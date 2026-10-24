@@ -3134,3 +3134,50 @@ describe("listGrowthDir（這一頁讓緩衝往哪端長）", () => {
     expect(listGrowthDir(map([100, 101]), [{ num: null }, { num: 99 }])).toBe(-1);
   });
 });
+
+// 列表快速捲動把手（P30，js/list_fast_scroll.js）的兩個入口：現況與跳號。
+describe("fastScrollInfo／jumpToNumber（快速捲動把手）", () => {
+  test("fastScrollInfo：緩衝的編號範圍＋板名；搜尋結果、不在緩衝、交易中 ⇒ null", () => {
+    const { s } = demandSession({ numStart: 500, count: 30 });
+    s._renderMode = "buffer";
+    expect(s.fastScrollInfo()).toMatchObject({ board: "C_Chat", lo: 500, hi: 529, edgeDown: false });
+    s._selectMode = true;
+    expect(s.fastScrollInfo()).toBeNull();
+    s._selectMode = false;
+    s._renderMode = "frozen";
+    expect(s.fastScrollInfo()).toBeNull();
+    s._renderMode = "buffer";
+    s.state = "opening";
+    expect(s.fastScrollInfo()).toBeNull();
+  });
+
+  test("jumpToNumber：排一條 jump-number（<N>⏎＋fullRepaint），落地／失敗呼叫 hooks；閒著才收", () => {
+    const { s, enqueued } = demandSession({ numStart: 500, count: 30 });
+    s._renderMode = "buffer";
+    const onDone = vi.fn();
+    const onFail = vi.fn();
+    s._rebuild = vi.fn();
+    expect(s.jumpToNumber(123, { onDone, onFail })).toBe(true);
+    const cmd = enqueued.find((c) => c.kind === "jump-number");
+    expect(cmd.keys).toBe("123\r");
+    expect(cmd.fullRepaint).toBe(true);
+    // 交易中（frozen）再來一次 ⇒ 不收、零送出
+    expect(s.jumpToNumber(456)).toBe(false);
+    expect(enqueued.filter((c) => c.kind === "jump-number").length).toBe(1);
+    cmd.onDone();
+    expect(s._rebuild).toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledTimes(1);
+    s._degradeToNative = vi.fn();
+    cmd.onFail();
+    expect(onFail).toHaveBeenCalledTimes(1);
+  });
+
+  test("jumpToNumber：不是 active（原生、opening）或編號不合法 ⇒ false、零送出", () => {
+    const { s, enqueued } = demandSession();
+    s._renderMode = "buffer";
+    expect(s.jumpToNumber(0)).toBe(false);
+    s.state = "idle";
+    expect(s.jumpToNumber(10)).toBe(false);
+    expect(enqueued.length).toBe(0);
+  });
+});

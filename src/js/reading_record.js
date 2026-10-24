@@ -133,6 +133,9 @@ export const RESTORE_TABLE = {
   },
   // 跳到第一篇未讀：目的就是移動；找不到時停在翻到的那頁（使用者拍板）。
   'unread-jump': { done: NONE, cancel: NONE, fail: NONE },
+  // 列表快速捲動把手（list_fast_scroll.js）放開＝跳號：目的就是移動；跳號逾時退原生，
+  // 停在 PTT 給的那頁（同鍵盤數字跳號）；取消＝一個 byte 都沒送。
+  'list-fast-scroll': { done: NONE, cancel: NONE, fail: NONE },
   // 首頁儀表板（home_dashboard.js）：抓我的最愛＝Ctrl+Z f → 讀頁 → q 回主功能表，清單
   // 換新之後面板仍停在同一張卡片；失敗停在 PTT 給的畫面，回到首頁時一樣捲回原處。
   // 開信箱＝目的地，從信箱回到首頁時捲回原處。

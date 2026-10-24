@@ -401,6 +401,8 @@ export const DEFAULT_PREFS = {
   // 只看關注（P36）：文章列表（列表好讀）右上角的切換鈕「只看關注」。這是功能開關；
   // 切換鈕本身預設關、存 localStorage（js/follow_only.js）。只改顯示 ⇒ 不在安全模式名單。
   enableFollowOnly: true,
+  // 列表快速捲動把手（P30，js/list_fast_scroll.js）：列表好讀捲動時右緣出現的把手，放開送一次跳號。
+  enableListFastScroll: true,
 
   // 快速搜尋（右鍵選單）。內建項目定義在 quick_search.js#BUILTIN_QUICK_SEARCH，
   // 這裡只存「被停用的內建 id」而不是整份清單：陣列 pref 走 readValuesWithDefault

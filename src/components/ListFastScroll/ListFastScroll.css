@@ -1,0 +1,71 @@
+/* 列表快速捲動把手（ListFastScroll/index.jsx）。位置由 js/list_fast_scroll.js 量好
+   （列表好讀視口 .listBodyView 的右緣），inline style 寫進來。寬高與
+   FAST_SCROLL_HANDLE_W／H 同值。z-index 同搜尋狀態列：高於終端機（≤3），低於 Mantine
+   overlay（200）。 */
+.listFastScroll {
+  position: fixed;
+  z-index: 160;
+  width: 28px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 3px;
+  box-sizing: border-box;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  animation: listFastScrollIn 0.12s ease-out;
+}
+
+.listFastScrollGrip {
+  display: block;
+  width: 8px;
+  height: 100%;
+  border-radius: 4px;
+  background: rgba(190, 200, 215, 0.55);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.listFastScroll:hover .listFastScrollGrip,
+.listFastScroll--dragging .listFastScrollGrip {
+  background: #8fb4e6;
+}
+
+.listFastScroll--dragging {
+  cursor: grabbing;
+}
+
+.listFastScrollBubble {
+  position: fixed;
+  z-index: 161;
+  transform: translateY(-50%);
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #1f2a3a;
+  border: 1px solid rgba(143, 180, 230, 0.6);
+  color: #e6eefa;
+  font:
+    600 15px/20px system-ui,
+    sans-serif;
+  white-space: nowrap;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+@keyframes listFastScrollIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listFastScroll {
+    animation: none;
+  }
+}

@@ -497,6 +497,17 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 `tests/unit/list_keys.test.js`（A/B 分類）、`tests/unit/board_list_session.test.js`（看板列表版）、
 `tests/e2e/offline/easy-reading-list.offline.spec.js`（`/`／`v` 兩條的自動回復）、`tests/e2e/offline/scenario_navigation.offline.spec.js`（A 類鍵全程不見原生，素材 `scn-list-bracket`）。
 
+## 快速捲動把手（P30）
+
+列表好讀的文章列表捲動時，`.listBodyView` 右緣出現一個把手（`js/list_fast_scroll.js`＋`components/ListFastScroll`，pref `enableListFastScroll` 預設開）。T2 數字跳號的另一個入口，不是新的交易。
+
+- **出現**：捲動 `.listBodyView`（document capture 的 scroll）後出現，停下 `FAST_SCROLL_IDLE_MS` 收起；拖動中不收。條件 `fastScrollAvailable`：`ListSession.fastScrollInfo()` 不是 null（state `active`＋render `buffer`＋不是搜尋結果／文摘＝`_selectMode`），而且緩衝沒涵蓋整個看板（`lo > 1` 或 `hi` 小於看過的最大編號）。看板列表在畫（owner 不是文章列表）不出現。
+- **編號換算**：軌道最上面＝1、最下面＝這個看板看過的最大編號，線性（`fastScrollNumAt`）。看過的最大編號 `nextHiSeen`：換板重來；`_edgeDown`（已補到板尾）以緩衝為準（刪文會讓板尾變小）；否則只增不減（遠跳到舊段後緩衝的最大編號會變小）。
+- **送鍵**：拖動途中零送出（只改把手位置與旁邊的「編號 N」）。放開＝`ListSession.jumpToNumber(N)`，跟鍵盤數字跳號同一條 `_beginJumpNumber`（`jump-number`，`<N>⏎`＋fullRepaint，逾時退原生）；交易中（frozen／opening）回 false、零送出。放回視口頂端那篇自己＝不送。`pointercancel`＝不送。
+- **閱讀紀錄**：`list-fast-scroll`，三種結果都不還原（目的就是移動；失敗停在 PTT 給的那頁，同鍵盤跳號）。
+- **輸入**：pointer 事件＋`setPointerCapture`，滑鼠與觸控同一套；把手 `touch-action:none`（拖它瀏覽器不捲頁）、`data-own-control`＋`App._onUploadLayer` 認 `#listFastScrollHandle`（不被當成點終端機）。
+- 守護：`tests/unit/list_fast_scroll.test.js`（換算、出現條件、拖動不送／放開送一次）、`list_session.test.js`「快速捲動把手」（兩個入口的 gate）、offline `list_fast_scroll.offline.spec.js`（真滑鼠）＋`mobile_list_fast_scroll.offline.spec.js`（真觸控）。
+
 ## 已知限制
 
 `buf.rows < 24` 不 engage（下界＝server clamp，`mbbsd/term.c:55`）——**≥24 的任意列數都可以**。

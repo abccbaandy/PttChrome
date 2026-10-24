@@ -75,6 +75,9 @@ describe("決策表", () => {
     // 使用者拍板：找不到第一篇未讀時停在翻到的那頁。
     ["unread-jump", "done", "none", "none", "none"],
     ["unread-jump", "fail", "none", "none", "none"],
+    ["list-fast-scroll", "done", "none", "none", "none"],
+    ["list-fast-scroll", "cancel", "none", "none", "none"],
+    ["list-fast-scroll", "fail", "none", "none", "none"],
     // 首頁儀表板：從主功能表出發（不是三種紀錄之一）。抓最愛 q 回主功能表、開信箱是目的地。
     ["home-favorites", "done", "none", "none", "none"],
     ["home-favorites", "fail", "none", "none", "none"],
