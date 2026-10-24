@@ -26,6 +26,8 @@
 //            內容可選、上傳也只能退回複製到剪貼簿，卻會把 sheet 撐到蓋住整個選單（遮罩點不到）。
 //   search ：可開的搜尋種類，與鍵盤攔截同一個判準（article_search.availableSearchKinds）。
 //   appBar ：頂部 App Bar 的標題（mobile_app_bar.js），同一次計算、同一個通知。
+//   editor ：PTT 編輯器（pageState 6，term_buf.setPageState 的判準）。第 1 格放「輸入框」
+//            （editor_input.js；pref 關掉時元件畫空格）。
 // 判準刻意不看 enableLongPush：推鈕送的是 X，長推文關掉時就是 PTT 原生推文。
 
 import { parsePagerFooterContext } from './string_util';
@@ -40,7 +42,7 @@ import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
   unreadJump: false, markAllRead: false, help: false, contentTools: false, refresh: false, end: false,
-  search: [], appBar: EMPTY_APP_BAR
+  editor: false, search: [], appBar: EMPTY_APP_BAR
 });
 
 // 送鍵表：key 是 term_view.sendKeyAsUser 的 keyName（單字元或 KeyMap 裡的具名鍵），
@@ -63,14 +65,14 @@ export function hasHelpHint(lastRowText) {
 
 // 工具列的固定格位。**每一格的位置不隨畫面變**：按鈕依畫面有條件出現時，flex 等寬
 // 會讓同一顆按鈕在不同畫面跑到不同位置（使用者回報「搜尋／到底有時在中間有時在旁邊」）。
-//   第 1 格：主要動作 —— 文章＝推、列表／主功能表＝搜尋
+//   第 1 格：主要動作 —— 文章＝推、編輯器＝輸入框、列表／主功能表＝搜尋
 //   第 2 格：次要動作 —— 文章／信件＝回文（回信）、文章列表＝發文
 //   第 3～6 格：重整、到底、按鍵、更多，**永遠都在**；不能用時反灰（不藏）。
 // null ＝這個畫面沒有這一格的動作，畫一個空格佔位（寬度照算）。
 export const TOOLBAR_SLOT_COUNT = 6;
 export function toolbarSlots(c) {
   const ctx = c || EMPTY_TOOLBAR_CONTEXT;
-  const first = ctx.push ? 'push' : ctx.search && ctx.search.length ? 'search' : null;
+  const first = ctx.push ? 'push' : ctx.editor ? 'editorInput' : ctx.search && ctx.search.length ? 'search' : null;
   const second = ctx.reply ? 'reply' : ctx.post ? 'post' : null;
   return [first, second, 'refresh', 'end', 'keys', 'more'];
 }
@@ -121,6 +123,7 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
       home: o.home
     }),
     end: pager || lists,
+    editor: pageState === 6,
     search: availableSearchKinds(facts),
     appBar: appBarFromFacts(facts, { ...(opts || {}), pageState: pageState })
   };
@@ -142,7 +145,8 @@ export function mobileToolbarContext(core) {
 }
 
 const FLAGS = [
-  'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'help', 'contentTools', 'refresh', 'end'
+  'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'help', 'contentTools', 'refresh', 'end',
+  'editor'
 ];
 
 export function sameToolbarContext(a, b) {

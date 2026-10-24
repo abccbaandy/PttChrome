@@ -148,6 +148,12 @@ describe("toolbarContextFromFacts", () => {
       null,
       ...tail,
     ]);
+    // 編輯器（pageState 6）：第 1 格＝輸入框（P27，editor_input.js），其餘照舊
+    const EDITOR_ROW = "  編輯文章  (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開║插入│aipr│    1:   1";
+    expect(toolbarContextFromFacts(frame({ 23: EDITOR_ROW }), 6).editor).toBe(true);
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3).editor).toBe(false);
+    expect(toolbarSlots(toolbarContextFromFacts(frame({ 23: EDITOR_ROW }), 6))).toEqual(["editorInput", null, ...tail]);
+    expect(sameToolbarContext({ editor: true, search: [] }, { editor: false, search: [] })).toBe(false);
     expect(toolbarSlots(EMPTY_TOOLBAR_CONTEXT)).toEqual([null, null, ...tail]);
     expect(toolbarSlots(EMPTY_TOOLBAR_CONTEXT).length).toBe(TOOLBAR_SLOT_COUNT);
   });

@@ -851,6 +851,39 @@ export const en_US = {
   "tooltip_enableListFastScroll": {
     "message": "While scrolling the easy-reading list, a handle appears at the right edge: drag it to pick a post number (nothing is sent while dragging) and release to jump there. Handy for going far back on big boards."
   },
+  "options_enableEditorInput": {
+    "message": "Type in a regular text box when posting, replying or mailing"
+  },
+  "tooltip_enableEditorInput": {
+    "message": "Adds a \"Text box\" on the PTT editor screen (bottom right on desktop, bottom bar on mobile): type with your system keyboard, IME, suggestions and paste, then press \"Insert\" to send the whole block at the editor cursor. Save and exit with Ctrl+X as usual."
+  },
+  "editorInput_open": {
+    "message": "Text box"
+  },
+  "editorInput_tip": {
+    "message": "Type in a regular text box and insert at the editor cursor"
+  },
+  "editorInput_title": {
+    "message": "Insert text into the editor"
+  },
+  "editorInput_label": {
+    "message": "Text to insert"
+  },
+  "editorInput_placeholder": {
+    "message": "Type something, then press Insert to send it at the editor cursor"
+  },
+  "editorInput_hint": {
+    "message": "Line breaks are sent as typed. Use native Ctrl+C for colors; Ctrl+X to save or exit."
+  },
+  "editorInput_insert": {
+    "message": "Insert"
+  },
+  "editorInput_cancel": {
+    "message": "Cancel"
+  },
+  "editorInput_notEditor": {
+    "message": "Not on the editor screen, nothing was sent (your text is kept)."
+  },
   "listFastScroll_label": {
     "message": "Fast scroll: drag to pick a number, release to jump"
   },

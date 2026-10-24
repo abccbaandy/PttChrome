@@ -12,6 +12,7 @@ import {
   IconPencilPlus,
   IconSearch,
   IconKeyboard,
+  IconCursorText,
   IconDots,
   IconRefresh,
   IconArrowBarToDown,
@@ -315,6 +316,13 @@ export const MobileToolbar = ({
     if (f && typeof f.toggle === "function") f.toggle();
   }, [pttchrome]);
 
+  const onEditorInput = useCallback(() => {
+    setPanel(null);
+    setConfirmLogout(false);
+    const ed = pttchrome.editorInput;
+    if (ed && typeof ed.open === "function") ed.open();
+  }, [pttchrome]);
+
   // 操作說明：送 h（與實體鍵盤同一條分派）；好讀開著時 PTT 的說明選單會變成 bottom sheet
   // （components/HelpMenu）。
   const onHelp = useCallback(() => {
@@ -400,6 +408,23 @@ export const MobileToolbar = ({
           i18n("mobileToolbar_push"),
           pushAction,
           { aria: i18n("mobileKeypad_push") },
+        );
+      case "editorInput":
+        // 編輯器輸入框（P27，js/editor_input.js）：pref 關掉（或安全模式）⇒ 照空格畫。
+        if (pttchrome.editorInput && pttchrome.editorInput.state.available)
+          return navBtn(
+            "__editorInput",
+            IconCursorText,
+            i18n("editorInput_open"),
+            onEditorInput,
+          );
+        return (
+          <span
+            key={"__slot" + i}
+            className="mobileToolbarBtn mobileToolbarSlotEmpty"
+            data-slot-empty={i}
+            aria-hidden="true"
+          />
         );
       case "search":
         return navBtn(

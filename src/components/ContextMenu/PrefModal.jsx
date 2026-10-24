@@ -1238,6 +1238,17 @@ export const PrefModal = ({
                   {i18n("options_enableLiveArticleHelper")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="enableEditorInput"
+                  checked={values.enableEditorInput}
+                  disabled={values.nativeSafeMode}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableEditorInput")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_enableEditorInput")}
+                </Text>
+                <PrefCheckbox
                   name="enableLongPush"
                   checked={values.enableLongPush}
                   onChange={onCheckboxChange}
