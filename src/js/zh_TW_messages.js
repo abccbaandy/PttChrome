@@ -292,6 +292,9 @@
   "commentFilter_skipped": {
     "message": "略過 {n} 則"
   },
+  "commentFilter_collapse": {
+    "message": "收起 {n} 則"
+  },
   "options_commentReplyMenu": {
     "message": "推文選單的「回覆這則」"
   },

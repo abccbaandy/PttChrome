@@ -139,12 +139,34 @@ function disposeNode(node) {
 // 推文篩選（P29）：連續被篩掉的推文收成的一條細線「略過 N 則」（screen_annotations
 // #applyCommentFilterSkips）。不是 bbsrow（不帶 type／srow／data-row）⇒ 選取複製、閱讀紀錄、
 // 版面量測這些找 bbsrow 的消費端都直接略過它。
-function buildFilterSkipNode(row, count) {
-  return el(
-    "div",
-    { class: "commentFilterSkip", "data-filter-skip": row },
-    String(i18n("commentFilter_skipped") || "").replace("{n}", String(count)),
+//
+// 點一下就地展開／收起那幾則（P38）：<button>（App 的滑鼠入口認 isOwnControlTarget，不落到
+// 推文高亮／邊緣翻頁）。展開時 label 換成「收起 N 則」，放在那串第一列上面（見
+// _buildRowNode 的 filterExpanded）。tabindex -1：點了不留焦點在它身上（鍵盤歸 #t）。
+function buildFilterSkipNode(row, count, ann, onToggle) {
+  const expanded = !!ann.filterExpanded;
+  const node = el(
+    "button",
+    {
+      // 不寫 type="button"：消費端用 [type] 認 bbsrow（不在 form 裡，submit 也無作用）。
+      tabindex: "-1",
+      class: "commentFilterSkip",
+      "data-filter-skip": row,
+      "aria-expanded": expanded ? "true" : "false",
+    },
+    String(
+      i18n(expanded ? "commentFilter_collapse" : "commentFilter_skipped") || "",
+    ).replace("{n}", String(count)),
   );
+  const key = ann.filterSkipKey;
+  node.__filterKey = key;
+  if (onToggle && key !== undefined) {
+    node.addEventListener("click", (e) => {
+      e.preventDefault();
+      onToggle(key, node);
+    });
+  }
+  return node;
 }
 
 export class ScreenController {
@@ -984,6 +1006,9 @@ export class ScreenController {
       const built = this._buildRowNode(row, lines, annotations);
       if (built && ann && ann.reverseJunction)
         built.classList.add("reverseJunction");
+      // 推文篩選展開出來的別人推文（P38）：淡一點，跟「只看的那個人」分得出來。
+      if (built && ann && ann.filterShown)
+        built.classList.add("commentFilterShown");
       // 原生／列表（非 stableRows）每幀都要重算，但畫面內容往往一字未變。序列化
       // 比對後沿用舊節點，可以省掉整列的 DOM 抽換——選取範圍與捲動位置因此不會
       // 每 30ms 被打斷一次。長頁走上面的參考快取，不必付這個序列化成本。
@@ -1028,8 +1053,33 @@ export class ScreenController {
     // 位移其餘列的 row/data-row（絕對 pageLines index），跨缺口的選取複製才不會錯位。
     const dropHidden = !!(enhance && enhance.dropHidden);
     const ann = annotations[row];
+    const onToggle = enhance && enhance.onCommentFilterToggle;
+    if (dropHidden && ann && ann.filterExpanded) {
+      // 展開的串（P38）：「收起 N 則」＋第一列本身（黑名單列照藏，只剩細線）。外層 div
+      // 只在展開時出現；佔位盒掛在外層（disposeNode 只看頂層節點）。
+      const bar = buildFilterSkipNode(row, ann.filterExpanded, ann, onToggle);
+      if (ann.hidden) return bar;
+      // 借用同一份 annotations 畫第一列本身（暫換這一列的標註、畫完換回）。
+      let inner;
+      annotations[row] = { ...ann, filterExpanded: undefined };
+      try {
+        inner = this._buildRowNode(row, lines, annotations);
+      } finally {
+        annotations[row] = ann;
+      }
+      if (!inner) return bar;
+      const wrap = el("div", { class: "commentFilterExpandedHead" }, [
+        bar,
+        inner,
+      ]);
+      wrap.__slots = inner.__slots;
+      inner.__slots = null;
+      return wrap;
+    }
     if (dropHidden && ann && ann.hidden)
-      return ann.filterSkip ? buildFilterSkipNode(row, ann.filterSkip) : null;
+      return ann.filterSkip
+        ? buildFilterSkipNode(row, ann.filterSkip, ann, onToggle)
+        : null;
     // 說明行已併入所屬圖行的右欄；連續同作者推文的後續列已併進 run 首列。
     if (ann && ann.mergedInto !== undefined) return null;
     if (ann && ann.mergedIntoComment !== undefined) return null;

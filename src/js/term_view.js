@@ -370,6 +370,8 @@ export function TermView() {
   this._commentFilter = null;
   this._commentFilterListeners = new Set();
   this._emittedCommentFilter = null;
+  // 引用穩定（render 層的細線直接掛它）。
+  this._onCommentFilterToggle = this.toggleCommentFilterSkip.bind(this);
   this.showFloorNumbers = true;
   // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
   // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
@@ -1091,7 +1093,7 @@ TermView.prototype = {
   setCommentFilter: function(userid, op, anchorRow) {
     if (!userid || !this.useEasyReadingMode || this.buf.pageState !== 3) return false;
     var anchor = this._filterAnchor(anchorRow);
-    this._commentFilter = { userid: String(userid).toLowerCase(), op: !!op, articleId: this._articleInstanceId };
+    this._commentFilter = { userid: String(userid).toLowerCase(), op: !!op, articleId: this._articleInstanceId, expanded: [] };
     this.redraw(true);
     this._restoreFilterAnchor(anchor);
     this._emitCommentFilter();
@@ -1106,6 +1108,30 @@ TermView.prototype = {
     this.redraw(true);
     this._restoreFilterAnchor(anchor);
     this._emitCommentFilter();
+  },
+
+  // 「略過 N 則」細線點一下就地展開／收起（P38）。key＝那串第一列的文字（標註層的
+  // filterSkipKey）；el＝被點的細線，重畫後同一串的細線放回原本的螢幕位置（手指下不跳）。
+  // 一個 byte 都不送；展開狀態跟著篩選走（換篩選、清掉、換文章都歸零）。
+  toggleCommentFilterSkip: function(key, el) {
+    var f = this.activeCommentFilter();
+    if (!f || typeof key !== 'string') return false;
+    var disp = this.mainDisplay, mc = this.mainContainer;
+    var offset = el && disp ? offsetTopWithin(el, disp) - disp.scrollTop : null;
+    var list = f.expanded || [];
+    f.expanded = list.indexOf(key) >= 0
+      ? list.filter(function(k) { return k !== key; })
+      : list.concat([key]);
+    this.redraw(true);
+    if (offset == null || !mc || typeof mc.querySelectorAll !== 'function') return true;
+    var bars = mc.querySelectorAll('.commentFilterSkip');
+    for (var i = 0; i < bars.length; ++i) {
+      if (bars[i].__filterKey !== key) continue;
+      renderChunksAround(bars[i]);
+      disp.scrollTop = Math.max(0, offsetTopWithin(bars[i], disp) - offset);
+      break;
+    }
+    return true;
   },
 
   // { row, offset }：該列節點距捲動容器可視頂端的距離（量不到 null）。
@@ -1239,6 +1265,9 @@ TermView.prototype = {
           followTitleKeywords: this.enableFollowList ? this.followTitleKeywords : null,
           // 推文篩選（進 annotationsKey；標註層只在好讀文章用它）。
           commentFilter: this.activeCommentFilter() ? this._commentFilter.userid : null,
+          // 「略過 N 則」展開了哪幾串（P38，進 annotationsKey）；點細線的入口給 render 層。
+          commentFilterExpanded: this.activeCommentFilter() ? this._commentFilter.expanded : null,
+          onCommentFilterToggle: this._onCommentFilterToggle,
           showFloorNumbers: this.showFloorNumbers,
           mergeSameAuthorComments: this.mergeSameAuthorComments,
           // 推文區塊行距。**刻意不進 annotationsKey**（js/screen_annotate_cache.js

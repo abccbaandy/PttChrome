@@ -75,6 +75,30 @@ describe("applyCommentFilterSkips", () => {
     applyCommentFilterSkips(result);
     expect(result.map((a) => (a && a.filterSkip) || 0)).toEqual([0, 2, 0, 0, 0, 0, 0, 1, 0]);
   });
+
+  test("P38 展開：key＝那串第一列的文字；被篩掉的列看得到（filterShown），黑名單照藏；再跑一次不換物件", () => {
+    const h = (o) => ({ hidden: true, pusher: "x", userid: "x", ...o });
+    const texts = ["內文", "推 a1", "推 bad", "推 a2", "推 friend", "推 a3"];
+    const result = [
+      null,
+      h({ filtered: true }),
+      h({}), // 黑名單
+      h({ filtered: true }),
+      { pusher: "friend", userid: "friend", hidden: false },
+      h({ filtered: true }),
+    ];
+    applyCommentFilterSkips(result, ["推 a1"], texts);
+    expect(result[1]).toMatchObject({ filterExpanded: 2, filterSkipKey: "推 a1", hidden: false, filterShown: true });
+    expect(result[1].filterSkip).toBeUndefined();
+    expect(result[2].hidden).toBe(true);
+    expect(result[3]).toMatchObject({ hidden: false, filterShown: true });
+    // 沒展開的那串照舊收成細線
+    expect(result[5]).toMatchObject({ filterSkip: 1, filterSkipKey: "推 a3", hidden: true });
+    // 前沿快路徑：下一幀拿到的前綴已經展開過，同一串、同一批物件
+    const before = result.slice();
+    applyCommentFilterSkips(result, ["推 a1"], texts);
+    expect(result.every((a, i) => a === before[i])).toBe(true);
+  });
 });
 
 describe("渲染", () => {
@@ -132,6 +156,40 @@ describe("渲染", () => {
       (n) => (n.classList.contains("commentFilterSkip") ? "skip" : n.getAttribute("data-pusher")),
     );
     expect(order).toEqual(["skip", "friend", "skip", "friend"]);
+  });
+
+  test("P38 點細線 ⇒ 呼叫 onCommentFilterToggle(key)；展開後「收起 N 則」在那串上面、被篩掉的推文看得到", () => {
+    const calls = [];
+    const p = props("friend");
+    p.enhance.onCommentFilterToggle = (key) => calls.push(key);
+    const m = mountScreen(p);
+    const first = m.container.querySelector(".commentFilterSkip");
+    expect(first.tagName).toBe("BUTTON");
+    expect(first.getAttribute("aria-expanded")).toBe("false");
+    // real-input: tests/e2e/offline/comment_filter.offline.spec.js
+    first.click();
+    // key＝那串第一列（a1 那則）的文字
+    expect(calls.length).toBe(1);
+    expect(calls[0]).toMatch(/^推 a1: 一 +06\/14 10:01/);
+
+    const q = props("friend");
+    q.enhance.onCommentFilterToggle = p.enhance.onCommentFilterToggle;
+    q.enhance.commentFilterExpanded = [calls[0]];
+    m.update(q);
+    expect(pushers(m)).toEqual(["a1", "a2", "friend", "friend"]);
+    const collapse = i18n("commentFilter_collapse").replace("{n}", "2");
+    const skipped = i18n("commentFilter_skipped").replace("{n}", "1");
+    expect(skips(m)).toEqual([collapse, skipped]);
+    const order = [...m.container.querySelectorAll('.commentFilterSkip, span[type="bbsrow"][data-pusher]')].map(
+      (n) => (n.classList.contains("commentFilterSkip") ? "skip" : n.getAttribute("data-pusher")),
+    );
+    expect(order).toEqual(["skip", "a1", "a2", "friend", "skip", "friend"]);
+    expect(m.container.querySelector(".commentFilterSkip").getAttribute("aria-expanded")).toBe("true");
+    // 展開出來的別人推文標淡色 class；只看的那個人不標
+    const shown = [...m.container.querySelectorAll(".commentFilterShown")];
+    expect(shown.length).toBe(2);
+    const key2 = (e) => annotationsKey({ enhance: { commentFilter: "a", commentFilterExpanded: e } }).sig;
+    expect(key2([])).not.toBe(key2(["x"]));
   });
 
   test("沒有篩選 ⇒ 全部推文、沒有細線", () => {
@@ -194,6 +252,24 @@ describe("view 狀態", () => {
     v.buf.pageState = 3;
     v._articleInstanceId = 4;
     expect(v.activeCommentFilter()).toBeNull();
+  });
+
+  test("P38 toggleCommentFilterSkip：展開／收起一串，重畫；換篩選就歸零；沒篩選不動", () => {
+    const v = makeView();
+    expect(v.toggleCommentFilterSkip("推 a1")).toBe(false);
+    v.setCommentFilter("friend", false, 0);
+    v.redraw.mockClear();
+    expect(v.toggleCommentFilterSkip("推 a1")).toBe(true);
+    expect(v.redraw).toHaveBeenCalledWith(true);
+    const first = v.activeCommentFilter().expanded;
+    expect(first).toEqual(["推 a1"]);
+    v.toggleCommentFilterSkip("推 a3");
+    v.toggleCommentFilterSkip("推 a1");
+    // 每次都是新陣列（annotationsKey 靠內容，舊陣列不被改）
+    expect(first).toEqual(["推 a1"]);
+    expect(v.activeCommentFilter().expanded).toEqual(["推 a3"]);
+    v.setCommentFilter("other", false, 0);
+    expect(v.activeCommentFilter().expanded).toEqual([]);
   });
 
   test("不在好讀文章 ⇒ 不設", () => {

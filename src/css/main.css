@@ -1938,13 +1938,34 @@ body.mobile-layout {
    buildFilterSkipNode）。不是 bbsrow：不吃終端機的字級／列高。 */
 #mainContainer .commentFilterSkip {
   display: block;
+  box-sizing: border-box;
+  width: 100%;
   margin: 2px 0;
   padding: 0 1em;
+  border: 0;
   border-top: 1px dashed #3a4660;
+  background: none;
   color: #7f8aa3;
   font-family: system-ui, sans-serif;
   font-size: max(12px, 0.55em);
   line-height: 1.8;
+  text-align: left;
+  cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+}
+/* P38：點細線就地展開／收起。箭頭放 ::after（不進 textContent）。 */
+#mainContainer .commentFilterSkip::after {
+  content: " ▾";
+}
+#mainContainer .commentFilterSkip[aria-expanded="true"]::after {
+  content: " ▴";
+}
+#mainContainer .commentFilterSkip:hover {
+  color: #aab4cc;
+}
+/* 展開出來的別人推文（列或手機推文卡片）淡一點；第一列外面包的那層只淡列本身、不淡細線。 */
+#mainContainer .commentFilterShown:not(.commentFilterExpandedHead),
+#mainContainer .commentFilterExpandedHead.commentFilterShown > :not(.commentFilterSkip) {
+  opacity: 0.6;
 }

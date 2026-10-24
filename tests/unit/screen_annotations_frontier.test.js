@@ -154,7 +154,16 @@ const OPTION_SETS = [
   { merge: true, autoFixUrl: true, cards: false, mergeCaption: null, fullPush: true },
   { merge: true, autoFixUrl: true, cards: false, mergeCaption: null, filter: "alpha1" },
   { merge: false, autoFixUrl: false, cards: true, mergeCaption: null, filter: "poster" },
+  // P38：「略過 N 則」點開的串（隔一串展開一串）。展開的列改成 filterShown、仍算同一串。
+  { merge: true, autoFixUrl: true, cards: false, mergeCaption: null, filter: "alpha1", expand: true },
 ];
+
+// 全文先算一次，每隔一串取那串的 key（第一列文字）當「使用者點開過的」。
+const expandedKeys = (full, o) => {
+  const { annotations } = computeAnnotations(full, enhanceFor(o), o.mergeCaption, false, {}, {}, {}, null, null);
+  const keys = annotations.filter((a) => a && a.filterSkip).map((a) => a.filterSkipKey);
+  return keys.filter((_, i) => i % 2 === 0);
+};
 
 describe("前沿快路徑：逐頁 append 與全量重算逐列相同", () => {
   for (const [oi, o] of OPTION_SETS.entries()) {
@@ -162,6 +171,11 @@ describe("前沿快路徑：逐頁 append 與全量重算逐列相同", () => {
       test(`選項組 ${oi}／種子 ${seed}`, () => {
         const full = makeArticle(seed * 31 + oi, 700, !!o.fullPush);
         const enhance = enhanceFor(o);
+        if (o.expand) {
+          enhance.commentFilterExpanded = expandedKeys(full, o);
+          // 正向對照：真的有展開到東西
+          expect(enhance.commentFilterExpanded.length).toBeGreaterThan(2);
+        }
         const r = rng(seed);
         let prev = null; // { lines, cache, annotations }
         let fastFrames = 0;
