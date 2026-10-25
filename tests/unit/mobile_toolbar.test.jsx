@@ -655,6 +655,27 @@ describe("更多：常用項目的圖示格（P40）", () => {
     expect(core.setMobileSelectMode).toHaveBeenCalledWith(true);
   });
 
+  // 開著的時候畫面 context 變了（開機剛連上、還沒第一次 screenSettled 就開了「更多」）：
+  // 「選取模式」原本在清單，context 一更新圖示格湊滿 3 格就被搬進去 ⇒ 按鈕節點換掉，
+  // 手指按下到放開之間換掉 ⇒ Chromium 不發 click（同 #152）。開著時不搬已經畫出來的項目。
+  test("開著時 context 變了：已經畫出來的項目不搬家（節點不換）；關掉重開才重新分組", async () => {
+    const core = makeCore();
+    renderBar(core);
+    await openMore();
+    const sel = byKey("__select");
+    expect(grid()).toBeNull();
+    act(() => core.setContext(LIST_CTX));
+    expect(byKey("__select")).toBe(sel);
+    expect(sel.isConnected).toBe(true);
+    // 新出現的項目照樣出現
+    expect(byKey("__markAllRead")).not.toBeNull();
+    fireEvent.click(sel);
+    expect(core.setMobileSelectMode).toHaveBeenCalledWith(true);
+    await sheetClosed();
+    await openMore();
+    expect(grid().contains(byKey("__select"))).toBe(true);
+  });
+
   test("主功能表（項目太少）：不收圖示格，照舊是清單", async () => {
     const core = makeCore();
     renderBar(core);

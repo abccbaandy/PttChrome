@@ -36,3 +36,16 @@ export function splitMoreGrid(visibleKeys) {
   if (grid.length < MORE_GRID_MIN) return { grid: [], list: visibleKeys.slice() };
   return { grid, list: visibleKeys.filter((k) => !grid.includes(k)) };
 }
+
+// sheet 開著時畫面 context 變了（例：開機還沒第一次 screenSettled 就開了「更多」）：已經畫出來的
+// 項目留在原本那一區，不在圖示格與清單之間搬家 —— 搬家＝按鈕節點換掉，手指按下到放開之間被換掉
+// Chromium 就不發 click（同 #152）。新出現的：圖示格已經有東西才進圖示格，否則進清單；消失的照樣拿掉。
+// prev＝這次開著時上一次的分組（剛打開傳 null ⇒ 等於 splitMoreGrid）。
+export function stableMoreSplit(visibleKeys, prev) {
+  if (!prev) return splitMoreGrid(visibleKeys);
+  const toGrid = (k) =>
+    prev.grid.includes(k) ||
+    (!prev.list.includes(k) && prev.grid.length > 0 && MORE_GRID_KEYS.includes(k));
+  const grid = MORE_GRID_KEYS.filter((k) => visibleKeys.includes(k) && toGrid(k));
+  return { grid, list: visibleKeys.filter((k) => !grid.includes(k)) };
+}
