@@ -49,6 +49,7 @@ import {
 import { parseFunctionKeys } from "./footer_keys";
 import { mergeRunKey } from "./screen_annotate_cache";
 import { detectHiddenRow } from "./hidden_text";
+import { applyJustPushedMark } from "./just_pushed";
 
 // PttChrome pageState (see term_buf.js#setPageState): 2 = board list, 3 = reading.
 export const PAGE_LIST = 2;
@@ -965,6 +966,7 @@ export function computeAnnotations(
     result.fixCandsSig = fixCands.map(fixKey).join(",");
     applyFunctionKeys(result, lines, enhance);
     applyNewCommentsMark(result, enhance);
+    applyJustPushedMark(result, texts, enhance);
     if (easyReading && commentFilter) applyCommentFilterSkips(result, commentFilterExpanded, texts);
     // ---- 給下一幀的前沿（見上方 fastFrom）----
     // 反向期間不算（tail 之後還會往 J 插入，前沿的前提「只往後接」不成立）。

@@ -841,6 +841,12 @@
   "options_markNewComments": {
     "message": "標出新推文"
   },
+  "options_markJustPushed": {
+    "message": "推完文標出剛推的那幾則"
+  },
+  "tooltip_markJustPushed": {
+    "message": "用長推文或底部推文列送完後，文末自己剛推的那幾則會淡淡亮一下約 2 秒，方便確認都送出去了。"
+  },
   "tooltip_markNewComments": {
     "message": "重開讀過的文章時，上次讀完之後才出現的推文前面會有一條灰線，右下角的工具面板可以一鍵跳過去。只記在這個瀏覽器。"
   },

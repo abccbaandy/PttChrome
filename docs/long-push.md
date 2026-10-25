@@ -502,6 +502,22 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 `session.start` 不在 `onPreflight` 裡同步呼叫（`setTimeout(0)`）：那一刻還在 session 的
 `_preflightDone` 裡，同步重入會讓狀態機在收尾一半時被改掉。
 
+## 剛推的那幾則（P42，`just_pushed.js`，pref `markJustPushed` 預設開）
+
+整段送完（`_finish({kind:'done'})`，落回文末之後）呼叫 `view.markJustPushed({ userid, count, since })`，
+畫面上自己剛推的那幾則淡淡亮一下（CSS `.justPushed` 2 秒淡出，減少動態＝靜態亮 2 秒），「長推文完成」提示照舊。
+**只看畫面、一個 byte 都不送** ⇒ 不在安全模式名單。底部推文列走同一條管線，一樣會標。
+
+| 判準 | 規則 | 認不出時 |
+|---|---|---|
+| 帳號 | 推文輸入列上的 id（`_userId`），沒有就退回 `view._selfId`（選單底列） | 都沒有 ⇒ 不標 |
+| 時間 | 推文列尾 `MM/DD HH:mm` 要落在台北時間 [開始送出 − 1 分, 現在 + 1 分] | 本機時鐘差太多／新格式推文沒有這種列尾 ⇒ 不標 |
+| 範圍 | 從累積頁最下面往上，最多 `count`（這次送出的則數）則；黑名單藏起來的不算；合併塊標在塊的第一列 | — |
+| 生效 | 只在同一篇（`_articleInstanceId`）的好讀累積頁；`JUST_PUSHED_MS` 後清掉重畫 | 離開文章、換文章 ⇒ 不標 |
+
+標註層同 `applyNewCommentsMark`：`applyJustPushedMark` 只寫 `result[row]`，`enhance.justPushed.key` 進
+`annotationsKey`（設定、到期各翻一次 ⇒ 那一幀全量重算）。守護 `tests/unit/just_pushed.test.js`。
+
 ## 尚待 live 驗證
 
 1. **探路**：禁推板／未達發文限制的實際橫幅字串是否與開源碼一致（term.ptt.cc 有私有

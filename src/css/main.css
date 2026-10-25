@@ -1232,6 +1232,22 @@ span {
   pointer-events: none;
 }
 
+/* 推完文剛推的那幾則（js/just_pushed.js，P42）：淡淡亮一下再淡出，跟 JUST_PUSHED_MS 同長。
+   中性白，不加新顏色（推文區不要花花綠綠）。減少動態 ⇒ 不動畫、靜態亮到狀態清掉（同樣 2 秒）。 */
+@keyframes justPushedFade {
+  from { background-color: rgba(255, 255, 255, 0.22); }
+  to { background-color: rgba(255, 255, 255, 0); }
+}
+#mainContainer .justPushed {
+  animation: justPushedFade 2s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  #mainContainer .justPushed {
+    animation: none;
+    background-color: rgba(255, 255, 255, 0.14);
+  }
+}
+
 /* 文章列表的「+N」（js/new_comments.js#listNewPush）：讀完之後推文數多了幾分。字在
    data-new-push，::after 畫（不會被選取／複製）。中性灰小框，不搶 PTT 推文數的顏色。
    原生／桌機列：疊在列尾的留白上（render/row.js 只在最後幾格是空白時才放），static

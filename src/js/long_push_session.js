@@ -253,6 +253,7 @@ LongPushSession.prototype = {
     // _rest() 讀的是 _text/_offset，**一定要在 _reset() 之前**。
     const rest = o.keepRest ? this._rest() : '';
     const sent = this._sent;
+    const userId = this._userId;
     this.active = false;
     this._clearTimer();
     this._emit(null);
@@ -261,6 +262,9 @@ LongPushSession.prototype = {
     this._reset();
     if (o.kind === 'done') {
       if (o.message) this._hint(o.message);
+      // 落回文末了 ⇒ 把自己剛推的那幾則淡淡亮一下（P42，js/just_pushed.js；只看畫面、不送鍵）。
+      if (sent > 0 && this._view && typeof this._view.markJustPushed === 'function')
+        this._view.markJustPushed({ userid: userId, count: sent, since: this._sendStartedAt });
       // 唯一的「整段都送出去了」出口 ⇒ 草稿到這裡才可以清（見建構式的 onSent）。
       if (this.onSent) this.onSent();
       return;
@@ -399,6 +403,8 @@ LongPushSession.prototype = {
     this._typeKey = PUSH_TYPE_KEY[o.type] || PUSH_TYPE_KEY.push;
     this._phase = 'sending';
     this.active = true;
+    // 剛推的那幾則（P42）的時間窗起點：推文列尾的時間不會早於這一刻（減寬限）。
+    this._sendStartedAt = Date.now();
 
     if (armed) {
       this._anchor = armed.anchor;
