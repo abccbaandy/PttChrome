@@ -56,6 +56,30 @@ export const en_US = {
   "cmenuShort_copyComment": {
     "message": "Copy"
   },
+  "mobileMoreShort_unreadJump": {
+    "message": "Unread"
+  },
+  "mobileMoreShort_followOnly": {
+    "message": "Following"
+  },
+  "mobileMoreShort_markAllRead": {
+    "message": "All read"
+  },
+  "mobileMoreShort_share": {
+    "message": "Share"
+  },
+  "mobileMoreShort_select": {
+    "message": "Select"
+  },
+  "mobileMoreShort_selectAll": {
+    "message": "Select all"
+  },
+  "mobileMoreShort_uploadImage": {
+    "message": "Upload"
+  },
+  "mobileMoreShort_help": {
+    "message": "Help"
+  },
   "cmenuShort_filterCommentUser": {
     "message": "This ID"
   },

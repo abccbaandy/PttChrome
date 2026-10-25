@@ -210,6 +210,17 @@
   opacity: 0.45;
 }
 
+/* 手機「更多」的常用項目（P40）：同一種圖示鈕排成一排 4 格的格子，項目多就換第二排。 */
+.mobileSheetQuickGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* 開關類（只看關注、選取模式）開著時的顏色，跟清單項目的 .mobileSheetItem.active 一樣。 */
+.mobileSheetQuickItem.active {
+  color: #a8c7fa;
+}
+
 .mobileSheetQuickLabel {
   max-width: 100%;
   overflow: hidden;

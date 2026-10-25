@@ -56,6 +56,30 @@
   "cmenuShort_copyComment": {
     "message": "複製"
   },
+  "mobileMoreShort_unreadJump": {
+    "message": "跳到未讀"
+  },
+  "mobileMoreShort_followOnly": {
+    "message": "只看關注"
+  },
+  "mobileMoreShort_markAllRead": {
+    "message": "全部已讀"
+  },
+  "mobileMoreShort_share": {
+    "message": "分享"
+  },
+  "mobileMoreShort_select": {
+    "message": "選取模式"
+  },
+  "mobileMoreShort_selectAll": {
+    "message": "全選"
+  },
+  "mobileMoreShort_uploadImage": {
+    "message": "上傳圖片"
+  },
+  "mobileMoreShort_help": {
+    "message": "說明"
+  },
   "cmenuShort_filterCommentUser": {
     "message": "只看他"
   },
