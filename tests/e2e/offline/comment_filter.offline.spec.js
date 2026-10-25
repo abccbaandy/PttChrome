@@ -1,5 +1,5 @@
 // 推文篩選（P29，docs/comment-filter.md）：好讀文章右鍵推文 →「只看這個人的推文」→ 只留那個人
-// 的推文＋「略過 N 則」細線＋上方橫幅；橫幅 ✕ 還原。真右鍵、真點擊、真重畫，一個 byte 都不送。
+// 的推文＋「略過 N 則」細線＋上方橫幅；橫幅切換鈕直接換（P41）、「全部」還原。真右鍵、真點擊、真重畫，一個 byte 都不送。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassettes, bootOffline, replayCassette } = require('../helpers/replay');
@@ -27,7 +27,7 @@ const visiblePushers = (page) =>
 test.describe('推文篩選（離線重放）', () => {
   test.skip(!article, '尚無 article cassette');
 
-  test(`右鍵推文 → 只看這個人 → 只剩他的推文＋略過細線＋橫幅；✕ 還原 [${article && article.__file}]`, async ({ page }) => {
+  test(`右鍵推文 → 只看這個人 → 只剩他的推文＋略過細線＋橫幅；「全部」還原 [${article && article.__file}]`, async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true, mergeSameAuthorComments: false });
@@ -76,7 +76,8 @@ test.describe('推文篩選（離線重放）', () => {
     await expect(page.locator(SKIP).first()).toHaveAttribute('aria-expanded', 'false');
     await expect.poll(async () => [...new Set(await visiblePushers(page))]).toEqual([target]);
 
-    await page.locator('#commentFilterBar .commentFilterClose').click();
+    await expect(page.locator('#commentFilterBar [data-filter="user"]')).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('#commentFilterBar [data-filter="all"]').click();
     await expect(page.locator('#commentFilterBar')).toHaveCount(0);
     await expect.poll(() => visiblePushers(page)).toEqual(all);
     await expect(page.locator('#mainContainer .commentFilterSkip')).toHaveCount(0);
@@ -84,7 +85,7 @@ test.describe('推文篩選（離線重放）', () => {
     expect(await takeCapture(page)).toBe('');
   });
 
-  test(`P39 右鍵推文 → 只看噓文／只看推文 → 只剩那一種＋橫幅；✕ 還原 [${article && article.__file}]`, async ({ page }) => {
+  test(`P39 右鍵推文 → 只看噓文／只看推文 → 只剩那一種＋橫幅；橫幅直接切換、「全部」還原 [${article && article.__file}]`, async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true, mergeSameAuthorComments: false });
@@ -122,9 +123,18 @@ test.describe('推文篩選（離線重放）', () => {
 
     await expect.poll(async () => [...new Set(await visibleTypes(page))]).toEqual([want]);
     await expect(page.locator('#mainContainer .commentFilterSkip').first()).toBeAttached();
-    await expect(page.locator('#commentFilterBar')).toContainText(await label(page, bannerKey));
+    await expect(page.locator('#commentFilterBar')).toHaveAttribute('aria-label', await label(page, bannerKey));
+    const wantChip = want === '噓' ? 'boo' : 'push';
+    await expect(page.locator(`#commentFilterBar [data-filter="${wantChip}"]`)).toHaveAttribute('aria-pressed', 'true');
 
-    await page.locator('#commentFilterBar .commentFilterClose').click();
+    // P41：橫幅直接切到另一種，不用先還原再右鍵重選
+    const other = want === '噓' ? '推' : '噓';
+    const otherChip = want === '噓' ? 'push' : 'boo';
+    await page.locator(`#commentFilterBar [data-filter="${otherChip}"]`).click();
+    await expect(page.locator(`#commentFilterBar [data-filter="${otherChip}"]`)).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await visibleTypes(page)).every((t) => t === other)).toBe(true);
+
+    await page.locator('#commentFilterBar [data-filter="all"]').click();
     await expect(page.locator('#commentFilterBar')).toHaveCount(0);
     await expect.poll(() => visiblePushers(page)).toEqual(all);
     expect(await takeCapture(page)).toBe('');

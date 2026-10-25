@@ -346,6 +346,18 @@
   "commentFilter_clear": {
     "message": "顯示全部推文"
   },
+  "commentFilter_chipAll": {
+    "message": "全部"
+  },
+  "commentFilter_chipPush": {
+    "message": "推"
+  },
+  "commentFilter_chipBoo": {
+    "message": "噓"
+  },
+  "commentFilter_chipOp": {
+    "message": "原 PO"
+  },
   "commentFilter_skipped": {
     "message": "略過 {n} 則"
   },

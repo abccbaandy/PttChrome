@@ -1120,8 +1120,13 @@ TermView.prototype = {
   },
 
   // f.key＝給標註層的 enhance.commentFilter（comment_parse#isFilteredOut）。
+  // anchorRow 省略（橫幅切換鈕，P41）⇒ 錨在視窗頂端那一列，同 clearCommentFilter。
   _applyCommentFilter: function(f, anchorRow) {
     if (!this.useEasyReadingMode || this.buf.pageState !== 3) return false;
+    if (anchorRow == null) {
+      var top = this._topRowNode();
+      anchorRow = top ? Number(top.el.getAttribute('srow')) : null;
+    }
     var anchor = this._filterAnchor(anchorRow);
     f.articleId = this._articleInstanceId;
     f.expanded = [];
