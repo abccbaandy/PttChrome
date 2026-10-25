@@ -13,6 +13,13 @@ const swallow = (e) => {
   e.stopPropagation();
 };
 
+// 只看推／噓（P39）沒有帳號；其餘是「只看這個人／原 PO」。
+function bannerKey(filter) {
+  if (filter.type === "噓") return "commentFilter_bannerBoo";
+  if (filter.type === "推") return "commentFilter_bannerPush";
+  return filter.op ? "commentFilter_bannerOp" : "commentFilter_banner";
+}
+
 export const CommentFilterBar = ({ pttchrome }) => {
   const view = pttchrome && pttchrome.view;
   const [filter, setFilter] = useState(null);
@@ -29,9 +36,10 @@ export const CommentFilterBar = ({ pttchrome }) => {
   }, [pttchrome]);
 
   if (!filter) return null;
-  const label = String(
-    i18n(filter.op ? "commentFilter_bannerOp" : "commentFilter_banner") || "",
-  ).replace("{id}", filter.userid);
+  const label = String(i18n(bannerKey(filter)) || "").replace(
+    "{id}",
+    filter.userid || "",
+  );
   return (
     <div
       id={COMMENT_FILTER_BAR_ID}

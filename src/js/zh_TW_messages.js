@@ -287,16 +287,28 @@
     "message": "好讀文章底部常駐推文列"
   },
   "options_enableCommentFilter": {
-    "message": "推文篩選：只看這個人／只看原 PO"
+    "message": "推文篩選：只看這個人／只看原 PO／只看推或噓"
   },
   "tooltip_enableCommentFilter": {
-    "message": "好讀文章裡長按（桌機右鍵）推文，選單多「只看這個人的推文」「只看原 PO」：推文區只留那個人的推文，其他的收成一條「略過 N 則」，上方橫幅按 ✕ 還原。只影響這一篇、換文章就恢復。"
+    "message": "好讀文章裡長按（桌機右鍵）推文，選單多「只看這個人的推文」「只看原 PO」「只看推文」「只看噓文」：推文區只留符合的推文，其他的收成一條「略過 N 則」，上方橫幅按 ✕ 還原。只影響這一篇、換文章就恢復。"
   },
   "cmenu_filterCommentUser": {
     "message": "只看這個人的推文"
   },
   "cmenu_filterCommentOp": {
     "message": "只看原 PO 的推文"
+  },
+  "cmenu_filterCommentPush": {
+    "message": "只看推文"
+  },
+  "cmenu_filterCommentBoo": {
+    "message": "只看噓文"
+  },
+  "commentFilter_bannerPush": {
+    "message": "只顯示推文"
+  },
+  "commentFilter_bannerBoo": {
+    "message": "只顯示噓文"
   },
   "cmenu_clearCommentFilter": {
     "message": "顯示全部推文"

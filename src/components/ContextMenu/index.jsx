@@ -200,6 +200,11 @@ const menuHandlerByEventKey = {
     t && pttchrome.view.setCommentFilter(t.pusher, false, t.row),
   filterCommentOp: (pttchrome, { commentFilterTarget: t }) =>
     t && t.op && pttchrome.view.setCommentFilter(t.op, true, t.row),
+  // 只看推文／只看噓文（P39）。
+  filterCommentPush: (pttchrome, { commentFilterTarget: t }) =>
+    t && pttchrome.view.setCommentTypeFilter("推", t.row),
+  filterCommentBoo: (pttchrome, { commentFilterTarget: t }) =>
+    t && pttchrome.view.setCommentTypeFilter("噓", t.row),
   clearCommentFilter: (pttchrome) => pttchrome.view.clearCommentFilter(),
   // 稍後再讀（P34）：收進／移出清單（recent_articles.js），一個 byte 都不送。
   readLater: (pttchrome, { readLaterTarget: t }) => {
