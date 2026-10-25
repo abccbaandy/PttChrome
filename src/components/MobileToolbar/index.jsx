@@ -46,6 +46,7 @@ import {
 } from "../../js/mobile_toolbar";
 import {
   splitMoreGrid,
+  stableMoreSplit,
   MORE_GRID_LABEL_KEYS,
 } from "./more_sheet_layout";
 import "./MobileToolbar.css";
@@ -116,6 +117,8 @@ export const MobileToolbar = ({
   const [context, setContext] = useState(EMPTY_TOOLBAR_CONTEXT);
   // null | 'keys' | 'more'：同一時間只開一個面板。
   const [panel, setPanel] = useState(null);
+  // 「更多」開著時的分組（stableMoreSplit）；收起時清掉。
+  const moreSplitRef = useRef(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
   // 「更多」裡的圖片上傳兩項跟著總開關 enableImageUpload（同桌機右鍵選單）：開 sheet
   // 當下現讀偏好；收起時不重算，退場動畫中項目才不會跳掉。
@@ -655,9 +658,14 @@ export const MobileToolbar = ({
     __settings: { label: i18n("mobileToolbar_settings"), onClick: onSettings },
     __logout: true,
   };
-  const { grid: moreGrid, list: moreList } = splitMoreGrid(
-    Object.keys(moreItems).filter((k) => moreItems[k]),
-  );
+  // 開著時沿用上一次的分組（stableMoreSplit：項目不在圖示格與清單之間搬家）；收起就重來。
+  const moreVisible = Object.keys(moreItems).filter((k) => moreItems[k]);
+  const moreSplit =
+    panel === "more"
+      ? stableMoreSplit(moreVisible, moreSplitRef.current)
+      : splitMoreGrid(moreVisible);
+  moreSplitRef.current = panel === "more" ? moreSplit : null;
+  const { grid: moreGrid, list: moreList } = moreSplit;
   const pressedProps = (it) =>
     it.pressed === undefined
       ? {}

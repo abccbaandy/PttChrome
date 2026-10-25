@@ -82,6 +82,9 @@
     上傳圖片、操作說明）收成最上面一排 4 格的圖示格（圖示＋短字，完整的字在 aria-label，跟長按推文的 P37 那排同一種樣子），
     不捲就點得到；文章導覽、上傳紀錄、設定、登出留在下面清單。常用的少於 3 個（主功能表）就不收、照舊是清單。
     `data-key` 不變（e2e 與開關狀態的 `aria-pressed` 都照舊）。
+    **開著時不重新分組**（`stableMoreSplit`）：畫面 context 在 sheet 開著時變了（例：開機還沒第一次
+    screenSettled 就開了「更多」，`contentTools` 從預設 false 變 true、圖示格湊滿 3 格），已經畫出來的項目
+    留在原本那一區 —— 搬家＝按鈕節點換掉，手指按下到放開之間被換掉 Chromium 就不發 click（同 #152）。收起重開才重新分組。
     觸覺回饋 `navigator.vibrate(HAPTIC_MS)`（APK 無 VIBRATE 權限＝no-op）。
   - 送鍵只走 `view.sendKeyAsUser(keyName, mods?)`，並先 `App.noteUserAction()`（等待進度條）。不可 `view._send`（列表好讀＝在序列化交易
     中途插隊）、不可 `App.onFunctionKey`（文章好讀會先進 functionMode ⇒ PgDn 不捲動）。
