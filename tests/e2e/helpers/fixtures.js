@@ -42,6 +42,7 @@
 const base = require('@playwright/test');
 const { login, autoLoginBoot, attachConsole } = require('./ptt');
 const { assertNotBotBlocked } = require('./bot_block');
+const { E2E_LOCALE } = require('../e2e_locale');
 const {
   startRecorder,
   markRecorder,
@@ -56,7 +57,7 @@ const test = base.test.extend({
       // CLAUDE.md「dev build 開站即 connect()」）。Playwright 在 test 失敗後會重啟
       // worker、fixture 因此重建，沒有這道閂鎖就會一路重登到封鎖延長。
       assertNotBotBlocked();
-      const context = await browser.newContext({ baseURL: 'http://localhost:8080' });
+      const context = await browser.newContext({ baseURL: 'http://localhost:8080', locale: E2E_LOCALE });
       const page = await context.newPage();
       const logs = attachConsole(page);
 

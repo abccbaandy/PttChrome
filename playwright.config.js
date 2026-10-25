@@ -1,6 +1,7 @@
 const { defineConfig, devices } = require('@playwright/test');
 const { e2eWorkers } = require('./tests/e2e/workers_policy');
 const { assertNotWorktree } = require('./scripts/worktree');
+const { E2E_LOCALE } = require('./tests/e2e/e2e_locale');
 
 // git worktree 裡禁跑任何 Playwright project（exit 2），理由與逃生門見 scripts/worktree.js。
 // 放在 config 而非 package.json：直接 `npx playwright test` 也擋得到。
@@ -70,6 +71,8 @@ module.exports = defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://localhost:8080',
+    // 介面一律中文（headless 預設 en-US ⇒ app 會選英文）。理由見 tests/e2e/e2e_locale.js。
+    locale: E2E_LOCALE,
     headless: true,
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
