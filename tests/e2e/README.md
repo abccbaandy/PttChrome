@@ -363,6 +363,13 @@ window 失焦（Playwright 1.62 實測，`isTrusted`／`document.hasFocus()`）�
   被卸載（例如還在跑關閉動畫的 Mantine Modal），drop 會派給脫離文件的節點 ⇒ window 上的 listener 收不到、沒人
   preventDefault ⇒ 瀏覽器改開新分頁載入檔案，app 的遮罩卡住。⇒ **拖放前先等上一個對話框真的卸載**
   （`long_push_image_upload.offline.spec.js#openLongPushModal`）。
+- 觸控 tap（`page.touchscreen.tap`）的事件順序是 touchstart／pointerdown → touchend／pointerup → 相容滑鼠事件
+  mousemove／mousedown／mouseup → click。手指下的節點被換成同位置的新節點時：在 pointerdown／touchstart／pointerup／
+  touchend 裡換 ⇒ click 照樣發給**新節點**（點擊落點重新命中）；在 **mousedown** 裡換 ⇒ click 整個不發；在 **mouseup**
+  裡換 ⇒ click 發給**已脫離文件的舊節點**，window 上的 listener 收不到（等於 app 沒收到）。⇒ 會吃掉 tap 的只有「相容
+  滑鼠事件的 handler 同步重建手指下的節點」（#152 的底色重畫、#225 的「更多」項目搬家都是這一類）。偵測法：
+  init script 記 pointerdown 的 target，pointerup 後 80ms 內 window 沒收到 click 且 target 已 `!isConnected` ⇒ 記一筆；
+  整批 offline-mobile 掛上跑過一輪是 0 筆。
 - contextmenu 時機依 OS：Windows 在 mouseup 發、Linux／macOS 在 mousedown 發 ⇒「按住右鍵滾輪」類斷言要依實際觀察到的時機分支，不寫死平台。
 
 ## 規範：會疊在畫面上的功能要進「浮層不蓋文末」矩陣
