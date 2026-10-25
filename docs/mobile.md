@@ -78,6 +78,10 @@
     `context_menu_entries`），集中在「更多」。設為全部已讀放這裡不必指定哪一列：`v` 的 `(V)已讀` 分支
     （`brc_toggle_all_read`）不看游標所在那篇；要指定某一列的「前已讀後未讀」與看板列表的「<板名> 設為已讀」
     （看板列表的 `v` 只作用在游標那個看板）留在長按選單。
+    版面（P40，`MobileToolbar/more_sheet_layout.js`）：常用的（跳到未讀、只看關注、設為全部已讀、分享、選取模式、全選、
+    上傳圖片、操作說明）收成最上面一排 4 格的圖示格（圖示＋短字，完整的字在 aria-label，跟長按推文的 P37 那排同一種樣子），
+    不捲就點得到；文章導覽、上傳紀錄、設定、登出留在下面清單。常用的少於 3 個（主功能表）就不收、照舊是清單。
+    `data-key` 不變（e2e 與開關狀態的 `aria-pressed` 都照舊）。
     觸覺回饋 `navigator.vibrate(HAPTIC_MS)`（APK 無 VIBRATE 權限＝no-op）。
   - 送鍵只走 `view.sendKeyAsUser(keyName, mods?)`，並先 `App.noteUserAction()`（等待進度條）。不可 `view._send`（列表好讀＝在序列化交易
     中途插隊）、不可 `App.onFunctionKey`（文章好讀會先進 functionMode ⇒ PgDn 不捲動）。

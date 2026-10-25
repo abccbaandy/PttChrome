@@ -16,6 +16,13 @@ import {
   IconDots,
   IconRefresh,
   IconArrowBarToDown,
+  IconCircleDot,
+  IconStar,
+  IconChecks,
+  IconHelp,
+  IconShare,
+  IconSelectAll,
+  IconPhotoUp,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import { readValuesWithDefault } from "../../js/pref_storage";
@@ -37,6 +44,10 @@ import {
   THREAD_NAV_KEYS,
   toolbarSlots,
 } from "../../js/mobile_toolbar";
+import {
+  splitMoreGrid,
+  MORE_GRID_LABEL_KEYS,
+} from "./more_sheet_layout";
 import "./MobileToolbar.css";
 
 // 手機底部導覽（docs/mobile.md「底部導覽」）。只在 pttchrome.mobile 時渲染。
@@ -588,6 +599,144 @@ export const MobileToolbar = ({
   // 「更多」是 bottom sheet（components/MobileSheet）：開著算 modal、系統返回＝收起。
   // 它畫在 portal 裡，不在工具列的事件攔截範圍內 —— 遮罩／項目的點擊靠 modalShown
   // 擋住 App 的滑鼠入口（MobileSheet 檔頭）。
+  // 「更多」的項目（P40：常用的收成最上面的圖示格，見 more_sheet_layout.js）。key＝data-key。
+  // label＝完整的字（清單項目的字、圖示格的 aria-label／title）。
+  const moreItems = {
+    __unreadJump: context.unreadJump && {
+      label: i18n("mobileToolbar_unreadJump"),
+      Icon: IconCircleDot,
+      onClick: onUnreadJump,
+    },
+    __followOnly: followOnlyState &&
+      followOnlyState.visible && {
+        label: i18n("followOnly_label"),
+        Icon: IconStar,
+        onClick: onFollowOnly,
+        pressed: !!followOnlyState.on,
+      },
+    __markAllRead: context.markAllRead && {
+      label: i18n("cmenu_markAllRead"),
+      Icon: IconChecks,
+      onClick: onMarkAllRead,
+    },
+    __help: context.help && {
+      label: i18n("mobileToolbar_help"),
+      Icon: IconHelp,
+      onClick: onHelp,
+    },
+    __share: context.share && {
+      label: i18n("mobileToolbar_share"),
+      Icon: IconShare,
+      onClick: onShare,
+    },
+    __threadNav: !!context.threadNav,
+    __select: {
+      label: i18n("mobileKeypad_select"),
+      Icon: IconCursorText,
+      onClick: onSelectMode,
+      pressed: !!selectMode,
+    },
+    __selectAll: context.contentTools && {
+      label: i18n("cmenu_selectAll"),
+      Icon: IconSelectAll,
+      onClick: onSelectAll,
+    },
+    __uploadImage: context.contentTools &&
+      imageUploadEnabled && {
+        label: i18n("cmenu_uploadImage"),
+        Icon: IconPhotoUp,
+        onClick: onUploadImage,
+      },
+    __uploadHistory: context.contentTools &&
+      imageUploadEnabled && {
+        label: i18n("cmenu_uploadHistory"),
+        onClick: onUploadHistory,
+      },
+    __settings: { label: i18n("mobileToolbar_settings"), onClick: onSettings },
+    __logout: true,
+  };
+  const { grid: moreGrid, list: moreList } = splitMoreGrid(
+    Object.keys(moreItems).filter((k) => moreItems[k]),
+  );
+  const pressedProps = (it) =>
+    it.pressed === undefined
+      ? {}
+      : { "aria-pressed": it.pressed ? "true" : "false" };
+  const renderMoreListItem = (key) => {
+    if (key === "__threadNav")
+      return (
+        <div key={key} className="mobileToolbarNavGrid" data-key="__threadNav">
+          {THREAD_NAV_KEYS.map((k) => (
+            <button
+              key={k.key}
+              type="button"
+              className="nomouse_command mobileSheetItem pttRipple"
+              data-key={k.key}
+              onClick={() => {
+                setPanel(null);
+                sendKey(k.key);
+              }}
+            >
+              {i18n(k.label)}
+            </button>
+          ))}
+        </div>
+      );
+    if (key === "__logout")
+      return confirmLogout ? (
+        <div key={key} className="mobileToolbarAsk" data-key="__logoutAsk">
+          <span>{i18n("mobileKeypad_logoutConfirm")}</span>
+          <button
+            type="button"
+            className="nomouse_command mobileToolbarMenuItem mobileKeypadDanger"
+            aria-label={i18n("mobileKeypad_logoutYes")}
+            data-key="__logoutYes"
+            onClick={onLogoutYes}
+          >
+            ✓
+          </button>
+          <button
+            type="button"
+            className="nomouse_command mobileToolbarMenuItem"
+            aria-label={i18n("mobileKeypad_logoutNo")}
+            data-key="__logoutNo"
+            onClick={() => setConfirmLogout(false)}
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <button
+          key={key}
+          type="button"
+          className="nomouse_command mobileSheetItem mobileSheetDanger pttRipple"
+          data-key="__logout"
+          onClick={() => setConfirmLogout(true)}
+        >
+          {i18n("mobileKeypad_logout")}
+        </button>
+      );
+    const it = moreItems[key];
+    return (
+      <button
+        key={key}
+        type="button"
+        className={
+          "nomouse_command mobileSheetItem pttRipple" +
+          (it.pressed ? " active" : "")
+        }
+        {...pressedProps(it)}
+        data-key={key}
+        onClick={it.onClick}
+      >
+        {it.label}
+      </button>
+    );
+  };
+
+  // 「更多」是 bottom sheet（components/MobileSheet）：開著算 modal、系統返回＝收起。
+  // 它畫在 portal 裡，不在工具列的事件攔截範圍內 —— 遮罩／項目的點擊靠 modalShown
+  // 擋住 App 的滑鼠入口（MobileSheet 檔頭）。
   const moreSheet = (
     <MobileSheet
       pttchrome={pttchrome}
@@ -611,160 +760,39 @@ export const MobileToolbar = ({
         {quickSearch.items.length ? (
           <div className="mobileSheetDivider" role="separator" />
         ) : null}
-        {context.unreadJump ? (
-          <button
-            type="button"
-            className="nomouse_command mobileSheetItem pttRipple"
-            data-key="__unreadJump"
-            onClick={onUnreadJump}
+        {moreGrid.length ? (
+          <div
+            className="mobileSheetQuickRow mobileSheetQuickGrid"
+            role="group"
+            data-more-grid=""
           >
-            {i18n("mobileToolbar_unreadJump")}
-          </button>
-        ) : null}
-        {followOnlyState && followOnlyState.visible ? (
-          <button
-            type="button"
-            className={
-              "nomouse_command mobileSheetItem pttRipple" +
-              (followOnlyState.on ? " active" : "")
-            }
-            aria-pressed={followOnlyState.on ? "true" : "false"}
-            data-key="__followOnly"
-            onClick={onFollowOnly}
-          >
-            {i18n("followOnly_label")}
-          </button>
-        ) : null}
-        {context.markAllRead ? (
-          <button
-            type="button"
-            className="nomouse_command mobileSheetItem pttRipple"
-            data-key="__markAllRead"
-            onClick={onMarkAllRead}
-          >
-            {i18n("cmenu_markAllRead")}
-          </button>
-        ) : null}
-        {context.help ? (
-          <button
-            type="button"
-            className="nomouse_command mobileSheetItem pttRipple"
-            data-key="__help"
-            onClick={onHelp}
-          >
-            {i18n("mobileToolbar_help")}
-          </button>
-        ) : null}
-        {context.share ? (
-          <button
-            type="button"
-            className="nomouse_command mobileSheetItem pttRipple"
-            data-key="__share"
-            onClick={onShare}
-          >
-            {i18n("mobileToolbar_share")}
-          </button>
-        ) : null}
-        {context.threadNav ? (
-          <div className="mobileToolbarNavGrid" data-key="__threadNav">
-            {THREAD_NAV_KEYS.map((k) => (
-              <button
-                key={k.key}
-                type="button"
-                className="nomouse_command mobileSheetItem pttRipple"
-                data-key={k.key}
-                onClick={() => {
-                  setPanel(null);
-                  sendKey(k.key);
-                }}
-              >
-                {i18n(k.label)}
-              </button>
-            ))}
+            {moreGrid.map((key) => {
+              const it = moreItems[key];
+              const Icon = it.Icon;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={
+                    "nomouse_command mobileSheetQuickItem pttRipple" +
+                    (it.pressed ? " active" : "")
+                  }
+                  {...pressedProps(it)}
+                  data-key={key}
+                  aria-label={it.label}
+                  title={it.label}
+                  onClick={it.onClick}
+                >
+                  <Icon size={22} stroke={1.75} aria-hidden="true" />
+                  <span className="mobileSheetQuickLabel">
+                    {i18n(MORE_GRID_LABEL_KEYS[key]) || it.label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         ) : null}
-        <button
-          type="button"
-          className={
-            "nomouse_command mobileSheetItem pttRipple" +
-            (selectMode ? " active" : "")
-          }
-          aria-pressed={selectMode}
-          data-key="__select"
-          onClick={onSelectMode}
-        >
-          {i18n("mobileKeypad_select")}
-        </button>
-        {context.contentTools ? (
-          <button
-            type="button"
-            className="nomouse_command mobileSheetItem pttRipple"
-            data-key="__selectAll"
-            onClick={onSelectAll}
-          >
-            {i18n("cmenu_selectAll")}
-          </button>
-        ) : null}
-        {context.contentTools && imageUploadEnabled ? (
-          <button
-            type="button"
-            className="nomouse_command mobileSheetItem pttRipple"
-            data-key="__uploadImage"
-            onClick={onUploadImage}
-          >
-            {i18n("cmenu_uploadImage")}
-          </button>
-        ) : null}
-        {context.contentTools && imageUploadEnabled ? (
-          <button
-            type="button"
-            className="nomouse_command mobileSheetItem pttRipple"
-            data-key="__uploadHistory"
-            onClick={onUploadHistory}
-          >
-            {i18n("cmenu_uploadHistory")}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="nomouse_command mobileSheetItem pttRipple"
-          data-key="__settings"
-          onClick={onSettings}
-        >
-          {i18n("mobileToolbar_settings")}
-        </button>
-        {confirmLogout ? (
-          <div className="mobileToolbarAsk" data-key="__logoutAsk">
-            <span>{i18n("mobileKeypad_logoutConfirm")}</span>
-            <button
-              type="button"
-              className="nomouse_command mobileToolbarMenuItem mobileKeypadDanger"
-              aria-label={i18n("mobileKeypad_logoutYes")}
-              data-key="__logoutYes"
-              onClick={onLogoutYes}
-            >
-              ✓
-            </button>
-            <button
-              type="button"
-              className="nomouse_command mobileToolbarMenuItem"
-              aria-label={i18n("mobileKeypad_logoutNo")}
-              data-key="__logoutNo"
-              onClick={() => setConfirmLogout(false)}
-            >
-              ✕
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="nomouse_command mobileSheetItem mobileSheetDanger pttRipple"
-            data-key="__logout"
-            onClick={() => setConfirmLogout(true)}
-          >
-            {i18n("mobileKeypad_logout")}
-          </button>
-        )}
+        {moreList.map(renderMoreListItem)}
       </div>
     </MobileSheet>
   );

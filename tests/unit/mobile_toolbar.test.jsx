@@ -620,3 +620,47 @@ describe("焦點與事件邊界", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("更多：常用項目的圖示格（P40）", () => {
+  const grid = () => document.querySelector("[data-more-grid]");
+  const LIST_CTX = { push: false, search: [], markAllRead: true, contentTools: true };
+
+  test("文章列表：常用的收進上面的圖示格（短字＋完整字在 aria-label），設定／登出留在下面清單", async () => {
+    const core = makeCore({ context: LIST_CTX });
+    renderBar(core);
+    await openMore();
+    const g = grid();
+    expect(g).not.toBeNull();
+    for (const k of ["__markAllRead", "__select", "__selectAll"]) {
+      expect(g.contains(byKey(k))).toBe(true);
+    }
+    expect(g.contains(byKey("__settings"))).toBe(false);
+    expect(g.contains(byKey("__logout"))).toBe(false);
+    const markAll = byKey("__markAllRead");
+    expect(markAll.getAttribute("aria-label")).toBe(i18n("cmenu_markAllRead"));
+    expect(markAll.textContent).toBe(i18n("mobileMoreShort_markAllRead"));
+    expect(markAll.querySelector("svg")).not.toBeNull();
+    // 圖示格在清單上面（不捲就點得到）
+    expect(g.compareDocumentPosition(byKey("__settings")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test("圖示格裡的開關照舊：選取模式 aria-pressed，點了呼叫 setMobileSelectMode", async () => {
+    const core = makeCore({ context: LIST_CTX });
+    renderBar(core);
+    await openMore();
+    const sel = byKey("__select");
+    expect(grid().contains(sel)).toBe(true);
+    expect(sel.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(sel);
+    expect(core.setMobileSelectMode).toHaveBeenCalledWith(true);
+  });
+
+  test("主功能表（項目太少）：不收圖示格，照舊是清單", async () => {
+    const core = makeCore();
+    renderBar(core);
+    await openMore();
+    expect(grid()).toBeNull();
+    expect(byKey("__select").classList.contains("mobileSheetItem")).toBe(true);
+    expect(byKey("__select").textContent).toBe(i18n("mobileKeypad_select"));
+  });
+});
