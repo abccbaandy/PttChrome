@@ -28,9 +28,9 @@
 |---|---|---|
 | webpack 全家、`@babel/*`、jest、cross-env、rimraf | 已移除，**勿加回** | 由 vite／vitest／Vite 內建機制（postcss 自動讀 `postcss.config.cjs`、`emptyOutDir`、mode 判定）取代 |
 | base58 | 已內聯成 `image_url_detect.js#flickrBase58Decode` | 2014 年後無維護。**不可換 bs58**：Bitcoin 字母表順序不同會解錯（回歸 test 鎖字母表） |
-| `resolutions` 區塊 | 已整塊刪除，**勿再加 pin** | 全為舊鏈 transitive dep 而設，`yarn why` 零 consumer |
-| `@grpc/grpc-js`（firestore transitive，`~1.9.0`） | Dependabot alert 以 `not_used` dismiss，**不加 resolutions** | 只在 firestore 的 Node entry（`index.node.mjs`）；瀏覽器 entry `index.esm.js` 不含。Node 端只有 integration 當 client，已知 CVE（getAuthContext、server 錯誤訊息外洩）都是 server 端。等 firebase 自己放寬範圍 |
-| `undici`（proxy/*-worker 經 wrangler→miniflare，**精確 pin** `7.29.1`） | 不加 `overrides`，等 miniflare 自己升 | 只在本機 `wrangler dev`／deploy 的工具鏈裡（Worker 執行時不含）；已知 CVE（EventSource 記憶體、SRI 大小寫、content-encoding DoS）都要連到惡意 server。miniflare 精確 pin，`npm audit fix` 只會給出降版 wrangler 的錯答案。root 的 undici（node-gyp 的 `^6.25.0`）在範圍內，`yarn up -R undici` 就修得掉 |
+| `resolutions`／`overrides` | **只准為安全性 pin 而加**，每條都要在 `tests/unit/dependency_security_pins.test.js` 記上游範圍快照 | 舊的 `resolutions` 整塊是舊鏈 transitive dep 殘渣（`yarn why` 零 consumer）而刪；安全性 pin 用守護擋同樣的下場：上游一改範圍就紅，涵蓋修補版就拆 |
+| `@grpc/grpc-js`（firestore transitive，`~1.9.0`） | root `resolutions` pin `^1.13.6` | firestore 最新版仍宣告 `~1.9.0`，修補版只有 ≥1.13.6（1.9 線無 backport）；Dependabot alert 掛著不關，dismiss 又要人手去點。只影響 firestore 的 Node entry（`index.node.mjs`，integration 當 client 用）；瀏覽器 entry `index.esm.js` 不含 grpc。firebase 放寬範圍就拆 |
+| `undici`（proxy/*-worker 經 wrangler→miniflare，**精確 pin** `7.29.1`） | 兩個 worker 的 `overrides` pin `^7.30.1` | miniflare 精確 pin，最新 wrangler 也一樣；`npm audit fix` 只會給出降版 wrangler 的錯答案。只在本機 `wrangler dev`／deploy 工具鏈（Worker 執行時不含）。miniflare 升上去就拆。root 的 undici（node-gyp 的 `^6.25.0`）在範圍內，`yarn up -R undici` 就修得掉 |
 | classnames | 保留 | 仍維護、React 生態常青；clsx 更小但收益微小，不值得動 |
 | firebase／`@mantine/*`／react／react-dom | 保留 | 皆現行主流大版本 |
 | `@playwright/test`、`@testing-library/*`、husky、lint-staged、prettier、postcss 系 | 保留 | 現代且活躍；postcss-preset-mantine + postcss-simple-vars 是 Mantine 官方建議鏈 |
