@@ -2317,6 +2317,10 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.highlightSelfComments = value;
       this.view.redraw(true);
       break;
+    case 'markJustPushed':
+      this.view.markJustPushedEnabled = value;
+      if (!value) this.view.clearJustPushed();
+      break;
     case 'enableAutoFixUrl':
       this.view.enableAutoFixUrl = value;
       this.view.redraw(true);

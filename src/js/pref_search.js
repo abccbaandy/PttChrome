@@ -497,6 +497,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_markNewComments",
     },
     {
+      key: "markJustPushed",
+      titleKey: "options_markJustPushed",
+      tooltipKey: "tooltip_markJustPushed",
+    },
+    {
       key: "listNewPushCount",
       titleKey: "options_listNewPushCount",
       tooltipKey: "tooltip_listNewPushCount",

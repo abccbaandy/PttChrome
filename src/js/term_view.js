@@ -38,6 +38,7 @@ import { keyEventPredatesModalClose } from './modal_key_gate';
 import icon128 from '../icon/icon_128.png';
 import { MOUSE_CURSOR_URLS } from './mouse_cursors';
 import { isAndroidApp, androidNotify } from './android_bridge';
+import { justPushedMinutes, JUST_PUSHED_MS } from './just_pushed';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
 
@@ -431,6 +432,10 @@ export function TermView() {
   // 只在 pageState＝選單時讀 ⇒ 手動登入也拿得到）；換連線由 App 呼叫 resetSelfId 清掉。
   this.highlightSelfComments = true;
   this._selfId = null;
+  // 推完文短暫標出剛推的那幾則（js/just_pushed.js，P42）：pref markJustPushed＋生效中的狀態。
+  this.markJustPushedEnabled = true;
+  this._justPushed = null;
+  this._justPushedTimer = null;
   // Board of the article being read (same header line); fallback board for a
   // boardless #AID link. Assigned by the App like flashListHint etc.
   this._articleBoard = null;
@@ -1058,6 +1063,49 @@ TermView.prototype = {
     if (id) this._selfId = id;
   },
 
+  // ---- 推完文短暫標出剛推的那幾則（P42，js/just_pushed.js）----
+  // 長推文整段送完、落回文末時呼叫（LongPushSession._finish）。info＝{ userid, count, since }；
+  // userid 沒有就用選單底列記下的登入者，再沒有就不標。JUST_PUSHED_MS 後自己清掉並重畫。
+  markJustPushed: function(info) {
+    var o = info || {};
+    var id = String(o.userid || this._selfId || '').toLowerCase();
+    if (!this.markJustPushedEnabled || !id || !(o.count > 0)) return false;
+    this.clearJustPushed(true);
+    var now = Date.now();
+    var minutes = justPushedMinutes(o.since || now, now);
+    this._justPushed = {
+      key: id + '|' + o.count + '|' + now,
+      userid: id,
+      count: o.count,
+      minutes: minutes,
+      articleId: this._articleInstanceId
+    };
+    var self = this;
+    this._justPushedTimer = setTimeout(function() {
+      self._justPushedTimer = null;
+      self.clearJustPushed();
+    }, JUST_PUSHED_MS);
+    this.redraw(true);
+    return true;
+  },
+
+  // quiet＝只清狀態不重畫（馬上又要設新的）。
+  clearJustPushed: function(quiet) {
+    if (this._justPushedTimer) clearTimeout(this._justPushedTimer);
+    this._justPushedTimer = null;
+    if (!this._justPushed) return;
+    this._justPushed = null;
+    if (!quiet) this.redraw(true);
+  },
+
+  // 給 enhance 的那一份：只在同一篇的好讀文章生效（離開、換文章就不標）。
+  justPushedEnhance: function() {
+    var j = this._justPushed;
+    if (!j || j.articleId !== this._articleInstanceId) return null;
+    if (!this.useEasyReadingMode || this.buf.pageState !== 3) return null;
+    return j;
+  },
+
   resetSelfId: function() {
     this._selfId = null;
   },
@@ -1378,6 +1426,12 @@ TermView.prototype = {
           // 新推文標記（js/new_comments.js）：第一則新推文在累積頁的哪一列。只在畫好讀
           // 累積頁（stableRows＋pageLines）時問 —— functionMode 的原生鏡像餵的是 24 列活
           // buffer，拿去問會把掃描狀態洗掉。進 annotationsKey（一篇文章最多翻一次）。
+          // 推完文剛推的那幾則（js/just_pushed.js）：只在畫好讀累積頁時給（同 newCommentsRow）。
+          // key 進 annotationsKey（設定、到期各翻一次）。
+          justPushed:
+            enhanceOverrides && enhanceOverrides.stableRows && lines === this.buf.pageLines
+              ? this.justPushedEnhance()
+              : null,
           newCommentsRow:
             enhanceOverrides && enhanceOverrides.stableRows && lines === this.buf.pageLines &&
             this.bbscore && this.bbscore.newComments

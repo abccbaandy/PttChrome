@@ -331,6 +331,9 @@ export const DEFAULT_PREFS = {
   // 新推文標記（js/new_comments.js）：重開讀過的文章時，上次讀完之後的推文前面畫一條灰線。
   // 推文數只記在這個瀏覽器、一個 byte 都不送 ⇒ 不在安全模式名單內。
   markNewComments: true,
+  // 推完文短暫標出自己剛推的那幾則（js/just_pushed.js，P42）：只看畫面、一個 byte 都不送
+  // ⇒ 不在安全模式名單內。
+  markJustPushed: true,
   // 文章列表的「+N」（js/new_comments.js#listNewPush）：讀過的文章推文數多了幾分。
   // 跟新推文標記共用同一份本機紀錄、一個 byte 都不送 ⇒ 不在安全模式名單內。
   listNewPushCount: true,

@@ -155,6 +155,8 @@ export function annotationsKey(input) {
     stable(e.commentCards),
     // 新推文標記的列（js/new_comments.js）：一篇文章裡從 null 翻成某一列最多一次。
     stable(e.newCommentsRow),
+    // 推完文剛推的那幾則（js/just_pushed.js）：設定、到期各翻一次 ⇒ 那一幀全量重算。
+    stable(e.justPushed ? e.justPushed.key : null),
     // 文章列表的「+N」（new_comments.listBadge）：紀錄或看板一變就換 key，整批重算。
     // 列表好讀的視窗走 rowIdentityStable，不進 key 的話讀完回列表節點會被原封沿用。
     stable(e.listNewPushKey),

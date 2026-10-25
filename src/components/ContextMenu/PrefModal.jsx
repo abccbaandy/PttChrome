@@ -2017,6 +2017,16 @@ export const PrefModal = ({
                   {i18n("tooltip_markNewComments")}
                 </Text>
                 <PrefCheckbox
+                  name="markJustPushed"
+                  checked={values.markJustPushed}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_markJustPushed")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_markJustPushed")}
+                </Text>
+                <PrefCheckbox
                   name="listNewPushCount"
                   checked={values.listNewPushCount}
                   onChange={onCheckboxChange}

@@ -111,6 +111,7 @@ export function buildRow({
   authorIdKind,
   mentionsSelf,
   newCommentsStart,
+  justPushed,
   fixedUrls,
   mentions,
   aids,
@@ -187,7 +188,7 @@ export function buildRow({
         "data-list-title": listTitle,
         "data-list-read": listRead ? "" : undefined,
         "data-list-followed": listFollowed ? "" : undefined,
-        class: cx({ pusherHighlight, mentionsSelf, newCommentsStart }) || undefined,
+        class: cx({ pusherHighlight, mentionsSelf, newCommentsStart, justPushed }) || undefined,
         // 新推文分隔線的小字（css .newCommentsStart::before 讀它）。
         "data-new-comments": newCommentsStart ? i18n("new_comments_divider") : undefined,
         style: hidden ? { visibility: "hidden" } : undefined,

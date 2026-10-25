@@ -842,6 +842,12 @@ export const en_US = {
   "options_markNewComments": {
     "message": "Mark new comments"
   },
+  "options_markJustPushed": {
+    "message": "Highlight the comments you just posted"
+  },
+  "tooltip_markJustPushed": {
+    "message": "After a long push or the bottom comment bar finishes, your just-posted comments at the end of the post glow briefly (about 2 seconds) so you can confirm they all went through."
+  },
   "tooltip_markNewComments": {
     "message": "When you reopen a post you have read, comments added since you last finished it get a gray line above them, and the tool panel at the bottom right can jump there. Remembered in this browser only."
   },
