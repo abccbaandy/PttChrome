@@ -104,6 +104,15 @@ function stable(v) {
 // 層做逐列節點重用的 hint（見 render/screen.js#_buildNodes），不影響任何一列算出
 // 來的 annotation。這個函式是白名單式列舉，新增 render hint 時不必來改它——但也
 // 不要順手把它們加進來，否則每一幀 changedRows 都是新陣列 ⇒ 快取永遠失效。
+// functionKeyRows → key 字串。後半段的列號改記成「倒數第幾列」（負數）：[1, n-1] 不論
+// n 多少都是 "1,-1"。功能鍵列永遠是 row 1（列表／主選單的提示列）與最後一列（footer），
+// 列物件也跟著位置走（header／footer 快取），所以同一個列物件的功能鍵與否不會因為
+// 序列變長而改變 ⇒ key 不必跟著變。沒給 lineCount（單元測試直接呼叫）就照原樣。
+function fnRowsKey(rows, n) {
+  if (!rows || !n) return stable(rows);
+  return rows.map((r) => (r * 2 >= n ? r - n : r)).join(',');
+}
+
 export function annotationsKey(input) {
   const e = (input && input.enhance) || {};
   const sig = [
@@ -136,7 +145,9 @@ export function annotationsKey(input) {
     // 的節點重用條件是 `rowIdentityStable || !changedRows.has(row)` ⇒ changedRows
     // 根本不參與判斷。漏了它，切 pref 之後 row 1 / row 23 的節點會被無條件沿用，
     // 按鈕該出現不出現、該消失不消失，直到視窗捲動換掉那些列物件為止。
-    stable(e.functionKeyRows),
+    // 以「從頭／從尾數第幾列」入 key（fnRowsKey）：列表視窗的序列一變長，最後一列的
+    // 列號就跟著變，原樣入 key ⇒ 補頁到上限之前每補一頁整份序列重建。
+    fnRowsKey(e.functionKeyRows, input && input.lineCount),
     // 手機列表卡片（'article'｜'board'｜undefined）：同一批列物件改畫成卡片，節點
     // 重用條件（rowIdentityStable）看不到這件事 ⇒ 必須進 key，切換時整批重建。
     stable(e.listCards),
