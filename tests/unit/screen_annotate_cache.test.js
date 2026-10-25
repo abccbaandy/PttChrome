@@ -169,6 +169,27 @@ describe("annotationsKey / sameKey", () => {
     expect(key.sig).not.toMatch(/highlight(ed)?\b/i);
   });
 
+  // 功能鍵列以「倒數第幾列」入 key：列表視窗的序列變長時，最後一列（footer）的列號
+  // 跟著變，但 key 不能變，否則補頁到上限之前每補一頁整份序列重建（list_card.test.js）。
+  describe("functionKeyRows", () => {
+    const withRows = (rows, n) => {
+      const b = base();
+      b.enhance.functionKeyRows = rows;
+      b.lineCount = n;
+      return annotationsKey(b);
+    };
+    test("[1, n-1] 在不同長度下是同一把鑰匙", () => {
+      expect(sameKey(withRows([1, 23], 24), withRows([1, 59], 60))).toBe(true);
+    });
+    test("有／沒有功能鍵列、只有最後一列 ⇒ 不同", () => {
+      expect(sameKey(withRows([1, 23], 24), withRows(null, 24))).toBe(false);
+      expect(sameKey(withRows([1, 23], 24), withRows([23], 24))).toBe(false);
+    });
+    test("同樣長度、不同列 ⇒ 不同", () => {
+      expect(sameKey(withRows([1, 23], 24), withRows([1, 22], 24))).toBe(false);
+    });
+  });
+
   test("沒有 enhance 也不炸", () => {
     expect(() => annotationsKey({})).not.toThrow();
     expect(sameKey(annotationsKey({}), annotationsKey({}))).toBe(true);

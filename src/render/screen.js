@@ -772,6 +772,8 @@ export class ScreenController {
     // term_buf 就地改寫的活 buffer：參考相同但內容每幀在變，套快取會畫出上一幀。
     const cacheKey = annotationsKey({
       enhance,
+      // functionKeyRows 以倒數列號入 key（screen_annotate_cache#fnRowsKey）。
+      lineCount: lines ? lines.length : 0,
       mergeCaption: this._mergeCaption,
       captionAi: this._captionAi,
       aiKeep: this._aiKeep,

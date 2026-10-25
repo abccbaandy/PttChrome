@@ -25,6 +25,8 @@ import { BoardListSession } from "../../src/js/board_list_session";
 afterEach(() => unmountAll());
 
 const text = (node) => (node ? node.textContent : "");
+// 引用穩定的功能鍵 handler（進 annotationsKey 的 refs，每幀換新的就永遠不同 key）。
+const noopFnKey = () => {};
 
 describe("buildListCard：文章列表", () => {
   const chars = listRow("someone", "□ [心得] 手機卡片測試");
@@ -317,6 +319,30 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
     expect(m.container.querySelector(".listBodyView").innerHTML).toBe(
       fresh.container.querySelector(".listBodyView").innerHTML
     );
+  });
+
+  // 上面那條的真實版本：term_view 會帶 functionKeyRows＝[1, 最後一列]（footer_keys.functionKeyRows），
+  // 序列一變長最後一列的列號就跟著變。它曾經整串進 annotationsKey ⇒ 補頁還沒到上限之前，
+  // 每補一頁 key 都不同、整份序列（手機約 300 張卡片）重建，手指下那張也被換掉。
+  test("卡片模式往上補頁（帶功能鍵列）：序列變長也沿用既有卡片", () => {
+    const older = listRow("zed", "□ 更早的一篇");
+    const stable = (lines) => {
+      const p = props("article");
+      return {
+        ...p,
+        lines,
+        enhance: { ...p.enhance, rowIdentityStable: true, functionKeyRows: [1, lines.length - 1], onFunctionKey: noopFnKey },
+      };
+    };
+    const m = mountScreen(stable(LINES));
+    const card = (r) => m.container.querySelector(`.listBodyView > .listCard[srow="${r}"]`);
+    const before = [card(3), card(4)];
+    const grown = [...LINES.slice(0, 3), older, ...LINES.slice(3)];
+    m.update(stable(grown));
+    expect(card(4)).toBe(before[0]);
+    expect(card(5)).toBe(before[1]);
+    const fresh = mountScreen(stable(grown));
+    expect(m.container.innerHTML).toBe(fresh.container.innerHTML);
   });
 
   test("同一批列物件切換卡片模式 ⇒ 節點重建（listCards 進 annotationsKey）", () => {
