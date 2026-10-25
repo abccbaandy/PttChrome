@@ -20,6 +20,8 @@ const COMMENT_KEYS = new Set([
   "copyCommentAll",
   "filterCommentUser",
   "filterCommentOp",
+  "filterCommentPush",
+  "filterCommentBoo",
   "clearCommentFilter",
 ]);
 

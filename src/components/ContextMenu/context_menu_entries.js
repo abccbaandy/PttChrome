@@ -106,7 +106,8 @@ export function buildContextMenuEntries(p) {
       (e) => p.onMenuSelect("copyCommentAll", e),
       { preview: previews.copyCommentAll, copy: true },
     );
-  // 推文篩選（P29）：生效中只給「顯示全部推文」；否則「只看這個人」＋（解析得到原PO 時）「只看原 PO」。
+  // 推文篩選（P29）：生效中只給「顯示全部推文」；否則「只看這個人」＋（解析得到原PO 時）「只看原 PO」
+  // ＋「只看推文」「只看噓文」（P39）。
   const cf = p.commentFilterTarget;
   if (cf && cf.active)
     item("clearCommentFilter", i18n("cmenu_clearCommentFilter"), (e) =>
@@ -122,6 +123,12 @@ export function buildContextMenuEntries(p) {
       item("filterCommentOp", i18n("cmenu_filterCommentOp"), (e) =>
         p.onMenuSelect("filterCommentOp", e),
       );
+    item("filterCommentPush", i18n("cmenu_filterCommentPush"), (e) =>
+      p.onMenuSelect("filterCommentPush", e),
+    );
+    item("filterCommentBoo", i18n("cmenu_filterCommentBoo"), (e) =>
+      p.onMenuSelect("filterCommentBoo", e),
+    );
   }
   if (
     p.replyCommentTarget ||

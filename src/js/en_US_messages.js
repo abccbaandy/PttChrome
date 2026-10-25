@@ -287,16 +287,28 @@ export const en_US = {
     "message": "Comment bar at the bottom of articles (easy reading)"
   },
   "options_enableCommentFilter": {
-    "message": "Comment filter: only this user / only the OP"
+    "message": "Comment filter: only this user / only the OP / only pushes or boos"
   },
   "tooltip_enableCommentFilter": {
-    "message": "In easy reading, long-press (right-click on desktop) a comment for \"Only this user's comments\" and \"Only the OP's comments\": other comments collapse into a thin \"N skipped\" line; press ✕ on the banner at the top to show everything again. Only affects the current post."
+    "message": "In easy reading, long-press (right-click on desktop) a comment for \"Only this user's comments\", \"Only the OP's comments\", \"Show only pushes\" or \"Show only boos\": other comments collapse into a thin \"N skipped\" line; press ✕ on the banner at the top to show everything again. Only affects the current post."
   },
   "cmenu_filterCommentUser": {
     "message": "Only comments by"
   },
   "cmenu_filterCommentOp": {
     "message": "Only the OP's comments"
+  },
+  "cmenu_filterCommentPush": {
+    "message": "Show only pushes (推)"
+  },
+  "cmenu_filterCommentBoo": {
+    "message": "Show only boos (噓)"
+  },
+  "commentFilter_bannerPush": {
+    "message": "Showing only pushes (推)"
+  },
+  "commentFilter_bannerBoo": {
+    "message": "Showing only boos (噓)"
   },
   "cmenu_clearCommentFilter": {
     "message": "Show all comments"

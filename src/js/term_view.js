@@ -11,7 +11,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText, parseStatusUserid } from './string_util';
-import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark } from './comment_parse';
+import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, COMMENT_TYPE_FILTER_PREFIX } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, listNumRange, isHiddenListRow, pinnedRowKey, MAX_LIST_ROWS, MAX_LIST_TOTAL_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
@@ -1108,9 +1108,24 @@ TermView.prototype = {
   // 只留 userid（小寫）的推文。op＝「只看原 PO」（只影響橫幅文字）。anchorRow＝使用者點的那一列
   // （pageLines 絕對索引），重畫後把它（或它之後最近一列看得到的）放回原本的螢幕位置。
   setCommentFilter: function(userid, op, anchorRow) {
-    if (!userid || !this.useEasyReadingMode || this.buf.pageState !== 3) return false;
+    if (!userid) return false;
+    var id = String(userid).toLowerCase();
+    return this._applyCommentFilter({ key: id, userid: id, op: !!op, type: null }, anchorRow);
+  },
+
+  // 只看推文／只看噓文（P39）：type＝'推'｜'噓'（→ 兩種都收）。其餘同 setCommentFilter。
+  setCommentTypeFilter: function(type, anchorRow) {
+    if (type !== '推' && type !== '噓') return false;
+    return this._applyCommentFilter({ key: COMMENT_TYPE_FILTER_PREFIX + type, userid: null, op: false, type: type }, anchorRow);
+  },
+
+  // f.key＝給標註層的 enhance.commentFilter（comment_parse#isFilteredOut）。
+  _applyCommentFilter: function(f, anchorRow) {
+    if (!this.useEasyReadingMode || this.buf.pageState !== 3) return false;
     var anchor = this._filterAnchor(anchorRow);
-    this._commentFilter = { userid: String(userid).toLowerCase(), op: !!op, articleId: this._articleInstanceId, expanded: [] };
+    f.articleId = this._articleInstanceId;
+    f.expanded = [];
+    this._commentFilter = f;
     this.redraw(true);
     this._restoreFilterAnchor(anchor);
     this._emitCommentFilter();
@@ -1283,7 +1298,7 @@ TermView.prototype = {
           // 只看關注（P36，進 annotationsKey；標註層只在列表好讀視窗用它）。
           listFollowOnly: !!this.listFollowOnly(),
           // 推文篩選（進 annotationsKey；標註層只在好讀文章用它）。
-          commentFilter: this.activeCommentFilter() ? this._commentFilter.userid : null,
+          commentFilter: this.activeCommentFilter() ? this._commentFilter.key : null,
           // 「略過 N 則」展開了哪幾串（P38，進 annotationsKey）；點細線的入口給 render 層。
           commentFilterExpanded: this.activeCommentFilter() ? this._commentFilter.expanded : null,
           onCommentFilterToggle: this._onCommentFilterToggle,

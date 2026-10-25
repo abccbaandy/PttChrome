@@ -9,6 +9,14 @@ const { startCapture, takeCapture } = require('../helpers/capture');
 const article = findCassettes('article')[0];
 const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
+// 看得到的推文列各是推／噓／→（列文字第一個字）。
+const visibleTypes = (page) =>
+  page.evaluate(() =>
+    Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"][data-pusher]')).map((el) =>
+      el.textContent.trim().charAt(0)
+    )
+  );
+
 const visiblePushers = (page) =>
   page.evaluate(() =>
     Array.from(document.querySelectorAll('#mainContainer span[type="bbsrow"][data-pusher]')).map((el) =>
@@ -73,6 +81,52 @@ test.describe('推文篩選（離線重放）', () => {
     await expect.poll(() => visiblePushers(page)).toEqual(all);
     await expect(page.locator('#mainContainer .commentFilterSkip')).toHaveCount(0);
     // 只改顯示：一個 byte 都不送
+    expect(await takeCapture(page)).toBe('');
+  });
+
+  test(`P39 右鍵推文 → 只看噓文／只看推文 → 只剩那一種＋橫幅；✕ 還原 [${article && article.__file}]`, async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true, mergeSameAuthorComments: false });
+    await replayCassette(page, article, { easyReading: true });
+
+    const all = await visiblePushers(page);
+    const types = await visibleTypes(page);
+    // 有噓文就驗「只看噓」，沒有就驗「只看推」；都要有別種推文才看得出篩選。
+    const want = types.includes('噓') ? '噓' : '推';
+    expect(types.includes(want) && types.some((t) => t !== want)).toBe(true);
+    const menuKey = want === '噓' ? 'cmenu_filterCommentBoo' : 'cmenu_filterCommentPush';
+    const bannerKey = want === '噓' ? 'commentFilter_bannerBoo' : 'commentFilter_bannerPush';
+
+    await page.evaluate(() => {
+      document.querySelector('#mainContainer span[type="bbsrow"][data-pusher]').setAttribute('data-e2e-target', '1');
+    });
+    const target = all[0];
+    await scrollIntoViewStable(page, '[data-e2e-target]');
+    const pt = await page.evaluate(() => {
+      const el = document.querySelector('[data-e2e-target]');
+      const r = el.getBoundingClientRect();
+      return { x: r.left + 4.5 * window.__app.view.chw, y: r.top + Math.min(r.height / 2, 10) };
+    });
+    await assertElementUnder(page, pt.x, pt.y, target, { closest: '[data-pusher]', attribute: 'data-pusher' });
+    await page.mouse.click(pt.x, pt.y, { button: 'right' });
+
+    const item = page
+      .locator('.DropdownMenu')
+      .first()
+      .getByRole('menuitem')
+      .filter({ hasText: await label(page, menuKey) });
+    await expect(item).toBeVisible();
+    await startCapture(page);
+    await item.click();
+
+    await expect.poll(async () => [...new Set(await visibleTypes(page))]).toEqual([want]);
+    await expect(page.locator('#mainContainer .commentFilterSkip').first()).toBeAttached();
+    await expect(page.locator('#commentFilterBar')).toContainText(await label(page, bannerKey));
+
+    await page.locator('#commentFilterBar .commentFilterClose').click();
+    await expect(page.locator('#commentFilterBar')).toHaveCount(0);
+    await expect.poll(() => visiblePushers(page)).toEqual(all);
     expect(await takeCapture(page)).toBe('');
   });
 });

@@ -211,7 +211,8 @@ export function parseComment(text) {
 //   articleAuthor:  lower id | null   (原PO)
 //   selfId:         lower id | null   (登入者自己；null ＝不標示，開關由 term_view 決定)
 //   followAuthors:  Set<lower id> | undefined   (關注名單；黑名單優先：被藏的不標)
-//   commentFilter:  lower id | null   (推文篩選 P29：只留這個人的推文，其餘 hidden＋filtered)
+//   commentFilter:  lower id | 'type:推' | 'type:噓' | null
+//                   (推文篩選 P29：只留這個人的推文，其餘 hidden＋filtered；P39 只看推／噓)
 // }
 // Result: { type, userid, floor?, hidden, pusher, contentCol, contentEnd?, dateEnd?,
 //           authorIdStart?, authorIdEnd?, authorIdKind?, mentionsSelf? }
@@ -235,7 +236,7 @@ export function annotateComment(text, ctx) {
       ? ctx.floorCounter.next(c.type)
       : undefined;
   const blocked = !!(ctx.blacklist && ctx.blacklist.has(c.userid));
-  const filtered = !blocked && isFilteredOut(c.userid, ctx);
+  const filtered = !blocked && isFilteredOut(c.userid, ctx, c.type);
   const hidden = blocked || filtered;
   const result = {
     type: c.type,
@@ -268,8 +269,14 @@ export function mentionsUser(content, userid) {
 // 推文篩選（P29，好讀文章「只看這個人／只看原 PO」）：設了篩選時，不是那個人的推文
 // 一律藏起來（跟黑名單同一套 hidden ⇒ 好讀 dropHidden 整列移除），另標 filtered 讓
 // 標註層把連續被藏的幾則收成一條「略過 N 則」。只改顯示、不送任何鍵。
-function isFilteredOut(userid, ctx) {
-  return !!ctx.commentFilter && userid !== ctx.commentFilter;
+// COMMENT_TYPE_FILTER_PREFIX 開頭 ⇒ 只看某種推文（P39：'type:推'／'type:噓'，→ 兩種都收）。
+// 帳號只有英數，不會撞到 ':'。看不出種類（新格式推文沒有推／噓，type 是空的）⇒ 不收。
+export const COMMENT_TYPE_FILTER_PREFIX = 'type:';
+function isFilteredOut(userid, ctx, type) {
+  const f = ctx.commentFilter;
+  if (!f) return false;
+  if (f.startsWith(COMMENT_TYPE_FILTER_PREFIX)) return !!type && type !== f.slice(COMMENT_TYPE_FILTER_PREFIX.length);
+  return userid !== f;
 }
 
 // 推文者 id 格的標示（原PO／自己／關注的人）。優先序：「我」＞原PO＞關注（ctx.followAuthors，
