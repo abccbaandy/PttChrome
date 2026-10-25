@@ -284,6 +284,13 @@ debug 時想即時看到 page console / pageerror：設環境變數 `$env:E2E_EC
 - `helpers/fixtures.js`：共用登入 session fixture（見上）
 - `core.spec.js`：live 核心（見「live 範圍」）
 
+## 規範：介面語系一律中文
+
+`playwright.config.js` 的 `use.locale` 是 `zh-TW`（`e2e_locale.js#E2E_LOCALE`），unit-browser 也一樣。
+headless Chromium 預設 en-US，app 依 `navigator.languages` 選語系，不設就整輪跑英文介面，中文字較寬才會出現的換行／截斷看不到。
+自己 `browser.newContext()` 開的 context 不吃 project 的 use，要明確帶 `locale: E2E_LOCALE`。
+UI 文字照舊用 `label(page, key)`（`window.__i18n`）查，不寫死字面。守護 `tests/unit/e2e_locale.test.js`。
+
 ## 規範：可設定的快捷鍵不准 hardcode
 
 凡是「使用者可在偏好設定改的鍵」（住在 `src/js/pref_storage.js` 的 `DEFAULT_PREFS`，目前唯一一個是

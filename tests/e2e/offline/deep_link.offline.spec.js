@@ -7,6 +7,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { installReplay, installOfflineNetwork } = require('../helpers/replay');
+const { E2E_LOCALE } = require('../e2e_locale');
 
 const AID = '1gIeu-3A';
 
@@ -69,7 +70,7 @@ test.describe('deep link', () => {
   // page：BroadcastChannel 只在同 origin＋同 profile 之間廣播，Playwright 每個
   // context 是獨立 profile，分開開就永遠收不到。
   test('既有分頁接手：新分頁不連線，只顯示提示', async ({ browser }) => {
-    const context = await browser.newContext({ baseURL: 'http://localhost:8080' });
+    const context = await browser.newContext({ baseURL: 'http://localhost:8080', locale: E2E_LOCALE });
     try {
       const existing = await context.newPage();
       await installReplay(existing);
@@ -107,7 +108,7 @@ test.describe('deep link', () => {
   // 預設 context 沒有通知權限 —— 那正是要驗的常態路徑：系統通知拿不到，但標題
   // 閃爍與頁內橫幅照常，而且整段不可以 throw。
   test('既有分頁接手：標題閃爍 + 頁內橫幅，切回來就停', async ({ browser }) => {
-    const context = await browser.newContext({ baseURL: 'http://localhost:8080' });
+    const context = await browser.newContext({ baseURL: 'http://localhost:8080', locale: E2E_LOCALE });
     const errors = [];
     try {
       const existing = await context.newPage();
@@ -167,6 +168,7 @@ test.describe('deep link', () => {
   test('授權通知的情況下同樣不炸', async ({ browser }) => {
     const context = await browser.newContext({
       baseURL: 'http://localhost:8080',
+      locale: E2E_LOCALE,
       permissions: ['notifications']
     });
     const errors = [];

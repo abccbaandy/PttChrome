@@ -7,6 +7,7 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import worktree from './scripts/worktree.js';
+import e2eLocale from './tests/e2e/e2e_locale.js';
 import { isBrowserTestSource } from './scripts/unit-browser-marker.mjs';
 
 // 需要 DOM 的 unit 檔第一行寫 BROWSER_MARKER ⇒ 跑在真 Chromium（unit-browser project），
@@ -76,7 +77,8 @@ export default defineConfig({
           setupFiles: ['tests/unit/setup.js'],
           browser: {
             enabled: true,
-            provider: playwright(),
+            // 介面語系一律中文，比照 e2e（理由見 tests/e2e/e2e_locale.js）。
+            provider: playwright({ contextOptions: { locale: e2eLocale.E2E_LOCALE } }),
             headless: true,
             // 失敗截圖對 unit 沒用，還會在 .vitest/ 堆檔。
             screenshotFailures: false,
