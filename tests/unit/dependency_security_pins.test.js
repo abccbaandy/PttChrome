@@ -19,11 +19,11 @@ function gte(version, min) {
   return true;
 }
 
-// yarn.lock 裡某個套件所有條目的指定欄位（`dependencies` 底下的宣告範圍，或 `version`）。
+// yarn.lock 裡某個套件所有條目的內文（標頭行之後的縮排區塊）。條目之間以空行分隔。
 function yarnEntries(name) {
-  const escaped = name.replace(/[/@.]/g, "\\$&");
-  const re = new RegExp(`^"${escaped}@npm:[^\\n]*":\\n((?:  .*\\n)+)`, "gm");
-  return [...YARN_LOCK.matchAll(re)].map((m) => m[1]);
+  return YARN_LOCK.split("\n\n")
+    .filter((block) => block.startsWith(`"${name}@npm:`))
+    .map((block) => block.slice(block.indexOf("\n") + 1));
 }
 
 describe("root：@grpc/grpc-js（經 @firebase/firestore）", () => {
