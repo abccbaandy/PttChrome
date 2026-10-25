@@ -346,6 +346,18 @@ export const en_US = {
   "commentFilter_clear": {
     "message": "Show all comments"
   },
+  "commentFilter_chipAll": {
+    "message": "All"
+  },
+  "commentFilter_chipPush": {
+    "message": "Push"
+  },
+  "commentFilter_chipBoo": {
+    "message": "Boo"
+  },
+  "commentFilter_chipOp": {
+    "message": "OP"
+  },
   "commentFilter_skipped": {
     "message": "{n} skipped"
   },

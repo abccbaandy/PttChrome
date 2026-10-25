@@ -8,6 +8,7 @@
 //   3. view：setCommentTypeFilter 只吃 推／噓；enhance 的 key 跟帳號篩選不撞（帳號只有英數）。
 //   4. 選單：沒篩選時多「只看推文」「只看噓文」，點了呼叫 setCommentTypeFilter；生效中照舊只給「顯示全部」。
 //   5. 橫幅文字依種類換。
+//   6. P41：橫幅是一排切換鈕「全部｜推｜噓｜原 PO」，點一下就換、目前那顆亮著。
 import { annotateComment, FloorCounter, COMMENT_TYPE_FILTER_PREFIX } from "../../src/js/comment_parse";
 import { buildContextMenuEntries } from "../../src/components/ContextMenu/context_menu_entries";
 import { splitQuickActions } from "../../src/components/ContextMenu/context_sheet_quick";
@@ -203,7 +204,7 @@ describe("選單", () => {
 });
 
 describe("橫幅", () => {
-  const fakeView = (filter) => {
+  const fakeView = (filter, author = null) => {
     let fn = null;
     return {
       onCommentFilterChange: (f) => {
@@ -212,17 +213,82 @@ describe("橫幅", () => {
         return () => {};
       },
       emit: (f) => fn(f),
+      articleAuthorId: () => author,
       clearCommentFilter: vi.fn(),
+      setCommentFilter: vi.fn(),
+      setCommentTypeFilter: vi.fn(),
     };
   };
+  const bar = () => document.getElementById("commentFilterBar");
+  const chip = (k) => bar().querySelector(`[data-filter="${k}"]`);
+  const pressed = () =>
+    Array.from(bar().querySelectorAll('[aria-pressed="true"]')).map((b) => b.getAttribute("data-filter"));
 
-  test("只看噓／只看推／帳號：文字各自不同", () => {
+  test("只看噓／只看推／帳號：說明文字各自不同（aria-label）", () => {
     const view = fakeView({ type: "噓", userid: null, op: false });
     render(<CommentFilterBar pttchrome={{ view }} />);
-    expect(screen.getByText(i18n("commentFilter_bannerBoo"))).toBeTruthy();
+    expect(bar().getAttribute("aria-label")).toBe(i18n("commentFilter_bannerBoo"));
     act(() => view.emit({ type: "推", userid: null, op: false }));
-    expect(screen.getByText(i18n("commentFilter_bannerPush"))).toBeTruthy();
+    expect(bar().getAttribute("aria-label")).toBe(i18n("commentFilter_bannerPush"));
     act(() => view.emit({ type: null, userid: "friend", op: false }));
-    expect(screen.getByText(i18n("commentFilter_banner").replace("{id}", "friend"))).toBeTruthy();
+    expect(bar().getAttribute("aria-label")).toBe(i18n("commentFilter_banner").replace("{id}", "friend"));
+  });
+
+  // P41：橫幅一排切換鈕，點一下就換，不用先 ✕ 再長按重選。
+  test("P41 切換鈕：目前那顆亮著；點別顆直接換、點亮著的不動、「全部」＝還原", () => {
+    const view = fakeView({ type: "噓", userid: null, op: false }, "author1");
+    render(<CommentFilterBar pttchrome={{ view }} />);
+    expect(Array.from(bar().querySelectorAll("button")).map((b) => b.textContent)).toEqual([
+      i18n("commentFilter_chipAll"),
+      i18n("commentFilter_chipPush"),
+      i18n("commentFilter_chipBoo"),
+      i18n("commentFilter_chipOp"),
+    ]);
+    expect(pressed()).toEqual(["boo"]);
+    chip("boo").click();
+    expect(view.setCommentTypeFilter).not.toHaveBeenCalled();
+    chip("push").click();
+    // 沒給 anchorRow ⇒ view 自己錨在視窗頂端那一列
+    expect(view.setCommentTypeFilter).toHaveBeenCalledWith("推");
+    chip("op").click();
+    expect(view.setCommentFilter).toHaveBeenCalledWith("author1", true);
+    chip("all").click();
+    expect(view.clearCommentFilter).toHaveBeenCalledTimes(1);
+  });
+
+  test("P41 只看這個人 ⇒ 多一顆亮著的帳號鈕；那個人就是原 PO ⇒ 亮原 PO、不多帳號鈕；原PO 解析不到 ⇒ 沒有原 PO 鈕", () => {
+    const view = fakeView({ type: null, userid: "friend", op: false }, "author1");
+    render(<CommentFilterBar pttchrome={{ view }} />);
+    expect(chip("user").textContent).toBe("friend");
+    expect(pressed()).toEqual(["user"]);
+    chip("user").click();
+    expect(view.setCommentFilter).not.toHaveBeenCalled();
+    act(() => view.emit({ type: null, userid: "author1", op: false }));
+    expect(chip("user")).toBeNull();
+    expect(pressed()).toEqual(["op"]);
+    cleanup();
+    render(<CommentFilterBar pttchrome={{ view: fakeView({ type: "推", userid: null, op: false }, null) }} />);
+    expect(chip("op")).toBeNull();
+    expect(pressed()).toEqual(["push"]);
+  });
+});
+
+describe("P41 view：橫幅切換沒給 anchorRow ⇒ 錨在視窗頂端那一列", () => {
+  test("setCommentTypeFilter(type) 不帶列號 ⇒ 用 _topRowNode 的 srow 當錨", () => {
+    const v = Object.create(TermView.prototype);
+    v._commentFilter = null;
+    v._commentFilterListeners = new Set();
+    v._articleInstanceId = 1;
+    v.useEasyReadingMode = true;
+    v.buf = { pageState: 3, pageLines: [] };
+    v.redraw = vi.fn();
+    v._topRowNode = () => ({ el: { getAttribute: () => "42" } });
+    const rows = [];
+    v._filterAnchor = (r) => (rows.push(r), null);
+    expect(v.setCommentTypeFilter("推")).toBe(true);
+    expect(v.setCommentFilter("op1", true)).toBe(true);
+    // 選單照舊帶點的那一列
+    expect(v.setCommentTypeFilter("噓", 7)).toBe(true);
+    expect(rows).toEqual([42, 42, 7]);
   });
 });

@@ -9,10 +9,10 @@
   z-index: 160;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   max-width: min(460px, calc(100vw - 24px));
   box-sizing: border-box;
-  padding: 2px 3px 2px 12px;
+  padding: 2px;
   border: 1px solid rgba(120, 170, 255, 0.6);
   border-radius: 999px;
   background: #16233a;
@@ -31,27 +31,43 @@
   top: calc(48px + var(--safe-top, 0px) + 8px);
 }
 
-.commentFilterLabel {
-  min-width: 0;
+/* 切換鈕（P41）：亮著的那顆＝目前的篩選。帳號鈕可能很長 ⇒ 只有它會截斷。 */
+.commentFilterChip {
+  flex: none;
+  min-width: 32px;
+  height: 24px;
+  max-width: 14em;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #cfe0ff;
+  font: inherit;
+  line-height: 24px;
+  padding: 0 10px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.commentFilterClose {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: 999px;
-  background: #24365a;
-  color: #fff;
-  font: inherit;
-  line-height: 24px;
-  padding: 0;
   cursor: pointer;
 }
 
-.commentFilterClose:hover {
-  background: #33507f;
+.commentFilterChip[data-filter="user"] {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.commentFilterChip:hover {
+  background: #24365a;
+}
+
+.commentFilterChip[aria-pressed="true"] {
+  background: #3a63a8;
+  color: #fff;
+  cursor: default;
+}
+
+/* 手機：指頭點得到的大小。 */
+.commentFilterBar[data-mobile] .commentFilterChip {
+  height: 32px;
+  line-height: 32px;
+  min-width: 44px;
 }
