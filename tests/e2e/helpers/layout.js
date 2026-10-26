@@ -115,6 +115,29 @@ async function waitRectStable(
   );
 }
 
+// 彈窗（Mantine Modal）的開場動畫跑完：selector 所在的 [role=dialog] 已回到最終位置
+// （transform 是單位矩陣）、子樹沒有在跑的動畫。剛開的彈窗要點裡面的按鈕前先等它。
+//
+// 為什麼 Playwright 自己的「stable」不夠：Modal 開場前幾幀停在起始位置（translateY(-30px)，
+// 還沒開始過場）⇒ 連兩幀 rect 相同，actionability 放行；接著 200ms 往下滑 30px。CI 吃滿
+// CPU 時 mousedown 落在按鈕上、mouseup 時按鈕已經滑走 ⇒ click 只發給共同祖先，按鈕的
+// onClick 沒跑（aid_board_choice 的事件紀錄：pointerdown 在按鈕、pointerup／click 在 Stack）。
+// 「沒有動畫」單獨看也不夠：起始那幾幀同樣沒有動畫，所以要連最終位置一起看。
+async function waitDialogSettled(page, selector, { timeout = 10000 } = {}) {
+  await page.waitForFunction(
+    (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      const dialog = el.closest('[role="dialog"]') || el;
+      const t = getComputedStyle(dialog).transform;
+      if (t !== 'none' && t !== 'matrix(1, 0, 0, 1, 0, 0)') return false;
+      return dialog.getAnimations({ subtree: true }).length === 0;
+    },
+    selector,
+    { timeout }
+  );
+}
+
 // 捲到視野中央 → 等版面停 → 確認它**真的還在視窗內**且不再動。回傳穩定後的 rect。
 //
 // 為什麼要迴圈：`scrollIntoView` 只是把當下的版面捲到位，捲動本身又會把新的佔位盒帶進
@@ -581,6 +604,7 @@ module.exports = {
   plainLeftEdge,
   scrollIntoViewStable,
   stableCommentRow,
+  waitDialogSettled,
   waitPreviewsSettled,
   waitRectStable,
   waitScrollStable,

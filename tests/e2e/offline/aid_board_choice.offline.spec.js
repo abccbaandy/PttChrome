@@ -10,6 +10,7 @@
 // 真實推文變成無看板的 #AID（只改後綴，版面欄位不動）；DOM 的 data-board 不能拿來
 // 改，點擊端用的是渲染時綁進 handler 的 board。
 const { test, expect } = require('@playwright/test');
+const { waitDialogSettled, installPaintedFrameProbe } = require('../helpers/layout');
 const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayCassette } = require('../helpers/replay');
 
@@ -46,9 +47,9 @@ async function boardlessLink(page) {
 }
 
 // 點彈窗裡的選項，並斷言彈窗真的收起（兩個選項的 handler 第一件事都是收彈窗）。
-// CI 偶發過「點了、彈窗一直開著、零送鍵」（docs 待查項 aid_board_choice），本機重現不出。
-// 所以點的同時在 document 捕獲階段記下 pointer／mouse／click 落在哪、按鈕節點有沒有被換掉；
-// 再發生時錯誤訊息直接帶出這份紀錄，不必再猜。
+// CI 偶發過「點了、彈窗一直開著、零送鍵」：事件紀錄抓到 pointerdown 在按鈕上、pointerup／click
+// 落在彈窗的 Stack ⇒ 按下到放開之間按鈕滑走了（Modal 開場動畫，見 layout.waitDialogSettled）。
+// 所以點之前先等彈窗停好；紀錄留著，萬一再紅錯誤訊息直接帶出落點。
 async function chooseAid(page, which) {
   const sel = `[data-aid-choice="${which}"]`;
   await page.evaluate((s) => {
@@ -73,6 +74,7 @@ async function chooseAid(page, which) {
       );
     }
   }, sel);
+  await waitDialogSettled(page, sel);
   await page.locator(sel).click();
   try {
     await expect(page.locator('[data-aid-board-choice]')).toHaveCount(0, { timeout: 5000 });
@@ -90,6 +92,40 @@ test.describe('無看板 AID 的看板選擇（離線重放）', () => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true });
     await replayCassette(page, cassette, { easyReading: true });
+  });
+
+  // 偶發紅的機制（chooseAid 的註解）：彈窗開場時按鈕先停在起始位置、再往下滑。鎖兩件事：
+  // ①前提還在（按鈕真的會滑，否則 waitDialogSettled 守的東西已不存在，這條該重寫）；
+  // ②waitDialogSettled 放行那一刻，按鈕已經在最終位置（之後不再動）。
+  test('彈窗開場會滑動；waitDialogSettled 放行時按鈕已在最終位置', async ({ page }) => {
+    const link = await boardlessLink(page);
+    const sel = '[data-aid-choice="pick"]';
+    // 逐幀在 paint 前取樣（helpers/layout.js#installPaintedFrameProbe），1.5 秒。
+    await installPaintedFrameProbe(page);
+    await page.evaluate((s) => {
+      const tops = [];
+      const rec = { tops, done: false };
+      window.__aidChoiceTops = rec;
+      const t0 = performance.now();
+      const sample = () => {
+        const b = document.querySelector(s);
+        if (b) tops.push(b.getBoundingClientRect().top);
+        if (performance.now() - t0 >= 1500) {
+          window.__paintedFrame.remove(sample);
+          rec.done = true;
+        }
+      };
+      window.__paintedFrame.add(sample);
+    }, sel);
+    await link.click();
+    await waitDialogSettled(page, sel);
+    const atSettle = await page.evaluate((s) => document.querySelector(s).getBoundingClientRect().top, sel);
+    // 取樣本身就是時間軸（逐幀 1.5 秒），等它跑完，不另外睡。
+    await page.waitForFunction(() => window.__aidChoiceTops.done);
+    const tops = await page.evaluate(() => window.__aidChoiceTops.tops);
+    const final = tops[tops.length - 1];
+    expect(Math.max(...tops) - Math.min(...tops), '前提：開場時按鈕會滑動').toBeGreaterThan(5);
+    expect(Math.abs(atSettle - final)).toBeLessThan(0.5);
   });
 
   test('點下去先開選擇彈窗、不送任何鍵；選本版 ⇒ s<目前看板>', async ({ page }) => {
