@@ -153,6 +153,47 @@ describe("橫幅", () => {
     expect(bar().querySelector('[data-filter="boo"] .commentFilterChipCount').textContent).toBe("3");
   });
 
+  // P46：讀到文末還是 0 則的推／噓／原 PO 變淡，點了只閃一句、不切過去（一個 byte 都不送）。
+  const chip = (k) => bar().querySelector(`[data-filter="${k}"]`);
+  test("讀完 0 則 ⇒ 變淡、點了只閃提示不切；全部／亮著的那顆不算", () => {
+    const view = fakeView(
+      { type: "噓", userid: null, op: false },
+      { counts: { all: 5, push: 5, boo: 0, op: 0, user: 0 }, complete: true },
+    );
+    view.flashListHint = vi.fn();
+    render(<CommentFilterBar pttchrome={{ view }} />);
+    expect(chip("op").hasAttribute("data-empty")).toBe(true);
+    expect(chip("op").getAttribute("aria-disabled")).toBe("true");
+    // 亮著的「噓」就算 0 則也不變淡（目前的篩選）；有則數的不變淡。
+    expect(chip("boo").hasAttribute("data-empty")).toBe(false);
+    expect(chip("push").hasAttribute("data-empty")).toBe(false);
+    expect(chip("all").hasAttribute("data-empty")).toBe(false);
+    chip("op").click();
+    expect(view.setCommentFilter).not.toHaveBeenCalled();
+    expect(view.flashListHint).toHaveBeenCalledWith(i18n("commentFilter_emptyOp"), 1500);
+    chip("push").click();
+    expect(view.setCommentTypeFilter).toHaveBeenCalledWith("推");
+  });
+
+  test("還沒讀完（0+）⇒ 照常能點；「全部」0 則也照常能還原", () => {
+    const view = fakeView(
+      { type: "推", userid: null, op: false },
+      { counts: { all: 0, push: 0, boo: 0, op: 0, user: 0 }, complete: false },
+    );
+    view.flashListHint = vi.fn();
+    render(<CommentFilterBar pttchrome={{ view }} />);
+    expect(bar().querySelectorAll("[data-empty]").length).toBe(0);
+    chip("boo").click();
+    expect(view.setCommentTypeFilter).toHaveBeenCalledWith("噓");
+    expect(view.flashListHint).not.toHaveBeenCalled();
+    view.tally = { counts: { all: 0, push: 0, boo: 0, op: 0, user: 0 }, complete: true };
+    act(() => view.buf.dispatchEvent(new CustomEvent("screenSettled")));
+    expect(chip("boo").hasAttribute("data-empty")).toBe(true);
+    expect(chip("all").hasAttribute("data-empty")).toBe(false);
+    chip("all").click();
+    expect(view.clearCommentFilter).toHaveBeenCalled();
+  });
+
   test("view 給不出則數 ⇒ 只有名稱", () => {
     render(<CommentFilterBar pttchrome={{ view: fakeView({ type: "推", userid: null, op: false }, null) }} />);
     expect(bar().querySelector(".commentFilterChipCount")).toBeNull();

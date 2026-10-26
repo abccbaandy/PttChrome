@@ -15,3 +15,12 @@ export function isCommentFilterBarTarget(el) {
 export function chipCountText(n, complete) {
   return String(n | 0) + (complete ? '' : '+');
 }
+
+// 這顆鈕點了也是白點（P46）：已讀到文末、這一種一則都沒有。只有推／噓／原 PO 會變淡：
+// 「全部」＝還原、帳號鈕＝目前的篩選，都不算；亮著的那顆不算；還沒讀完（「0+」）照常能點。
+const EMPTY_CHIP_KEYS = { push: 'commentFilter_emptyPush', boo: 'commentFilter_emptyBoo', op: 'commentFilter_emptyOp' };
+export function emptyChipHintKey(key, tally, active) {
+  if (!tally || !tally.complete || key === active) return null;
+  if (!Object.prototype.hasOwnProperty.call(EMPTY_CHIP_KEYS, key)) return null;
+  return (tally.counts[key] | 0) === 0 ? EMPTY_CHIP_KEYS[key] : null;
+}

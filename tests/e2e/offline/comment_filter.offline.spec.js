@@ -132,12 +132,32 @@ test.describe('推文篩選（離線重放）', () => {
       new RegExp(`^${shown}\\+?$`)
     );
 
-    // P41：橫幅直接切到另一種，不用先還原再右鍵重選
-    const other = want === '噓' ? '推' : '噓';
-    const otherChip = want === '噓' ? 'push' : 'boo';
-    await page.locator(`#commentFilterBar [data-filter="${otherChip}"]`).click();
-    await expect(page.locator(`#commentFilterBar [data-filter="${otherChip}"]`)).toHaveAttribute('aria-pressed', 'true');
-    await expect.poll(async () => (await visibleTypes(page)).every((t) => t === other)).toBe(true);
+    // P46：讀到文末還是 0 則的鈕變淡，點了只閃一句、不切過去。沒有這種鈕的卷就跳過這段。
+    const emptyChip = page.locator('#commentFilterBar [data-filter][data-empty]').first();
+    if (await emptyChip.count()) {
+      const key = await emptyChip.getAttribute('data-filter');
+      const hintKey = { push: 'commentFilter_emptyPush', boo: 'commentFilter_emptyBoo', op: 'commentFilter_emptyOp' }[key];
+      await expect(emptyChip.locator('.commentFilterChipCount')).toHaveText('0');
+      // aria-disabled ⇒ Playwright 的 locator.click 會等它變可用；照使用者的真點擊打在鈕中央。
+      const r = await emptyChip.boundingBox();
+      await page.mouse.click(r.x + r.width / 2, r.y + r.height / 2);
+      await expect(page.locator('.ListHint')).toHaveText(await label(page, hintKey));
+      await expect(emptyChip).toHaveAttribute('aria-pressed', 'false');
+      await expect(page.locator(`#commentFilterBar [data-filter="${wantChip}"]`)).toHaveAttribute('aria-pressed', 'true');
+    }
+
+    // P41：橫幅直接切到另一顆有推文的鈕，不用先還原再右鍵重選
+    const switchTo = page.locator(`#commentFilterBar [data-filter]:not([data-empty]):not([aria-pressed="true"]):not([data-filter="all"])`).first();
+    const switchKey = await switchTo.getAttribute('data-filter');
+    await switchTo.click();
+    await expect(page.locator(`#commentFilterBar [data-filter="${switchKey}"]`)).toHaveAttribute('aria-pressed', 'true');
+    if (switchKey !== 'op') {
+      const other = switchKey === 'push' ? '推' : '噓';
+      await expect.poll(async () => (await visibleTypes(page)).every((t) => t === other)).toBe(true);
+    } else {
+      const author = await page.evaluate(() => window.__app.view.articleAuthorId());
+      await expect.poll(async () => [...new Set(await visiblePushers(page))]).toEqual([author]);
+    }
 
     await page.locator('#commentFilterBar [data-filter="all"]').click();
     await expect(page.locator('#commentFilterBar')).toHaveCount(0);

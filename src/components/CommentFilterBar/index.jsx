@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { i18n } from "../../js/i18n";
-import { COMMENT_FILTER_BAR_ID, chipCountText } from "../../js/comment_filter";
+import {
+  COMMENT_FILTER_BAR_ID,
+  chipCountText,
+  emptyChipHintKey,
+} from "../../js/comment_filter";
 import "./CommentFilterBar.css";
 
 // 推文篩選（P29）的橫幅：一排切換鈕「全部｜推｜噓｜原 PO」（P41），點一下就換、目前那個亮起來；
@@ -8,7 +12,7 @@ import "./CommentFilterBar.css";
 // 「全部」＝ view.clearCommentFilter()。不是 modal：不搶 #t 焦點（事件規則同 HomeDashboard）。
 // 一個 byte 都不送（docs/comment-filter.md）。
 // 每顆後面帶則數（P44，view.commentFilterCounts）：好讀每載完一頁（screenSettled）重數，
-// 還沒讀到文末標「12+」。
+// 還沒讀到文末標「12+」。讀到文末還是 0 則的推／噓／原 PO 變淡（P46，data-empty），點了只閃一句、不切過去。
 const keepFocus = (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -110,28 +114,44 @@ export const CommentFilterBar = ({ pttchrome }) => {
       onClick={swallow}
       onContextMenu={swallow}
     >
-      {chips.map((c) => (
-        <button
-          key={c.key}
-          type="button"
-          className="commentFilterChip"
-          data-filter={c.key}
-          aria-pressed={c.key === active ? "true" : "false"}
-          title={c.key === "all" ? i18n("commentFilter_clear") : undefined}
-          onMouseDown={keepFocus}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (c.key !== active && c.run) c.run();
-          }}
-        >
-          {c.text}
-          {tally && (
-            <span className="commentFilterChipCount">
-              {chipCountText(tally.counts[c.key], tally.complete)}
-            </span>
-          )}
-        </button>
-      ))}
+      {chips.map((c) => {
+        const emptyHint = emptyChipHintKey(c.key, tally, active);
+        return (
+          <button
+            key={c.key}
+            type="button"
+            className="commentFilterChip"
+            data-filter={c.key}
+            data-empty={emptyHint ? "" : undefined}
+            aria-pressed={c.key === active ? "true" : "false"}
+            aria-disabled={emptyHint ? "true" : undefined}
+            title={
+              c.key === "all"
+                ? i18n("commentFilter_clear")
+                : emptyHint
+                  ? i18n(emptyHint)
+                  : undefined
+            }
+            onMouseDown={keepFocus}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (emptyHint) {
+                if (typeof view.flashListHint === "function")
+                  view.flashListHint(i18n(emptyHint), 1500);
+                return;
+              }
+              if (c.key !== active && c.run) c.run();
+            }}
+          >
+            {c.text}
+            {tally && (
+              <span className="commentFilterChipCount">
+                {chipCountText(tally.counts[c.key], tally.complete)}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 };
