@@ -286,6 +286,17 @@ export function isListCardBodyTarget(target) {
   return !!target.closest('.listBodyView .listCardBody');
 }
 
+// 觸控連點的第二下（mousedown detail ≥ 2：雙擊判定窗內、距離在 slop 內）落在卡片上
+// （列表卡片本體、主功能表／信箱的大按鈕）⇒ 要擋掉瀏覽器「雙擊選字」的預設動作。
+// 否則 mousedown 先選到一個字 ⇒ mouseup 把它複製進剪貼簿、App.mouse_click 看到選取就不處理
+// ⇒「點了沒進去、再點一次才進去」。常見情境：第一下落在卡片間距（不開），馬上補點本體。
+// 只管觸控（滑鼠雙擊選字是原生行為，不准擋，見 docs/enhanced-addon.md 踩坑 A）；觸控的
+// 選字手勢是長按，不受影響。pointerType 取自同一下的 pointerdown（相容滑鼠事件沒有它）。
+export function isTouchCardMultiTap({ detail, pointerType, target }) {
+  if (!(detail >= 2) || pointerType !== 'touch') return false;
+  return isListCardBodyTarget(target) || menuCardTargetRow(target) >= 0;
+}
+
 // 手機主功能表（Phase 5）的 `.main` 高與上緣位移。grid 幾何是「80 欄塞滿寬」⇒ 直式手機上
 // chh*rows 只佔可視高的六成左右，而大按鈕（固定 px 高）比格線列高得多 ⇒ 把 `.main`
 // 撐到整個可視高（扣軟鍵盤／工具列 inset），貼頂；可視高本來就不夠時退回格線規則

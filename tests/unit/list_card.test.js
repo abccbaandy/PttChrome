@@ -14,6 +14,7 @@ import {
   listRowSpan,
   listPageRows,
   isListCardBodyTarget,
+  isTouchCardMultiTap,
   listViewportGeometry,
   listFillRows,
   LIST_CARD_ROWS,
@@ -448,6 +449,25 @@ describe("listViewportGeometry（term_view／clientToPos／_pageRows 同源）",
     expect(isListCardBodyTarget(document.getElementById("blank"))).toBe(false);
     expect(isListCardBodyTarget(document.querySelector(".main"))).toBe(false);
     expect(isListCardBodyTarget(null)).toBe(false);
+    document.body.innerHTML = "";
+  });
+
+  // real-input: tests/e2e/offline/mobile_list_cards.offline.spec.js（觸控連點 tap 卡片本體）
+  test("isTouchCardMultiTap：只有觸控的第二下（detail ≥ 2）落在卡片本體／大按鈕才擋選字", () => {
+    document.body.innerHTML =
+      '<div class="main"><div class="listBodyView"><span class="listCard" id="card">' +
+      '<span class="listCardBody"><span class="listCardLine" id="line">x</span></span>' +
+      '</span></div><div data-menu-row="5"><span id="menu">x</span></div><span id="blank">x</span></div>';
+    const at = (id, over) => ({ detail: 2, pointerType: "touch", target: document.getElementById(id), ...over });
+    expect(isTouchCardMultiTap(at("line"))).toBe(true);
+    expect(isTouchCardMultiTap(at("menu"))).toBe(true);
+    expect(isTouchCardMultiTap(at("line", { detail: 3 }))).toBe(true);
+    // 第一下、滑鼠雙擊（原生選字不准擋）、筆、卡片間距、卡片以外：都不擋。
+    expect(isTouchCardMultiTap(at("line", { detail: 1 }))).toBe(false);
+    expect(isTouchCardMultiTap(at("line", { pointerType: "mouse" }))).toBe(false);
+    expect(isTouchCardMultiTap(at("line", { pointerType: null }))).toBe(false);
+    expect(isTouchCardMultiTap(at("card"))).toBe(false);
+    expect(isTouchCardMultiTap(at("blank"))).toBe(false);
     document.body.innerHTML = "";
   });
 });

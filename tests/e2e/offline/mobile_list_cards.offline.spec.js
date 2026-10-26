@@ -352,6 +352,67 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await tapCardWithSelection(page);
   });
 
+  // 回歸：手指第一下落在卡片間距（沒開，但底色已經跟著移到那張），馬上再點卡片本體
+  // ⇒ Chromium 把第二下算成雙擊（mousedown detail=2，判定窗內、距離在 slop 內），預設動作
+  // 是選字 ⇒ App.mouse_click 看到選取就不處理（'selection'）、還順手把那個字複製進剪貼簿。
+  // 第二下才開不了、第三下才開，就是「點了沒進去、再點一次才進去」。
+  // 斷言：觸控的第二下照樣開那一筆、沒有選到字。
+  test('觸控連點（第二下落在雙擊判定窗內）tap 卡片本體：照樣開那一筆、不選字', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    const target = await page.evaluate(() => {
+      const v = document.querySelector('#mainContainer .listBodyView');
+      const vr = v.getBoundingClientRect();
+      const seq = window.__app.listSession._sequence();
+      const header = window.__app.listSession.headerRows();
+      for (const c of v.querySelectorAll(':scope > .listCard')) {
+        const r = c.getBoundingClientRect();
+        if (r.top < vr.top + 2 || r.bottom > vr.bottom - 2) continue;
+        const num = window.__app.buf.listLineNums[seq[Number(c.getAttribute('srow')) - header]];
+        if (num == null || num === window.__app.listSession._selectedNum) continue;
+        c.setAttribute('data-e2e-dbl-card', '1');
+        return { num };
+      }
+      return null;
+    });
+    expect(target).not.toBeNull();
+    Object.assign(target, await waitRectStable(page, '[data-e2e-dbl-card]'));
+    Object.assign(
+      target,
+      await page.evaluate(() => {
+        const b = document.querySelector('[data-e2e-dbl-card] .listCardBody').getBoundingClientRect();
+        return { x: b.left + b.width / 2, bodyY: (b.top + b.bottom) / 2 };
+      })
+    );
+    const gapY = target.top + target.height - 1;
+    const gapHit = await page.evaluate(
+      ({ x, y }) => {
+        const el = document.elementFromPoint(x, y);
+        return !!el && !!el.closest('[data-e2e-dbl-card]') && !el.closest('.listCardBody');
+      },
+      { x: target.x, y: gapY }
+    );
+    expect(gapHit).toBe(true);
+    await page.evaluate(() => {
+      window.__e2eDblDetail = [];
+      window.__e2eDblClickSel = [];
+      document.addEventListener('mousedown', (e) => window.__e2eDblDetail.push(e.detail), true);
+      // 選取要在 click 當下量（之後 setInputAreaFocus 的計時器會把它清掉）。
+      document.addEventListener('click', () => window.__e2eDblClickSel.push(String(document.getSelection())), true);
+    });
+    const sentBefore = await page.evaluate(() => window.__replay.sent.length);
+    await page.touchscreen.tap(target.x, gapY);
+    // 第一下是間距：不開、不送鍵。
+    expect(await page.evaluate(() => window.__replay.sent.length)).toBe(sentBefore);
+    await page.touchscreen.tap(target.x, target.bodyY);
+    // 前提：第二下真的被瀏覽器算成雙擊（不是的話這條測不到東西）。
+    expect(await page.evaluate(() => window.__e2eDblDetail)).toEqual([1, 2]);
+    expect(await page.evaluate(() => window.__e2eDblClickSel)).toEqual(['', '']);
+    await expect
+      .poll(() => page.evaluate((n) => window.__replay.sent.slice(n).join(''), sentBefore))
+      .toContain(String(target.num) + '\r');
+  });
+
   // 整張卡片＝同一組點選目標：長按任一段都同時給作者與標題（作者只是第二行一小段字，
   // 依落點分段的舊做法手指按不中，選項就都不出現）。
   // App Bar 點標題捲回頂端（app_bar_scroll_top.js）：列表走 screen.scrollListTo，回到已載入的第一筆。

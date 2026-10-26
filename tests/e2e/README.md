@@ -370,6 +370,9 @@ window 失焦（Playwright 1.62 實測，`isTrusted`／`document.hasFocus()`）�
   滑鼠事件的 handler 同步重建手指下的節點」（#152 的底色重畫、#225 的「更多」項目搬家都是這一類）。偵測法：
   init script 記 pointerdown 的 target，pointerup 後 80ms 內 window 沒收到 click 且 target 已 `!isConnected` ⇒ 記一筆；
   整批 offline-mobile 掛上跑過一輪是 0 筆。
+- 兩下觸控 tap 相隔在雙擊判定窗內（Chromium aura 400ms）、距離在 slop 內 ⇒ 第二下的相容 mousedown 是 `detail=2`，
+  預設動作照滑鼠雙擊**選一個字**（觸控也一樣），click 當下選取非空。app 的 click 路徑看到選取就不處理 ⇒ 第二下被吞；
+  卡片上由 `mobile_layout.isTouchCardMultiTap` 在 mousedown 擋掉選字（只擋觸控，滑鼠雙擊選字是原生行為）。
 - contextmenu 時機依 OS：Windows 在 mouseup 發、Linux／macOS 在 mousedown 發 ⇒「按住右鍵滾輪」類斷言要依實際觀察到的時機分支，不寫死平台。
 
 ## 規範：會疊在畫面上的功能要進「浮層不蓋文末」矩陣

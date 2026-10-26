@@ -312,6 +312,10 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   mousemove 沒追到 hover 時（例：畫面有選取）改由 `App.mouse_up` 搬底色 ⇒ 重畫換掉手指下的卡片 ⇒ click 不發
   （症狀：底色移過去了卻沒開文，再點一次才開）。守護 `list_card.test.js`（比節點身分，`toEqual` 只比結構會放過）、
   `mobile_list_cards`「畫面上有選取時 tap 卡片」「畫面沒有底色＋有選取時 tap 卡片」。
+- **觸控連點的第二下落在卡片上不准選字**（`mobile_layout.isTouchCardMultiTap`，`App.mouse_down` 依同一下 pointerdown 的
+  pointerType 判斷後 preventDefault）：第一下落在卡片間距（不開、底色已移過去），馬上補點本體 ⇒ 第二下是 `detail=2`，
+  瀏覽器預設選字 ⇒ mouseup 把字複製進剪貼簿、`mouse_click` 看到選取不處理 ⇒ 再點一次才開。主功能表／信箱大按鈕同理。
+  只擋觸控：滑鼠雙擊選字是原生行為（`docs/enhanced-addon.md` 踩坑 A）。守護 `list_card.test.js`、`mobile_list_cards`「觸控連點」。
 - **tap 留痕**：debug 錄製中，卡片模式的每一下 tap 在 `App.mouse_click` 記 `listTap`（outcome＝card／not-card／
   selection／modal／aid-navigation），session 忙碌吞掉時記 `listSession.clickBusy`。「點了沒開文」再出現時，
   錄製檔用 `yarn debug:screens` 看那一下的 outcome 就知道擋在哪一層。

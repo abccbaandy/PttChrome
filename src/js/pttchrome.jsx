@@ -81,7 +81,7 @@ import { SearchStatus, isSearchStatusTarget } from './search_status';
 import { FollowOnly, isFollowOnlyTarget } from './follow_only';
 import { ListFastScroll, isListFastScrollTarget } from './list_fast_scroll';
 import { EditorInput, isEditorInputTarget } from './editor_input';
-import { inputModeFor, isListCardBodyTarget, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
+import { inputModeFor, isListCardBodyTarget, isTouchCardMultiTap, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
 import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
@@ -394,6 +394,12 @@ export const App = function() {
   window.addEventListener('click', function(e) {
     self.mouse_click(e);
   }, false);
+
+  // 這一下是不是觸控：相容滑鼠事件（mousedown…）沒有 pointerType，取同一下的 pointerdown。
+  this._lastPointerType = null;
+  window.addEventListener('pointerdown', function(e) {
+    self._lastPointerType = e.pointerType;
+  }, true);
 
   window.addEventListener('mousedown', function(e) {
     self.mouse_down(e);
@@ -2737,6 +2743,10 @@ App.prototype.mouse_down = function(e) {
     return;
   //0=left button, 1=middle button, 2=right button
   if (e.button === 0) {
+    // 觸控連點的第二下落在卡片上：不讓瀏覽器選字（見 mobile_layout.isTouchCardMultiTap）。
+    // 只擋選字這個預設動作，click 照發 ⇒ mouse_click 照常開那一筆。
+    if (isTouchCardMultiTap({ detail: e.detail, pointerType: this._lastPointerType, target: e.target }))
+      e.preventDefault();
     if (this.buf.useMouseBrowsing) {
       // 350ms 內的第二下＝雙擊（或三擊）。要壓掉的只有「再送一次 PTT 指令」，
       // **不可以 preventDefault** —— mousedown 的預設行為就是瀏覽器的選取，
