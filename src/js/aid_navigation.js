@@ -343,6 +343,7 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   this._urlScanLen = 0;
   this._urlScanHit = null;
   this._urlScanForwarded = false; // 掃到轉錄標頭了：之後的網址都不是本篇
+  this._urlScanInst = undefined; // 掃的是哪一篇（view._articleInstanceId）
   // 這一輪的結束回呼（只有 agent 工具會給，見 startBoard）。
   this._onRunEnd = null;
 }
@@ -1151,10 +1152,20 @@ AidNavigation.prototype = {
     if (acc && acc.length) {
       // 好讀累積長頁可以長到數千列，但它只會往後 concat（screen_annotate_cache.js
       // 的不變量），所以只掃「這次新增的那幾列」。換文章／_healFromTop 會把
-      // pageLines 清掉重建 ⇒ 長度變短或首列變了就把游標與命中一起歸零。
+      // pageLines 清掉重建 ⇒ 換了一篇、長度變短或首列變了就把游標與命中一起歸零。
+      // 換文章的權威訊號是 term_view 的 _articleInstanceId（accumulatePageLines
+      // 'rebuild' 分支 bump）：首列是「作者 … 看板 …」，同作者同看板的兩篇一字不差，
+      // 下一篇又比較長時首列與長度都認不出來 ⇒ 拿到上一篇的 AID（長推文的守門會
+      // 送那個 #AID，推到別篇）。
       const head = acc.length ? buf.getRowText(0, 0, buf.cols, acc) : '';
-      if (acc.length < this._urlScanLen || head !== this._urlScanHead)
+      const inst = this._view ? this._view._articleInstanceId : undefined;
+      if (
+        inst !== this._urlScanInst ||
+        acc.length < this._urlScanLen ||
+        head !== this._urlScanHead
+      )
         this.resetLocalPostAidScan();
+      this._urlScanInst = inst;
       this._urlScanHead = head;
       if (!this._urlScanHit && !this._urlScanForwarded) {
         for (let r = this._urlScanRow; r < acc.length; ++r) {

@@ -18,6 +18,7 @@ import {
 import { subjectOfListText } from "../../src/js/list_session";
 import { parseStatusRow } from "../../src/js/string_util";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
+import { fnToAid } from "../../src/js/aid_codec";
 
 vi.useFakeTimers();
 
@@ -1561,6 +1562,30 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
       expect(nav.findLocalPostAid().aid).toBe(BROWSERS_AID);
       termBuf.pageLines = ["作者 bbb (乙) 看板 Browsers", "內文……", "更多內文"];
       expect(nav.findLocalPostAid()).toBeNull();
+    });
+
+    // 同作者、同看板的兩篇：首列（「作者 … 看板 …」）一字不差，下一篇又比較長 ⇒
+    // 首列與長度兩個訊號都認不出換了文章。換文章的權威訊號是 term_view 在
+    // accumulatePageLines 'rebuild' 分支 bump 的 _articleInstanceId。
+    // 症狀：長推文的守門拿上一篇的 AID 送 #AID ⇒ 推到上一篇讀的那篇。
+    test("同作者同看板、下一篇較長（首列相同）→ 換文章仍要歸零", () => {
+      const HEAD = "作者 aaa (甲) 看板 Browsers";
+      const first = [HEAD, URL_ROW("Browsers", BROWSERS_FN)];
+      const { nav, termBuf, view } = makeHarness({
+        pageState: 3,
+        articleBoard: "Browsers",
+        pageLines: first
+      });
+      view._articleInstanceId = 1;
+      expect(nav.findLocalPostAid().aid).toBe(BROWSERS_AID);
+
+      view._articleInstanceId = 2;
+      termBuf.pageLines = [HEAD, "內文……", "更多內文", "還有內文"];
+      expect(nav.findLocalPostAid()).toBeNull();
+
+      const OTHER_FN = "M.1786269999.A.123";
+      termBuf.pageLines = termBuf.pageLines.concat([URL_ROW("Browsers", OTHER_FN)]);
+      expect(nav.findLocalPostAid()).toEqual({ board: "Browsers", aid: fnToAid(OTHER_FN) });
     });
   });
 });
