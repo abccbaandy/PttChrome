@@ -618,6 +618,41 @@ html.commentBarShown #mainContainer::after {
   opacity: 0.8;
 }
 
+/* 手機列表卡片「開啟中」（P45，cursor_highlight.LIST_CARD_OPENING_CLASS）：tap 之後到
+   文章畫面回來之前，那張卡片換一層藍底、標題行右側一個小轉圈（::after，不佔版面、
+   卡片固定高不受影響）。底色蓋過游標底色（同一個元素，選擇器多一層）。 */
+.listCard .listCardBody.listCardOpening {
+  position: relative;
+  background-color: rgba(70, 120, 210, 0.35);
+}
+.listCard .listCardBody.listCardOpening::after {
+  content: "";
+  position: absolute;
+  right: 0.4em;
+  top: 0.2em;
+  width: 0.8em;
+  height: 0.8em;
+  box-sizing: border-box;
+  border: 2px solid rgba(220, 230, 255, 0.9);
+  border-top-color: transparent;
+  border-radius: 50%;
+  background: #1c2c4a;
+  box-shadow: 0 0 0 0.25em #1c2c4a;
+  animation: listCardOpeningSpin 0.8s linear infinite;
+}
+@keyframes listCardOpeningSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .listCard .listCardBody.listCardOpening::after {
+    animation: none;
+    border-top-color: rgba(220, 230, 255, 0.9);
+    border-style: dotted;
+  }
+}
+
 /* 列表好讀模式的 body 捲動視口。高度由 JS 設成 body 列數 × 列高，內容是整段
    緩衝（≤ MAX_LIST_ROWS 列）⇒ 有真正的可捲距離，捲動交給瀏覽器（與文章好讀
    同一套引擎）。`overflow-y` 也由 JS 控（auto／hidden，見 screen.js

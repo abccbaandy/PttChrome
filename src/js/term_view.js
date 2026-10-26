@@ -2,7 +2,7 @@
 
 import { TermKeyboard, isAltRemapEvent } from './term_keyboard';
 import { cursorColorForBg } from './cursor_color';
-import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow } from './cursor_highlight';
+import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow, withListOpening } from './cursor_highlight';
 import { clickableColStart, DEFAULT_LIST_CLICK_START, DEFAULT_PUSH_CLICK_START, DEFAULT_PUSH_CLICK_END, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion, visibleHintBand } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { edgeBandRect, exitBandRect } from './mouse_geometry';
@@ -1538,6 +1538,13 @@ TermView.prototype = {
       background: !!this.cursorRowBackground,
       colorIndex: this.highlightBG
     });
+    // 手機卡片「開啟中」（P45，setListOpening）：游標那張卡片多一個 class。
+    var opened = withListOpening(row, cls, {
+      opening: listMode && !!this._listOpening,
+      listCursorRow: this._listCursorRow
+    });
+    row = opened.row;
+    cls = opened.cls;
     if (TRACE)
       console.log(`applyCursorHighlight: mode=${mode} row=${row} col=${col} cls=${cls}`);
     this.componentScreen.setCursorHighlight(
@@ -2433,6 +2440,16 @@ TermView.prototype = {
       this._listLoadingEl = el;
     }
     if (el) el.style.display = on ? 'block' : 'none';
+  },
+
+  // 手機列表卡片「開啟中」（P45，docs/mobile.md）：ListSession 開文交易開始時 on、
+  // 交易結束（文章到了、被拒退回、切原生）時 off。只改顯示、不送鍵；只在卡片模式，
+  // 跟「讀取中…」同一個開關（showStatusHints，熟手關掉就整組不出現）。
+  setListOpening: function(on) {
+    on = !!on && !!this.listCards && shouldShowHint(null, this.showStatusHints);
+    if (on === !!this._listOpening) return;
+    this._listOpening = on;
+    if (this.componentScreen) this.applyCursorHighlight();
   },
 
   // Persistent (non-fading) overlay line for T2 parameter collection (`v`

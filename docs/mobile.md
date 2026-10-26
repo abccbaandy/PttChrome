@@ -316,6 +316,11 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   pointerType 判斷後 preventDefault）：第一下落在卡片間距（不開、底色已移過去），馬上補點本體 ⇒ 第二下是 `detail=2`，
   瀏覽器預設選字 ⇒ mouseup 把字複製進剪貼簿、`mouse_click` 看到選取不處理 ⇒ 再點一次才開。主功能表／信箱大按鈕同理。
   只擋觸控：滑鼠雙擊選字是原生行為（`docs/enhanced-addon.md` 踩坑 A）。守護 `list_card.test.js`、`mobile_list_cards`「觸控連點」。
+- **開啟中回饋**（P45）：開文交易一開始（`ListSession._beginOpen`／`_beginOpenPinned`）游標那張卡片
+  （`onMouseClick` 先把選取移過去）就掛 `listCardOpening`（藍底＋標題行右側小轉圈），不必等 PTT 回文章畫面。
+  走游標底色同一條管線（`cursor_highlight.withListOpening` → `term_view.applyCursorHighlight`）⇒ 只搬 class、
+  不重畫手指下的卡片。交易的每個出口都會 `_setLoading(false)`，開啟中跟著收。只在卡片模式，跟「讀取中…」
+  同一個開關（`showStatusHints`）；一個 byte 都不多送。守護 `list_card_opening.test.js`、`mobile_list_cards`「開啟中」。
 - **tap 留痕**：debug 錄製中，卡片模式的每一下 tap 在 `App.mouse_click` 記 `listTap`（outcome＝card／not-card／
   selection／modal／aid-navigation），session 忙碌吞掉時記 `listSession.clickBusy`。「點了沒開文」再出現時，
   錄製檔用 `yarn debug:screens` 看那一下的 outcome 就知道擋在哪一層。

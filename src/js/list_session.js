@@ -3186,6 +3186,7 @@ ListSession.prototype = {
     this._openedNum = num;
     this._renderMode = 'frozen';
     this._setLoading(true);
+    this._setOpening(true);
     this._armFrozenWatchdog();
     this._breakChain();
     // flushPending: drop queued prefetch but keep an in-flight one paired
@@ -3264,6 +3265,7 @@ ListSession.prototype = {
     }
     this._renderMode = 'frozen';
     this._setLoading(true);
+    this._setOpening(true);
     this._armFrozenWatchdog();
     this._breakChain();
     // flushPending: keep an in-flight prefetch paired (see _beginRelative).
@@ -3502,6 +3504,14 @@ ListSession.prototype = {
     if (!!on !== !!this._loadingShown) this._diag('listSession.loading', { on: !!on });
     this._loadingShown = !!on;
     if (this._view.setListLoading) this._view.setListLoading(on);
+    // 每個交易的出口（文章到了、被拒退回、切原生、watchdog）都會關「讀取中」⇒ 開啟中跟著收。
+    if (!on) this._setOpening(false);
+  },
+
+  // 手機卡片「開啟中」（P45）：開文交易一開始就讓那張卡片有回饋，不必等 PTT 回文章畫面。
+  // 只改顯示、不送鍵；term_view.setListOpening 自己判卡片模式與開關。
+  _setOpening: function(on) {
+    if (this._view.setListOpening) this._view.setListOpening(on);
   },
 
   _resumeBuffer: function(facts) {

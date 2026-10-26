@@ -92,6 +92,22 @@ export function resolveHighlightRow(input) {
   return kbRow;
 }
 
+// 手機列表卡片「開啟中」（P45）：tap 卡片送出開文之後、文章畫面到之前（或被拒退回列表），
+// 那張卡片（＝虛擬游標列：ListSession.onMouseClick 先把選取移過去才開文）多掛這個 class，
+// CSS 畫底色＋右側小轉圈。跟游標底色走同一條管線，是因為那條有不重畫的快路徑
+// （Screen.setCursorHighlight 對卡片只搬 class）——手指剛放開，重畫卡片沒有任何好處。
+export const LIST_CARD_OPENING_CLASS = "listCardOpening";
+
+// 套上「開啟中」之後這一幀的 { row, cls }（row／cls＝resolveHighlightRow／cursorHighlightClasses
+// 的結果，cls 可能是空字串＝底色關掉）。opening 只在手機卡片、列表好讀時由 term_view 給；
+// 沒有游標列就照舊（認不出就不標）。開啟中一律標游標列（不看滑鼠 hover 列），底色樣式照舊疊上。
+export function withListOpening(row, cls, input) {
+  const o = input || {};
+  const cursorRow = o.listCursorRow == null ? -1 : o.listCursorRow;
+  if (!o.opening || cursorRow < 0) return { row: row, cls: cls };
+  return { row: cursorRow, cls: cls ? cls + " " + LIST_CARD_OPENING_CLASS : LIST_CARD_OPENING_CLASS };
+}
+
 // 底色從第幾欄畫起（0 = 整列）。**與可點區同一個真相源**（mouse_regions.
 // clickableColStart），使用者 2026-08 定案「點擊區域＝底色區域」：那條底色本身就是
 // 「這裡點得下去」的提示（列表起點由 pref mouseListClickStart 選），範圍不生效
