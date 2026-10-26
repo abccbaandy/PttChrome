@@ -24,7 +24,7 @@ PTT 端的協定事實（畫面序列、每個字串、冷卻分類）全部整�
 | `src/js/long_push_session.js` | 狀態機（形狀比照 `aid_navigation.js`）：**三階段** `preflight` → `armed` → `sending`，每一步一個 `CommandQueue` command。`active`＝線路上有命令在飛、`busy`＝這個功能還握著畫面（含 armed 與冷卻倒數） |
 | `src/components/ContextMenu/LongPushModal.jsx` | 輸入框（Textarea ＋ 類型 ＋ 即時則數 ＋ 濾字提示 ＋ >20 則二次確認 ＋ 圖片上傳，見下節）。手機改 bottom sheet 外殼、按鈕列放 sheet footer（鍵盤不擋送出鍵，見 `docs/mobile.md` Phase 9） |
 | `src/components/ContextMenu/LongPushProgressModal.jsx` | 送出中／探路中的全版遮罩（真 modal，唯一出口是取消） |
-| `src/components/ContextMenu/LongPushErrorModal.jsx` | 推不出去時的錯誤框：**PTT 原文照錄** ＋ 來源標示 ＋ 已送出則數 ＋ 剩餘內容（唯讀 Textarea，按了才複製） |
+| `src/components/ContextMenu/LongPushErrorModal.jsx` | 推不出去時的錯誤框：**PTT 原文照錄** ＋ 來源標示 ＋ 已送出則數 ＋ 剩餘內容（唯讀 Textarea，按了才複製）＋已送出幾則時「改成只送剩下的」（P43，按了才換草稿、重開推文框） |
 | `src/components/ContextMenu/index.jsx` | gating、handler、`modalOpen` 推導、`longPush.onChange`／`onPreflight`／`onResult`／`onSent` 掛接 |
 | `src/js/pttchrome.jsx` | `new LongPushSession(...)`（與 aidNavigation 共用同一條 CommandQueue）＋ `onFunctionKey`／`onPasteDone` 守門 |
 | `src/js/term_view.js` | `onKeyDown`／`onTextInput` 守門 |
@@ -359,7 +359,9 @@ term.ptt.cc 送來的實錄（`\e[1m` 已開著所以選單上
     被 PTT 擋下來、使用者取消，草稿一律留著——那是他打的字，我們沒有替他丟掉的權力。
     已知取捨（2026-09-17 使用者拍板）：失敗時草稿留的是**整段原文**，重開直接送會把
     已送出的前幾則再推一次；錯誤框另有「剩餘內容」可以複製。**不要自作主張把草稿
-    改寫成 `rest`**。
+    改寫成 `rest`**。P43（2026-10-26 使用者同意）：錯誤框在「已送出 ≥1 則且還有剩」時多一顆
+    「改成只送剩下的」，**使用者按了**才 `writeDraft(rest)` 並走 `openLongPush` 重開（同一條探路、
+    開框讀回草稿、型別照不變量 15 回到推）；接不下來 ⇒ 錯誤框留著、閃提示。一則都沒送時不給（草稿本來就是整段）。
 15. **型別每次開框都重設為「推」**。以前刻意不重置，於是上次選的噓會沿用到下一次開框；
     按 X 的預期一律是推，而噓錯了收不回來（PTT 沒有撤回 API）。禁噓板那條 effect
     （`booAllowed` false 且 type==='boo' → 推）照舊並存。
@@ -536,6 +538,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | unit | `tests/unit/long_push_flow.test.js` | 真 CommandQueue ＋ 假 buf/view：鍵序、冷卻、取消、flush、上限校正（**欄寬優先、第 2 則起不退回保守值**）、**游標守門與重新定位**、**每一步送完 vtkbd 都回 `VK_NORMAL`**（不變量 17）、**`onSent` 只在整段成功送完響一次**（harness 與畫面常數抽在 `tests/unit/helpers/long_push_harness.js`，與下一列共用） |
 | unit | `tests/unit/long_push_preflight.test.js` | **探路**：只送一個 X、各 kind 的收尾鍵序、**收尾中間幀量欄寬（型別選單／降級兩條路）並交給 `start()`**、**PTT 原文逐字照錄**（含沒看過的新訊息）、冷卻不算不能推且不倒數、逾時一個收尾鍵都不送、ORDER INVARIANT（scrollTop 歸零前採樣）、`start()` 不重採錨點也不重解 AID |
 | unit | `tests/unit/long_push_error_modal.test.jsx` | 錯誤框：原文照錄、來源標示兩態、已送出則數、剩餘內容唯讀可讀回、**按了才複製** |
+| unit | `tests/unit/long_push_resume_rest.test.jsx` | P43「改成只送剩下的」：只在已送出且有剩時出現、錯誤框出現當下草稿不動、按了才換草稿＋重開探路＋開框內容是剩下的、接不下來錯誤框留著 |
 | unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告**、**型別每次開框回到推**、**草稿還原／還原提示／清除／開框不覆寫**、**鍵盤送出**（ctrl 與 meta 都收、單獨 Enter 不送、組字中不送、提示不進 accessible name） |
 | unit | `tests/unit/comment_bar.test.js` / `comment_bar_ui.test.jsx` / `comment_bar_quick_push.test.jsx` | 底部推文列：`quickPushPlan` 各條退回、打字計數（`commentBarCounter`／`commentBarMaxBytes`）、出現條件與位置、Enter／IME／焦點／事件不外洩、`openQuickPush` 直接送不開輸入框與退回時內容在輸入框 |
 | offline e2e | `tests/e2e/offline/comment_bar.offline.spec.js` | 列與終端機同寬、捲到底最後一列不被蓋住、打字計數兩態且不把送出鈕擠出列外、打字不送 byte、Enter 接上探路、Esc 焦點回終端機、原生 pmore／pref 關不出現 |

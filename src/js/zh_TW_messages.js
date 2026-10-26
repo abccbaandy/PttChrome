@@ -276,6 +276,9 @@
   "longPushError_copyRest": {
     "message": "複製剩餘內容"
   },
+  "longPushError_resumeRest": {
+    "message": "改成只送剩下的"
+  },
   "longPushError_close": {
     "message": "關閉"
   },

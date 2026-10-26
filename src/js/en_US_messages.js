@@ -276,6 +276,9 @@ export const en_US = {
   "longPushError_copyRest": {
     "message": "Copy remaining text"
   },
+  "longPushError_resumeRest": {
+    "message": "Send only the rest"
+  },
   "longPushError_close": {
     "message": "Close"
   },
