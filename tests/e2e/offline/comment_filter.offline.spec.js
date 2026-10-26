@@ -126,6 +126,11 @@ test.describe('推文篩選（離線重放）', () => {
     await expect(page.locator('#commentFilterBar')).toHaveAttribute('aria-label', await label(page, bannerKey));
     const wantChip = want === '噓' ? 'boo' : 'push';
     await expect(page.locator(`#commentFilterBar [data-filter="${wantChip}"]`)).toHaveAttribute('aria-pressed', 'true');
+    // P44：亮著那顆的則數＝畫面上留下來的那種推文則數（沒讀到文末多一個 +）。
+    const shown = (await visibleTypes(page)).length;
+    await expect(page.locator(`#commentFilterBar [data-filter="${wantChip}"] .commentFilterChipCount`)).toHaveText(
+      new RegExp(`^${shown}\\+?$`)
+    );
 
     // P41：橫幅直接切到另一種，不用先還原再右鍵重選
     const other = want === '噓' ? '推' : '噓';

@@ -896,6 +896,50 @@ export class FloorCounter {
   }
 }
 
+// 推文篩選切換鈕的則數（P44，docs/comment-filter.md）：逐列餵好讀累積頁的文字，數「點了那顆之後看得到幾則」。
+// - 推文的範圍＝樓層的範圍（FloorCounter 的閂：過了「※ 發信站／文章網址」那一列才算），
+//   內文裡引用的推文長相不算。一列都還沒過閂 ⇒ seen 為 false，呼叫端不標數字（認不出就不標）。
+// - 推／噓只數舊格式（新格式推文看不出種類，篩選也不收它）；全部／原 PO／帳號兩種格式都數。
+// - 黑名單的人不算（篩不篩都看不到）。新格式的 `│` 內容列跟著標頭，本來就不另計。
+export class FilterChipCounter {
+  constructor(blacklist) {
+    this.blacklist = blacklist || null;
+    this.latch = new FloorCounter();
+    this.scanned = 0;
+    this.all = 0;
+    this.push = 0;
+    this.boo = 0;
+    this.byUser = new Map();
+  }
+
+  feed(text) {
+    this.scanned++;
+    const c = parseComment(text);
+    const h = c ? null : parseModernCommentHeader(text);
+    if (!c && !h) {
+      this.latch.nonComment(text);
+      return;
+    }
+    if (!this.latch.metaSeen) return;
+    const id = c ? c.userid : h.userid;
+    if (this.blacklist && this.blacklist.has(id)) return;
+    this.all++;
+    if (c && c.type === '推') this.push++;
+    else if (c && c.type === '噓') this.boo++;
+    this.byUser.set(id, (this.byUser.get(id) || 0) + 1);
+  }
+
+  get seen() {
+    return this.latch.metaSeen;
+  }
+
+  // 每顆切換鈕的則數（data-filter 的 key）；author／userid 小寫，沒有就 0。
+  counts(author, userid) {
+    const u = (id) => (id ? this.byUser.get(String(id).toLowerCase()) || 0 : 0);
+    return { all: this.all, push: this.push, boo: this.boo, op: u(author), user: u(userid) };
+  }
+}
+
 // Cross-page de-duplication for easy reading. When PTT pages down, the top of the
 // new screen re-displays the bottom rows of the previous screen (the overlap);
 // genuinely new content follows. Returns how many top rows of `newText` are that

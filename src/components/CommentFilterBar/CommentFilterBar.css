@@ -50,6 +50,14 @@
   cursor: pointer;
 }
 
+/* 則數（P44）：比名稱淡一階、細一點，亮著的鈕裡照樣看得清楚。 */
+.commentFilterChipCount {
+  margin-left: 3px;
+  font-weight: 400;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
 .commentFilterChip[data-filter="user"] {
   flex: 0 1 auto;
   min-width: 0;
@@ -70,4 +78,11 @@
   height: 32px;
   line-height: 32px;
   min-width: 44px;
+  padding: 0 8px;
+}
+
+/* 則數（P44）很大、帳號很長時：帳號鈕先縮，還放不下就整排橫向捲，不超出畫面。 */
+.commentFilterBar {
+  overflow-x: auto;
+  scrollbar-width: none;
 }
