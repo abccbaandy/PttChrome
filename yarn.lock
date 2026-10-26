@@ -143,16 +143,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@firebase/app-compat@npm:0.5.19":
-  version: 0.5.19
-  resolution: "@firebase/app-compat@npm:0.5.19"
+"@firebase/app-compat@npm:0.5.20":
+  version: 0.5.20
+  resolution: "@firebase/app-compat@npm:0.5.20"
   dependencies:
-    "@firebase/app": "npm:0.16.3"
+    "@firebase/app": "npm:0.16.4"
     "@firebase/component": "npm:0.7.5"
     "@firebase/logger": "npm:0.5.2"
     "@firebase/util": "npm:1.15.3"
     tslib: "npm:^2.1.0"
-  checksum: 10c0/313eafa9dc6d77c495b89da67a2efad4ddd1e662253a7cfea3aada2c2dba54d0c657374ca57b708116a82a6da900cf5a1cfd52ee30482929bc686742051e227e
+  checksum: 10c0/dce07e4ef07b21bcae47751ab2e67da13c8c188d705f3db032420b649e44acc5ecd1b5fbf054c561ba8c563fe6c3ce22e715dc6a6dd39134f54ff326ae0c4256
   languageName: node
   linkType: hard
 
@@ -165,24 +165,24 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@firebase/app@npm:0.16.3":
-  version: 0.16.3
-  resolution: "@firebase/app@npm:0.16.3"
+"@firebase/app@npm:0.16.4":
+  version: 0.16.4
+  resolution: "@firebase/app@npm:0.16.4"
   dependencies:
     "@firebase/component": "npm:0.7.5"
     "@firebase/logger": "npm:0.5.2"
     "@firebase/util": "npm:1.15.3"
     idb: "npm:7.1.1"
     tslib: "npm:^2.1.0"
-  checksum: 10c0/4537d7067cd042e61b01da08a534883eb22b25f8fb43d2498bd0c6a8d2f625cae83b0279755e319b276f1520ad2ca44b53748c3ed4ea439c1722d524265b0732
+  checksum: 10c0/bd59c79a7d956207a6d8dc51d881480060d10faf21e0b37b8513d9fbd06d2a21180dc86442964d95b0bbc807d50d425355fea5087d28c9ff36ebbe0dd6d8cdea
   languageName: node
   linkType: hard
 
-"@firebase/auth-compat@npm:0.6.12":
-  version: 0.6.12
-  resolution: "@firebase/auth-compat@npm:0.6.12"
+"@firebase/auth-compat@npm:0.6.13":
+  version: 0.6.13
+  resolution: "@firebase/auth-compat@npm:0.6.13"
   dependencies:
-    "@firebase/auth": "npm:1.13.7"
+    "@firebase/auth": "npm:1.13.8"
     "@firebase/auth-types": "npm:0.13.2"
     "@firebase/component": "npm:0.7.5"
     "@firebase/util": "npm:1.15.3"
@@ -190,7 +190,7 @@ __metadata:
   peerDependencies:
     "@firebase/app": 0.x
     "@firebase/app-compat": 0.x
-  checksum: 10c0/a3059109f8a9988754b371da109b4d33670ffbbc12deef7366b82dd84663bf5e5cbfc33ffb259ff4f66c6dc657c532f3754f77a6512d68149c908099c0cf5a60
+  checksum: 10c0/c0c87387daecb1e5d4491336eabb81cd975c481b91eaa827550dc5f53af4dd9b617b509e2a8b6a50edecb709706b16b81d6019763c0ba8a0a1f12adffd5fa735
   languageName: node
   linkType: hard
 
@@ -211,9 +211,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@firebase/auth@npm:1.13.7":
-  version: 1.13.7
-  resolution: "@firebase/auth@npm:1.13.7"
+"@firebase/auth@npm:1.13.8":
+  version: 1.13.8
+  resolution: "@firebase/auth@npm:1.13.8"
   dependencies:
     "@firebase/component": "npm:0.7.5"
     "@firebase/logger": "npm:0.5.2"
@@ -225,7 +225,7 @@ __metadata:
   peerDependenciesMeta:
     "@react-native-async-storage/async-storage":
       optional: true
-  checksum: 10c0/8d4498cf663cc410ecb4c086d0f9a6171d5f6923a66050db3856eaf48e098c1f1bf8ac51dcac66bc81dfc09cc8fb6eabe065591519cbe562f6e9edc339a5aceb
+  checksum: 10c0/bb7d9d28a5a03048b1789de0342f60b188982dafdda954fb5a858412f3be569d627c573c341b3ebb682912dda3e082d95904522da54d632060b8f61a68ef0cae
   languageName: node
   linkType: hard
 
@@ -301,19 +301,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@firebase/firestore-compat@npm:0.4.15":
-  version: 0.4.15
-  resolution: "@firebase/firestore-compat@npm:0.4.15"
+"@firebase/firestore-compat@npm:0.4.16":
+  version: 0.4.16
+  resolution: "@firebase/firestore-compat@npm:0.4.16"
   dependencies:
     "@firebase/component": "npm:0.7.5"
-    "@firebase/firestore": "npm:4.18.0"
+    "@firebase/firestore": "npm:4.19.0"
     "@firebase/firestore-types": "npm:3.0.5"
     "@firebase/util": "npm:1.15.3"
     tslib: "npm:^2.1.0"
   peerDependencies:
     "@firebase/app": 0.x
     "@firebase/app-compat": 0.x
-  checksum: 10c0/d88fc50c1a0c9ac0d16978ca5b159a208875c3d89f0089964f8f4c73386205a5f06ba1a4f8e8aabd654c613596005c567d1af26321f5ca5b0569d1bad6215ecf
+  checksum: 10c0/16e411049a24e8fdcc63cb494ffd074f72dc75f578f4e3912c4ade14d12d8a4ad8fbbc9543ddac8a0786caa4d638c56f37d61c8d7f5e5bc1dc329890b1f10ea5
   languageName: node
   linkType: hard
 
@@ -327,9 +327,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@firebase/firestore@npm:4.18.0":
-  version: 4.18.0
-  resolution: "@firebase/firestore@npm:4.18.0"
+"@firebase/firestore@npm:4.19.0":
+  version: 4.19.0
+  resolution: "@firebase/firestore@npm:4.19.0"
   dependencies:
     "@firebase/component": "npm:0.7.5"
     "@firebase/logger": "npm:0.5.2"
@@ -341,7 +341,7 @@ __metadata:
     tslib: "npm:^2.1.0"
   peerDependencies:
     "@firebase/app": 0.x
-  checksum: 10c0/8c3f0ec5d9ca1a609809feebc9d8cefa8e7cf86074c17de4dfa795a8862cbd6c75b659f5b36912cb845f9c21b84e13e5e5558034a547e817d544fd4b844a65ee
+  checksum: 10c0/ac4ce4cff3c116747ac97923256e6871fbe786f323726548bbc0571ff1bae6d732fd3c2912682bdd6b72323f1c638cdb90ece7060d05f357bd42efcaff25158b
   languageName: node
   linkType: hard
 
@@ -760,10 +760,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oxc-project/types@npm:=0.153.0":
-  version: 0.153.0
-  resolution: "@oxc-project/types@npm:0.153.0"
-  checksum: 10c0/32011227bc4f0e6536c07ef79ce9254e5a453cdbfdb51b6717d0edc06b7d85a9a2a8ca12102de3b71f91a0e78d4facb538d17b28e6a7b6527ffc8901d8cd82c6
+"@oxc-project/types@npm:=0.155.0":
+  version: 0.155.0
+  resolution: "@oxc-project/types@npm:0.155.0"
+  checksum: 10c0/07227fb2c2e03b07453129f2407b49b165eadaa679a34dad68e0b0526420506cea223431807983413f6968053de873c13b05d3978a9a43cabb3999ca97ba2ec5
   languageName: node
   linkType: hard
 
@@ -850,107 +850,107 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rolldown/binding-android-arm-eabi@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-android-arm-eabi@npm:1.2.13"
+"@rolldown/binding-android-arm-eabi@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-android-arm-eabi@npm:1.2.15"
   conditions: os=android & cpu=arm
   languageName: node
   linkType: hard
 
-"@rolldown/binding-android-arm64@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-android-arm64@npm:1.2.13"
+"@rolldown/binding-android-arm64@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-android-arm64@npm:1.2.15"
   conditions: os=android & cpu=arm64
   languageName: node
   linkType: hard
 
-"@rolldown/binding-darwin-arm64@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-darwin-arm64@npm:1.2.13"
+"@rolldown/binding-darwin-arm64@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-darwin-arm64@npm:1.2.15"
   conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
 
-"@rolldown/binding-darwin-x64@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-darwin-x64@npm:1.2.13"
+"@rolldown/binding-darwin-x64@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-darwin-x64@npm:1.2.15"
   conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
 
-"@rolldown/binding-freebsd-x64@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-freebsd-x64@npm:1.2.13"
+"@rolldown/binding-freebsd-x64@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-freebsd-x64@npm:1.2.15"
   conditions: os=freebsd & cpu=x64
   languageName: node
   linkType: hard
 
-"@rolldown/binding-linux-arm-gnueabihf@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-linux-arm-gnueabihf@npm:1.2.13"
+"@rolldown/binding-linux-arm-gnueabihf@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-linux-arm-gnueabihf@npm:1.2.15"
   conditions: os=linux & cpu=arm
   languageName: node
   linkType: hard
 
-"@rolldown/binding-linux-arm64-gnu@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-linux-arm64-gnu@npm:1.2.13"
+"@rolldown/binding-linux-arm64-gnu@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-linux-arm64-gnu@npm:1.2.15"
   conditions: os=linux & cpu=arm64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@rolldown/binding-linux-arm64-musl@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-linux-arm64-musl@npm:1.2.13"
+"@rolldown/binding-linux-arm64-musl@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-linux-arm64-musl@npm:1.2.15"
   conditions: os=linux & cpu=arm64 & libc=musl
   languageName: node
   linkType: hard
 
-"@rolldown/binding-linux-ppc64-gnu@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-linux-ppc64-gnu@npm:1.2.13"
+"@rolldown/binding-linux-ppc64-gnu@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-linux-ppc64-gnu@npm:1.2.15"
   conditions: os=linux & cpu=ppc64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@rolldown/binding-linux-s390x-gnu@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-linux-s390x-gnu@npm:1.2.13"
+"@rolldown/binding-linux-s390x-gnu@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-linux-s390x-gnu@npm:1.2.15"
   conditions: os=linux & cpu=s390x & libc=glibc
   languageName: node
   linkType: hard
 
-"@rolldown/binding-linux-x64-gnu@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-linux-x64-gnu@npm:1.2.13"
+"@rolldown/binding-linux-x64-gnu@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-linux-x64-gnu@npm:1.2.15"
   conditions: os=linux & cpu=x64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@rolldown/binding-linux-x64-musl@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-linux-x64-musl@npm:1.2.13"
+"@rolldown/binding-linux-x64-musl@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-linux-x64-musl@npm:1.2.15"
   conditions: os=linux & cpu=x64 & libc=musl
   languageName: node
   linkType: hard
 
-"@rolldown/binding-openharmony-arm64@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-openharmony-arm64@npm:1.2.13"
+"@rolldown/binding-openharmony-arm64@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-openharmony-arm64@npm:1.2.15"
   conditions: os=openharmony & cpu=arm64
   languageName: node
   linkType: hard
 
-"@rolldown/binding-win32-arm64-msvc@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-win32-arm64-msvc@npm:1.2.13"
+"@rolldown/binding-win32-arm64-msvc@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-win32-arm64-msvc@npm:1.2.15"
   conditions: os=win32 & cpu=arm64
   languageName: node
   linkType: hard
 
-"@rolldown/binding-win32-x64-msvc@npm:1.2.13":
-  version: 1.2.13
-  resolution: "@rolldown/binding-win32-x64-msvc@npm:1.2.13"
+"@rolldown/binding-win32-x64-msvc@npm:1.2.15":
+  version: 1.2.15
+  resolution: "@rolldown/binding-win32-x64-msvc@npm:1.2.15"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
@@ -1448,25 +1448,25 @@ __metadata:
   languageName: node
   linkType: hard
 
-"firebase@npm:^13.0.0":
-  version: 13.0.0
-  resolution: "firebase@npm:13.0.0"
+"firebase@npm:^13.1.0":
+  version: 13.1.0
+  resolution: "firebase@npm:13.1.0"
   dependencies:
     "@firebase/ai": "npm:3.0.0"
     "@firebase/analytics": "npm:0.10.25"
     "@firebase/analytics-compat": "npm:0.2.31"
-    "@firebase/app": "npm:0.16.3"
+    "@firebase/app": "npm:0.16.4"
     "@firebase/app-check": "npm:0.13.1"
     "@firebase/app-check-compat": "npm:0.4.7"
-    "@firebase/app-compat": "npm:0.5.19"
+    "@firebase/app-compat": "npm:0.5.20"
     "@firebase/app-types": "npm:0.9.6"
-    "@firebase/auth": "npm:1.13.7"
-    "@firebase/auth-compat": "npm:0.6.12"
+    "@firebase/auth": "npm:1.13.8"
+    "@firebase/auth-compat": "npm:0.6.13"
     "@firebase/data-connect": "npm:0.7.4"
     "@firebase/database": "npm:1.1.5"
     "@firebase/database-compat": "npm:2.1.7"
-    "@firebase/firestore": "npm:4.18.0"
-    "@firebase/firestore-compat": "npm:0.4.15"
+    "@firebase/firestore": "npm:4.19.0"
+    "@firebase/firestore-compat": "npm:0.4.16"
     "@firebase/functions": "npm:0.14.0"
     "@firebase/functions-compat": "npm:0.5.0"
     "@firebase/installations": "npm:0.6.24"
@@ -1480,7 +1480,7 @@ __metadata:
     "@firebase/storage": "npm:0.14.6"
     "@firebase/storage-compat": "npm:0.4.6"
     "@firebase/util": "npm:1.15.3"
-  checksum: 10c0/bb4c5f175b9d32eab8b8464b624de5872a923f676168aa5a7904602c4fc8e19b5461d0a77cf3d5b6a32d3860be80134fef16d71aaf35babb1a05c9e1e7fd1dd0
+  checksum: 10c0/579974a1dde377a95a782e9a7a3211c94056771d54ea3cc0feb3d12133c46959d21816dbba7d430540c4430e551d9b116ec0abbad18e35544d65efb6b8fac1ba
   languageName: node
   linkType: hard
 
@@ -1781,7 +1781,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nanoid@npm:^3.3.19, nanoid@npm:^3.3.20":
+"nanoid@npm:^3.3.20":
   version: 3.3.20
   resolution: "nanoid@npm:3.3.20"
   bin:
@@ -1950,25 +1950,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss@npm:^8.5.29":
-  version: 8.5.29
-  resolution: "postcss@npm:8.5.29"
-  dependencies:
-    nanoid: "npm:^3.3.19"
-    picocolors: "npm:^1.1.1"
-    source-map-js: "npm:^1.2.2"
-  checksum: 10c0/5d0c45a511e8ede0fe124d04885877525e69e3c1476f0c8c22ed53f3945bace9ca5ef8578274bdfe916b1cd0301253a52c5dbd8695115fae805cee55465088fc
-  languageName: node
-  linkType: hard
-
-"postcss@npm:^8.5.30":
-  version: 8.5.30
-  resolution: "postcss@npm:8.5.30"
+"postcss@npm:^8.5.30, postcss@npm:^8.5.31":
+  version: 8.5.31
+  resolution: "postcss@npm:8.5.31"
   dependencies:
     nanoid: "npm:^3.3.20"
     picocolors: "npm:^1.1.1"
     source-map-js: "npm:^1.2.2"
-  checksum: 10c0/219cdc50ba3f2b6d0f8b779c4939514cb9d9f53cc9eb92dae1a06f2d6eb910b2ce339a3ee93e7c893b89e50241509fd92c04f0639af1cdf41a1e13983a476029
+  checksum: 10c0/52f94c6655f86f568a803ce9c8eb3c749e109cc711d26644c4cde953b30c1b947a2f25af3b9453de68584ac655572f46ed8e830b8ab2f21dd226b3f640992e00
   languageName: node
   linkType: hard
 
@@ -2051,17 +2040,17 @@ __metadata:
     "@vitejs/plugin-react": "npm:^6.1.2"
     "@vitest/browser-playwright": "npm:^5.0.5"
     classnames: "npm:^2.5.1"
-    firebase: "npm:^13.0.0"
+    firebase: "npm:^13.1.0"
     husky: "npm:^9.0.0"
     lint-staged: "npm:^17.6.0"
     playwright: "npm:^1.64.1"
-    postcss: "npm:^8.5.30"
+    postcss: "npm:^8.5.31"
     postcss-preset-mantine: "npm:^1.18.0"
     postcss-simple-vars: "npm:^7.0.1"
     prettier: "npm:^3.9.10"
     react: "npm:^19.3.1"
     react-dom: "npm:^19.3.1"
-    vite: "npm:^8.3.4"
+    vite: "npm:^8.3.5"
     vitest: "npm:^5.0.5"
   languageName: unknown
   linkType: soft
@@ -2176,26 +2165,26 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rolldown@npm:~1.2.12":
-  version: 1.2.13
-  resolution: "rolldown@npm:1.2.13"
+"rolldown@npm:~1.2.14":
+  version: 1.2.15
+  resolution: "rolldown@npm:1.2.15"
   dependencies:
-    "@oxc-project/types": "npm:=0.153.0"
-    "@rolldown/binding-android-arm-eabi": "npm:1.2.13"
-    "@rolldown/binding-android-arm64": "npm:1.2.13"
-    "@rolldown/binding-darwin-arm64": "npm:1.2.13"
-    "@rolldown/binding-darwin-x64": "npm:1.2.13"
-    "@rolldown/binding-freebsd-x64": "npm:1.2.13"
-    "@rolldown/binding-linux-arm-gnueabihf": "npm:1.2.13"
-    "@rolldown/binding-linux-arm64-gnu": "npm:1.2.13"
-    "@rolldown/binding-linux-arm64-musl": "npm:1.2.13"
-    "@rolldown/binding-linux-ppc64-gnu": "npm:1.2.13"
-    "@rolldown/binding-linux-s390x-gnu": "npm:1.2.13"
-    "@rolldown/binding-linux-x64-gnu": "npm:1.2.13"
-    "@rolldown/binding-linux-x64-musl": "npm:1.2.13"
-    "@rolldown/binding-openharmony-arm64": "npm:1.2.13"
-    "@rolldown/binding-win32-arm64-msvc": "npm:1.2.13"
-    "@rolldown/binding-win32-x64-msvc": "npm:1.2.13"
+    "@oxc-project/types": "npm:=0.155.0"
+    "@rolldown/binding-android-arm-eabi": "npm:1.2.15"
+    "@rolldown/binding-android-arm64": "npm:1.2.15"
+    "@rolldown/binding-darwin-arm64": "npm:1.2.15"
+    "@rolldown/binding-darwin-x64": "npm:1.2.15"
+    "@rolldown/binding-freebsd-x64": "npm:1.2.15"
+    "@rolldown/binding-linux-arm-gnueabihf": "npm:1.2.15"
+    "@rolldown/binding-linux-arm64-gnu": "npm:1.2.15"
+    "@rolldown/binding-linux-arm64-musl": "npm:1.2.15"
+    "@rolldown/binding-linux-ppc64-gnu": "npm:1.2.15"
+    "@rolldown/binding-linux-s390x-gnu": "npm:1.2.15"
+    "@rolldown/binding-linux-x64-gnu": "npm:1.2.15"
+    "@rolldown/binding-linux-x64-musl": "npm:1.2.15"
+    "@rolldown/binding-openharmony-arm64": "npm:1.2.15"
+    "@rolldown/binding-win32-arm64-msvc": "npm:1.2.15"
+    "@rolldown/binding-win32-x64-msvc": "npm:1.2.15"
     "@rolldown/pluginutils": "npm:^1.0.0"
   dependenciesMeta:
     "@rolldown/binding-android-arm-eabi":
@@ -2230,7 +2219,7 @@ __metadata:
       optional: true
   bin:
     rolldown: ./bin/cli.mjs
-  checksum: 10c0/20106c8531c4d90a88de8c2094885f1e2fd748cd05e3317d01292ab338ffa435d6acb678f4fdd8677d1b29be4212d29d3e3ca591ff06abd8423d817fe9e2729c
+  checksum: 10c0/084cbdcc222e534c9aff90e77488cdeb6a685a20a34e6e3ba77c3b8646723cea2f090f05522f452ed51217cce68b7aa67df8661b49b4ac0227a5edfcb0383b68
   languageName: node
   linkType: hard
 
@@ -2460,19 +2449,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"vite@npm:^8.3.4":
-  version: 8.3.4
-  resolution: "vite@npm:8.3.4"
+"vite@npm:^8.3.5":
+  version: 8.3.5
+  resolution: "vite@npm:8.3.5"
   dependencies:
     fsevents: "npm:~2.3.3"
     lightningcss: "npm:^1.33.0"
     picomatch: "npm:^4.0.7"
-    postcss: "npm:^8.5.29"
-    rolldown: "npm:~1.2.12"
+    postcss: "npm:^8.5.30"
+    rolldown: "npm:~1.2.14"
     tinyglobby: "npm:^0.2.17"
   peerDependencies:
     "@types/node": ^20.19.0 || >=22.12.0
-    "@vitejs/devtools": ^0.7.1
+    "@vitejs/devtools": ^0.7.1 || ^0.8.0
     esbuild: ^0.27.0 || ^0.28.0
     jiti: ">=1.21.0"
     less: ^4.0.0
@@ -2513,7 +2502,7 @@ __metadata:
       optional: true
   bin:
     vite: bin/vite.js
-  checksum: 10c0/63d7351fa21580fb646f0b594c64e97a56cdf15c55a57372a7adefe6287995fa7384cb5ddca14695ff7dca738ba00e0a3352fc24df711d9c501c5576f40f0867
+  checksum: 10c0/33991600925b6717429c14a2c2907554aed077489ee6ff7815f9f49d5de559f5173ccb0472f2b3f9eef2a49e2e014f6cb624db8d4adebb37baad3a8cbc15065a
   languageName: node
   linkType: hard
 
