@@ -11,7 +11,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText, parseStatusUserid } from './string_util';
-import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, COMMENT_TYPE_FILTER_PREFIX } from './comment_parse';
+import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, COMMENT_TYPE_FILTER_PREFIX, FilterChipCounter } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, listNumRange, isHiddenListRow, pinnedRowKey, MAX_LIST_ROWS, MAX_LIST_TOTAL_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
@@ -1143,6 +1143,31 @@ TermView.prototype = {
 
   articleAuthorId: function() {
     return this._articleAuthor || null;
+  },
+
+  // 橫幅切換鈕的則數（P44）：{ counts: { all, push, boo, op, user }, complete }；篩選沒生效、
+  // 推文區還沒出現（沒過文末 meta 列）⇒ null。數的是好讀已載入的累積頁（一個 byte 都不送），
+  // complete＝已讀到文末（反向讀取中、functionMode 都不算）。累積頁只往後長 ⇒ 只餵新的列；
+  // 首列變了、變短、黑名單換了、反向讀取（往中間插頁）⇒ 從頭數。
+  commentFilterCounts: function() {
+    var f = this.activeCommentFilter();
+    var buf = this.buf;
+    var lines = buf && buf.pageLines;
+    if (!f || !lines || !lines.length) return null;
+    var er = this.bbscore && this.bbscore.easyReading;
+    var reversing = !!(er && er._reverse);
+    var head = buf.getRowText(0, 0, buf.cols, lines);
+    var c = this._filterChipCounter;
+    if (!c || reversing || c.head !== head || c.blacklist !== this.blacklist || lines.length < c.scanned) {
+      c = this._filterChipCounter = new FilterChipCounter(this.blacklist);
+      c.head = head;
+    }
+    for (var r = c.scanned; r < lines.length; ++r) c.feed(buf.getRowText(r, 0, buf.cols, lines));
+    if (!c.seen) return null;
+    return {
+      counts: c.counts(this.articleAuthorId(), f.userid),
+      complete: !!(er && er.easyReadingReachedPageEnd && !reversing && !er._functionMode)
+    };
   },
 
   _emitCommentFilter: function() {
