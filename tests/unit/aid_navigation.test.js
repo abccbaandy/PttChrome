@@ -1984,6 +1984,38 @@ describe("agent 工具的跳法（startBoard／startNum）", () => {
     expect(ends).toEqual([{ ok: true }]);
   });
 
+  // 雙欄閱讀／讀完接著讀：編號來自列表快照，之後有人刪文就是別篇。verify 認不出游標那列
+  // ⇒ 不 ⏎，停在列表（開錯篇會把別篇記成讀過，收不回來）。
+  test("startNum 帶 verify：游標那列認不出 ⇒ 不 ⏎、onEnd ok:false；認得出 ⇒ 照開", () => {
+    const row = (num, title) => {
+      const rowTexts = new Array(24).fill("");
+      rowTexts[10] = ">" + String(num).padStart(6) + "   110/14 someone      □ " + title;
+      return rowTexts;
+    };
+    const run = (title) => {
+      const h = makeHarness();
+      atMainMenu(h);
+      const ends = [];
+      const seen = [];
+      const verify = (text) => {
+        seen.push(text);
+        return text.includes("[問卦] 要的那篇");
+      };
+      expect(h.nav.startNum("Gossiping", 780297, (r) => ends.push(r), verify)).toBe(true);
+      settle(h.queue, facts("clean-list", { boardName: "gossiping" }));
+      settle(h.queue, facts("transient", { boardName: "gossiping", cursorRowNum: 780297, curY: 10, rowTexts: row(780297, title) }));
+      return { h, ends, seen };
+    };
+    const bad = run("[問卦] 別篇");
+    expect(bad.seen).toEqual([row(780297, "[問卦] 別篇")[10]]);
+    expect(bad.h.sent).toEqual(["sGossiping\r\f", "780297\r\f"]);
+    expect(bad.h.nav.active).toBe(false);
+    expect(bad.ends).toEqual([expect.objectContaining({ ok: false })]);
+
+    const good = run("[問卦] 要的那篇");
+    expect(good.h.sent[2]).toBe("\r\f");
+  });
+
   test("板名錯（落不了地）⇒ onEnd ok:false 帶原因，解鎖", () => {
     const h = makeHarness();
     atMainMenu(h);

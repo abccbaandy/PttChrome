@@ -21,7 +21,15 @@
 
 import { isArticleListTitleRow } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
-import { listPageOf, listEntryOf, mergeSnapshot, sameBoard, findCurrentNum, cursorHintFresh } from './split_reader';
+import {
+  listPageOf,
+  mergeSnapshot,
+  sameBoard,
+  findCurrentNum,
+  cursorHintFresh,
+  sameListEntry,
+  cursorRowIs
+} from './split_reader';
 import { subjectKey, subjectMatches } from './long_push_anchor';
 import { hiddenReason, listFilterOf } from './list_row_filter';
 import { serializedOpHint } from './serialized_op_gate';
@@ -117,17 +125,8 @@ export function landedOn(entry, article, seen) {
   );
 }
 
-// 快照裡同一個編號的兩列是不是同一篇（列表對列表：作者＋主題）。
-export function sameListEntry(a, b) {
-  return !!(
-    a &&
-    b &&
-    String(a.author).toLowerCase() === String(b.author).toLowerCase() &&
-    a.subject &&
-    b.subject &&
-    subjectMatches(a.subject, b.subject)
-  );
-}
+// 快照裡同一個編號的兩列是不是同一篇：住在 split_reader（雙欄閱讀換文也要用），這裡轉出。
+export { sameListEntry };
 
 // 搜尋結果的快照：編號是這一次搜尋自己的空間，換了條件（再搜一次、增加條件）同一個編號
 // 就是別篇 ⇒ 新的一頁與舊快照有任何一號對不上（兩邊都不是被刪的）就整份換掉，不混用。
@@ -418,15 +417,15 @@ NextArticle.prototype = {
     this._set({ pending: true, pull: null, progress: null });
     // 遮罩一定要在 start 之前：start 同步就進 functionMode 鏡像原生畫面，先蓋上才不會閃。
     this._showVeil(entry);
-    // 搜尋結果：<編號>⏎ 後游標那一列要是卡片上那篇才開（快照可能是上一次搜尋的）；
-    // 認得出就順便當落地比對的 seen。
+    // <編號>⏎ 後游標那一列要是卡片上那篇才開：搜尋結果的快照可能是上一次搜尋的；完整
+    // 列表的編號是位置，快照之後有人刪文就換成別篇。認得出就順便當落地比對的 seen。
     const verify = function(rowText) {
-      const row = listEntryOf(rowText);
-      if (!row || row.num !== entry.num || row.deleted || !sameListEntry(row, entry)) return false;
+      const row = cursorRowIs(entry, rowText);
+      if (!row) return false;
       if (self._nav && self._nav.entry === entry) self._nav.seen = row;
       return true;
     };
-    const started = sub ? nav.startSubNum(board, entry.num, verify, done) : nav.startNum(board, entry.num, done);
+    const started = sub ? nav.startSubNum(board, entry.num, verify, done) : nav.startNum(board, entry.num, done, verify);
     if (!started) {
       clearTimeout(this._nav.timer);
       this._nav = null;

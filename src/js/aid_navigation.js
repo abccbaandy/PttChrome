@@ -667,10 +667,15 @@ AidNavigation.prototype = {
     return true;
   },
 
-  startNum: function(board, num, onEnd) {
+  // verify（可省）：`<編號>⏎` 之後游標那一列認得出才 ⏎ 開文，認不出就停在列表（同
+  // startSubNum）。編號取自列表快照的呼叫端（雙欄閱讀、讀完接著讀）一定要帶：完整列表的
+  // 編號是位置，快照之後有人刪文／搬文，同一個編號就是別篇，開下去會把別篇記成讀過。
+  startNum: function(board, num, onEnd, verify) {
     if (this.active || !board || !(num > 0)) return false;
     this._onRunEnd = onEnd || null;
-    const run = makeRun({ board: board, kind: 'num', aid: null, num: num }, 'goto');
+    const target = { board: board, kind: 'num', aid: null, num: num };
+    if (typeof verify === 'function') target.verify = verify;
+    const run = makeRun(target, 'goto');
     run.external = true;
     this._hint('開啟 ' + board + ' 第 ' + num + ' 篇…', PROGRESS_HINT_MS);
     this._begin(run);
