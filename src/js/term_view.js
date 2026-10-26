@@ -1148,7 +1148,7 @@ TermView.prototype = {
   // 橫幅切換鈕的則數（P44）：{ counts: { all, push, boo, op, user }, complete }；篩選沒生效、
   // 推文區還沒出現（沒過文末 meta 列）⇒ null。數的是好讀已載入的累積頁（一個 byte 都不送），
   // complete＝已讀到文末（反向讀取中、functionMode 都不算）。累積頁只往後長 ⇒ 只餵新的列；
-  // 首列變了、變短、黑名單換了、反向讀取（往中間插頁）⇒ 從頭數。
+  // 換文章、首列變了、變短、黑名單換了、反向讀取（往中間插頁）⇒ 從頭數。
   commentFilterCounts: function() {
     var f = this.activeCommentFilter();
     var buf = this.buf;
@@ -1158,9 +1158,12 @@ TermView.prototype = {
     var reversing = !!(er && er._reverse);
     var head = buf.getRowText(0, 0, buf.cols, lines);
     var c = this._filterChipCounter;
-    if (!c || reversing || c.head !== head || c.blacklist !== this.blacklist || lines.length < c.scanned) {
+    // 換文章看 _articleInstanceId：同作者同看板的兩篇首列一字不差，下一篇較長時首列與長度都認不出來。
+    if (!c || reversing || c.inst !== this._articleInstanceId || c.head !== head || c.blacklist !== this.blacklist ||
+        lines.length < c.scanned) {
       c = this._filterChipCounter = new FilterChipCounter(this.blacklist);
       c.head = head;
+      c.inst = this._articleInstanceId;
     }
     for (var r = c.scanned; r < lines.length; ++r) c.feed(buf.getRowText(r, 0, buf.cols, lines));
     if (!c.seen) return null;

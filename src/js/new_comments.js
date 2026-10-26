@@ -194,11 +194,16 @@ NewComments.prototype = {
     this._saved = null;
   },
 
-  // 累積頁同步：換文章（首列變了、變短）就重來；只餵新列。
+  // 累積頁同步：換文章（_articleInstanceId 變了、首列變了、變短）就重來；只餵新列。
   _sync: function(lines) {
     const buf = this._core.buf;
     const head = lines.length ? buf.getRowText(0, 0, buf.cols, lines) : null;
-    if (head !== this._head || lines.length < this._scanner.scanned) this._reset(head);
+    const inst = (this._core.view || {})._articleInstanceId;
+    // 換文章的權威訊號是 view._articleInstanceId（accumulatePageLines 'rebuild' 分支 bump）：首列是
+    // 「作者 … 看板 …」，同作者同看板的兩篇一字不差，下一篇又比上一篇長時首列與長度都認不出來。
+    // 認錯會把這一篇的推文數記到上一篇的紀錄裡。
+    if (inst !== this._inst || head !== this._head || lines.length < this._scanner.scanned) this._reset(head);
+    this._inst = inst;
     for (let r = this._scanner.scanned; r < lines.length; ++r) this._scanner.feed(buf.getRowText(r, 0, buf.cols, lines));
     if (this._key) return;
     const view = this._core.view || {};

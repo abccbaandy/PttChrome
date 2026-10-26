@@ -296,6 +296,20 @@ describe("ArticleTools：累積頁長大／換文章", () => {
     expect(t.tools.state.stats.push).toBe(4);
     expect(t.tools.state.selectedComments.map((c) => c.content).pop()).toBe("又來");
   });
+  // 同作者同看板的下一篇：首列一字不差、又比上一篇長 ⇒ 首列與長度都認不出換了文章。
+  // 換文章的權威訊號是 view._articleInstanceId；症狀：統計把上一篇的推文算進來。
+  test("同作者同看板、下一篇較長（首列相同）⇒ 從頭重算，不疊上一篇", () => {
+    const short = [...HEADER, "短文", "--", "※ 發信站: 批踢踢實業坊(ptt.cc)", push("噓", "dave", "上一篇的噓")];
+    const t = makeCore({ lines: short });
+    t.core.view._articleInstanceId = 1;
+    t.settle();
+    expect(t.tools.state.stats).toEqual({ push: 0, boo: 1, arrow: 0, modern: 0 });
+    t.setLines(ARTICLE.slice());
+    t.core.view._articleInstanceId = 2;
+    t.settle();
+    expect(t.tools.state.stats).toEqual({ push: 3, boo: 1, arrow: 1, modern: 0 });
+    expect(t.tools.state.users.map((u) => u.user)).not.toContain("dave");
+  });
   test("換一篇（首列變了）⇒ 從頭重算，選的人不在新文章裡就取消", () => {
     const t = makeCore();
     t.settle();

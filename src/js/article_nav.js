@@ -108,10 +108,14 @@ ArticleNav.prototype = {
     const buf = this._core.buf;
     const acc = buf.pageLines || [];
     const head = acc.length ? buf.getRowText(0, 0, buf.cols, acc) : null;
-    if (head !== this._head || acc.length < this._lines.length) {
+    const inst = (this._core.view || {})._articleInstanceId;
+    // 換文章的權威訊號是 view._articleInstanceId（accumulatePageLines 'rebuild' 分支 bump）：首列是
+    // 「作者 … 看板 …」，同作者同看板的兩篇一字不差，下一篇又比上一篇長時首列與長度都認不出來。
+    if (inst !== this._inst || head !== this._head || acc.length < this._lines.length) {
       this._lines = [];
       this._head = head;
     }
+    this._inst = inst;
     if (acc.length === this._lines.length) return false;
     for (let r = this._lines.length; r < acc.length; ++r) this._lines.push(buf.getRowText(r, 0, buf.cols, acc));
     return true;
