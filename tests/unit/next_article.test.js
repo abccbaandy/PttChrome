@@ -187,8 +187,8 @@ function makeCore() {
       },
     },
     aidNavigation: {
-      startNum(board, num, onEnd) {
-        starts.push({ board, num, onEnd });
+      startNum(board, num, onEnd, verify) {
+        starts.push({ board, num, onEnd, verify });
         return true;
       },
       startSubNum(board, num, verify, onEnd) {
@@ -434,6 +434,23 @@ describe("NextArticle：何時出現", () => {
 });
 
 describe("NextArticle：點卡片換文", () => {
+  // 完整列表的編號是位置：快照之後有人刪文（清掉）、板主搬文，同一個編號就是別篇。
+  // 沒有 verify 時 ⏎ 照開，等落地才閃「不是卡片上那篇」⇒ 別篇已經被讀過（已讀標記、
+  // 最近讀過、新推文紀錄都記到它頭上），收不回來。
+  test("完整列表也帶 verify：<編號>⏎ 後游標那列不是卡片上那篇 ⇒ 不開", () => {
+    const { next, show, read, starts } = makeCore();
+    show(PAGE());
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    next.open();
+    const { verify } = starts[0];
+    expect(typeof verify).toBe("function");
+    expect(verify(listRow(102, "bob", "[問題] 第二篇", { cursor: true }))).toBe(true);
+    expect(verify(listRow(102, "eve", "[問題] 第二篇", { cursor: true }))).toBe(false);
+    expect(verify(listRow(102, "bob", "[閒聊] 別篇", { cursor: true }))).toBe(false);
+    expect(verify(listRow(103, "bob", "[問題] 第二篇", { cursor: true }))).toBe(false);
+    expect(verify(DELETED_ROW(102))).toBe(false);
+  });
+
   test("走 startNum(板, 下一篇的編號)；落地是那一篇 ⇒ 沒有提示", () => {
     const { next, show, read, starts, hints } = makeCore();
     show(PAGE());

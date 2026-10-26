@@ -95,6 +95,26 @@ export function listPageOf(rowTexts, curY) {
 }
 
 // 列表的一列 → 快照條目；不是有編號的文章列（置底文、空列）⇒ null。
+// 快照裡同一個編號的兩列是不是同一篇（列表對列表：作者＋主題）。
+export function sameListEntry(a, b) {
+  return !!(
+    a &&
+    b &&
+    String(a.author).toLowerCase() === String(b.author).toLowerCase() &&
+    a.subject &&
+    b.subject &&
+    subjectMatches(a.subject, b.subject)
+  );
+}
+
+// 換文時 `<編號>⏎` 之後游標那一列（aid_navigation 的 verify）是不是快照上那篇：同編號、
+// 沒被刪、作者＋主題對得上。是 ⇒ 回那一列的解析結果（呼叫端拿來當落地比對），否則 null。
+export function cursorRowIs(entry, rowText) {
+  const row = listEntryOf(rowText);
+  if (!entry || !row || row.num !== entry.num || row.deleted || !sameListEntry(row, entry)) return null;
+  return row;
+}
+
 export function listEntryOf(text) {
   const e = parseListEntry(text || '');
   if (!e) return null;
@@ -422,7 +442,11 @@ SplitReader.prototype = {
       }, NAV_WATCHDOG_MS)
     };
     this._set({ pendingNum: num });
-    if (!nav.startNum(board, num, done)) {
+    // 左欄是快照：之後有人刪文／搬文，同一個編號就是別篇 ⇒ 游標那列認得出才開。
+    const verify = function(rowText) {
+      return !!cursorRowIs(entry, rowText);
+    };
+    if (!nav.startNum(board, num, done, verify)) {
       clearTimeout(this._nav.timer);
       this._nav = null;
       rr.end(bm, 'cancel');

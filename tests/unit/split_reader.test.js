@@ -243,8 +243,8 @@ function makeCore({ side = 600, mobile = false } = {}) {
     },
     aidNavigation: {
       active: false,
-      startNum(board, num, onEnd) {
-        starts.push({ board, num, onEnd });
+      startNum(board, num, onEnd, verify) {
+        starts.push({ board, num, onEnd, verify });
         return true;
       },
     },
@@ -394,6 +394,21 @@ describe("SplitReader：點一篇換過去", () => {
     read("C_Chat", "alice", "[閒聊] 第一篇");
     expect(split.state).toMatchObject({ visible: true, currentNum: 101, pendingNum: null });
     expect(split.state.entries.find((e) => e.num === 101).unread).toBe(false);
+  });
+  // 左欄是列表快照：之後有人刪文、搬文，同一個編號就是別篇（完整列表的編號是位置）。
+  // ⏎ 之前先認游標那列，認不出就停在列表，不替使用者讀錯的那篇。
+  test("帶 verify：<編號>⏎ 後游標那列要是左欄那篇才開", () => {
+    const { split, show, read, starts } = makeCore();
+    show(PAGE());
+    read("C_Chat", "carol", "[閒聊] 第三篇");
+    split.openNum(102);
+    const { verify } = starts[0];
+    expect(typeof verify).toBe("function");
+    expect(verify(listRow(102, "bob", "[問題] 第二篇", { cursor: true }))).toBe(true);
+    expect(verify(listRow(102, "eve", "[問題] 第二篇", { cursor: true }))).toBe(false);
+    expect(verify(listRow(102, "bob", "[閒聊] 別篇", { cursor: true }))).toBe(false);
+    expect(verify(listRow(101, "bob", "[問題] 第二篇", { cursor: true }))).toBe(false);
+    expect(verify(DELETED_ROW(102))).toBe(false);
   });
   test("失敗 ⇒ 清掉開啟中，留在 PTT 給的畫面", () => {
     const { split, show, read, starts } = makeCore();
