@@ -941,6 +941,20 @@ export const ContextMenu = ({ pttchrome }) => {
     (text) => pttchrome.doCopy(text),
     [pttchrome],
   );
+  // 「改成只送剩下的」（P43）：使用者按了才把草稿換成剩餘內容（不變量 14 不自動改寫），
+  // 再走同一條入口重開推文框（探路送 X；開框讀回草稿、型別照規矩回到推）。錯誤框由
+  // openLongPush 的 initialState 收掉；接不下來 ⇒ 錯誤框留著、閃提示。
+  const onLongPushResumeRest = useCallback(
+    (rest) => {
+      writeDraft(rest);
+      if (!openLongPush())
+        pttchrome.view?.flashListHint?.(
+          serializedOpHint(pttchrome) || i18n("longPushError_busy"),
+          3000,
+        );
+    },
+    [pttchrome, openLongPush],
+  );
   const onLongPushConfirm = useCallback(
     ({ text, type }) => {
       update({ showsLongPush: false, longPushPreflight: null });
@@ -1582,6 +1596,7 @@ export const ContextMenu = ({ pttchrome }) => {
         error={longPushError}
         onHide={onLongPushErrorHide}
         onCopy={onLongPushCopyRest}
+        onResumeRest={onLongPushResumeRest}
       />
       <Suspense fallback={null}>
         <SearchModal

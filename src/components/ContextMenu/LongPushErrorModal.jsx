@@ -21,6 +21,8 @@ import { i18n } from "../../js/i18n";
 //    dimmed 小字標示，讓使用者知道這句話是誰說的。
 // 2. **剩餘內容不自動進剪貼簿**，放在唯讀 Textarea 裡讓使用者自己選取或按鈕複製
 //    （舊版偷偷 doCopy，等於無聲蓋掉他手上的剪貼簿內容）。
+// 3. **草稿不自動改寫成剩餘內容**（docs/long-push.md 不變量 14）。已經送出幾則時多一顆
+//    「改成只送剩下的」（P43）：使用者按了才換草稿、重開推文框（onResumeRest）。
 
 const replaceI18n = (id, replacements) =>
   i18n(id)
@@ -36,7 +38,7 @@ const titleOf = (phase) => {
   return i18n("longPushError_title");
 };
 
-export const LongPushErrorModal = ({ error, onHide, onCopy }) => {
+export const LongPushErrorModal = ({ error, onHide, onCopy, onResumeRest }) => {
   const rest = (error && error.rest) || "";
   const sent = (error && error.sent) || 0;
   return (
@@ -96,6 +98,15 @@ export const LongPushErrorModal = ({ error, onHide, onCopy }) => {
             {rest && (
               <Button variant="default" mr="auto" onClick={() => onCopy(rest)}>
                 {i18n("longPushError_copyRest")}
+              </Button>
+            )}
+            {rest && sent > 0 && onResumeRest && (
+              <Button
+                variant="light"
+                data-testid="longPushResumeRest"
+                onClick={() => onResumeRest(rest)}
+              >
+                {i18n("longPushError_resumeRest")}
               </Button>
             )}
             <Button onClick={onHide}>{i18n("longPushError_close")}</Button>
