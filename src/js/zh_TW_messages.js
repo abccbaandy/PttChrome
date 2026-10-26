@@ -361,6 +361,15 @@
   "commentFilter_chipOp": {
     "message": "原 PO"
   },
+  "commentFilter_emptyPush": {
+    "message": "這篇沒有推文"
+  },
+  "commentFilter_emptyBoo": {
+    "message": "這篇沒有噓文"
+  },
+  "commentFilter_emptyOp": {
+    "message": "原 PO 沒有推文"
+  },
   "commentFilter_skipped": {
     "message": "略過 {n} 則"
   },

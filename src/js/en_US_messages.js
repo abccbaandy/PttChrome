@@ -361,6 +361,15 @@ export const en_US = {
   "commentFilter_chipOp": {
     "message": "OP"
   },
+  "commentFilter_emptyPush": {
+    "message": "No 推 comments in this post"
+  },
+  "commentFilter_emptyBoo": {
+    "message": "No 噓 comments in this post"
+  },
+  "commentFilter_emptyOp": {
+    "message": "The author has no comments here"
+  },
   "commentFilter_skipped": {
     "message": "{n} skipped"
   },

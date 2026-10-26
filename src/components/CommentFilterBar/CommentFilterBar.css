@@ -67,6 +67,16 @@
   background: #24365a;
 }
 
+/* 讀完了還是 0 則（P46）：變淡、不給 hover 底色，點了只閃提示。 */
+.commentFilterChip[data-empty] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.commentFilterChip[data-empty]:hover {
+  background: transparent;
+}
+
 .commentFilterChip[aria-pressed="true"] {
   background: #3a63a8;
   color: #fff;
