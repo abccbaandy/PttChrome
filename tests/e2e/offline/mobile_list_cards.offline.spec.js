@@ -200,6 +200,35 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     expect(sent).not.toContain('\x1b[D');
   });
 
+  // P45：手指一放開，那張卡片就是「開啟中」（底色＋小轉圈），不必等 PTT 回文章畫面；
+  // 交易結束（這卷沒錄開文的回應 ⇒ 由 watchdog 收成原生）就收掉，不留在任何卡片上。
+  test('tap 卡片 ⇒ 那張卡片馬上標「開啟中」；交易結束就收掉', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    const target = await page.evaluate(() => {
+      const v = document.querySelector('#mainContainer .listBodyView');
+      const vr = v.getBoundingClientRect();
+      for (const c of v.querySelectorAll(':scope > .listCard')) {
+        const r = c.getBoundingClientRect();
+        if (r.top < vr.top + 2 || r.bottom > vr.bottom - 2) continue;
+        if (c.querySelector('.listCardCursor').textContent.trim()) continue; // 不是游標那張
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, srow: c.getAttribute('srow') };
+      }
+      return null;
+    });
+    expect(target).not.toBeNull();
+    const sentBefore = await page.evaluate(() => window.__replay.sent.length);
+    await page.touchscreen.tap(target.x, target.y);
+    const opening = page.locator('#mainContainer .listCardBody.listCardOpening');
+    await expect(opening).toHaveCount(1);
+    await expect(opening).toHaveAttribute('data-row', target.srow);
+    // 只有開文交易自己的序號跳轉，回饋本身一個 byte 都不送（沒有方向鍵、沒有別的指令）
+    const sent = await page.evaluate((n) => window.__replay.sent.slice(n).join(''), sentBefore);
+    expect(sent).toMatch(/^[\d\s]+$/);
+    await waitState(page, (x) => x.renderMode !== 'frozen', 30000);
+    await expect(opening).toHaveCount(0);
+  });
+
   // 防誤點：卡片間距（.listCard 的 padding-block，本體之外）點了不開文；同一張卡片
   // 點本體照開 ⇒ 證明是間距被吞，不是 handler 整個失效。
   test('tap 卡片間距不開文；tap 同一張卡片本體才開', async ({ page }) => {
