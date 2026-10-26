@@ -98,6 +98,17 @@ describe("view.commentFilterCounts", () => {
     expect(v.commentFilterCounts()).toBeNull();
   });
 
+  // 同作者同看板的下一篇：首列一字不差、上一篇又比較短 ⇒ 首列與長度都認不出換了文章。
+  // 換文章的權威訊號是 _articleInstanceId；症狀：則數疊上上一篇的推文（P46 還會因此判錯哪顆是 0）。
+  test("同作者同看板、下一篇較長（首列相同）⇒ 從頭數，不疊上一篇", () => {
+    const v = makeView([...BODY, ts("噓 old: 上一篇")]);
+    expect(v.commentFilterCounts().counts).toMatchObject({ all: 1, boo: 1 });
+    v._articleInstanceId = 4;
+    v._commentFilter = { ...v._commentFilter, articleId: 4 };
+    v.buf.pageLines = [...BODY, ...COMMENTS.slice(0, 1), ts("推 dd: 新的")];
+    expect(v.commentFilterCounts().counts).toMatchObject({ all: 2, push: 2, boo: 0 });
+  });
+
   test("推文區還沒出現（沒過 meta 列）⇒ null", () => {
     const v = makeView(BODY.slice(0, 3));
     expect(v.commentFilterCounts()).toBeNull();

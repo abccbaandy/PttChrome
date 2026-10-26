@@ -122,6 +122,20 @@ describe("ArticleNav 控制器", () => {
     }
   });
 
+  // 同作者同看板的下一篇：首列一字不差、又比上一篇長 ⇒ 首列與長度都認不出換了文章。
+  // 換文章的權威訊號是 view._articleInstanceId；症狀：標記停在上一篇的推文位置。
+  test("同作者同看板、下一篇較長（首列相同）⇒ 換文章重讀，不接著上一篇的列", () => {
+    const lines = ["作者 someone 看板 Test", "內文", "推 abc: 好 10/23 12:34"];
+    const { nav, core, settle } = makeCore({ lines });
+    core.view._articleInstanceId = 1;
+    settle();
+    expect(nav.state).toMatchObject({ total: 3, commentRow: 2 });
+    lines.splice(0, lines.length, "作者 someone 看板 Test", "另一篇", "更長的內文", "推 xyz: 讚 10/23 12:35", "推 abc: 好 10/23 12:36");
+    core.view._articleInstanceId = 2;
+    settle();
+    expect(nav.state).toMatchObject({ total: 5, commentRow: 3 });
+  });
+
   test("跳列只捲好讀視口；拖曳＝捲到那個比例、讓它落在視窗中間", () => {
     const { nav, core, scrolled, settle } = makeCore();
     settle();

@@ -150,6 +150,22 @@ describe("NewComments：讀完才記，重開時標第一則新推文", () => {
     core.aidNavigation.findLocalPostAid = () => ({ aid: "1ZZZZZZZ" });
     expect(show(other, false)).toBeNull();
   });
+  // 同作者、同看板的兩篇：首列（「作者 … 看板 …」）一字不差，上一篇只有一頁、下一篇的第一頁又比較長 ⇒
+  // 首列與長度兩個訊號都認不出換了文章。換文章的權威訊號是 term_view 的 _articleInstanceId。
+  // 症狀：下一篇的推文數記到上一篇的紀錄（storage 被寫壞），下一篇用上一篇的「看過幾則」標新推文。
+  test("同作者同看板、下一篇較長（首列相同）⇒ 換文章仍要重來，各記各的", () => {
+    const st = memStorage();
+    const { show, core } = makeCore(st);
+    core.view._articleInstanceId = 1;
+    expect(show(withComments(1), true)).toBeNull();
+    expect(loadSeen(st, "test/1ABCDEFG")).toBe(1);
+    core.view._articleInstanceId = 2;
+    core.aidNavigation.findLocalPostAid = () => ({ aid: "1ZZZZZZZ" });
+    const next = withComments(4).map((t, i) => (i === ARTICLE.length ? push("xyz", "另一篇的推文") : t));
+    expect(show(next, true)).toBeNull();
+    expect(loadSeen(st, "test/1ABCDEFG")).toBe(1);
+    expect(loadSeen(st, "test/1ZZZZZZZ")).toBe(4);
+  });
   test("反向讀取中 ⇒ 不標、不記；接合後從頭重掃", () => {
     const st = memStorage();
     saveSeen(st, "test/1ABCDEFG", 1, 1);
