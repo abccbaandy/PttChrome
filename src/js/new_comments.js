@@ -15,6 +15,9 @@
 // 推噓分（推 +1、噓 -1、→ 0，＝pttbbs post.c 改 .DIR recommend 的規則）與作者＋主題，
 // 列表上同一板、作者＋主題對得上唯一一筆紀錄、推文數欄是精確數字（1～99）時，顯示
 // 「列表推文數 − 讀完時的分數」（> 0 才顯示）。一樣一個 byte 都不送。
+//
+// 點「+N」徽章＝開這篇並跳到新推文（armJumpOnOpen）：開文照列表原本那一下（同一條開文
+// 交易），多的只是好讀載到「以下是新推文」那一列時把視口捲過去。一樣一個 byte 都不送。
 
 import { parseComment, FloorCounter } from './comment_parse';
 import { readEffectivePrefs } from './pref_storage';
@@ -160,6 +163,28 @@ export function listNewPush(records, text) {
   return d > 0 ? d : null;
 }
 
+// 點了「+N」徽章之後，開文後要不要捲到新推文（純決策，tests/unit/new_comments_jump.test.js）。
+//   還沒綁定：等下一篇文章出現（_articleInstanceId 換了、在文章畫面）⇒ 'bind'；等太久 ⇒ 'drop'。
+//   已綁定：換文章／離開文章／使用者自己捲了 ⇒ 'drop'；找到第一則新推文那一列 ⇒ 'jump'；
+//           讀到文末還是沒有（沒有新推文、沒有紀錄、網址列認不出）⇒ 'drop'。
+export const JUMP_ARM_MS = 10000;
+export const JUMP_BOUND_MS = 60000;
+export function nextJumpStep(s) {
+  if (!s.bound) {
+    if (s.pageState === 3 && s.inst != null && s.inst !== s.armedInst) return 'bind';
+    return s.ageMs > JUMP_ARM_MS ? 'drop' : 'wait';
+  }
+  if (s.inst !== s.boundInst || s.pageState !== 3 || s.userScrolled) return 'drop';
+  if (s.row != null) return 'jump';
+  if (s.reachedEnd || s.ageMs > JUMP_BOUND_MS) return 'drop';
+  return 'wait';
+}
+
+// 點的是列表上的「+N」徽章嗎（render/list_card.js、row.js 的 .listNewPush）。
+export function isListNewPushTarget(target) {
+  return !!(target && typeof target.closest === 'function' && target.closest('.listNewPush'));
+}
+
 function defaultStorage() {
   try {
     return typeof window !== 'undefined' ? window.localStorage : null;
@@ -184,6 +209,69 @@ export function NewComments(core, storage) {
 }
 
 NewComments.prototype = {
+  // 列表上的一下點擊（App.mouse_click，只在這一下會開文時呼叫）：點在「+N」徽章上 ⇒ 開文後跳到
+  // 新推文；點在別處 ⇒ 取消上一次還沒用掉的。
+  noteListClick: function(target) {
+    if (isListNewPushTarget(target)) this.armJumpOnOpen();
+    else this.cancelJumpOnOpen();
+  },
+
+  armJumpOnOpen: function() {
+    const view = this._core.view || {};
+    this._jump = { armedInst: view._articleInstanceId, at: Date.now(), bound: false };
+  },
+
+  // 使用者按了別的鍵（term_view.onKeyDown）、點了別的列：作廢。
+  cancelJumpOnOpen: function() {
+    this._jump = null;
+  },
+
+  _advanceJump: function() {
+    const j = this._jump;
+    if (!j) return;
+    const core = this._core;
+    const view = core.view || {};
+    const buf = core.buf;
+    const er = core.easyReading;
+    const disp = view.mainDisplay;
+    const now = Date.now();
+    const inArticle = !!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode);
+    let row = null;
+    if (j.bound && inArticle && !this._reversing()) {
+      const lines = buf.pageLines || [];
+      if (lines.length) {
+        this._sync(lines);
+        if (this._seen != null) row = this._scanner.rowAfter(this._seen);
+      }
+    }
+    const chh = view.chh || 16;
+    const step = nextJumpStep({
+      bound: j.bound,
+      armedInst: j.armedInst,
+      boundInst: j.boundInst,
+      inst: view._articleInstanceId,
+      pageState: inArticle ? 3 : buf ? buf.pageState : null,
+      ageMs: now - j.at,
+      userScrolled: !!(j.bound && disp && Math.abs(disp.scrollTop - j.top) > chh * 2),
+      row: row,
+      reachedEnd: !!(er && er.easyReadingReachedPageEnd)
+    });
+    if (step === 'wait') return;
+    if (step === 'bind') {
+      // 綁定這一篇；之後視口被使用者捲走（超過兩列）就不搶。
+      // 同一次 settle 接著判（好讀可能一口氣載完整篇，之後不會再有 settle）。
+      this._jump = { bound: true, boundInst: view._articleInstanceId, at: now, top: disp ? disp.scrollTop : 0 };
+      this._advanceJump();
+      return;
+    }
+    if (step === 'jump') {
+      // 那一列還沒畫進 DOM（量不到）⇒ 留著，下一次 settle 再試。
+      if (!er.scrollToArticleRow(row)) return;
+      core.debugRecorder?.log('newComments.jumpOnOpen', { row: row });
+    }
+    this._jump = null;
+  },
+
   _reset: function(head) {
     this._head = head;
     this._scanner = new CommentScanner();
@@ -259,6 +347,7 @@ NewComments.prototype = {
   },
 
   _onSettled: function() {
+    this._advanceJump();
     const core = this._core;
     const er = core.easyReading;
     const buf = core.buf;

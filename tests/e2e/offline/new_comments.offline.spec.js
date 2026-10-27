@@ -101,6 +101,35 @@ test.describe('新推文標記', () => {
     expect(await takeCapture(page)).toBe('');
   });
 
+  // P48：在列表上點了「+N」徽章（armJumpOnOpen；真 tap 守在 mobile_list_cards）⇒ 開文後好讀
+  // 一路載到那條線就自己捲過去，不必再按「跳到新推文」；捲動不送任何鍵。
+  test('從列表點 +N 開文：載到新推文那條線就自己捲過去，不送鍵', async ({ page }) => {
+    test.setTimeout(90000);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.addInitScript(
+      ({ KEY, ARTICLE_KEY }) => window.localStorage.setItem(KEY, JSON.stringify({ [ARTICLE_KEY]: [40, 1] })),
+      { KEY, ARTICLE_KEY }
+    );
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true, mergeSameAuthorComments: false });
+    await page.evaluate(() => window.__app.newComments.armJumpOnOpen());
+    await replayCassette(page, article, { easyReading: true });
+    const mark = page.locator('#mainContainer [type="bbsrow"].newCommentsStart');
+    await expect(mark).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        const r = await mark.evaluate((el) => el.getBoundingClientRect().top);
+        const v = await page.evaluate(() => window.__app.view.mainDisplay.getBoundingClientRect());
+        return r >= v.top - 1 && r < v.top + v.height;
+      })
+      .toBe(true);
+    expect(await page.evaluate(() => window.__app.view.mainDisplay.scrollTop)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => window.__app.newComments._jump)).toBeNull();
+    // 送出去的只有好讀自己的翻頁（PgDn），沒有任何為了跳過去而送的鍵
+    const sent = await page.evaluate(() => window.__replay.sent.join(''));
+    expect(sent.replace(/\x1b\[6~/g, '')).toBe('');
+  });
+
   test('沒有新推文、pref 關 ⇒ 不標', async ({ page }) => {
     test.setTimeout(90000);
     await boot(page, article.meta.commentCount);

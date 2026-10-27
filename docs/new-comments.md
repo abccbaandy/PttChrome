@@ -27,6 +27,15 @@
 - **標註層**：term_view 在文章列表（pageState 2）問 `newComments.listBadge(看板)`，得到 `{ key, fn }`：`listNewPushKey` 進 `annotationsKey`（紀錄原文或看板一變就換，列表好讀走 `rowIdentityStable`，不進 key 的話讀完回列表節點會被原封沿用），`listNewPushFor` 逐列查表放進 `listNewPush`（只看該列自己的文字 ⇒ 逐列獨立）。
 - **渲染**：原生／桌機列（`row.js`）80 欄格線沒有空位 ⇒ 只在最後 5 格是空白時，把徽章掛在 bbsline 的最後、`position: absolute` 用 static position（第 80 格之後）再往左平移自己的寬，不佔格線、不撐寬；標題寫到最後幾格就不畫。手機卡片（`list_card.js`）放在標題行最前面。字一律在 `data-new-push`＋`::after`，不會被選取／複製；沒有 +N 的列輸出不變（golden 不受影響）。
 
+## 點「+N」跳到新推文（P48）
+
+點徽章＝開這篇並捲到「以下是新推文」那一列；點列的其他地方照舊從開頭讀。一樣一個 byte 都不送，開關就是 `listNewPushCount`（徽章不畫就點不到）。
+
+- **開文不另寫**：`App._noteListOpenClick` 在列表好讀**會收下這一下**（文章列表 session、state active、renderMode buffer）時才呼叫 `newComments.noteListClick(target)`：target 在 `.listNewPush` 裡 ⇒ `armJumpOnOpen`，否則取消上一次還沒用掉的。交易中被吞掉的那一下一律取消（不然會跳到交易自己開的那篇）。原生列表（列表好讀關）點徽章只開文、不跳。
+- **何時捲**（`nextJumpStep`，在 `screenSettled` 推進）：下一篇文章出現（`_articleInstanceId` 換了、在好讀文章畫面）才綁定，10 秒內沒開成就作廢；綁定後掃描找到第一則新推文那一列就 `easyReading.scrollToArticleRow`（那一列還沒畫進 DOM ⇒ 下一次 settle 再試），讀到文末還沒有就作廢。綁定與跳在同一次 settle 裡接著判（好讀可能一口氣載完）。
+- **不搶視口**：綁定後使用者自己捲了（超過兩列）、按了任何非修飾鍵（`term_view.onKeyDown`）、換了文章、離開文章 ⇒ 作廢。
+- **點得到**：桌機列的徽章原本 `pointer-events: none`，現在要收點擊（以 click 的 target 認）；它只疊在列尾的留白上，不擋任何字。手機卡片的標題行會裁切 overflow，可點範圍擴不出列高（徽章本身已是整個列高）。
+
 ## 測試
 
-unit：`list_new_push.test.js`（推噓分、列表數字的精確值、比對規則、紀錄格式、listBadge 的 key 與 pref）、`list_new_push_render.test.js`（真瀏覽器：列尾疊放不撐寬、放不下不畫、卡片位置）、`new_comments.test.js`（數法、紀錄存讀與上限、讀完才記、重開找列、換文章、反向讀取、functionMode、pref 關、`applyNewCommentsMark` 的標法、`annotationsKey`）。offline e2e：`new_comments.offline.spec.js`（stock-huang：第一次不標且讀完記下 49；預存 40 ⇒ 第 41 則上緣有線且不蓋上一列、跳到新推文只捲視口不送鍵；沒有新推文不標）。
+unit：`list_new_push.test.js`（推噓分、列表數字的精確值、比對規則、紀錄格式、listBadge 的 key 與 pref）、`list_new_push_render.test.js`（真瀏覽器：列尾疊放不撐寬、放不下不畫、卡片位置）、`new_comments.test.js`（數法、紀錄存讀與上限、讀完才記、重開找列、換文章、反向讀取、functionMode、pref 關、`applyNewCommentsMark` 的標法、`annotationsKey`）。offline e2e：`new_comments.offline.spec.js`（stock-huang：第一次不標且讀完記下 49；預存 40 ⇒ 第 41 則上緣有線且不蓋上一列、跳到新推文只捲視口不送鍵；從列表點 +N 開文 ⇒ 自己捲過去；沒有新推文不標）、`mobile_list_cards`（真 tap 徽章 ⇒ 開那一篇並記下要跳）。點徽章的決策表在 `new_comments_jump.test.js`，點得到在 `list_new_push_render.test.js`。

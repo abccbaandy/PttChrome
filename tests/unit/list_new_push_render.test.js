@@ -42,6 +42,16 @@ describe("原生列", () => {
     expect(b.right).toBeLessThanOrEqual(line.right + 0.5);
   });
 
+  // 點徽章＝開文並跳到新推文（new_comments.noteListClick 以 click 的 target 認）⇒ 點徽章中心
+  // 要點得到徽章本身，不能被 pointer-events: none 穿透到底下的列。
+  test("點得到：徽章中心的命中目標是徽章", () => {
+    const chars = listRow("someone", "□ [心得] 短標題");
+    const node = mount(buildRow({ chars, row: 5, forceWidth: 16, listNewPush: 3 }).node);
+    const b = node.querySelector(".listNewPush").getBoundingClientRect();
+    const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    expect(hit && hit.closest(".listNewPush")).not.toBeNull();
+  });
+
   test("標題寫到最後幾格 ⇒ 不畫（不蓋字）", () => {
     const chars = row(seg(" 350024 + 2 6/14 someone      □ " + "x".repeat(80)));
     const node = mount(buildRow({ chars, row: 5, forceWidth: 16, listNewPush: 3 }).node);
@@ -65,6 +75,16 @@ describe("手機卡片", () => {
     expect(main.firstChild.className).toBe("listNewPush");
     expect(main.firstChild.getAttribute("data-new-push")).toBe("+12");
     expect(node.textContent).toBe(plain.textContent);
+  });
+
+  test("點得到：徽章中心的命中目標是徽章（整個列高都算）", () => {
+    const chars = listRow("someone", "□ [心得] 手機卡片測試");
+    const node = mount(buildListCard({ chars, row: 5, kind: "article", forceWidth: 16, listNewPush: 12 }).node);
+    const badge = node.querySelector(".listNewPush");
+    const b = badge.getBoundingClientRect();
+    const line = badge.closest(".listCardLine").getBoundingClientRect();
+    expect(b.height).toBeGreaterThanOrEqual(line.height - 1);
+    expect(document.elementFromPoint(b.left + b.width / 2, b.top + 1).closest(".listNewPush")).toBe(badge);
   });
 
   test("看板列表的卡片不畫", () => {
