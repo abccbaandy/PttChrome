@@ -42,6 +42,10 @@ export const DEFAULT_PREFS = {
   // 預設關等於沒做。關掉＝逐位元回到 2026-09-03 之前（黏性原生：開文／離板
   // 才回好讀），這是使用者拍板的逃生門 —— 判定類功能的最後一道防線就是設定開關。
   enableListNativeAutoResume: true,
+  // 列表忙時點的那一下不要丟（js/list_pending_click.js，P47）：到底／跳號／補頁接合／原地重整
+  // 這類凍結交易中點文章，記住最後點的那篇，交易結束還對得上（同編號、同作者同主題）就替使用者開。
+  // 會替使用者送開文鍵 ⇒ 在安全模式名單內。
+  queueListClickWhenBusy: true,
   // 跳過進板畫面（js/board_note_skip.js）：從看板列表／選擇看板進板時，進板公告
   // （含動畫）由程式代按一鍵收掉，直接落在文章列表。預設開；文章列表按 `b` 看
   // 進板畫面不受影響。
@@ -469,6 +473,7 @@ export const NATIVE_SAFE_MODE_KEYS = Object.freeze([
   "enableEasyReadingList",
   "enableBoardListSmoothScroll",
   "enableListNativeAutoResume",
+  "queueListClickWhenBusy",
   "skipBoardEntryScreen",
   "enableHelpMenuPopup",
   "reconnectResume",

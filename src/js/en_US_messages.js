@@ -1202,6 +1202,12 @@ export const en_US = {
   "tooltip_enableListNativeAutoResume": {
     "message": "When a non-navigation key is pressed in a listing (search, tag, push, mark-as-read...), switch back to the easy-reading view as soon as the action completes and the screen goes quiet. Cursor-only keys ([ ] = \\ + - < > , . { } t, and t v V in the board list) never show the native mirror at all. Turn this off to stay native until an article is opened or the board is left."
   },
+  "options_queueListClickWhenBusy": {
+    "message": "Open a post clicked while the list is busy once it is done"
+  },
+  "tooltip_queueListClickWhenBusy": {
+    "message": "Clicking a post while the list is jumping, paging or refreshing remembers the last one clicked and opens it when the list is done, if it is still in the same place. Pressing another key meanwhile, or the post having moved, cancels it."
+  },
   "options_reconnectResume": {
     "message": "Return to where you were after reconnecting"
   },

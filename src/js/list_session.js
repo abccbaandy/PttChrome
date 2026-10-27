@@ -19,6 +19,7 @@ import {
   parseListTitle,
   pageArticleNums,
   parseListArticleNumLoose,
+  parseListArticleNum,
   isPinnedListRow,
   isDeletedListRow,
   rowToText,
@@ -60,6 +61,7 @@ import {
 } from './list_scroll';
 import { LEFT_ARROW } from './function_key_plan';
 import { readEffectivePrefs } from './pref_storage';
+import { canQueueListClick, pendingClickDecision } from './list_pending_click';
 import { HINT_ERROR } from './status_hint';
 import {
   BOARD_LIST,
@@ -979,13 +981,21 @@ export function ListSession(core, view, termBuf, queue) {
   this._lastNavAt = 0;
   // _sequence() 的記憶化（見該函式）：null＝還沒算過。
   this._seqCache = null;
+  // 列表忙時點的那一下（P47，js/list_pending_click.js）：{ num, identity, board, at }；null＝沒有。
+  this._pendingClick = null;
 
   // listRenderMode 是**共用**旗標（看板列表平滑捲動走同一個），所以透過所有權層
   // 存取：寫 buffer/frozen ＝宣告所有權，寫 native ＝只釋放自己持有的，讀 ＝別人
   // 持有時回 'native'。少了它，「進板」那一幀（我們 engage、BoardListSession 收攤）
   // 的結果會取決於兩個 settle listener 誰先跑。見 js/list_render_owner.js。
   defineOwnedRenderMode(this, termBuf, OWNER_ARTICLE_LIST);
-  termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
+  const self = this;
+  termBuf.addEventListener('screenSettled', function() {
+    self._onScreenSettled();
+    // 忙時點的那一下（P47）：settle 是交易落地的地方；_onScreenSettled 中途 return 的分支很多，
+    // 統一在它跑完之後判。
+    if (self._pendingClick) self._flushPendingClick();
+  });
 }
 
 ListSession.prototype = {
@@ -2562,33 +2572,49 @@ ListSession.prototype = {
     // 原生鏡像期間（passthrough/functionMode 的 native）不歸這裡管：呼叫端根本不會
     // 進來，但保險起見不處理也不提示，交給原生滑鼠瀏覽。
     if (this._renderMode === 'native') return;
-    if (this.state !== 'active' || this._renderMode !== 'buffer') {
-      // 交易進行中（開文／leave／jump 的 frozen）：與鍵盤同樣的「吞掉但不靜默」。
-      this._core.debugRecorder?.log('listSession.clickBusy', {
-        state: this.state,
-        renderMode: this._renderMode
-      });
-      if (this._view.flashListHint)
-        this._view.flashListHint('好讀列表：處理中，請稍候…');
-      return;
-    }
     // renderRow 是**渲染後**的列號：header 之後就是整段序列（body 現在全部畫
     // 出來、由瀏覽器捲），所以 body index 直接是序列位置。
     const idx = renderRow - this.headerRows();
-    if (idx < 0) return; // header
+    if (this.state !== 'active' || this._renderMode !== 'buffer') {
+      // 交易進行中（開文／leave／jump 的 frozen）：與鍵盤同樣的「吞掉但不靜默」。
+      // 凍結交易（到底、跳號、補頁接合、原地重整）的話先記著這一篇，交易一結束還對得上
+      // 就替使用者開（P47，_flushPendingClick）。
+      const queued = idx >= 0 && this._queuePendingClick(renderRow, col);
+      this._core.debugRecorder?.log('listSession.clickBusy', {
+        state: this.state,
+        renderMode: this._renderMode,
+        queued: queued
+      });
+      if (this._view.flashListHint)
+        this._view.flashListHint(queued ? '好讀列表：處理中，完成後開啟這篇…' : '好讀列表：處理中，請稍候…');
+      return;
+    }
+    this._pendingClick = null;
+    const abs = this._clickedAbs(idx, col);
+    if (abs == null) return;
+    this._openAbs(abs);
+  },
+
+  // 點擊落在哪一筆（整份緩衝的絕對索引）；idx＝body 序列位置。header、可點起始欄左邊、
+  // 短板補的空白列 ⇒ null。
+  _clickedAbs: function(idx, col) {
+    if (idx < 0) return null; // header
     // 可點起始欄（pref mouseListClickStart）與原生一致（避免點到左邊欄位誤開）。
     // 虛擬視窗的欄位與 server 的 readdoent 逐格對齊（buildListWindowLines 取的就是
     // 同一批 80 格 TermChar；relabelListCursorRow 只重寫 cols 0-6、labelListCursor
     // 的半形 '>' 只佔 cell 0），所以 comment_parse 的欄位表在這裡照樣成立。
     const rangeOn = !!(this._termBuf && this._termBuf.useMouseBrowsing);
     const start = this._view && this._view.mouseListClickStart;
-    if (col < clickableColStart(2, rangeOn, start)) return;
+    if (col < clickableColStart(2, rangeOn, start)) return null;
     const view = this.getListView();
-    if (!view) return;
+    if (!view) return null;
     // idx >= seq.length ＝ 短板補到 bodyRows 的空白列（或 footer），沒有文章可點。
     const abs = idx < view.seq.length ? view.seq[idx] : null;
-    if (abs == null) return;
+    return abs == null ? null : abs;
+  },
 
+  // 把選取移到第 abs 筆並開文（滑鼠單擊與 P47 的補開共用）。
+  _openAbs: function(abs) {
     const nums = this._termBuf.listLineNums || [];
     this._selectedNum = nums[abs];
     this._selectedPinnedKey =
@@ -2606,6 +2632,66 @@ ListSession.prototype = {
       else if (a === 'begin-open-pinned') this._beginOpenPinned();
       else this._runAction(a, null);
     }
+  },
+
+  // ---- 忙時點的那一下（P47，js/list_pending_click.js）-------------------------
+
+  // 記住最後點的那一篇（覆蓋前一次）；回傳有沒有記。置底文（沒有編號）、讀不出身分、
+  // 開文中／讀文章中、pref 關 ⇒ 不記，照舊只閃提示。
+  // 編號與身分取自**畫面上那一列**（term_view._listWindowLines，凍結時就是使用者看到的快照）：
+  // 凍結期間緩衝可能已經被補頁／重建改掉，用 getListView 算出來的索引會指到別篇。
+  _queuePendingClick: function(renderRow, col) {
+    this._pendingClick = null;
+    if (!canQueueListClick(this.state, this._renderMode)) return false;
+    if (!readEffectivePrefs().queueListClickWhenBusy) return false;
+    const rangeOn = !!(this._termBuf && this._termBuf.useMouseBrowsing);
+    if (col < clickableColStart(2, rangeOn, this._view && this._view.mouseListClickStart)) return false;
+    const shown = (this._view && this._view._listWindowLines) || [];
+    const text = shown[renderRow] ? rowToText(shown[renderRow]) : '';
+    const num = parseListArticleNum(text);
+    const identity = listRowIdentity(text);
+    if (num == null || !identity || this._boardName == null) return false;
+    this._pendingClick = { num: num, identity: identity, board: this._boardName, at: Date.now() };
+    return true;
+  },
+
+  _identityAtAbs: function(abs) {
+    const lines = this._termBuf.listLines || [];
+    return lines[abs] ? listRowIdentity(rowToText(lines[abs])) : null;
+  },
+
+  // 使用者自己按了鍵（term_view.onKeyDown）：作廢。
+  cancelPendingClick: function() {
+    if (this._pendingClick) this._diag('listSession.pendingClick', { action: 'drop', reason: 'key' });
+    this._pendingClick = null;
+  },
+
+  // 交易可能結束的地方都問一次（settle 的最後、讀取中收掉之後）。
+  _flushPendingClick: function() {
+    const p = this._pendingClick;
+    if (!p) return;
+    const nums = this._termBuf.listLineNums || [];
+    const view = this.state === 'active' && this._renderMode === 'buffer' ? this.getListView() : null;
+    let abs = view ? nums.indexOf(p.num) : -1;
+    // 要在目前畫得出來的序列裡（被黑名單／只看關注藏起來的不開）。
+    if (abs >= 0 && view.seq.indexOf(abs) < 0) abs = -1;
+    const d = pendingClickDecision({
+      pending: p,
+      state: this.state,
+      renderMode: this._renderMode,
+      now: Date.now(),
+      board: this._boardName,
+      rowIdentity: abs >= 0 ? this._identityAtAbs(abs) : null
+    });
+    if (d.action === 'wait' || d.action === 'none') return;
+    this._pendingClick = null;
+    this._diag('listSession.pendingClick', { action: d.action, reason: d.reason || null, num: p.num });
+    if (d.action === 'open') {
+      this._openAbs(abs);
+      return;
+    }
+    if (d.reason === 'moved' && this._view.flashListHint)
+      this._view.flashListHint('好讀列表：剛剛點的文章已不在原處，沒有開啟');
   },
 
   // ---- 右鍵選單「前已讀後未讀」(pttbbs b_mark_read_unread) --------------------
@@ -3506,6 +3592,14 @@ ListSession.prototype = {
     if (this._view.setListLoading) this._view.setListLoading(on);
     // 每個交易的出口（文章到了、被拒退回、切原生、watchdog）都會關「讀取中」⇒ 開啟中跟著收。
     if (!on) this._setOpening(false);
+    // 忙時點的那一下（P47）：出口的狀態要等這一串同步呼叫跑完才定（resume-buffer 之後還有
+    // rebuild）⇒ 排到 microtask 再判。
+    if (!on && this._pendingClick) {
+      const self = this;
+      Promise.resolve().then(function() {
+        self._flushPendingClick();
+      });
+    }
   },
 
   // 手機卡片「開啟中」（P45）：開文交易一開始就讓那張卡片有回饋，不必等 PTT 回文章畫面。

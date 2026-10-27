@@ -1255,6 +1255,85 @@ test.describe('文章列表好读模式（离线）', () => {
   });
 });
 
+// P47（js/list_pending_click.js）：列表凍結交易中點文章，記住那一篇，交易一結束、那篇還在原處
+// 就替使用者開；期間按了別的鍵就作廢。凍結交易用 _freezeForTransaction 造（卷裡沒有一段
+// 剛好夠長、時機又決定的交易），點擊、記住、交易出口（_resumeBuffer → 讀取中收掉）與開文都是真的。
+test.describe('列表忙時點的那一下（離線）', () => {
+  test.skip(!nav, '缺 cchat-list-nav cassette');
+
+  test('凍結中點文章 ⇒ 交易結束自動開那一篇；中途按鍵 ⇒ 作廢不開', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
+    await replayListCassette(page, nav);
+    await page.waitForFunction(() => window.__app.buf.pageState === 2);
+    await ptt.applyPrefs(page, {
+      enableEasyReadingList: true,
+      easyReadingListPrefetchCount: 30,
+      useMouseBrowsing: true,
+    });
+    await waitState(page, (x) => x.state === 'active' && x.listLen > 30 && x.queueIdle, 20000);
+    // 開文目標＝錄製的第三個 jump（cassette 只對這個序號有開文素材，同上一條）。
+    const openNum = nav.steps.filter((st) => st.num != null)[2].num;
+    await page.locator('#t').focus();
+    await page.keyboard.press('PageUp');
+    await waitState(page, (x) => x.queueIdle && x.listLen > 50, 15000);
+    await page.evaluate((n) => {
+      const ls = window.__app.listSession;
+      ls._selectedNum = n;
+      ls._selectedPinnedKey = null;
+      ls._forceRedraw();
+    }, openNum);
+    await waitScreenSettled(page);
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await waitState(page, (x) => x.queueIdle && x.selectedNum !== openNum);
+    const targetRow = (await dumpScreenRows(page)).findIndex((t, i) => i >= 3 && t.trim().startsWith(String(openNum)));
+    expect(targetRow).toBeGreaterThanOrEqual(3);
+    await page.evaluate((r) => {
+      document.querySelector('#mainContainer .listBodyView').scrollTop = (r - 3) * window.__app.view.chh;
+    }, targetRow);
+    const rowSel = `#mainContainer [data-type="bbsline"][data-row="${targetRow}"]`;
+    await waitRectStable(page, rowSel);
+    const titleX = await page.evaluate(() => window.__app.view.chw * 32);
+
+    const freeze = () =>
+      page.evaluate(() => {
+        const ls = window.__app.listSession;
+        ls.state = 'functionMode';
+        ls._freezeForTransaction();
+      });
+    const finish = () =>
+      page.evaluate(() => {
+        const ls = window.__app.listSession;
+        ls.state = 'active';
+        ls._resumeBuffer(null);
+      });
+    const sentCount = () => page.evaluate(() => window.__replay.sent.length);
+
+    // ① 凍結中點下去，接著按了別的鍵 ⇒ 作廢：交易結束也不開、不送任何鍵。
+    await freeze();
+    await page.locator(rowSel).click({ position: { x: titleX, y: 4 } });
+    expect(await page.evaluate(() => window.__app.listSession._pendingClick)).toMatchObject({ num: openNum });
+    await page.keyboard.press('ArrowDown'); // 凍結中被吞掉，但算「使用者按了別的鍵」
+    expect(await page.evaluate(() => window.__app.listSession._pendingClick)).toBeNull();
+    const before = await sentCount();
+    await finish();
+    await waitScreenSettled(page);
+    let s = await waitState(page, (x) => x.state === 'active' && x.renderMode === 'buffer');
+    expect(s.selectedNum).not.toBe(openNum);
+    expect(await sentCount()).toBe(before);
+
+    // ② 凍結中點下去 ⇒ 交易一結束就開那一篇（同一條開文交易，真的進到文章）。
+    await freeze();
+    await page.locator(rowSel).click({ position: { x: titleX, y: 4 } });
+    await finish();
+    s = await waitState(page, (x) => x.state === 'suspended', 20000);
+    expect(s.selectedNum).toBe(openNum);
+    expect(s.pageState).toBe(3);
+  });
+});
+
 test.describe('置底文 Enter 开启（离线，pinned 卷）', () => {
   test.skip(!pinned, '缺 cchat-list-pinned cassette');
 
