@@ -18,6 +18,7 @@ import {
   articleListBoardOf,
   visitBoard,
   closeBoardTab,
+  tabsToShow,
   BOARD_TABS_KEY,
   BOARD_TABS_MAX,
 } from "../../src/js/board_tabs";
@@ -106,6 +107,14 @@ function makeCore(storage) {
 
 beforeEach(() => {
   submitted.length = 0;
+});
+
+describe("分頁列只列別的板", () => {
+  test("現在這個板不畫（大小寫不分）；順序照記錄；沒有現在的板就全列", () => {
+    expect(tabsToShow(["Stock", "Gossiping", "Test"], "test")).toEqual(["Stock", "Gossiping"]);
+    expect(tabsToShow(["Stock", "Gossiping"], null)).toEqual(["Stock", "Gossiping"]);
+    expect(tabsToShow(undefined, "Test")).toEqual([]);
+  });
 });
 
 describe("BoardTabs 控制器", () => {

@@ -37,12 +37,6 @@
   color: #c8c8d0;
 }
 
-.boardTab.is-active {
-  border-color: #6b8cff;
-  background: #22304f;
-  color: #fff;
-}
-
 .boardTabName {
   height: 100%;
   padding: 0 10px;
@@ -52,10 +46,6 @@
   font: inherit;
   cursor: pointer;
   touch-action: manipulation;
-}
-
-.boardTab.is-active .boardTabName {
-  cursor: default;
 }
 
 .boardTabClose {
@@ -84,7 +74,7 @@
   color: #fff;
 }
 
-.boardTab:not(.is-active):hover {
+.boardTab:hover {
   background: #24242c;
 }
 

@@ -16,7 +16,8 @@
 | 切板 | `submitSearch(core, 'board', name)`＝原生 `s<板>⏎`（同首頁儀表板的看板卡片、搜尋彈窗的「前往看板」，閱讀紀錄 `board-search`）。現在這個板點了不送 | 不另開送鍵路 |
 | 回到上次看到的位置 | **PTT 自己記**：`read.c#getkeep` 依看板目錄記游標與頂列（整個登入 session，`keeplist`），進板時還原；列表好讀接著在那個游標上 engage。這裡不另記視野 | 閱讀紀錄只記一個列表視野，per-board 視野不必重做一份 |
 | 關掉 | 右鍵／長按（`contextmenu`，Android Chrome 長按也是它）；桌機 hover 另有 ×。現在這個板關不掉（下一幀就記回來） | — |
-| 位置 | 桌機：疊在終端機第 1 列（文章列表的按鍵提示列「[←]離開 [→]閱讀…」）上，同終端機寬、列高同 `view.chh`，底色同終端機把那一列蓋掉。手機：App Bar 右邊（標題就是現在這個板 ⇒ 只列別的板），橫向可捲 | 不推動終端機（`docs/terminal-size.md` LOCKED）；第 1 列在列表上是靜態提示 |
+| 只列別的板 | `tabsToShow`：現在這個板不畫（桌機上方標題列《板名》、手機 App Bar 本來就寫著，點它也只是切到自己）。記錄照舊有它，離開後就出現 | 佔一格沒有用處，窄螢幕還把別的分頁擠出去 |
+| 位置 | 桌機：疊在終端機第 1 列（文章列表的按鍵提示列「[←]離開 [→]閱讀…」）上，同終端機寬、列高同 `view.chh`，底色同終端機把那一列蓋掉。手機：App Bar 右邊，橫向可捲 | 不推動終端機（`docs/terminal-size.md` LOCKED）；第 1 列在列表上是靜態提示 |
 | 滑鼠 | `App._onUploadLayer` 認 `#boardTabs` 放過；按鈕 mousedown `preventDefault`（不搶 `#t` 焦點）＋ stopPropagation | 同 AidBackButton |
 
 e2e：`installReplay` 預設關（蓋在第 1 列、分頁清單存在 localStorage），只有 `board_tabs.offline.spec.js`／`mobile_board_tabs.offline.spec.js` 以 `opts.boardTabs` 打開。
