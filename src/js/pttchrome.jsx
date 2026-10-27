@@ -2469,6 +2469,16 @@ App.prototype.onPrefChange = function(name, value) {
   }
 };
 
+// 列表好讀上會開文的那一下：點在「+N」徽章上 ⇒ 開文後跳到新推文（new_comments.noteListClick）。
+// 只在文章列表 session 會收下這一下時才記（交易中被吞掉的那一下不留下待跳的請求，
+// 否則會跳到交易自己開的那篇）。
+App.prototype._noteListOpenClick = function(owner, target) {
+  if (!this.newComments) return;
+  if (owner === this.listSession && owner.state === 'active' && owner._renderMode === 'buffer')
+    this.newComments.noteListClick(target);
+  else this.newComments.cancelJumpOnOpen();
+};
+
 App.prototype.checkClass = function(cn) {
   // SVG 元素（Mantine 圖示如關閉鈕的 ✕、chevron 等）的 className 是
   // SVGAnimatedString（物件、truthy，故會通過呼叫端的 `if (e.target.className)`
@@ -2648,6 +2658,7 @@ App.prototype.mouse_click = function(e) {
             if (isListCardBodyTarget(e.target)) {
               this._traceListTap('card', e);
               this.noteUserAction();
+              this._noteListOpenClick(clickOwner, e.target);
               clickOwner.onMouseClick(lpos.row, LIST_TITLE_COL_START);
             } else {
               this._traceListTap('not-card', e);
@@ -2657,8 +2668,10 @@ App.prototype.mouse_click = function(e) {
             this.sendNavKeyAsUser(EDGE_NAV_KEY[ledge.action]);
           else if (lpos.col >= 0 && lpos.col < EXIT_COL_END)
             clickOwner.onMouseExitClick();
-          else
+          else {
+            this._noteListOpenClick(clickOwner, e.target);
             clickOwner.onMouseClick(lpos.row, lpos.col);
+          }
         }
         return;
       }

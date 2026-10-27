@@ -229,6 +229,49 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await expect(opening).toHaveCount(0);
   });
 
+  // P48：tap 卡片上的「+N」徽章＝開這一篇（同一條開文交易），並記下「開文後跳到新推文」；
+  // tap 卡片其他地方照舊只開文。徽章的比對規則守在 unit（list_new_push.test.js），這裡把
+  // listBadge 換成只認目標那一篇，專心驗真 tap 的命中與開文。
+  test('tap 卡片上的 +N 徽章 ⇒ 開那一篇，並記下開文後跳到新推文', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    const target = await page.evaluate(() => {
+      const v = document.querySelector('#mainContainer .listBodyView');
+      const vr = v.getBoundingClientRect();
+      const seq = window.__app.listSession._sequence();
+      const header = window.__app.listSession.headerRows();
+      for (const c of v.querySelectorAll(':scope > .listCard')) {
+        const r = c.getBoundingClientRect();
+        if (r.top < vr.top + 2 || r.bottom > vr.bottom - 2) continue;
+        if (c.querySelector('.listCardCursor').textContent.trim()) continue; // 不是游標那張
+        const num = window.__app.buf.listLineNums[seq[Number(c.getAttribute('srow')) - header]];
+        if (num == null) continue;
+        return { num, srow: c.getAttribute('srow') };
+      }
+      return null;
+    });
+    expect(target).not.toBeNull();
+    await page.evaluate((num) => {
+      const app = window.__app;
+      app.newComments.listBadge = () => ({
+        key: 'p48-e2e',
+        fn: (text) => (parseInt(String(text).slice(0, 7), 10) === num ? 3 : null),
+      });
+      app.listSession._forceRedraw();
+    }, target.num);
+    const badge = page.locator(`#mainContainer .listCard[srow="${target.srow}"] .listNewPush`);
+    await expect(badge).toHaveCount(1);
+    const box = await waitRectStable(page, `#mainContainer .listCard[srow="${target.srow}"] .listNewPush`);
+    expect(await page.evaluate(() => window.__app.newComments._jump)).toBeFalsy();
+    const sentBefore = await page.evaluate(() => window.__replay.sent.length);
+    await page.touchscreen.tap(box.left + box.width / 2, box.top + box.height / 2);
+    await expect.poll(async () => (await state(page)).selectedNum).toBe(target.num);
+    expect(await page.evaluate(() => window.__app.newComments._jump)).toMatchObject({ bound: false });
+    // 開文只有序號跳轉；徽章本身一個 byte 都不多送
+    const sent = await page.evaluate((n) => window.__replay.sent.slice(n).join(''), sentBefore);
+    expect(sent).toMatch(/^[\d\s]+$/);
+  });
+
   // 防誤點：卡片間距（.listCard 的 padding-block，本體之外）點了不開文；同一張卡片
   // 點本體照開 ⇒ 證明是間距被吞，不是 handler 整個失效。
   test('tap 卡片間距不開文；tap 同一張卡片本體才開', async ({ page }) => {

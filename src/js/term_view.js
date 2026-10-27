@@ -1697,6 +1697,9 @@ TermView.prototype = {
       this.flashListHint(busyHint);
       return;
     }
+    // 點「+N」徽章後還沒跳到新推文：使用者自己按鍵了 ⇒ 作廢（new_comments.armJumpOnOpen）。
+    if (this.bbscore.newComments && MODIFIER_KEY_NAMES.indexOf(e.key) < 0)
+      this.bbscore.newComments.cancelJumpOnOpen();
     // 手機黏滯 Ctrl：下一個按鍵改送組合鍵（用一次就解除）。重新走 sendKeyAsUser ⇒
     // 整條分派（好讀／列表好讀／原生）照組合鍵的語意處理。
     if (this.bbscore.mobileCtrlArmed && !e.ctrlKey && !e.altKey && !e.metaKey &&

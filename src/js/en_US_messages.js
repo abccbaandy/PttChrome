@@ -870,7 +870,7 @@ export const en_US = {
     "message": "Show the push count gained since you read a post in the post list"
   },
   "tooltip_listNewPushCount": {
-    "message": "Posts you have read to the end get a \"+N\" in the post list: the push count is N higher than when you last finished it. Only posts finished in this browser; not shown when the count reads 爆 or the post cannot be told apart."
+    "message": "Posts you have read to the end get a \"+N\" in the post list: the push count is N higher than when you last finished it. Clicking the \"+N\" opens the post and scrolls straight to the new comments (with easy-reading list on). Only posts finished in this browser; not shown when the count reads 爆 or the post cannot be told apart."
   },
   "new_comments_jump": {
     "message": "Jump to new comments"

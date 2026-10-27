@@ -1300,10 +1300,14 @@ span {
   vertical-align: middle;
   white-space: nowrap;
 }
+/* 點徽章＝開這篇並跳到新推文（new_comments.noteListClick 以 click 的 target 認）⇒ 要收得到點擊，
+   不能 pointer-events: none。手機卡片的標題行 overflow 會裁切，可點範圍往外擴也擴不出列高。 */
+#mainContainer .listNewPush {
+  cursor: pointer;
+}
 #mainContainer span[data-type="bbsline"] > .listNewPush {
   position: absolute;
   transform: translateX(calc(-100% - 0.5em));
-  pointer-events: none;
 }
 
 /* 開站回到上次的地方的倒數提示（js/reconnect_resume.js）：底部置中，跟狀態提示同一個
