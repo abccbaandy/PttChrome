@@ -95,9 +95,12 @@ pref `refreshMinIntervalSec`（預設 5 秒，0 ＝不限制），只在**真的
 ## live 文小幫手是怎麼監控新推文的（對照）
 
 `App.incrementCountToUpdatePushthread`：每秒計數，到設定秒數且 `pageState` 是 2/3 就裸送
-`←→End`（`\x1b[D\x1b[C\x1b[4~`）＝離開文章、重開游標下那篇、跳到文末。開啟時先關掉好讀模式
+`←→End`（`\x1b[D\x1b[C\x1b[4~`）＝離開文章、重開游標下那篇、跳到文末。送之前問本幀
+（`screen_refresh.liveHelperUpdateAllowed`）：文章要底列是 pager 狀態列、列表要底列是列表 caption、游標不在輸入欄。
+`pageState` 會黏住，推文型別選單（`bbs.c#recommend` 的 `vkey()`）底下還是 3，← 會被當成選了預設的「推」；
+鍵盤會關掉小幫手，但滑鼠、手機工具列、右鍵選單不會。開啟時先關掉好讀模式
 （`exitEasyReading`），任何按鍵都會關掉它（`cancelsLiveHelper`）。沒有任何驗證：上面「為什麼不用 ←→」
-那段的開錯篇風險它都有，也沒有頻率保護（最小 1 秒）。本功能沒有改動它。
+那段的開錯篇風險它都有，也沒有頻率保護（最小 1 秒）。
 
 ## 守護
 

@@ -26,7 +26,7 @@ import { parsePagerFooterContext } from './string_util';
 import { boardListContextKind, classifyBoardListScreen } from './board_list_parse';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
 import { parseBoardKey, boardNameFromKey } from './screen_titles';
-import { footerCaption } from './screen_captions';
+import { footerCaption, EDITOR_CAPTION } from './screen_captions';
 import {
   isSearchPromptFrame,
   searchGateFacts,
@@ -83,6 +83,22 @@ export function refreshTargetFromFacts(facts, pageState, opts) {
   }
   if (classifyBoardListScreen(facts)) return { kind: 'board-list' };
   return null;
+}
+
+// live 文小幫手（App.incrementCountToUpdatePushthread）每 N 秒裸送 ←→End：這一幀能不能送。
+// pageState 會黏住（term_buf.setPageState 沒有 reset 分支）：文章裡叫出推文型別選單
+// （bbs.c#recommend「您覺得這篇文章 1.值得推薦 … [1]?」，vkey() 只吃一鍵）時還是 3 ⇒
+// ← 不是數字 ⇒ 型別被當成預設的「推」，後面的 →End 落進內容輸入列。鍵盤按鍵會關掉
+// 小幫手（term_view.cancelsLiveHelper），滑鼠、手機工具列、右鍵選單不會 ⇒ 一律問本幀：
+// 文章要底列是 pager 狀態列，列表要底列是已知列表 caption，游標在輸入欄一律不送。
+export function liveHelperUpdateAllowed({ pageState, lastRowText, cursorOnInputField }) {
+  if (cursorOnInputField) return false;
+  if (pageState === 3) return atPagerStatusRow(lastRowText);
+  if (pageState === 2) {
+    const caption = footerCaption(lastRowText);
+    return caption != null && caption !== EDITOR_CAPTION;
+  }
+  return false;
 }
 
 // 瀏覽器的「重新整理」快捷鍵裡我們接手的那幾顆：F5、⌘R（mac）。
