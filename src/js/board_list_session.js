@@ -88,6 +88,7 @@ const PREFETCH_HARD_MS = 1500;
 const NATIVE_PASSTHROUGH_MS = 3000;
 // 凍結畫面的絕對後盾：任何一條回呼沒跑到都不能讓畫面永遠凍住 ＋ 永遠吞鍵。
 const FROZEN_WATCHDOG_MS = 2500;
+const STALL_WATCHDOG_SLACK_MS = 200; // 同 list_session.js
 // 非導覽操作結束後自動切回平滑捲動（pref enableListNativeAutoResume）。兩個常數
 // 的取值與理由完全同 list_session.js，那裡有完整說明（RESUME_QUIET_MS 不是體感
 // 旋鈕，它堵的是「一個回應 settle 兩次」那個洞；RESUME_GRACE_MS 擋回復後的殘餘幀）。
@@ -1439,13 +1440,23 @@ BoardListSession.prototype = {
   },
 
   _armFrozenWatchdog: function() {
+    this._setFrozenWatchdog(FROZEN_WATCHDOG_MS);
+  },
+
+  // 線路靜默寬限的讓路規則同 list_session.js#_setFrozenWatchdog。
+  _setFrozenWatchdog: function(ms) {
     const self = this;
     if (this._frozenWatchdog) clearTimeout(this._frozenWatchdog);
     this._frozenWatchdog = setTimeout(function() {
       self._frozenWatchdog = null;
-      if (self._renderMode === 'frozen' || self.state === 'opening')
-        self._degradeToNative('指令逾時，已切至原生模式');
-    }, FROZEN_WATCHDOG_MS);
+      if (self._renderMode !== 'frozen' && self.state !== 'opening') return;
+      const stallMs = self._queue.stallWaitMs ? self._queue.stallWaitMs() : 0;
+      if (stallMs > 0) {
+        self._setFrozenWatchdog(stallMs + STALL_WATCHDOG_SLACK_MS);
+        return;
+      }
+      self._degradeToNative('指令逾時，已切至原生模式');
+    }, ms);
   },
 
   // 把 server 的真游標對到本地選取。`choose_board` 的 `num` 是 **static**

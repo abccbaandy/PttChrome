@@ -558,4 +558,110 @@ describe("CommandQueue", () => {
       expect(onFlushed).toHaveBeenCalled();
     });
   });
+
+  // 線路靜默寬限（stallCapMs）。手機 APK 實錄：行動網路閒置一下之後的第一個命令，
+  // 回應 1.1～2.0 秒後才整包到（內容正確），列表的 250/600/1200 預算在 850ms 就判
+  // timeout → 開文／離開列表全部降級原生、使用者的動作丟掉。下面用列表的實際預算
+  // 重放那個時序。
+  describe("線路靜默寬限（stallCapMs）", () => {
+    const LIST_BUDGET = { timeoutMs: 250, probeTimeoutMs: 600, hardTimeoutMs: 1200 };
+    const makeStallQueue = (stallCapMs = 4000) => {
+      const sent = [];
+      const q = new CommandQueue({ send: (k) => sent.push(k), stallCapMs });
+      return { q, sent };
+    };
+
+    test("一個 byte 都沒回：探針窗、hard 到期都不判 timeout；1.9 秒後回應到了照常完成", () => {
+      const { q, sent } = makeStallQueue();
+      const done = vi.fn();
+      const fail = vi.fn();
+      q.enqueue(cmd("785551\r", { kind: "leave-sync-jump", fullRepaint: true, ...LIST_BUDGET, onDone: done, onFail: fail }));
+      vi.advanceTimersByTime(250); // 探針照送
+      expect(sent).toEqual(["785551\r\f", "\f"]);
+      vi.advanceTimersByTime(1600); // t=1850：探針窗（850）與 hard（1200）都過了
+      expect(fail).not.toHaveBeenCalled();
+      expect(q.inFlightKind).toBe("leave-sync-jump");
+      expect(q.stallWaitMs()).toBe(4000 - 1850);
+      q.noteRecv(); // t=1867 回應整包到
+      settleWith(q, true);
+      expect(done).toHaveBeenCalledTimes(1);
+      expect(fail).not.toHaveBeenCalled();
+      expect(q.idle).toBe(true);
+    });
+
+    test("有界：線路一直沒聲音 ⇒ 送出起算 stallCapMs 照舊 onFail('timeout')", () => {
+      const { q } = makeStallQueue(4000);
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { ...LIST_BUDGET, onFail: fail }));
+      vi.advanceTimersByTime(3999);
+      expect(fail).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(fail).toHaveBeenCalledWith("timeout");
+      expect(q.stallWaitMs()).toBe(0);
+    });
+
+    test("線路有聲音但不是答案 ⇒ 不給寬限，照舊快速判定（不是 RTT 自適應）", () => {
+      const { q } = makeStallQueue();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { ...LIST_BUDGET, onFail: fail }));
+      vi.advanceTimersByTime(100);
+      q.noteRecv(); // 收過 byte（例如半幀），之後沒下文
+      vi.advanceTimersByTime(750); // t=850：探針窗到期
+      expect(fail).toHaveBeenCalledWith("timeout");
+      expect(q.stallWaitMs()).toBe(0);
+    });
+
+    test("寬限內收到不符的完整探針幀 ⇒ 照舊 miss", () => {
+      const { q } = makeStallQueue();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { ...LIST_BUDGET, onFail: fail }));
+      vi.advanceTimersByTime(1500); // 已進寬限
+      q.noteRecv();
+      expect(settleWith(q, false)).toBe("miss");
+      expect(fail).toHaveBeenCalledWith("miss", expect.anything());
+    });
+
+    test("被 expedite 催過的背景命令不享有寬限（前景交易在等它讓線）", () => {
+      const { q, sent } = makeStallQueue();
+      const fail = vi.fn();
+      q.enqueue(cmd("\x1b[5~", { kind: "prefetch-up", ...LIST_BUDGET, onFail: fail }));
+      q.enqueue(cmd("785256\r", { kind: "leave-sync-jump", ...LIST_BUDGET }));
+      q.expedite(250);
+      vi.advanceTimersByTime(850); // 探針 250 + 探針窗 600
+      expect(fail).toHaveBeenCalledWith("timeout");
+      expect(sent[sent.length - 1]).toBe("785256\r"); // 前景交易上線，它自己有寬限
+      expect(q.stallWaitMs()).toBe(4000);
+    });
+
+    test("已經在寬限裡乾等的背景命令被 expedite ⇒ 短窗後讓線", () => {
+      const { q, sent } = makeStallQueue();
+      const fail = vi.fn();
+      q.enqueue(cmd("\x1b[5~", { kind: "prefetch-up", ...LIST_BUDGET, onFail: fail }));
+      vi.advanceTimersByTime(1500); // 已進寬限（探針窗 850、hard 1200 都過了）
+      q.enqueue(cmd("785256\r", { kind: "leave-sync-jump", ...LIST_BUDGET }));
+      q.expedite(250);
+      vi.advanceTimersByTime(249);
+      expect(fail).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(fail).toHaveBeenCalledWith("timeout");
+      expect(sent[sent.length - 1]).toBe("785256\r");
+    });
+
+    test("probe:false 的命令不享有寬限（沒有探針就沒有「必有回應」可言）", () => {
+      const { q } = makeStallQueue();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { timeoutMs: 250, probe: false, onFail: fail }));
+      vi.advanceTimersByTime(250);
+      expect(fail).toHaveBeenCalledWith("timeout");
+    });
+
+    test("未設 stallCapMs ＝ 原行為（850ms 判 timeout）", () => {
+      const { q } = makeQueue();
+      const fail = vi.fn();
+      q.enqueue(cmd("A", { ...LIST_BUDGET, onFail: fail }));
+      vi.advanceTimersByTime(850);
+      expect(fail).toHaveBeenCalledWith("timeout");
+      expect(q.stallWaitMs()).toBe(0);
+    });
+  });
 });

@@ -8,7 +8,7 @@ import { EasyReading, switchModePlan } from './easy_reading';
 import { ListSession } from './list_session';
 import { BoardListSession } from './board_list_session';
 import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
-import { CommandQueue } from './command_queue';
+import { CommandQueue, LINK_STALL_CAP_MS } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { needsAidBoardChoice } from './aid_board_choice';
 import { ScreenRefresh } from './screen_refresh';
@@ -189,6 +189,10 @@ export const App = function() {
     // frame that raced the probe out, not an answer to it.
     isCompleteFrame: (facts) =>
       !!(facts && facts.changedRows && facts.rows && facts.changedRows.size >= facts.rows),
+    // 手機線路閒置後的第一個回應常常 1～2 秒才到：線路完全沒聲音時不要 0.85 秒就
+    // 判逾時降級原生（見 command_queue 檔頭 stallCapMs）。收包由 onData 的
+    // commandQueue.noteRecv() 回報。
+    stallCapMs: LINK_STALL_CAP_MS,
     // 線路空了就叫醒好讀：它的自動翻頁被 easy_reading._send 的閘門擋住時，是
     // **延後**不是丟棄，而文章落地那一幀好讀必定比 queue 早跑（見上面的 ORDER
     // MATTERS）⇒ 第一個 PageDown 一定被擋。少了這條線就只剩好讀自己的 620ms
@@ -622,6 +626,8 @@ App.prototype.onConnect = function() {
 };
 
 App.prototype.onData = function(data) {
+  // 在 parser.feed 之前：這包內容引發的 settle／逾時判定都要看得到「線路有聲音」。
+  this.commandQueue.noteRecv();
   this.boardNoteSkip.noteRecv();
   this.parser.feed(data);
   // 收件匣每包都解析（跨包接續在模組裡）；下面的失焦通知照舊只在失焦時跑。

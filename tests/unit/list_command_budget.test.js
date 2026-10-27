@@ -13,7 +13,7 @@
 //      90ms，超過這個量級的沉默寧可降級回原生，不要凍畫面空等。
 //
 // 這是**表格式**守護：新增一條腿卻忘了掛 \f／忘了套預算，這裡就會紅。
-import { CommandQueue } from "../../src/js/command_queue";
+import { CommandQueue, LINK_STALL_CAP_MS } from "../../src/js/command_queue";
 import { ListSession } from "../../src/js/list_session";
 
 // listLines 只需要能被 rowToText 讀：一列 = TermChar-like 陣列。
@@ -328,12 +328,86 @@ describe("零回應跳號不得凍住畫面", () => {
     expect(queue.inFlightKind).toBe("open-enter");
   });
 
-  test("連探針都沒回應：850ms 內就降級回原生，不再空等", () => {
+  test("連探針都沒回應（未開線路靜默寬限）：850ms 內就降級回原生，不再空等", () => {
     const { s } = openWithRealQueue();
     expect(s.state).toBe("opening");
 
     vi.advanceTimersByTime(250 + 600 + 1);
     expect(s.state).not.toBe("opening"); // _openFailed → functionMode 原生鏡像
     expect(s._renderMode).toBe("native");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 線路靜默寬限（command_queue.js 檔頭 stallCapMs；App 接 LINK_STALL_CAP_MS）。
+// 手機 APK 實錄（Gossiping 文章列表）：閒置一下之後的第一個命令，回應 1.1～2.0 秒
+// 才整包到、內容正確；修前列表在 850ms 判 timeout ⇒ 點卡片開文、返回鍵離開列表
+// 一律「逾時，已切至原生模式」，晚到的回應也救不回使用者的動作。
+// ---------------------------------------------------------------------------
+describe("線路慢一兩秒才回：不降級原生，等到回應照常完成", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const withStallQueue = () => {
+    const sent = [];
+    const queue = new CommandQueue({ send: (k) => sent.push(k), stallCapMs: LINK_STALL_CAP_MS });
+    const { s } = makeSession({ queue });
+    const hints = [];
+    s._view.flashListHint = (msg) => hints.push(msg);
+    s._selectedNum = 115;
+    return { s, queue, sent, hints };
+  };
+
+  test("點開文章：回應 1.9 秒後才到 ⇒ 不降級，收腿送 Enter", () => {
+    const { s, queue, sent, hints } = withStallQueue();
+    s.onKeyDown({ key: "Enter", preventDefault() {} });
+    expect(s.state).toBe("opening");
+    vi.advanceTimersByTime(1876);
+    expect(s.state).toBe("opening");
+    expect(hints).toEqual([]);
+    queue.noteRecv();
+    queue.onSettle({}, parkFacts(115));
+    expect(sent).toEqual(["115\r\f", "\f", "\r"]); // open-enter 已上線
+    expect(queue.inFlightKind).toBe("open-enter");
+  });
+
+  test("返回鍵離開列表：同步跳號腿 1.9 秒才回，且超過凍結後盾 2.5s ⇒ 仍照常送出離開鍵", () => {
+    const { s, queue, sent, hints } = withStallQueue();
+    s._beginLeave();
+    expect(sent).toEqual(["115\r\f"]);
+    vi.advanceTimersByTime(1867);
+    expect(hints).toEqual([]);
+    queue.noteRecv();
+    queue.onSettle({}, parkFacts(115));
+    expect(sent).toEqual(["115\r\f", "\f", "\x1b[D"]);
+    expect(queue.inFlightKind).toBe("leave-board");
+    // 離開鍵自己也慢：凍結後盾（2500ms，收腿時重新武裝）到期時線路仍沒聲音 ⇒ 讓路。
+    vi.advanceTimersByTime(2600);
+    expect(hints).toEqual([]);
+    expect(s._renderMode).toBe("frozen");
+    queue.noteRecv();
+    queue.onSettle({}, { kind: "menu", rows: 24, rowTexts: new Array(24).fill("") });
+    expect(hints).toEqual([]);
+    expect(queue.idle).toBe(true);
+  });
+
+  test("線路一直沒聲音：寬限到期才降級原生（有界，不會永遠凍住）", () => {
+    const { s, hints } = withStallQueue();
+    s._beginLeave();
+    vi.advanceTimersByTime(LINK_STALL_CAP_MS - 1);
+    expect(hints).toEqual([]);
+    expect(s._renderMode).toBe("frozen");
+    vi.advanceTimersByTime(1);
+    expect(hints).toEqual(["離開列表逾時，已切至原生模式"]);
+    expect(s._renderMode).toBe("native");
+  });
+
+  test("線路有回但不是答案：照舊快速降級（寬限只給完全沒聲音的線路）", () => {
+    const { s, queue, hints } = withStallQueue();
+    s._beginLeave();
+    vi.advanceTimersByTime(100);
+    queue.noteRecv(); // 收到東西，但沒有任何一幀符合 park 指紋
+    vi.advanceTimersByTime(750);
+    expect(hints).toEqual(["離開列表逾時，已切至原生模式"]);
   });
 });

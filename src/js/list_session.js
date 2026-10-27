@@ -791,6 +791,9 @@ const FROZEN_WATCHDOG_MS = 2500;
 // 在飛那一步自帶長預算時（_frozenStepBudgetMs）後盾跟著撐長，但不超過這個絕對上限
 // （＝佇列預設的 hard timeout）：預算再離譜也不能變成永久凍結＋吞鍵。
 const FROZEN_WATCHDOG_MAX_MS = 10000;
+// 後盾讓路給線路靜默寬限時多等的這一點：佇列自己的截止點（→ 交易的 onFail）先跑，
+// 後盾只收「回呼沒跑到」的殘局（見 _setFrozenWatchdog）。
+const STALL_WATCHDOG_SLACK_MS = 200;
 // Fast-fail budgets for the serialized machine keys. PTT answers in ~90ms and
 // term_buf needs another SETTLE_MS (50ms) to settle, so anything past ~250ms of
 // silence is already abnormal: ask the deterministic question (the queue's
@@ -2278,15 +2281,27 @@ ListSession.prototype = {
   // render already recovered, so it needs no clearing at the many unfreeze
   // points (only _cleanup tears it down).
   _armFrozenWatchdog: function() {
-    const self = this;
-    if (this._frozenWatchdog) clearTimeout(this._frozenWatchdog);
     let ms = FROZEN_WATCHDOG_MS;
     const budget = this._frozenStepBudgetMs;
     if (budget > ms) ms = budget <= FROZEN_WATCHDOG_MAX_MS ? budget : FROZEN_WATCHDOG_MAX_MS;
+    this._setFrozenWatchdog(ms);
+  },
+
+  _setFrozenWatchdog: function(ms) {
+    const self = this;
+    if (this._frozenWatchdog) clearTimeout(this._frozenWatchdog);
     this._frozenWatchdog = setTimeout(function() {
       self._frozenWatchdog = null;
-      if (self._renderMode === 'frozen' || self.state === 'opening')
-        self._degradeToNative('指令逾時，已切至原生模式');
+      if (self._renderMode !== 'frozen' && self.state !== 'opening') return;
+      // 線路完全沒聲音、在飛命令還在靜默寬限內（command_queue.js 檔頭
+      // stallCapMs）：讓命令自己的有界截止點先收尾（它的 onFail 會降級），後盾
+      // 只往後挪到那之後再看一次。寬限是送出起算的絕對值 ⇒ 不會無限延長。
+      const stallMs = self._queue.stallWaitMs ? self._queue.stallWaitMs() : 0;
+      if (stallMs > 0) {
+        self._setFrozenWatchdog(stallMs + STALL_WATCHDOG_SLACK_MS);
+        return;
+      }
+      self._degradeToNative('指令逾時，已切至原生模式');
     }, ms);
   },
 
