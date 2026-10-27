@@ -1400,10 +1400,15 @@ const URL_ROW = (board, fn) =>
   "※ 文章網址: https://www.ptt.cc/bbs/" + board + "/" + fn + ".html";
 const BROWSERS_FN = "M.1786265274.A.5E3";
 const BROWSERS_AID = "1gU3wwNZ";
+// 網址列的前一列（mbbsd/edit.c#addsimplesignature 寫完「※ 發信站」，bbs.c 發文時 file_appendf
+// 緊接著補「※ 文章網址」）。
+const ORIGIN_ROW = "※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)";
+const OTHER_FN = "M.1700000000.A.ABC";
 
 // 一個「人在文章裡、畫面上看得到文章網址那行」的原生畫面。
 function articleScreenWithUrl(board = "Browsers", fn = BROWSERS_FN) {
   const rows = screen({ last: STATUS_ROW, mark: "文章內文" });
+  rows[17] = ORIGIN_ROW;
   rows[18] = URL_ROW(board, fn);
   return rows;
 }
@@ -1464,6 +1469,34 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
     expect(nav.findLocalPostAid()).toBeNull();
   });
 
+  // 內文裡貼了同板另一篇的「※ 文章網址」（系列文的前情提要常這樣貼）：系統寫的那行一定緊接在
+  // 「※ 發信站」之後（edit.c#addsimplesignature＋bbs.c 的 file_appendf），內文貼的沒有。認錯的話
+  // 新推文紀錄／最近讀過記到別篇，長推文的守門會送那篇的 #AID、推到別篇。
+  test("內文貼的同板網址（前一列不是 ※ 發信站）不算本篇；文末系統寫的才算", () => {
+    const rows = screen({ last: STATUS_ROW });
+    rows[4] = "前情提要：";
+    rows[5] = URL_ROW("Browsers", OTHER_FN);
+    rows[17] = ORIGIN_ROW;
+    rows[18] = URL_ROW("Browsers", BROWSERS_FN);
+    const { nav } = makeHarness({ pageState: 3, articleBoard: "Browsers", screenRows: rows });
+    expect(nav.findLocalPostAid()).toEqual({ board: "Browsers", aid: BROWSERS_AID });
+  });
+
+  test("內文貼的同板網址（好讀累積頁，系統那行還沒載到）→ null，不是那篇", () => {
+    const acc = ["作者 someone (某人) 看板 Browsers", "標題 [心得] 續集", "", "前情提要：", URL_ROW("Browsers", OTHER_FN), "內文……"];
+    const { nav, termBuf } = makeHarness({ pageState: 3, articleBoard: "Browsers", pageLines: acc });
+    expect(nav.findLocalPostAid()).toBeNull();
+    termBuf.pageLines = acc.concat(["--", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN)]);
+    expect(nav.findLocalPostAid()).toEqual({ board: "Browsers", aid: BROWSERS_AID });
+  });
+
+  test("網址列在畫面第一列（發信站捲出畫面外）→ null，退回按 Q", () => {
+    const rows = screen({ last: STATUS_ROW });
+    rows[0] = URL_ROW("Browsers", BROWSERS_FN);
+    const { nav } = makeHarness({ pageState: 3, articleBoard: "Browsers", screenRows: rows });
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
   test("引言列（回文帶進來的原文網址）不算", () => {
     const rows = screen({ last: STATUS_ROW });
     rows[5] = ": " + URL_ROW("Browsers", BROWSERS_FN);
@@ -1506,6 +1539,7 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
   describe("好讀累積長頁（pageLines）", () => {
     test("累積頁裡的那行也讀得到", () => {
       const acc = ["作者 someone (某人) 看板 Browsers", "標題 [問題] 測試"];
+      acc[39] = ORIGIN_ROW;
       acc[40] = URL_ROW("Browsers", BROWSERS_FN);
       const { nav } = makeHarness({
         pageState: 3,
@@ -1529,6 +1563,7 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
       });
       expect(nav.findLocalPostAid()).toBeNull();
       acc.push("內文……");
+      acc.push(ORIGIN_ROW);
       acc.push(URL_ROW("Browsers", BROWSERS_FN));
       termBuf.pageLines = acc;
       expect(nav.findLocalPostAid()).toEqual({
@@ -1540,7 +1575,7 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
     // 換文章時 pageLines 被清掉重建。快取沒歸零的話，下一篇會拿到上一篇的 AID
     // ——同一個看板的下一篇正好躲過看板守門，症狀是「複製到剛剛那篇的連結」。
     test("換文章（pageLines 重建）→ 快取歸零，不得沿用上一篇的 AID", () => {
-      const first = ["作者 aaa (甲) 看板 Browsers", URL_ROW("Browsers", BROWSERS_FN)];
+      const first = ["作者 aaa (甲) 看板 Browsers", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN)];
       const { nav, termBuf } = makeHarness({
         pageState: 3,
         articleBoard: "Browsers",
@@ -1553,7 +1588,7 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
     });
 
     test("累積頁變長但首列換了（同樣是換文章）→ 也要歸零", () => {
-      const first = ["作者 aaa (甲) 看板 Browsers", URL_ROW("Browsers", BROWSERS_FN)];
+      const first = ["作者 aaa (甲) 看板 Browsers", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN)];
       const { nav, termBuf } = makeHarness({
         pageState: 3,
         articleBoard: "Browsers",
@@ -1570,7 +1605,7 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
     // 症狀：長推文的守門拿上一篇的 AID 送 #AID ⇒ 推到上一篇讀的那篇。
     test("同作者同看板、下一篇較長（首列相同）→ 換文章仍要歸零", () => {
       const HEAD = "作者 aaa (甲) 看板 Browsers";
-      const first = [HEAD, URL_ROW("Browsers", BROWSERS_FN)];
+      const first = [HEAD, ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN)];
       const { nav, termBuf, view } = makeHarness({
         pageState: 3,
         articleBoard: "Browsers",
@@ -1584,7 +1619,7 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
       expect(nav.findLocalPostAid()).toBeNull();
 
       const OTHER_FN = "M.1786269999.A.123";
-      termBuf.pageLines = termBuf.pageLines.concat([URL_ROW("Browsers", OTHER_FN)]);
+      termBuf.pageLines = termBuf.pageLines.concat([ORIGIN_ROW, URL_ROW("Browsers", OTHER_FN)]);
       expect(nav.findLocalPostAid()).toEqual({ board: "Browsers", aid: fnToAid(OTHER_FN) });
     });
   });
@@ -1753,6 +1788,7 @@ describe("超長文（footer 被行號擠掉）", () => {
 
   test("退出路徑也先走免費路徑：累積頁讀得到本篇網址 ⇒ 返回錨點是 AID", () => {
     const acc = ["作者 someone (某人) 看板 Browsers"];
+    acc[9299] = ORIGIN_ROW;
     acc[9300] = URL_ROW("Browsers", BROWSERS_FN);
     const h = makeHarness({
       footer: SQUEEZED_ROW,

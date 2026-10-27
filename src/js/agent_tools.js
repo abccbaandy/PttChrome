@@ -20,7 +20,7 @@ import { serializedOpHint } from './serialized_op_gate';
 import { isMainMenuRow } from './aid_navigation';
 import { parseStatusRow, statusSignature } from './string_util';
 import { findPageOverlap } from './comment_parse';
-import { parseArticleUrlLine, isCrossPostHeaderLine } from './aid_parse';
+import { parseOwnArticleUrlLine, isCrossPostHeaderLine } from './aid_parse';
 import { listEntriesFromScreen, parseArticleLines } from './agent_parse';
 import { blacklistHit, listFilterOf } from './list_row_filter';
 
@@ -86,12 +86,15 @@ export function readScreen(core) {
   };
 }
 
-// 全文的「※ 文章網址」→ { board, aid, url }。兩道守門同 aid_navigation.findLocalPostAid：
-// 轉錄標頭之後的網址是原文的；看板不符的網址是轉錄帶進來的（pttbbs 擋同板轉錄）。
+// 全文的「※ 文章網址」→ { board, aid, url }。守門同 aid_navigation.findLocalPostAid：
+// 只認緊接在「※ 發信站」之後的那行（內文貼的不算）；轉錄標頭之後的網址是原文的；看板不符的
+// 網址是轉錄帶進來的（pttbbs 擋同板轉錄）。
 export function findArticleUrl(lines, board) {
+  let prev = '';
   for (const text of lines) {
     if (isCrossPostHeaderLine(text)) return null;
-    const hit = parseArticleUrlLine(text);
+    const hit = parseOwnArticleUrlLine(prev, text);
+    prev = text;
     if (!hit) continue;
     if (board && hit.board.toLowerCase() !== board.toLowerCase()) return null;
     const m = text.match(/https?:\/\/\S+/);

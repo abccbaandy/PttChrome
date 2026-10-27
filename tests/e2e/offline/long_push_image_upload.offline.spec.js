@@ -16,6 +16,8 @@ const { rightClickPlainText, dragFiles } = require('../helpers/real_input');
 // （ContextMenu 的 gating：enableLongPush && buf.pageState === 3）。
 const ARTICLE_HEADER = '作者  testuser (安安) 看板 Test';
 const ARTICLE_TITLE = '標題  [閒聊] 測試文章';
+// 系統寫網址列時一定緊接在「※ 發信站」之後（findLocalPostAid 只認這種，內文貼的網址不算）。
+const ARTICLE_ORIGIN = '※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)';
 const ARTICLE_URL =
   '※ 文章網址: https://www.ptt.cc/bbs/Test/M.1756700000.A.ABC.html';
 const ARTICLE_FOOTER =
@@ -92,6 +94,7 @@ const drawArticle = (page) =>
   drawRows(page, {
     0: ARTICLE_HEADER,
     1: ARTICLE_TITLE,
+    19: ARTICLE_ORIGIN,
     20: ARTICLE_URL,
     23: ARTICLE_FOOTER
   });
