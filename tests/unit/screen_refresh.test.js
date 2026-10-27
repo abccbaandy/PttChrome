@@ -9,6 +9,7 @@ import {
   isBoardKeywordPromptFrame,
   ScreenRefresh,
   DEFAULT_REFRESH_MIN_INTERVAL_SEC,
+  liveHelperUpdateAllowed,
 } from "../../src/js/screen_refresh";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
@@ -332,5 +333,39 @@ describe("ScreenRefresh.refresh", () => {
     expect(r.refresh("key")).toBe(true);
     expect(core.aidNavigation.refresh).toHaveBeenCalledTimes(2);
     expect(r._lastAt).toBe(5000);
+  });
+});
+
+describe("live 文小幫手：本幀才送 ←→End", () => {
+  // bbs.c#recommend 的型別選單：vkey() 只吃一鍵，← 不是數字 ⇒ 型別變成預設的「推」。
+  const TYPE_MENU = "您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ";
+  const LIST_FOOTER = "文章選讀  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面";
+
+  test("文章的 pager 狀態列、列表的 caption ⇒ 送", () => {
+    expect(liveHelperUpdateAllowed({ pageState: 3, lastRowText: READ_ROW })).toBe(true);
+    expect(liveHelperUpdateAllowed({ pageState: 2, lastRowText: LIST_FOOTER })).toBe(true);
+  });
+
+  test("pageState 黏在 3、底列是推文型別選單 ⇒ 不送（← 會選成「推」）", () => {
+    expect(liveHelperUpdateAllowed({ pageState: 3, lastRowText: TYPE_MENU })).toBe(false);
+  });
+
+  test("游標在輸入欄（推文內容、pmore 的 / 搜尋）⇒ 不送", () => {
+    expect(
+      liveHelperUpdateAllowed({ pageState: 3, lastRowText: READ_ROW, cursorOnInputField: true }),
+    ).toBe(false);
+    expect(
+      liveHelperUpdateAllowed({ pageState: 2, lastRowText: LIST_FOOTER, cursorOnInputField: true }),
+    ).toBe(false);
+  });
+
+  test("列表底列不是列表 caption（prompt 蓋掉、編輯器）、其他 pageState ⇒ 不送", () => {
+    expect(liveHelperUpdateAllowed({ pageState: 2, lastRowText: "確定要刪除嗎 [y/N]? " })).toBe(false);
+    expect(
+      liveHelperUpdateAllowed({ pageState: 2, lastRowText: " 編輯文章  (^Z)說明 ││插入│aipr│  1:  1" }),
+    ).toBe(false);
+    expect(liveHelperUpdateAllowed({ pageState: 6, lastRowText: READ_ROW })).toBe(false);
+    expect(liveHelperUpdateAllowed({ pageState: 5, lastRowText: READ_ROW })).toBe(false);
+    expect(liveHelperUpdateAllowed({ pageState: 1, lastRowText: LIST_FOOTER })).toBe(false);
   });
 });

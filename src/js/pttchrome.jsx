@@ -11,7 +11,7 @@ import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
 import { CommandQueue, LINK_STALL_CAP_MS } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { needsAidBoardChoice } from './aid_board_choice';
-import { ScreenRefresh } from './screen_refresh';
+import { ScreenRefresh, liveHelperUpdateAllowed } from './screen_refresh';
 import { ReadingRecord } from './reading_record';
 import { ReconnectResume, isResumeToastTarget } from './reconnect_resume';
 import { UnreadJump } from './unread_jump';
@@ -1506,8 +1506,13 @@ App.prototype.incrementCountToUpdatePushthread = function(interval) {
 
   if (++this.pushthreadAutoUpdateCount >= this.maxPushthreadAutoUpdateCount) {
     this.pushthreadAutoUpdateCount = 0;
-    if (this.buf.pageState == 3 || this.buf.pageState == 2) {
-      //this.view._send('qrG');
+    // pageState 會黏住：推文型別選單底下還是 3，← 會被當成選「推」（screen_refresh.js）。
+    const buf = this.buf;
+    if (liveHelperUpdateAllowed({
+      pageState: buf.pageState,
+      lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
+      cursorOnInputField: buf.isCursorOnInputField()
+    })) {
       this.view._send('\x1b[D\x1b[C\x1b[4~');
     }
   }
