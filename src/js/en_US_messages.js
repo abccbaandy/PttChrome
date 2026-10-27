@@ -1364,6 +1364,18 @@ export const en_US = {
   "recent_remove": {
     "message": "Remove"
   },
+  "options_resumeRecentArticles": {
+    "message": "Reopen recent articles where you left off"
+  },
+  "tooltip_resumeRecentArticles": {
+    "message": "When you reopen a half-read article from the home dashboard or the command palette, it scrolls to the line you stopped at once loaded; tap \"Back to top\" to start over. Articles read to the end still open at the top. Only scrolls the view, never sends extra keys."
+  },
+  "recent_resumeHint": {
+    "message": "Picking up where you left off"
+  },
+  "recent_resumeTop": {
+    "message": "Back to top"
+  },
   "recent_failed": {
     "message": "Can't open this article right now, please try again"
   },

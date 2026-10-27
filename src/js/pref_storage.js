@@ -67,6 +67,9 @@ export const DEFAULT_PREFS = {
   // 最近讀過／稍後再讀（js/recent_articles.js）：記下讀過的文章（只讀文末網址列）、右鍵收進
   // 稍後再讀，首頁儀表板與指令面板點了開回去。記的時候不送鍵；開回去是使用者按的 ⇒ 不在安全模式名單內。
   enableRecentArticles: true,
+  // 最近讀過開回去時接著上次讀到的地方（js/recent_articles.js，P49）：AID 跳文落地後只捲視口，
+  // 不多送鍵 ⇒ 不在安全模式名單內。
+  resumeRecentArticles: true,
   // 看板分頁（js/board_tabs.js）：文章列表上方一排最近去過的看板，點一下替使用者送
   // s<板>⏎ 切板 ⇒ 在安全模式名單內。
   enableBoardTabs: true,

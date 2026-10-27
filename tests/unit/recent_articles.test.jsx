@@ -25,6 +25,10 @@ import {
   pushEntry,
   articleMatches,
   recentKey,
+  resumeLineOf,
+  resumeLineFromRecord,
+  nextResumeStep,
+  RESUME_ARM_MS,
 } from "../../src/js/recent_articles";
 import { buildPaletteItems } from "../../src/js/command_palette";
 import { buildContextMenuEntries } from "../../src/components/ContextMenu/context_menu_entries";
@@ -171,6 +175,179 @@ describe("控制器", () => {
     expect(core.deepLinkController.request).toHaveBeenCalledWith({ board: A2.board, aid: A2.aid });
     core.deepLinkController.request.mockReturnValueOnce(null);
     expect(ra.open(A2)).toBe(false);
+  });
+});
+
+// P49：開回去接著上次讀到的地方。
+describe("接著上次讀到的地方", () => {
+  // 好讀文章：視窗頂端在第 line 列；mainDisplay 量 atBottom（離底超過兩列＝沒到底）。
+  function readingCore() {
+    const core = fakeCore();
+    core.view._articleInstanceId = 1;
+    core.view.chh = 20;
+    core.view.line = 0;
+    core.view.currentLineIndex = () => core.view.line;
+    core.view.mainDisplay = { scrollTop: 0, scrollHeight: 5000, clientHeight: 400 };
+    core.easyReading = {
+      _enabled: true,
+      _functionMode: false,
+      easyReadingReachedPageEnd: false,
+      _pendingScrollRestore: null,
+      requestScrollRestore: vi.fn(),
+      cancelScrollRestore: vi.fn(),
+    };
+    core.aidNavigation.active = false;
+    core.aidNavigation.currentPostAid = () => core.landed;
+    core.landed = null;
+    return core;
+  }
+
+  afterEach(() => {
+    document.getElementById("recentResume")?.remove();
+  });
+
+  test("純函式：位置正規化、讀到文末不記、落地決策", () => {
+    expect(resumeLineOf(0.5)).toBeNull();
+    expect(resumeLineOf(42.12345)).toBe(42.123);
+    expect(resumeLineOf(NaN)).toBeNull();
+    expect(resumeLineFromRecord({ easy: true, atBottom: false, lineIndex: 30 })).toBe(30);
+    expect(resumeLineFromRecord({ easy: true, atBottom: true, lineIndex: 30 })).toBeNull();
+    expect(resumeLineFromRecord({ easy: false, atBottom: false, lineIndex: 30 })).toBeNull();
+
+    const base = { ageMs: 100, navActive: false, pageState: 3, inst: 2, armedInst: 1, easy: true, key: "b/x", landedKey: "b/x" };
+    expect(nextResumeStep(base)).toBe("apply");
+    expect(nextResumeStep({ ...base, navActive: true })).toBe("wait");
+    expect(nextResumeStep({ ...base, inst: 1 })).toBe("wait"); // 還是出發那篇
+    expect(nextResumeStep({ ...base, pageState: 2 })).toBe("wait"); // 跳文失敗停在列表
+    expect(nextResumeStep({ ...base, easy: false })).toBe("wait"); // 好讀還沒接手
+    expect(nextResumeStep({ ...base, landedKey: "b/y" })).toBe("drop"); // 落在別篇
+    expect(nextResumeStep({ ...base, landedKey: null })).toBe("drop"); // 認不出
+    expect(nextResumeStep({ ...base, ageMs: RESUME_ARM_MS + 1 })).toBe("drop");
+  });
+
+  test("捲動停下來記位置：只改那一筆的 line、不換順序、不通知清單；讀到文末清掉；重讀一次不洗掉", () => {
+    const core = readingCore();
+    const st = memStorage();
+    const ra = new RecentArticles(core, st);
+    core.settle(); // 記下 A1
+    ra.noteRead(A2);
+    const k1 = recentKey(A1.board, A1.aid);
+    const changes = [];
+    ra.onChange(() => changes.push(1));
+
+    core.view.line = 37.5;
+    expect(ra.samplePosition()).toBe(true);
+    expect(ra.state.recent.map((e) => e.aid)).toEqual([A2.aid, A1.aid]);
+    expect(ra.savedLine(k1)).toBe(37.5);
+    expect(JSON.parse(st.getItem(RECENT_ARTICLES_KEY)).recent[1].line).toBe(37.5);
+    expect(changes).toEqual([]);
+
+    // 再讀一次同一篇（noteRead 不帶位置）⇒ 位置留著
+    ra.noteRead(A1);
+    expect(ra.savedLine(k1)).toBe(37.5);
+
+    // 讀到文末 ⇒ 下次從頭
+    core.easyReading.easyReadingReachedPageEnd = true;
+    core.view.mainDisplay.scrollTop = 4600;
+    expect(ra.samplePosition()).toBe(true);
+    expect(ra.savedLine(k1)).toBeNull();
+    expect(JSON.parse(st.getItem(RECENT_ARTICLES_KEY)).recent[0]).not.toHaveProperty("line");
+  });
+
+  test("離開文章那一幀、原生鏡像、還原還沒落地、換了一篇 ⇒ 不記", () => {
+    const core = readingCore();
+    const ra = new RecentArticles(core, memStorage());
+    core.settle();
+    const k1 = recentKey(A1.board, A1.aid);
+    core.view.line = 50;
+    ra.samplePosition();
+    core.view.line = 0;
+
+    core.buf._settleTimer = 1; // 畫面還在變（列表那一幀剛到）
+    expect(ra.samplePosition()).toBe(false);
+    core.buf._settleTimer = null;
+    core.easyReading._functionMode = true;
+    expect(ra.samplePosition()).toBe(false);
+    core.easyReading._functionMode = false;
+    core.easyReading._pendingScrollRestore = { lineIndex: 50 };
+    expect(ra.samplePosition()).toBe(false);
+    core.easyReading._pendingScrollRestore = null;
+    core.view._articleInstanceId = 2; // 下一篇還沒讀到網址列
+    expect(ra.samplePosition()).toBe(false);
+    core.view._articleInstanceId = 1;
+    core.buf.pageState = 2;
+    expect(ra.samplePosition()).toBe(false);
+    expect(ra.savedLine(k1)).toBe(50);
+
+    // 開關關掉也不記
+    core.buf.pageState = 3;
+    prefOverride.resumeRecentArticles = false;
+    expect(ra.samplePosition()).toBe(false);
+    expect(ra.savedLine(k1)).toBe(50);
+  });
+
+  test("開回去：落在同一篇才交給好讀還原，頂端提示「回到開頭」收回還原、捲回頂端", () => {
+    expect(DEFAULT_PREFS.resumeRecentArticles).toBe(true);
+    expect(NATIVE_SAFE_MODE_KEYS).not.toContain("resumeRecentArticles");
+    const core = readingCore();
+    const ra = new RecentArticles(core, memStorage());
+    core.settle();
+    core.view.line = 80;
+    ra.samplePosition();
+
+    core.buf.pageState = 2; // 回到列表，從指令面板開回去
+    core.settle();
+    expect(ra.open(A1)).toBe(true);
+    core.aidNavigation.active = true;
+    core.settle();
+    expect(core.easyReading.requestScrollRestore).not.toHaveBeenCalled();
+
+    // 落地：新的一篇、跳文落地記下的就是 A1
+    core.aidNavigation.active = false;
+    core.buf.pageState = 3;
+    core.view._articleInstanceId = 2;
+    core.landed = { board: A1.board, aid: A1.aid };
+    core.settle();
+    core.settle();
+    expect(core.easyReading.requestScrollRestore.mock.calls).toEqual([[80]]);
+    const toast = document.getElementById("recentResume");
+    expect(toast.hidden).toBe(false);
+    expect(toast.textContent).toContain(i18n("recent_resumeHint"));
+
+    core.view.mainDisplay.scrollTop = 300;
+    fireEvent.click(toast.querySelector("button"));
+    expect(core.easyReading.cancelScrollRestore).toHaveBeenCalled();
+    expect(core.view.mainDisplay.scrollTop).toBe(0);
+    expect(toast.hidden).toBe(true);
+  });
+
+  test("落在別篇、沒讀到一半、開關關掉 ⇒ 不捲", () => {
+    const core = readingCore();
+    const ra = new RecentArticles(core, memStorage());
+    core.settle();
+    core.view.line = 80;
+    ra.samplePosition();
+    core.buf.pageState = 2;
+    core.settle();
+
+    ra.open(A1);
+    core.buf.pageState = 3;
+    core.view._articleInstanceId = 2;
+    core.landed = { board: A2.board, aid: A2.aid };
+    core.settle();
+    expect(core.easyReading.requestScrollRestore).not.toHaveBeenCalled();
+
+    ra.open(A2); // 沒有位置
+    core.view._articleInstanceId = 3;
+    core.settle();
+    expect(core.easyReading.requestScrollRestore).not.toHaveBeenCalled();
+
+    prefOverride.resumeRecentArticles = false;
+    ra.open(A1);
+    core.view._articleInstanceId = 4;
+    core.landed = { board: A1.board, aid: A1.aid };
+    core.settle();
+    expect(core.easyReading.requestScrollRestore).not.toHaveBeenCalled();
   });
 });
 
