@@ -369,6 +369,14 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 7g. **跳號腿一律 `fullRepaint: true`，且 miss 只能由完整幀定讞**（2026-08-25「開文偶發凍四秒」）。兩半缺一不可：
    - **零回應跳號**：跳到真游標**已經所在**的序號時畫面零差異 ⇒ server 不寫任何一格 ⇒ `term_buf` 的 settle timer 只由 server 活動 re-arm（不變量 2b）⇒ 沒 settle ⇒ expect 永不被評估，只能苦等軟逾時。（**2026-09 起「零回應」不再等於「零 byte」**：PTT 的 DEC 2026 同步輸出讓每個 `doupdate()` 都吐一對 `ESC[?2026h/l`，連 `!ft.dirty` 早退也吐 ⇒ 線上會看到 16 bytes。但那兩條序列不觸發 `_touchRows`／`posChanged` ⇒ **依然零 settle**，所以下面的結論與 `fullRepaint` 解法完全不變。細節見 `docs/pttbbs-screen-protocol.md` §1.1。）prefetch 錨定腿剛把游標跳到 2381，open-jump 又跳 2381 ⇒ 凍 4094ms（其中 4002ms 純空等）。→ **keys 形如 `<數字>\r` 的每一腿都必須 `fullRepaint: true`**（目前八腿：`open-jump`、`open-pinned-jump`、`jump-number`、`jump-end`、`jump-home`、`prefetch-anchor-*`、`native-sync-jump`、`leave-sync-jump`），另加 `open-pinned-end`（游標已在底部時 End 同樣零回應）。**expect 不變**：協定 §6 M1——`redrawwin` 重繪的是 server 虛擬螢幕「現狀」，跳號後底列仍空 ⇒ 永遠不會變成 clean-list，park 指紋（不變量 3）仍是唯一判準。**翻頁腿（`prefetch-up/down`）刻意不掛**：有動的翻頁本來就確定性回應，附 \f 只是流量×2；`native-key`／`native-paste`／`native-input` 也不掛（bytes 是使用者任意輸入，且 §8.2 明訂 `view_postinfo` 這類交易不可帶 `fullRepaint`）。
    - **`isCompleteFrame` 守門**（`command_queue.js` 可注入，預設 `() => true`；`pttchrome.jsx` 注入 `changedRows.size >= rows`）：探針從 4000ms 提前到 250ms 之後，「探針送出後的下一個 settle 就是探針的答案」不再成立——慢速連線上指令自己的真回應常常晚於探針才到，而**部分幀不是「我在哪」的答案**。沒這道守門，那種幀會被判定讞 miss → 常態誤降級原生。判準來源：\f 的 `redrawwin` 回應固定以 `ESC[H ESC[2J` 開頭，而 `term_buf` 的 erase-display `case 2` 走 `_touchRows(0, rows-1)` ⇒ 全螢幕清除必然讓 `changedRows` 涵蓋所有列。非完整幀改用**探針窗**重新武裝並計數，上限 `MAX_PROBE_EXTENSIONS=1`（最壞 ≈ 250+600+600，仍在 2500ms 看門狗之內，沒有無限延長的路）。守門失效的退路是 hard timeout → `onFail('timeout')`，只可能把 miss 延後到硬上限，**不可能卡死**。
+7h. **線路靜默寬限**（`command_queue.js` 的 `stallCapMs`，App 接 `LINK_STALL_CAP_MS=4000`）：命令送出後**一個 byte 都沒收到**（`App.onData` → `queue.noteRecv()`），
+   探針窗與 hard 到期都不判 timeout，等到「送出起算 4000ms」才照舊 `onFail('timeout')`。量到的事實（手機 APK）：行動網路閒置一下之後的第一個命令，
+   回應 1.1～2.0 秒後才整包到、內容正確，緊接著的命令只要十幾 ms；7b 的 250/600/1200 會在 850ms 把**每一個**前景交易判逾時降級
+   （點卡片開文、返回鍵離開列表全失敗，使用者的動作丟掉）。這**不違反「勿再引入 RTT 自適應 timeout」**：判定仍只看內容、計時仍只觸發探針；
+   它只區分「有回但不是答案」（照舊快速 miss／timeout）與「完全沒聲音」（降級也看不到新東西）。界線：收過任何 byte、`probe:false`、
+   被 `expedite` 催過的背景命令都不享有（已在寬限裡等的被催 ⇒ 短窗後讓線）。凍結後盾（7c）到期時 `queue.stallWaitMs()>0` ⇒ 往後挪到寬限用完＋200ms
+   （`_setFrozenWatchdog`，兩種列表 session 同一條規則），否則 2.5s 後盾會先降級。死線最壞多凍到 4s 再降級。
+   守護：`command_queue.test.js`「線路靜默寬限」、`list_command_budget.test.js`「線路慢一兩秒才回」、`board_list_session.test.js`「凍結後盾 × 線路靜默寬限」。
    守護：`list_command_budget.test.js`（跳號腿 \f 契約＋真 CommandQueue 的零回應重現）、`command_queue.test.js`「isCompleteFrame…」一組。
 8. CommandQueue timer 要包 wrapper（Illegal invocation）。
 9. `_renderScreenLines` list 分支傳 `{pageState:2}`；**dropHidden=false**（黑名單已在 `visibleListIndices` 前置過濾，視窗切片本來就不含隱藏列）。

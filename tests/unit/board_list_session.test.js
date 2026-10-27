@@ -1692,3 +1692,34 @@ describe("頂端保留區：到頂一定是 0（看板列表）", () => {
     expect(targets.at(-1)).toBe(0);
   });
 });
+
+// 凍結後盾（2.5s）讓路給 CommandQueue 的線路靜默寬限（command_queue.js 檔頭
+// stallCapMs）：手機線路閒置後第一個回應可能 1～2 秒才到，後盾若照舊 2.5s 降級，
+// 寬限就白給了。讓路有界：寬限是命令送出起算的絕對值。
+describe("凍結後盾 × 線路靜默寬限", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  test("在飛命令還在寬限內 ⇒ 2.5s 不降級；寬限用完才降級", () => {
+    const { s, queue, hints } = makeSession();
+    let stall = 1500;
+    queue.stallWaitMs = () => stall;
+    s._freezeForTransaction();
+    vi.advanceTimersByTime(2500);
+    expect(hints).toEqual([]);
+    expect(s._renderMode).toBe("frozen");
+    stall = 0; // 寬限用完（佇列自己的 onFail 本該先收，這裡模擬回呼沒跑到的殘局）
+    vi.advanceTimersByTime(1500 + 200);
+    expect(hints).toEqual(["指令逾時，已切至原生模式"]);
+  });
+
+  test("沒有寬限（線路有聲音／寬限關閉）⇒ 照舊 2.5s 降級", () => {
+    const { s, queue, hints } = makeSession();
+    queue.stallWaitMs = () => 0;
+    s._freezeForTransaction();
+    vi.advanceTimersByTime(2499);
+    expect(hints).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(hints).toEqual(["指令逾時，已切至原生模式"]);
+  });
+});

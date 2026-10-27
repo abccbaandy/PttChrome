@@ -11,6 +11,7 @@ const WIRE = "\x1b[1;33;46m★friend01\x1b[0;1;37;45m 在嗎 \x1b[m";
 function fakeApp({ focused, notifications = true }) {
   return {
     appFocused: focused,
+    commandQueue: { noteRecv() {} },
     boardNoteSkip: { noteRecv() {} },
     parser: { feed() {} },
     messageInbox: { noteData: vi.fn() },
@@ -49,4 +50,16 @@ test("通知開關關掉：APK 也不送", () => {
   const app = fakeApp({ focused: false, notifications: false });
   App.prototype.onData.call(app, WIRE);
   expect(app.view.showWaterballNotification).not.toHaveBeenCalled();
+});
+
+// 不是水球閘門，但同一個入口：CommandQueue 的線路靜默寬限靠「收過 byte 沒有」判定
+// （command_queue.js 檔頭 stallCapMs），而且要在 parser.feed 之前告知 —— feed 引發
+// 的 settle／判定要看得到線路已經有聲音。
+test("每包先告訴 CommandQueue 線路有聲音，再餵 parser", () => {
+  const order = [];
+  const app = fakeApp({ focused: true });
+  app.commandQueue = { noteRecv: () => order.push("noteRecv") };
+  app.parser = { feed: () => order.push("feed") };
+  App.prototype.onData.call(app, WIRE);
+  expect(order).toEqual(["noteRecv", "feed"]);
 });

@@ -43,6 +43,18 @@
 //     design exists to avoid). Default () => true = the pre-gate behaviour,
 //     so callers that cannot tell (unit tests, future embedders) are
 //     unaffected.
+//   - opts.stallCapMs（線路靜默寬限）：送出後**一個 byte 都還沒收到**時，探針窗
+//     到期不判 timeout，改等到「送出起算 stallCapMs」為止。量到的事實（手機 APK
+//     實錄）：行動網路上閒置一下之後的第一個命令，回應常常 1～2 秒後才整包到，
+//     到了之後內容完全正確；同一條線上緊接著的命令只要十幾 ms。250/600/1200 的
+//     快速失敗預算是照桌機 RTT 定的，在那種線上**每一個**前景交易都會判 timeout
+//     降級原生（開文、離開列表全部失敗，回應晚一秒才到也救不回使用者的動作）。
+//     這**不是** RTT 自適應：判定仍只看內容，計時仍只觸發探針；它只區分「線路有
+//     回應但不是答案」（照舊快速 miss／timeout）與「線路完全沒聲音」（降級原生也
+//     看不到任何新東西，只會丟掉使用者的動作）。有界：上限是送出起算的絕對值，
+//     探針已經送過，超過就照舊 onFail('timeout')。收到任何 byte（noteRecv）即失去
+//     寬限；被 expedite 催過的背景命令不享有（前景交易在等它讓線）。0／未設＝關。
+//     凍結畫面的看門狗用 stallWaitMs() 讓路，否則 2.5s 後盾會先降級。
 //
 // Zero dependencies: send and the timer functions are injected so unit tests
 // drive it with vitest fake timers and the app binds it to conn.send.
@@ -51,6 +63,10 @@
 // unsatisfying settle is taken as the verdict regardless (see _concludes).
 // 1 = worst case two probe windows on top of the soft window.
 const MAX_PROBE_EXTENSIONS = 1;
+
+// App 實際接上的線路靜默寬限（見檔頭 opts.stallCapMs）。實錄的靜默長度
+// 1.1～2.0 秒，留一倍餘裕；死線最壞多凍這麼久，之後照舊降級原生。
+export const LINK_STALL_CAP_MS = 4000;
 
 export function CommandQueue(opts) {
   this._send = opts.send;
@@ -88,6 +104,9 @@ export function CommandQueue(opts) {
     function() {
       return true;
     };
+  // See the header: 0 = off (the pre-stall behaviour, kept for embedders/tests
+  // that drive timeouts without a wire).
+  this._stallCapMs = opts.stallCapMs || 0;
   this._inFlight = null;
   this._pending = [];
   this._softTimer = null;
@@ -189,7 +208,16 @@ CommandQueue.prototype = {
   // 過一陣子才復原」）.
   expedite: function(ms) {
     const cmd = this._inFlight;
-    if (!cmd || cmd._probed || cmd.probe === false) return;
+    if (!cmd) return;
+    // 有人在等它讓線 ⇒ 不給線路靜默寬限（見檔頭 stallCapMs）；已經在寬限裡
+    // 乾等的，照一般 expedite 的短窗收掉（到期走 fail，同樣不提前 finish）。
+    cmd._expedited = true;
+    if (cmd._stalling) {
+      this._emit('expedite', cmd);
+      this._armSoft(cmd, ms || 250);
+      return;
+    }
+    if (cmd._probed || cmd.probe === false) return;
     this._emit('expedite', cmd);
     this._armSoft(cmd, ms || 250);
   },
@@ -246,6 +274,19 @@ CommandQueue.prototype = {
     this._maybeIdle();
   },
 
+  // App.onData 每收到一包就呼叫：在飛的命令從此「聽過線路的聲音」，失去靜默寬限。
+  // 不用 settle 判定：settle 只會送到佇列擁有者那一邊（list_render_owner 的分流），
+  // 收包才是唯一不分擁有者的事實。
+  noteRecv: function() {
+    if (this._inFlight) this._inFlight._heard = true;
+  },
+
+  // 在飛命令還能因線路靜默再等多久（ms）；0 ＝不在靜默寬限內（已收過 byte、
+  // 被催過、寬限關閉或已用完）。凍結看門狗用它讓路（見檔頭 stallCapMs）。
+  stallWaitMs: function() {
+    return this._inFlight ? this._stallLeft(this._inFlight) : 0;
+  },
+
   get inFlightKind() {
     return this._inFlight ? this._inFlight.kind : null;
   },
@@ -273,6 +314,9 @@ CommandQueue.prototype = {
     this._inFlight = cmd;
     cmd._probed = false;
     cmd._probeExtensions = 0;
+    cmd._heard = false;
+    cmd._expedited = false;
+    cmd._stalling = false;
     cmd._sentAt = Date.now();
     this._armBoth(cmd);
     this._emit('send', cmd);
@@ -313,6 +357,16 @@ CommandQueue.prototype = {
       this._send('\f');
       return;
     }
+    // 線路從送出到現在一個 byte 都沒回：降級原生也看不到任何新東西，只會丟掉
+    // 使用者的動作 ⇒ 在絕對上限內繼續等（見檔頭 stallCapMs）。soft／hard 兩個
+    // 計時器都會走到這裡，重複進來只是把 soft 重設成同一個截止點。
+    const stallLeft = this._stallLeft(cmd);
+    if (stallLeft > 0) {
+      cmd._stalling = true;
+      this._emit('stall', cmd);
+      this._armSoft(cmd, stallLeft);
+      return;
+    }
     this._emit('fail', cmd);
     this._finish();
     if (cmd.onFail) cmd.onFail('timeout');
@@ -329,6 +383,12 @@ CommandQueue.prototype = {
     if (cmd._probeExtensions >= MAX_PROBE_EXTENSIONS) return true;
     cmd._probeExtensions++;
     return false;
+  },
+
+  _stallLeft: function(cmd) {
+    if (!this._stallCapMs || cmd._heard || cmd._expedited || cmd.probe === false) return 0;
+    const left = this._stallCapMs - (Date.now() - cmd._sentAt);
+    return left > 0 ? left : 0;
   },
 
   // See _onIdle: announce ONLY a genuinely empty queue, and only to an opt-in
