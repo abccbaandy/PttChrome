@@ -2589,7 +2589,11 @@ ListSession.prototype = {
         this._view.flashListHint(queued ? '好讀列表：處理中，完成後開啟這篇…' : '好讀列表：處理中，請稍候…');
       return;
     }
-    this._pendingClick = null;
+    if (this._pendingClick) {
+      // 交易剛結束、補開判定還沒跑就又點了：以這一下為準，排隊那張的標記收掉。
+      this._pendingClick = null;
+      this._setOpening(false);
+    }
     const abs = this._clickedAbs(idx, col);
     if (abs == null) return;
     this._openAbs(abs);
@@ -2641,7 +2645,18 @@ ListSession.prototype = {
   // 編號與身分取自**畫面上那一列**（term_view._listWindowLines，凍結時就是使用者看到的快照）：
   // 凍結期間緩衝可能已經被補頁／重建改掉，用 getListView 算出來的索引會指到別篇。
   _queuePendingClick: function(renderRow, col) {
-    this._pendingClick = null;
+    const queued = this._recordPendingClick(renderRow, col);
+    // 排隊中被點的那張卡片先標「開啟中」（P45 同一個樣式；凍結交易中游標常不在那張上）。
+    // 沒記成的話，只收**先前排隊**留下的標記：開文中（opening）再點不能把那張的標記收掉。
+    if (queued) this._setOpening(true, renderRow);
+    return queued;
+  },
+
+  _recordPendingClick: function(renderRow, col) {
+    if (this._pendingClick) {
+      this._pendingClick = null;
+      this._setOpening(false);
+    }
     if (!canQueueListClick(this.state, this._renderMode)) return false;
     if (!readEffectivePrefs().queueListClickWhenBusy) return false;
     const rangeOn = !!(this._termBuf && this._termBuf.useMouseBrowsing);
@@ -2662,8 +2677,10 @@ ListSession.prototype = {
 
   // 使用者自己按了鍵（term_view.onKeyDown）：作廢。
   cancelPendingClick: function() {
-    if (this._pendingClick) this._diag('listSession.pendingClick', { action: 'drop', reason: 'key' });
+    if (!this._pendingClick) return;
+    this._diag('listSession.pendingClick', { action: 'drop', reason: 'key' });
     this._pendingClick = null;
+    this._setOpening(false);
   },
 
   // 交易可能結束的地方都問一次（settle 的最後、讀取中收掉之後）。
@@ -2687,9 +2704,11 @@ ListSession.prototype = {
     this._pendingClick = null;
     this._diag('listSession.pendingClick', { action: d.action, reason: d.reason || null, num: p.num });
     if (d.action === 'open') {
+      // _beginOpen 會改標游標那張（選取已移到這篇）。
       this._openAbs(abs);
       return;
     }
+    this._setOpening(false);
     if (d.reason === 'moved' && this._view.flashListHint)
       this._view.flashListHint('好讀列表：剛剛點的文章已不在原處，沒有開啟');
   },
@@ -3591,7 +3610,8 @@ ListSession.prototype = {
     this._loadingShown = !!on;
     if (this._view.setListLoading) this._view.setListLoading(on);
     // 每個交易的出口（文章到了、被拒退回、切原生、watchdog）都會關「讀取中」⇒ 開啟中跟著收。
-    if (!on) this._setOpening(false);
+    // 還在排隊（P47）的話那張的標記留著，交給下面的補開判定收或改標。
+    if (!on && !this._pendingClick) this._setOpening(false);
     // 忙時點的那一下（P47）：出口的狀態要等這一串同步呼叫跑完才定（resume-buffer 之後還有
     // rebuild）⇒ 排到 microtask 再判。
     if (!on && this._pendingClick) {
@@ -3604,8 +3624,9 @@ ListSession.prototype = {
 
   // 手機卡片「開啟中」（P45）：開文交易一開始就讓那張卡片有回饋，不必等 PTT 回文章畫面。
   // 只改顯示、不送鍵；term_view.setListOpening 自己判卡片模式與開關。
-  _setOpening: function(on) {
-    if (this._view.setListOpening) this._view.setListOpening(on);
+  // row：P47 排隊中被點的那張（渲染列號）；沒給＝游標那張。
+  _setOpening: function(on, row) {
+    if (this._view.setListOpening) this._view.setListOpening(on, row);
   },
 
   _resumeBuffer: function(facts) {

@@ -321,6 +321,7 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   走游標底色同一條管線（`cursor_highlight.withListOpening` → `term_view.applyCursorHighlight`）⇒ 只搬 class、
   不重畫手指下的卡片。交易的每個出口都會 `_setLoading(false)`，開啟中跟著收。只在卡片模式，跟「讀取中…」
   同一個開關（`showStatusHints`）；一個 byte 都不多送。守護 `list_card_opening.test.js`、`mobile_list_cards`「開啟中」。
+  列表忙時點的那一下（P47）排隊中，標的是**被點的那張**而不是游標那張（見 `docs/easy-reading-list.md`「忙時點的那一下」）。
 - **tap 留痕**：debug 錄製中，卡片模式的每一下 tap 在 `App.mouse_click` 記 `listTap`（outcome＝card／not-card／
   selection／modal／aid-navigation），session 忙碌吞掉時記 `listSession.clickBusy`。「點了沒開文」再出現時，
   錄製檔用 `yarn debug:screens` 看那一下的 outcome 就知道擋在哪一層。
