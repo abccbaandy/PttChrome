@@ -22,7 +22,7 @@ import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
 import { parseMenuItemRow, isMenuScreen } from './menu_items';
 import { isMailListFooter, isMailListRows } from './mail_list';
-import { EDITOR_CAPTION, footerCaption } from './screen_captions';
+import { footerCaption, isEditorFooter } from './screen_captions';
 import {
   ARCHIVE_LIST,
   BOARD_LIST,
@@ -97,13 +97,6 @@ export const termInvColors = [
 function isReversedCell(ch) {
   return !!ch && ch.getFg() === 0 && ch.getBg() === 7;
 }
-
-// 編輯器（vedit）底列最右側的狀態框：`%s│%c%c%c%c%3d:%3d`（插入/取代、aipr 四旗標、
-// 行:欄）。舊版 edit.c:471-479、新版 edit.c#edit_msg（CONFIRMED 讀碼 @ piaip.newui
-// 7e35b24e）格式相同，caption 同為「 編輯文章 」，只有中段改成動態按鈕 ⇒ 兩者就是
-// 新舊都成立的錨點（公告範例 `||插入|5ipr||` 與 source 不符，以 source 為準）。
-// 只要求結尾是行:欄；它擋掉「內文剛好以 編輯文章 開頭」的誤判。
-const EDITOR_STATUS_BOX_RE = /(插入|取代).*\d+:\s*\d+\s*$/;
 
 function TermChar(ch) {
   this.ch = ch;
@@ -1461,6 +1454,14 @@ TermBuf.prototype = {
     return this._isPauseRow(this.getRowText(this.rows - 1, 0, this.cols)) || this._isAnsiPassFrame();
   },
 
+  // 本幀是不是編輯器（setPageState 那條 6 的唯一真相源）。pageState 6 同樣會黏住：編輯器裡
+  // 在底列問話的 prompt（^Q「結束但不儲存 [y/N]?」、跳至第幾行、區塊刪除…，edit.c 的
+  // vmsg／getdata(b_lines…)）不命中 setPageState 任何分支 ⇒ 還是 6。替使用者送字的消費端
+  // （編輯器輸入框、上傳網址插入）一律問這個，不能只看 pageState。
+  isEditorScreenNow: function() {
+    return isEditorFooter(this.getRowText(this.rows - 1, 0, this.cols));
+  },
+
   // pager 現在是誰的：string_util.parsePagerFooterContext 讀底列，再加一條底列看不出來的：
   // 看板精華區（文章列表的 z，bbs.c#b_man）不 setutmpmode，currstat 還是 READING ⇒
   // footer 照印 pager_reading_cmds，跟看板文章一字不差；但那裡 s／#／Q／X／y 都只會讓
@@ -1481,8 +1482,7 @@ TermBuf.prototype = {
       this.pageState = 5; // some ansi drawing screen to pass
       return;
     }
-    if (footerCaption(lastRowText) === EDITOR_CAPTION &&
-        EDITOR_STATUS_BOX_RE.test(lastRowText)) {
+    if (isEditorFooter(lastRowText)) {
       this.pageState = 6;
       return;
     }

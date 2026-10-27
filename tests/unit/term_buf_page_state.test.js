@@ -17,6 +17,8 @@
 // 故本檔鎖的是**症狀**：「離開一個非選單畫面回到子選單時，pageState 必須回到 1」。
 import { TermBuf } from "../../src/js/term_buf";
 import { navKeyAllowed } from "../../src/js/nav_key_gate";
+import { editorInputAvailable } from "../../src/js/editor_input";
+import { decideInsertMode } from "../../src/js/image_upload";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import { u2b } from "../../src/js/string_util";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
@@ -299,6 +301,27 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
     const t = makeBuf();
     t.paint(editorScreen(" (^X)存檔 (^C)色碼 (^V)彩色 (Esc-h)按鍵 (^Z)說明", "║插入│aipr║  3:  5"));
     expect(t.buf.pageState).toBe(6);
+  });
+
+  // edit.c#edit_cmd_abort（^Q）：grayout 後 vmsg("結束但不儲存 [y/N]? ")，vkey 收一個鍵，y ⇒ 不存直接離開。
+  // vtuikit.c#vshowmsg 把它畫在底列：" ◆ " ＋訊息＋靠右 " [按任意鍵繼續]"（沒有「請」，不是 pass 列）
+  // ⇒ setPageState 一個分支都不命中，pageState 黏在 6。這時編輯器輸入框／上傳網址若照 6 送字，
+  // 首字就是在回答這個 prompt（"y…" ＝整篇丟掉）。
+  test("編輯器裡 ^Q 的確認列：pageState 黏 6，但 isEditorScreenNow() 為 false ⇒ 編輯器輸入框不出現、上傳網址不送", () => {
+    const t = makeBuf();
+    t.paint(editorScreen(" (^X)存檔 (^C)色碼 (^V)彩色 (Esc-h)按鍵 (^Z)說明"));
+    expect(t.buf.pageState).toBe(6);
+    expect(t.buf.isEditorScreenNow()).toBe(true);
+
+    const prompt = " ◆ 結束但不儲存 [y/N]? ";
+    t.paint(at(ROWS - 1, 0) + "\x1b[K" + padCols(prompt, COLS - width(" [按任意鍵繼續]") - 1) + " [按任意鍵繼續]" + at(ROWS - 1, 0));
+    expect(t.buf.pageState).toBe(6);
+    expect(t.buf.isEditorScreenNow()).toBe(false);
+    const last = t.buf.getRowText(ROWS - 1, 0, COLS);
+    expect(
+      editorInputAvailable({ enabled: true, safeMode: false, pageState: t.buf.pageState, editorNow: t.buf.isEditorScreenNow() }),
+    ).toBe(false);
+    expect(decideInsertMode({ pageState: t.buf.pageState, lastRowText: last })).not.toBe("send");
   });
 
   test("底列以「 編輯文章 」開頭但沒有右側狀態框 ⇒ 不是 6", () => {

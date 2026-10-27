@@ -112,9 +112,16 @@ describe("parseUploadResponse", () => {
   });
 });
 
+const EDITOR_FOOTER = " 編輯文章  (^X)存檔 (^C)色碼 (^Z)說明      ║插入│aipr║  3:  5";
+
 describe("decideInsertMode", () => {
-  test("編輯文章（pageState 6）→ 直接送進終端機", () => {
-    expect(decideInsertMode({ pageState: 6, lastRowText: "" })).toBe("send");
+  test("編輯文章（pageState 6、底列是編輯器）→ 直接送進終端機", () => {
+    expect(decideInsertMode({ pageState: 6, lastRowText: EDITOR_FOOTER })).toBe("send");
+  });
+
+  test("pageState 黏在 6 但底列是編輯器裡的確認 prompt（^Q 結束但不儲存）→ 不送", () => {
+    expect(decideInsertMode({ pageState: 6, lastRowText: " ◆ 結束但不儲存 [y/N]?        [按任意鍵繼續]" })).toBe("clipboard");
+    expect(decideInsertMode({ pageState: 6, lastRowText: "" })).toBe("clipboard");
   });
 
   // bbs.c#recommend 的 prompt 是 sprintf("%s%s%s %s:", ctype_attr, ctype, RESET, myid)，
@@ -204,7 +211,7 @@ describe("decideInsertMode", () => {
 
   test("hasTextTarget 為 false／未給時行為與原本完全一樣", () => {
     expect(
-      decideInsertMode({ pageState: 6, lastRowText: "", hasTextTarget: false }),
+      decideInsertMode({ pageState: 6, lastRowText: EDITOR_FOOTER, hasTextTarget: false }),
     ).toBe("send");
     expect(
       decideInsertMode({

@@ -17,8 +17,10 @@ beforeAll(() => loadBig5Tables());
 
 describe("editorInputAvailable／prepareEditorInsert", () => {
   test("只在編輯器（pageState 6）、開關開、不是安全模式", () => {
-    const base = { enabled: true, safeMode: false, pageState: 6 };
+    const base = { enabled: true, safeMode: false, pageState: 6, editorNow: true };
     expect(editorInputAvailable(base)).toBe(true);
+    // pageState 黏在 6、底列已經不是編輯器（^Q 確認列等 prompt）⇒ 不出現
+    expect(editorInputAvailable({ ...base, editorNow: false })).toBe(false);
     expect(editorInputAvailable({ ...base, pageState: 3 })).toBe(false);
     expect(editorInputAvailable({ ...base, enabled: false })).toBe(false);
     expect(editorInputAvailable({ ...base, safeMode: true })).toBe(false);
@@ -41,7 +43,13 @@ describe("editorInputAvailable／prepareEditorInsert", () => {
 
 describe("EditorInput（控制器）", () => {
   const makeCore = (pageState) => ({
-    buf: { pageState, addEventListener() {} },
+    buf: {
+      pageState,
+      addEventListener() {},
+      isEditorScreenNow() {
+        return this.pageState === 6 && !this.promptOnFooter;
+      },
+    },
     view: { mainDisplay: null, chh: 20 },
     onPasteDone: vi.fn(),
   });
@@ -71,6 +79,16 @@ describe("EditorInput（控制器）", () => {
     expect(ed.open()).toBe(true);
     core.buf.pageState = 3;
     expect(ed.insert("內容")).toMatchObject({ ok: false, reason: "not-editor" });
+    expect(core.onPasteDone).not.toHaveBeenCalled();
+    expect(ed.state.open).toBe(true);
+  });
+
+  test("框開著時編輯器底列跳出 prompt（pageState 還是 6）⇒ insert 不送、框留著", () => {
+    const core = makeCore(6);
+    const ed = new EditorInput(core);
+    expect(ed.open()).toBe(true);
+    core.buf.promptOnFooter = true;
+    expect(ed.insert("yes")).toMatchObject({ ok: false, reason: "not-editor" });
     expect(core.onPasteDone).not.toHaveBeenCalled();
     expect(ed.state.open).toBe(true);
   });

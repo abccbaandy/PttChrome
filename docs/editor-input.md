@@ -21,7 +21,9 @@ PTT 編輯器（`Ctrl+P` 發文、`y` 回文、寄信）在手機上是縮小的
 2. **送之前濾字**：`stripNonBig5`（`long_push.js`，同長推文）濾掉 PTT 畫不出來的字（emoji、控制字元），
    濾掉了什麼在框裡告訴使用者。只剩空白／換行 ⇒ 不送。
 3. **只在編輯器（認不出 ⇒ 原生）**：判準是 `term_buf.setPageState` 的 pageState 6（footer caption＋插入／取代
-   狀態框兩個要素都要對上）。認不出 ⇒ 入口不出現；框開著時畫面換了（被踢出、存檔離開）⇒ 按插入時再判一次，
+   狀態框兩個要素都要對上），**而且本幀底列仍是編輯器**（`buf.isEditorScreenNow()`）：pageState 會黏住，編輯器裡在底列
+   問話的 prompt（^Q 的 vmsg「結束但不儲存 [y/N]?」、跳至第幾行…）不命中任何分支，底下還是 6，那時送字＝替使用者回答
+   prompt（首字 y 整篇丟掉）。認不出 ⇒ 入口不出現；框開著時畫面換了（被踢出、存檔離開、跳出 prompt）⇒ 按插入時再判一次，
    不送、框留著、內容不丟。
 4. **不改 PTT 畫面位置** ⇒ 不經閱讀紀錄（送的是使用者自己打的字，位置由編輯器游標決定）。
 5. **modal**：桌機 Modal 開著時 `setModalOpen('editorInput', open)`，打字不漏給 PTT；手機 MobileSheet 自己管。
