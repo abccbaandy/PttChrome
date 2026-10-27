@@ -1541,7 +1541,8 @@ TermView.prototype = {
     // 手機卡片「開啟中」（P45，setListOpening）：游標那張卡片多一個 class。
     var opened = withListOpening(row, cls, {
       opening: listMode && !!this._listOpening,
-      listCursorRow: this._listCursorRow
+      listCursorRow: this._listCursorRow,
+      openingRow: this._listOpeningRow
     });
     row = opened.row;
     cls = opened.cls;
@@ -2453,10 +2454,13 @@ TermView.prototype = {
   // 手機列表卡片「開啟中」（P45，docs/mobile.md）：ListSession 開文交易開始時 on、
   // 交易結束（文章到了、被拒退回、切原生）時 off。只改顯示、不送鍵；只在卡片模式，
   // 跟「讀取中…」同一個開關（showStatusHints，熟手關掉就整組不出現）。
-  setListOpening: function(on) {
+  // row：P47 排隊中被點的那張卡片的渲染列號（沒給＝游標那張）。
+  setListOpening: function(on, row) {
     on = !!on && !!this.listCards && shouldShowHint(null, this.showStatusHints);
-    if (on === !!this._listOpening) return;
+    var r = on && row != null && row >= 0 ? row : -1;
+    if (on === !!this._listOpening && r === (this._listOpeningRow == null ? -1 : this._listOpeningRow)) return;
     this._listOpening = on;
+    this._listOpeningRow = r;
     if (this.componentScreen) this.applyCursorHighlight();
   },
 

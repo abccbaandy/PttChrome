@@ -103,9 +103,10 @@ export const LIST_CARD_OPENING_CLASS = "listCardOpening";
 // 沒有游標列就照舊（認不出就不標）。開啟中一律標游標列（不看滑鼠 hover 列），底色樣式照舊疊上。
 export function withListOpening(row, cls, input) {
   const o = input || {};
-  const cursorRow = o.listCursorRow == null ? -1 : o.listCursorRow;
-  if (!o.opening || cursorRow < 0) return { row: row, cls: cls };
-  return { row: cursorRow, cls: cls ? cls + " " + LIST_CARD_OPENING_CLASS : LIST_CARD_OPENING_CLASS };
+  // openingRow：P47 排隊中被點的那張（凍結交易中游標常不在那裡）；沒給就標游標列。
+  const target = o.openingRow != null && o.openingRow >= 0 ? o.openingRow : o.listCursorRow;
+  if (!o.opening || target == null || target < 0) return { row: row, cls: cls };
+  return { row: target, cls: cls ? cls + " " + LIST_CARD_OPENING_CLASS : LIST_CARD_OPENING_CLASS };
 }
 
 // 底色從第幾欄畫起（0 = 整列）。**與可點區同一個真相源**（mouse_regions.

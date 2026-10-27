@@ -229,6 +229,45 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await expect(opening).toHaveCount(0);
   });
 
+  // P47：列表在凍結交易中 tap 卡片 ⇒ 記著、交易結束再開；排隊期間**被點的那張**就標「開啟中」
+  // （凍結時游標不在那張上，P45 原本只標游標那張）。按了別的鍵作廢 ⇒ 標記收掉、一個 byte 都不送。
+  test('凍結中 tap 卡片 ⇒ 被點的那張標「開啟中」；按鍵作廢就收掉', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    const target = await page.evaluate(() => {
+      const v = document.querySelector('#mainContainer .listBodyView');
+      const vr = v.getBoundingClientRect();
+      for (const c of v.querySelectorAll(':scope > .listCard')) {
+        const r = c.getBoundingClientRect();
+        if (r.top < vr.top + 2 || r.bottom > vr.bottom - 2) continue;
+        if (c.querySelector('.listCardCursor').textContent.trim()) continue; // 不是游標那張
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, srow: c.getAttribute('srow') };
+      }
+      return null;
+    });
+    expect(target).not.toBeNull();
+    await page.evaluate(() => {
+      const ls = window.__app.listSession;
+      ls.state = 'functionMode';
+      ls._freezeForTransaction();
+    });
+    const sentBefore = await page.evaluate(() => window.__replay.sent.length);
+    await page.touchscreen.tap(target.x, target.y);
+    expect(await page.evaluate(() => window.__app.listSession._pendingClick)).not.toBeNull();
+    const opening = page.locator('#mainContainer .listCardBody.listCardOpening');
+    await expect(opening).toHaveCount(1);
+    await expect(opening).toHaveAttribute('data-row', target.srow);
+    await page.keyboard.press('ArrowDown'); // 凍結中被吞掉，但算「使用者按了別的鍵」
+    expect(await page.evaluate(() => window.__app.listSession._pendingClick)).toBeNull();
+    await expect(opening).toHaveCount(0);
+    expect(await page.evaluate(() => window.__replay.sent.length)).toBe(sentBefore);
+    await page.evaluate(() => {
+      const ls = window.__app.listSession;
+      ls.state = 'active';
+      ls._resumeBuffer(null);
+    });
+  });
+
   // P48：tap 卡片上的「+N」徽章＝開這一篇（同一條開文交易），並記下「開文後跳到新推文」；
   // tap 卡片其他地方照舊只開文。徽章的比對規則守在 unit（list_new_push.test.js），這裡把
   // listBadge 換成只認目標那一篇，專心驗真 tap 的命中與開文。
