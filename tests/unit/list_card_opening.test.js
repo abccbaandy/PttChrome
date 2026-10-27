@@ -9,10 +9,7 @@
 //   3. 只在卡片模式；showStatusHints 關掉就不出現（跟「讀取中…」同一組）；一個 byte 都不多送。
 //   4. 列表忙時點的那一下（P47）排隊時，標的是**被點的那張**（凍結交易中游標常不在那裡），
 //      作廢（按鍵、對不上、離開）就收；交易出口關「讀取中」時還在排隊的話不收（交給補開判定）。
-import {
-  LIST_CARD_OPENING_CLASS,
-  withListOpening,
-} from "../../src/js/cursor_highlight";
+import { LIST_CARD_OPENING_CLASS, withListOpening } from "../../src/js/cursor_highlight";
 import { TermView } from "../../src/js/term_view";
 import { ListSession } from "../../src/js/list_session";
 import { LIST_HEADER_ROWS } from "../../src/js/list_window";
@@ -20,66 +17,34 @@ import { LIST_TITLE_COL_START } from "../../src/js/comment_parse";
 
 describe("withListOpening", () => {
   test("開啟中 ⇒ 標游標列，底色樣式照舊疊上", () => {
-    expect(
-      withListOpening(4, "b2", { opening: true, listCursorRow: 6 }),
-    ).toEqual({
+    expect(withListOpening(4, "b2", { opening: true, listCursorRow: 6 })).toEqual({
       row: 6,
       cls: "b2 " + LIST_CARD_OPENING_CLASS,
     });
     // 底色關掉（cls 空字串）也要標
-    expect(
-      withListOpening(-1, "", { opening: true, listCursorRow: 6 }),
-    ).toEqual({
+    expect(withListOpening(-1, "", { opening: true, listCursorRow: 6 })).toEqual({
       row: 6,
       cls: LIST_CARD_OPENING_CLASS,
     });
   });
   test("沒在開啟、或沒有游標列 ⇒ 原樣", () => {
-    expect(
-      withListOpening(4, "b2", { opening: false, listCursorRow: 6 }),
-    ).toEqual({ row: 4, cls: "b2" });
-    expect(
-      withListOpening(4, "b2", { opening: true, listCursorRow: -1 }),
-    ).toEqual({ row: 4, cls: "b2" });
-    expect(
-      withListOpening(4, "b2", { opening: true, listCursorRow: null }),
-    ).toEqual({ row: 4, cls: "b2" });
+    expect(withListOpening(4, "b2", { opening: false, listCursorRow: 6 })).toEqual({ row: 4, cls: "b2" });
+    expect(withListOpening(4, "b2", { opening: true, listCursorRow: -1 })).toEqual({ row: 4, cls: "b2" });
+    expect(withListOpening(4, "b2", { opening: true, listCursorRow: null })).toEqual({ row: 4, cls: "b2" });
   });
 
   test("指定了被點的那一列（P47 排隊中）⇒ 標那一列，不標游標列", () => {
-    expect(
-      withListOpening(4, "b2", {
-        opening: true,
-        listCursorRow: 6,
-        openingRow: 9,
-      }),
-    ).toEqual({
+    expect(withListOpening(4, "b2", { opening: true, listCursorRow: 6, openingRow: 9 })).toEqual({
       row: 9,
       cls: "b2 " + LIST_CARD_OPENING_CLASS,
     });
-    expect(
-      withListOpening(4, "b2", {
-        opening: true,
-        listCursorRow: -1,
-        openingRow: 9,
-      }).row,
-    ).toBe(9);
-    expect(
-      withListOpening(4, "b2", {
-        opening: true,
-        listCursorRow: 6,
-        openingRow: -1,
-      }).row,
-    ).toBe(6);
+    expect(withListOpening(4, "b2", { opening: true, listCursorRow: -1, openingRow: 9 }).row).toBe(9);
+    expect(withListOpening(4, "b2", { opening: true, listCursorRow: 6, openingRow: -1 }).row).toBe(6);
   });
 });
 
 describe("TermView.setListOpening", () => {
-  const makeView = ({
-    listCards = true,
-    showStatusHints,
-    renderMode = "frozen",
-  } = {}) => {
+  const makeView = ({ listCards = true, showStatusHints, renderMode = "frozen" } = {}) => {
     const v = Object.create(TermView.prototype);
     const calls = [];
     v.componentScreen = { setCursorHighlight: (h) => calls.push(h) };
@@ -105,10 +70,7 @@ describe("TermView.setListOpening", () => {
   test("卡片模式：開 ⇒ 游標卡片多一個 class；關 ⇒ 回到一般底色", () => {
     const { v, last } = makeView();
     v.setListOpening(true);
-    expect(last()).toMatchObject({
-      row: 7,
-      cls: "b2 " + LIST_CARD_OPENING_CLASS,
-    });
+    expect(last()).toMatchObject({ row: 7, cls: "b2 " + LIST_CARD_OPENING_CLASS });
     v.setListOpening(false);
     expect(last()).toMatchObject({ row: 7, cls: "b2" });
   });
@@ -116,15 +78,9 @@ describe("TermView.setListOpening", () => {
   test("帶列號（P47 排隊中）⇒ 標那張卡片；換成游標列（真的開文）也會重標", () => {
     const { v, last } = makeView();
     v.setListOpening(true, 4);
-    expect(last()).toMatchObject({
-      row: 4,
-      cls: "b2 " + LIST_CARD_OPENING_CLASS,
-    });
+    expect(last()).toMatchObject({ row: 4, cls: "b2 " + LIST_CARD_OPENING_CLASS });
     v.setListOpening(true);
-    expect(last()).toMatchObject({
-      row: 7,
-      cls: "b2 " + LIST_CARD_OPENING_CLASS,
-    });
+    expect(last()).toMatchObject({ row: 7, cls: "b2 " + LIST_CARD_OPENING_CLASS });
     v.setListOpening(false);
     expect(last()).toMatchObject({ row: 7, cls: "b2" });
   });
@@ -148,8 +104,7 @@ describe("TermView.setListOpening", () => {
 });
 
 describe("ListSession：開文交易開始就標、每個出口都收", () => {
-  const rowOf = (text) =>
-    text.split("").map((c) => ({ ch: c, isLeadByte: false }));
+  const rowOf = (text) => text.split("").map((c) => ({ ch: c, isLeadByte: false }));
   function makeSession() {
     const opening = [];
     const marks = [];
@@ -231,15 +186,9 @@ describe("ListSession：開文交易開始就標、每個出口都收", () => {
   });
 
   describe("忙時點的那一下（P47）：排隊的那張卡片先標開啟中", () => {
-    const rowOf = (text) =>
-      text.split("").map((c) => ({ ch: c, isLeadByte: false }));
+    const rowOf = (text) => text.split("").map((c) => ({ ch: c, isLeadByte: false }));
     const LINE = (num, author, title) =>
-      String(num).padStart(7) +
-      "    " +
-      " 9/01 " +
-      author.padEnd(13) +
-      "□" +
-      title;
+      String(num).padStart(7) + "    " + " 9/01 " + author.padEnd(13) + "□" + title;
     const ROW = LIST_HEADER_ROWS + 2;
     function busy() {
       const t = makeSession();
