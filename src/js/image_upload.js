@@ -19,6 +19,7 @@
 // 本檔的決策部分全是純函式（無 DOM、無網路），守護在 tests/unit/image_upload.test.js。
 
 import { classifyPushScreen } from './push_screen';
+import { isEditorFooter } from './screen_captions';
 
 export const URUSAI_UPLOAD_URL = 'https://api-v1-t2-upload.urusai.cc';
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -92,7 +93,8 @@ export function decideInsertMode({ pageState, lastRowText, hasTextTarget }) {
   // 而且**優先於** send：那個 modal 開著時底下的畫面是文章／文章列表，走 send 等於
   // 把網址的每個字元當成列表快捷鍵按下去。所以這是最優先，不是並列的第三個分支。
   if (hasTextTarget) return 'target';
-  if (pageState === 6) return 'send';
+  // pageState 6 會黏住（編輯器裡底列跳出 prompt 時還是 6）⇒ 底列本身也要是編輯器的。
+  if (pageState === 6 && isEditorFooter(lastRowText)) return 'send';
   if (lastRowText && classifyPushScreen([lastRowText], 1).kind === 'inputPrompt')
     return 'send';
   return 'clipboard';

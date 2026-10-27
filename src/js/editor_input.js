@@ -21,10 +21,12 @@ export function isEditorInputTarget(el) {
   return !!(el && typeof el.closest === 'function' && el.closest('#' + EDITOR_INPUT_ID));
 }
 
-// 這一幀要不要有入口（純函式）。
+// 這一幀要不要有入口（純函式）。editorNow ＝本幀底列就是編輯器（buf.isEditorScreenNow）：
+// pageState 6 會黏住，編輯器裡跳出的確認 prompt（^Q「結束但不儲存 [y/N]?」）底下還是 6，
+// 那時送字＝替使用者回答 prompt（首字 y 就整篇丟掉）。
 export function editorInputAvailable(facts) {
   const f = facts || {};
-  return !!(f.enabled && !f.safeMode && f.pageState === EDITOR_PAGE_STATE);
+  return !!(f.enabled && !f.safeMode && f.pageState === EDITOR_PAGE_STATE && f.editorNow);
 }
 
 // 插入前的整理（純函式）：濾掉 PTT 畫不出來的字；只剩空白／換行也算空（不送）。
@@ -79,7 +81,8 @@ EditorInput.prototype = {
     return editorInputAvailable({
       enabled: !!prefs.enableEditorInput,
       safeMode: !!prefs.nativeSafeMode,
-      pageState: core.buf ? core.buf.pageState : null
+      pageState: core.buf ? core.buf.pageState : null,
+      editorNow: !!(core.buf && core.buf.isEditorScreenNow && core.buf.isEditorScreenNow())
     });
   },
 

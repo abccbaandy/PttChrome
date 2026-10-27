@@ -41,7 +41,7 @@ CORS **CONFIRMED**：preflight `OPTIONS` 回 `204` + `Access-Control-Allow-Origi
 | 畫面 | 判準 | 動作 |
 |---|---|---|
 | 頁面上有註冊的文字輸入框 | `hasTextTarget`（controller 的 `_insertTarget`） | `target`：`target.insert(text)`。**最優先**，贏過下面兩條 |
-| 編輯文章 | `pageState === 6`（`term_buf.js#setPageState`） | `send`：`App.onPasteDone(text)` |
+| 編輯文章 | `pageState === 6`（`term_buf.js#setPageState`）＋底列本幀仍是編輯器（`screen_captions.isEditorFooter`；6 會黏住，^Q 確認列底下還是 6） | `send`：`App.onPasteDone(text)` |
 | 推文**內容輸入列** | `classifyPushScreen([lastRowText], 1).kind === 'inputPrompt'`（`push_screen.js`） | `send` |
 | 其他（列表／選單／閱讀／推文流程的其餘各步） | — | `clipboard`：`App.doCopy(text)` + 提示 |
 

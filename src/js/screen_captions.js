@@ -50,6 +50,18 @@ export function footerCaption(lastRowText) {
   return KNOWN_CAPTIONS.has(m[1]) ? m[1] : null;
 }
 
+// 編輯器（vedit）底列最右側的狀態框：`%s│%c%c%c%c%3d:%3d`（插入/取代、aipr 四旗標、
+// 行:欄）。舊版 edit.c:471-479、新版 edit.c#edit_msg（CONFIRMED 讀碼 @ piaip.newui
+// 7e35b24e）格式相同，caption 同為「 編輯文章 」，只有中段改成動態按鈕 ⇒ 兩者就是
+// 新舊都成立的錨點（公告範例 `||插入|5ipr||` 與 source 不符，以 source 為準）。
+// 只要求結尾是行:欄；它擋掉「內文剛好以 編輯文章 開頭」的誤判。
+const EDITOR_STATUS_BOX_RE = /(插入|取代).*\d+:\s*\d+\s*$/;
+
+// 這一列是編輯器的底列（caption＋狀態框兩個要素）。
+export function isEditorFooter(lastRowText) {
+  return footerCaption(lastRowText) === EDITOR_CAPTION && EDITOR_STATUS_BOX_RE.test(lastRowText);
+}
+
 // 文章列表的子模式：搜尋結果（MODE_SELECT）與文摘（MODE_DIGEST）。獨立的編號空間、
 // `#` AID 搜尋被拒（read.c select_by_aid）；在列表上 ← 只離開子模式（read_cmd_quit）。
 // 舊版 caption 一律「文章選讀」分不出來 ⇒ 不算（已知限制）。
