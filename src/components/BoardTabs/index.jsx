@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { IconX } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
-import { BOARD_TABS_ID } from "../../js/board_tabs";
+import { BOARD_TABS_ID, tabsToShow } from "../../js/board_tabs";
 import "./BoardTabs.css";
 
 // 看板分頁（邏輯在 js/board_tabs.js，設計見 docs/board-tabs.md）。位置與顯示與否只從
 // pttchrome.boardTabs.onChange 來。
-//   - 桌機：疊在終端機第 1 列（文章列表的按鍵提示列）上，現在這個板反白；× 與右鍵關掉。
-//   - 手機：App Bar 右邊（標題就是現在這個板 ⇒ 只列別的板），長按關掉。
+//   - 只列別的板（tabsToShow）：現在這個板上方標題列／App Bar 本來就寫著。
+//   - 桌機：疊在終端機第 1 列（文章列表的按鍵提示列）上；× 與右鍵關掉。
+//   - 手機：App Bar 右邊，長按關掉。
 // 事件規則同 AidBackButton：mousedown preventDefault（不搶 #t 焦點）、滑鼠事件一律
 // stopPropagation（App 的滑鼠入口在 window），App._onUploadLayer 也認 #boardTabs 放過。
 const keepFocus = (e) => {
@@ -26,10 +27,7 @@ export const BoardTabs = ({ pttchrome }) => {
   }, [ctl]);
 
   if (!state || !state.visible) return null;
-  const cur = (state.current || "").toLowerCase();
-  const tabs = state.mobile
-    ? state.tabs.filter((n) => n.toLowerCase() !== cur)
-    : state.tabs;
+  const tabs = tabsToShow(state.tabs, state.current);
   return (
     <div
       id={BOARD_TABS_ID}
@@ -52,21 +50,15 @@ export const BoardTabs = ({ pttchrome }) => {
       onContextMenu={swallow}
     >
       {tabs.map((name) => {
-        const active = name.toLowerCase() === cur;
         return (
-          <span
-            key={name}
-            className={"boardTab" + (active ? " is-active" : "")}
-          >
+          <span key={name} className="boardTab">
             <button
               type="button"
               role="tab"
-              aria-selected={active}
+              aria-selected={false}
               className="boardTabName"
               data-board-tab={name}
-              title={
-                active ? name : i18n("boardTabs_openTip").replace("{0}", name)
-              }
+              title={i18n("boardTabs_openTip").replace("{0}", name)}
               onMouseDown={keepFocus}
               onClick={(e) => {
                 e.stopPropagation();
@@ -81,7 +73,7 @@ export const BoardTabs = ({ pttchrome }) => {
             >
               {name}
             </button>
-            {!active && !state.mobile && (
+            {!state.mobile && (
               <button
                 type="button"
                 className="boardTabClose"

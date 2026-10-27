@@ -65,11 +65,11 @@ async function boot(page, prefs) {
 }
 
 test.describe('看板分頁', () => {
-  test('疊在終端機第 1 列；點別的板 ⇒ 送原生 s；右鍵關掉不送鍵', async ({ page }) => {
+  test('疊在終端機第 1 列、只列別的板；點別的板 ⇒ 送原生 s；右鍵關掉不送鍵', async ({ page }) => {
     await boot(page);
     await expect(tabs(page)).toBeVisible();
-    await expect(tabs(page).locator('[data-board-tab]')).toHaveText(['Stock', 'Gossiping', 'Test']);
-    await expect(tabs(page).locator('[data-board-tab="Test"]')).toHaveAttribute('aria-selected', 'true');
+    // 現在這個板（Test）上方標題列本來就寫著 ⇒ 不列。
+    await expect(tabs(page).locator('[data-board-tab]')).toHaveText(['Stock', 'Gossiping']);
 
     // 位置：第 1 列（標題列下面、表頭上面）。
     const row0 = await waitRectStable(page, '#mainContainer > [type="bbsrow"]:nth-child(1)');
@@ -80,9 +80,9 @@ test.describe('看板分頁', () => {
 
     await startCapture(page);
     await rightClickElement(page, '#boardTabs [data-board-tab="Gossiping"]');
-    await expect(tabs(page).locator('[data-board-tab]')).toHaveText(['Stock', 'Test']);
-    // 現在這個板點了不送；點 Stock ⇒ s（＋保證整幀重繪的 \f），板名要等 prompt 才送。
-    await tabs(page).locator('[data-board-tab="Test"]').click();
+    await expect(tabs(page).locator('[data-board-tab]')).toHaveText(['Stock']);
+    expect(await peekCapture(page)).toBe('');
+    // 點 Stock ⇒ s（＋保證整幀重繪的 \f），板名要等 prompt 才送。
     await tabs(page).locator('[data-board-tab="Stock"]').click();
     await expect.poll(() => peekCapture(page)).toContain('s');
     expect(await takeCapture(page)).toBe('s\f');

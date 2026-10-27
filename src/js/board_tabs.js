@@ -60,6 +60,13 @@ export function closeBoardTab(tabs, name) {
   return (tabs || []).filter((t) => t.name.toLowerCase() !== lower);
 }
 
+// 分頁列上要畫的板：現在這個板不列（上方標題列／手機 App Bar 本來就寫著板名，點它也只是切到
+// 自己）。記錄照舊有它，離開之後就會出現。
+export function tabsToShow(names, current) {
+  const cur = String(current || '').toLowerCase();
+  return (names || []).filter((n) => n.toLowerCase() !== cur);
+}
+
 function readTabs(storage) {
   try {
     const raw = storage && storage.getItem(BOARD_TABS_KEY);
