@@ -1201,6 +1201,12 @@
   "tooltip_enableListNativeAutoResume": {
     "message": "在列表按下非導覽鍵（搜尋、標記、推文、設定已讀…）時，操作完成、畫面靜下來就自動切回好讀模式。只移動游標的鍵（[ ] = \\ + - < > , . { } t，看板列表的 t v V）更是全程不切原生。關掉＝停在原生模式，要開啟文章或離開看板才回好讀。"
   },
+  "options_queueListClickWhenBusy": {
+    "message": "列表忙的時候點的文章，忙完自動開"
+  },
+  "tooltip_queueListClickWhenBusy": {
+    "message": "列表正在到底、跳號、補頁或重新整理時點文章，會記住最後點的那一篇，處理完、那篇還在原處就自動開啟。期間按了別的鍵、或那篇已經不在原處就不開。"
+  },
   "options_reconnectResume": {
     "message": "斷線重連後回到原處"
   },

@@ -118,6 +118,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableListNativeAutoResume",
     },
     {
+      key: "queueListClickWhenBusy",
+      titleKey: "options_queueListClickWhenBusy",
+      tooltipKey: "tooltip_queueListClickWhenBusy",
+    },
+    {
       key: "skipBoardEntryScreen",
       titleKey: "options_skipBoardEntryScreen",
       tooltipKey: "tooltip_skipBoardEntryScreen",

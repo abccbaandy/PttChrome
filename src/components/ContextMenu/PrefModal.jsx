@@ -936,6 +936,17 @@ export const PrefModal = ({
                   {i18n("tooltip_enableListNativeAutoResume")}
                 </Text>
                 <PrefCheckbox
+                  name="queueListClickWhenBusy"
+                  checked={values.queueListClickWhenBusy}
+                  disabled={values.nativeSafeMode}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_queueListClickWhenBusy")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_queueListClickWhenBusy")}
+                </Text>
+                <PrefCheckbox
                   name="skipBoardEntryScreen"
                   checked={values.skipBoardEntryScreen}
                   disabled={values.nativeSafeMode}

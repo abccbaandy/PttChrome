@@ -508,6 +508,16 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 - **輸入**：pointer 事件＋`setPointerCapture`，滑鼠與觸控同一套；把手 `touch-action:none`（拖它瀏覽器不捲頁）、`data-own-control`＋`App._onUploadLayer` 認 `#listFastScrollHandle`（不被當成點終端機）。
 - 守護：`tests/unit/list_fast_scroll.test.js`（換算、出現條件、拖動不送／放開送一次）、`list_session.test.js`「快速捲動把手」（兩個入口的 gate）、offline `list_fast_scroll.offline.spec.js`（真滑鼠）＋`mobile_list_fast_scroll.offline.spec.js`（真觸控）。
 
+## 忙時點的那一下（P47）
+
+列表在凍結交易中（到底／End、跳號、補頁接合、原地重整，以及 passthrough cursor-sync 那一小段 state≠active ∧ render＝buffer）時點文章，原本吞掉只閃「處理中」。現在記住**最後點的那一篇**，交易一結束還對得上就替使用者開（`js/list_pending_click.js`，pref `queueListClickWhenBusy` 預設開、在安全模式名單內）。
+
+- **記什麼**：`ListSession._queuePendingClick` 從**畫面上那一列**（`term_view._listWindowLines[renderRow]`，凍結時就是使用者看到的快照）取編號＋作者＋主題＋看板。**不可以**用 `getListView` 算索引：凍結期間緩衝可能已被補頁／重建改掉，索引會指到別篇。置底文（沒編號）、讀不出身分、開文中（opening）、讀文章中（suspended）、原生鏡像不記。
+- **何時判**（`pendingClickDecision`）：screenSettled 跑完 `_onScreenSettled` 之後、以及 `_setLoading(false)` 之後的 microtask（出口那一串同步呼叫跑完才定：resume-buffer 之後還有 rebuild）。state active＋render buffer ⇒ 同一板、同編號那一列在畫得出來的序列裡、作者＋主題對得上（`subjectMatches`，截斷的 … 也認）才開；交易還沒結束 ⇒ 等；其他（收成原生、離開列表、換板、8 秒 `PENDING_CLICK_MS`）⇒ 作廢。
+- **開文**：`_openAbs`，跟滑鼠單擊同一條（移選取 → `_forceRedraw` → reducer 的 open／`_beginOpen`），閱讀紀錄照開文的規則。
+- **作廢**：使用者在這期間按了任何非修飾鍵（`term_view.onKeyDown` → `cancelPendingClick`）、之後又點了一下（覆蓋或清掉）。對不上（moved）閃「剛剛點的文章已不在原處，沒有開啟」。
+- 守護：`tests/unit/list_pending_click.test.js`（決策表）、offline `easy-reading-list.offline.spec.js`「列表忙時點的那一下」（真滑鼠點凍結中的列表：按鍵作廢不送、交易結束開那一篇）。
+
 ## 已知限制
 
 `buf.rows < 24` 不 engage（下界＝server clamp，`mbbsd/term.c:55`）——**≥24 的任意列數都可以**。
