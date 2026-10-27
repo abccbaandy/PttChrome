@@ -66,7 +66,7 @@ import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
 import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { WhatsNew, isWhatsNewTarget } from './whats_new';
-import { RecentArticles } from './recent_articles';
+import { RecentArticles, isRecentResumeTarget } from './recent_articles';
 import { isCommentFilterBarTarget } from './comment_filter';
 import { MessageInbox, isMessageInboxTarget } from './message_inbox';
 import { NewComments } from './new_comments';
@@ -2507,7 +2507,7 @@ App.prototype._onUploadLayer = function(e) {
   const t = e && e.target;
   return (
     isUploadLayerTarget(t) || isHomeDashboardTarget(t) || isSplitReaderTarget(t) || isArticleToolsTarget(t) ||
-    isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t) ||
+    isCommentBarTarget(t) || isMessageInboxTarget(t) || isNextArticleTarget(t) || isResumeToastTarget(t) || isRecentResumeTarget(t) ||
     isSearchStatusTarget(t) || isArticleNavTarget(t) || isBoardTabsTarget(t) || isWhatsNewTarget(t) ||
     isCommentFilterBarTarget(t) || isFollowOnlyTarget(t) || isListFastScrollTarget(t) ||
     isEditorInputTarget(t)

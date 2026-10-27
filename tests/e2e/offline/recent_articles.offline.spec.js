@@ -2,16 +2,19 @@
 //   1. 好讀讀一篇（stock-huang，文末有網址列）⇒ 記進「最近讀過」；真右鍵 →「稍後再讀」⇒ 收進清單，
 //      一個 byte 都不送。
 //   2. 文章列表按 F4 ⇒ 指令面板列出那一篇；點下去 ⇒ 走 deep link 的 AID 跳文（送鍵切到那個板）。
+//   3. 開回讀到一半的那篇（scn-deep-link 真往返）⇒ 好讀載到上次那一列後捲過去，頂端「回到開頭」
+//      捲回頂端；之後滾輪捲動停下來 ⇒ 位置記回清單。
 // 選單、面板的點擊與焦點只有真瀏覽器驗得出來。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { loadCassette, bootOffline, replayCassette, waitScreenSettled } = require('../helpers/replay');
+const { loadCassette, bootOffline, replayCassette, waitScreenSettled, bootScenario } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const { waitPreviewsSettled } = require('../helpers/layout');
 const { rightClickElement } = require('../helpers/real_input');
 const { drawMainMenu } = require('../helpers/main_menu');
 
 const article = loadCassette('stock-huang');
+const scenario = loadCassette('scn-deep-link');
 const KEY = 'pttchrome.recentArticles.v1';
 const readStore = (page) =>
   page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{"recent":[],"later":[]}'), KEY);
@@ -99,5 +102,45 @@ test.describe('最近讀過／稍後再讀', () => {
     await item.click();
     // AID 跳文從別的板出發：先切到 Stock 板（送鍵裡有板名）。
     await expect.poll(() => peekCapture(page), { timeout: 10000 }).toContain('Stock');
+  });
+
+  test('開回讀到一半的文章 ⇒ 捲到上次那一列；「回到開頭」捲回頂端；捲動停下來記回位置', async ({ page }) => {
+    test.skip(!scenario, '缺 scn-deep-link（需帳號：yarn record:scenarios）');
+    test.setTimeout(90000);
+    const { board, aid } = scenario.meta;
+    const LINE = 60;
+    await bootScenario(page, ptt, scenario);
+    await page.evaluate(
+      ({ k, board, aid, line }) =>
+        localStorage.setItem(k, JSON.stringify({ recent: [{ board, aid, title: '測試', at: 1, line }], later: [] })),
+      { k: KEY, board, aid, line: LINE }
+    );
+    await page.evaluate(({ board, aid }) => window.__app.recentArticles.open({ board, aid }), { board, aid });
+
+    await page.waitForFunction(() => {
+      const a = window.__app;
+      return a.buf.pageState === 3 && !a.aidNavigation.active && a.easyReading.easyReadingReachedPageEnd;
+    });
+    const toast = page.locator('#recentResume');
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText(await label(page, 'recent_resumeHint'));
+    // 好讀的一次性還原：累積到位才捲（量節點，頂端那一列就是上次的那一列）。
+    await expect
+      .poll(() => page.evaluate(() => Math.floor(window.__app.view.currentLineIndex())), { timeout: 10000 })
+      .toBe(LINE);
+
+    await toast.getByRole('button', { name: await label(page, 'recent_resumeTop') }).click();
+    await expect(toast).toBeHidden();
+    expect(await page.evaluate(() => window.__app.view.mainDisplay.scrollTop)).toBe(0);
+    // 捲回頂端也會記：第一列＝沒有讀到一半，那一筆不帶 line（下次從頭）
+    await expect.poll(async () => (await readStore(page)).recent[0].line).toBeUndefined();
+
+    // 真滾輪往下捲、停下來 ⇒ 記回現在頂端那一列
+    const box = await page.locator('#mainContainer').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + 100);
+    await page.mouse.wheel(0, 900);
+    await expect.poll(async () => (await readStore(page)).recent[0].line || 0).toBeGreaterThan(5);
+    const top = await page.evaluate(() => Math.floor(window.__app.view.currentLineIndex()));
+    expect(Math.floor((await readStore(page)).recent[0].line)).toBe(top);
   });
 });

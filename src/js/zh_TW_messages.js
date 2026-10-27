@@ -1363,6 +1363,18 @@
   "recent_remove": {
     "message": "移除"
   },
+  "options_resumeRecentArticles": {
+    "message": "開回最近讀過的文章時，接著上次讀到的地方"
+  },
+  "tooltip_resumeRecentArticles": {
+    "message": "從首頁、指令面板開回讀到一半的文章，載入後捲到上次讀到的那一列，頂端可以按「回到開頭」。讀到文末的文章照舊從頭開始。只捲畫面，不多送任何按鍵。"
+  },
+  "recent_resumeHint": {
+    "message": "接著上次讀到的地方"
+  },
+  "recent_resumeTop": {
+    "message": "回到開頭"
+  },
   "recent_failed": {
     "message": "現在開不了這篇，請稍候再試"
   },

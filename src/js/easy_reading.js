@@ -2227,6 +2227,12 @@ EasyReading.prototype.requestScrollToBottom = function() {
   this._pendingScrollRestore = { bottom: true, tries: 0 };
 };
 
+// 發起還原的功能自己收回（最近讀過的「回到開頭」）：還沒落地的那次不再套用。
+EasyReading.prototype.cancelScrollRestore = function(reason) {
+  if (this._pendingScrollRestore) this._diagScrollRestore('drop', { reason: reason || 'cancel' });
+  this._pendingScrollRestore = null;
+};
+
 EasyReading.prototype._advanceScrollRestore = function() {
   const pending = this._pendingScrollRestore;
   if (!pending) return;

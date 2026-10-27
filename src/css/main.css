@@ -1347,6 +1347,45 @@ span {
   cursor: pointer;
 }
 
+/* 最近讀過開回去「接著上次讀到的地方｜回到開頭」（js/recent_articles.js）：頂端置中，外觀同上面
+   的倒數提示；手機讓開常駐的頂部 App Bar（48px，同 PageTopAlert）。 */
+#recentResume {
+  position: fixed;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  padding: 6px 6px 6px 14px;
+  border-radius: 6px;
+  background: rgba(20, 20, 20, 0.92);
+  box-shadow: 0 0 0 1px #444;
+  color: #eee;
+  font: 14px/1.4 sans-serif;
+}
+body.mobile-layout #recentResume {
+  top: calc(48px + 12px);
+}
+#recentResume[hidden] {
+  display: none;
+}
+#recentResume .recentResumeTop {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid #777;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
 /* Pusher highlight (Enhanced Add-on): click a comment row to tint EVERY row by the
    same pusher. Applied to the whole bbsrow (#mainContainer > span is display:block
    → a full-width band); transparent char spans let the navy show through. */
