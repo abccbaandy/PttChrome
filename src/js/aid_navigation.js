@@ -60,7 +60,7 @@ import { parseStatusRow, parsePagerFooterContext } from './string_util';
 import { NavHistory, chooseAnchor } from './nav_history';
 import {
   parsePostInfoAid,
-  parseArticleUrlLine,
+  parseOwnArticleUrlLine,
   parsePostInfoUrl,
   isCrossPostHeaderLine
 } from './aid_parse';
@@ -1180,7 +1180,7 @@ AidNavigation.prototype = {
             this._urlScanForwarded = true;
             break;
           }
-          const found = parseArticleUrlLine(text);
+          const found = r > 0 ? parseOwnArticleUrlLine(buf.getRowText(r - 1, 0, buf.cols, acc), text) : null;
           if (found) {
             this._urlScanHit = found;
             break;
@@ -1195,10 +1195,12 @@ AidNavigation.prototype = {
       // 轉錄標頭可能已經捲出這一屏：只看得到網址時仍會誤認 ⇒ 這是原生模式的已知
       // 盲點（看不到就不知道），好讀累積頁從第一列掃起才是完整判準。
       this.resetLocalPostAidScan();
+      let prev = '';
       for (let r = 0; r < buf.rows && !hit; ++r) {
         const text = buf.getRowText(r, 0, buf.cols);
         if (isCrossPostHeaderLine(text)) return null;
-        hit = parseArticleUrlLine(text);
+        hit = parseOwnArticleUrlLine(prev, text);
+        prev = text;
       }
     }
     if (!hit) return null;

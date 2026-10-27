@@ -262,6 +262,8 @@ const ARTICLE = [
   ' 時間  Wed Oct 14 21:00:00 2026',
   '內文 A',
   '內文 B',
+  '--',
+  '※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)',
   '※ 文章網址: https://www.ptt.cc/bbs/Gossiping/M.1760446800.A.123.html',
   '推 user1: 推                                                       10/14 21:01',
 ];
@@ -272,7 +274,7 @@ describe('ptt_read_article', () => {
     // 一頁 4 列內容＋1 列狀態；第二頁與第一頁重疊 1 列（內文 A）。
     const pages = [
       [...ARTICLE.slice(0, 4), STATUS(1, 2, 60, 1, 4)],
-      [...ARTICLE.slice(3, 7), STATUS(2, 2, 100, 4, 7)],
+      [...ARTICLE.slice(3), STATUS(2, 2, 100, 4, 9)],
     ];
     let page = 0;
     const show = () => {
@@ -351,11 +353,15 @@ describe('ptt_read_article', () => {
   });
 });
 
-test('findArticleUrl：轉錄標頭之後與看板不符的網址都不算本篇', () => {
+test('findArticleUrl：轉錄標頭之後、看板不符、內文貼的網址都不算本篇', () => {
+  const origin = '※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)';
   const url = '※ 文章網址: https://www.ptt.cc/bbs/Gossiping/M.1760446800.A.123.html';
-  expect(findArticleUrl([url], 'gossiping')).toMatchObject({ board: 'Gossiping', url: expect.stringContaining('M.1760446800') });
-  expect(findArticleUrl(['※ [本文轉錄自 Gossiping 看板 #1gIeu-3A ]', url], 'Gossiping')).toBe(null);
-  expect(findArticleUrl([url], 'C_Chat')).toBe(null);
+  expect(findArticleUrl([origin, url], 'gossiping')).toMatchObject({ board: 'Gossiping', url: expect.stringContaining('M.1760446800') });
+  expect(findArticleUrl(['※ [本文轉錄自 Gossiping 看板 #1gIeu-3A ]', origin, url], 'Gossiping')).toBe(null);
+  expect(findArticleUrl([origin, url], 'C_Chat')).toBe(null);
+  // 系統寫的那行緊接在「※ 發信站」之後（edit.c#addsimplesignature＋bbs.c 的 file_appendf）；
+  // 內文貼的同板網址沒有 ⇒ 不是本篇。
+  expect(findArticleUrl(['前情提要：', url], 'Gossiping')).toBe(null);
 });
 
 describe('ptt_read_screen／ptt_send_keys', () => {

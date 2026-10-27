@@ -156,6 +156,16 @@ export function parseArticleUrlLine(rowText) {
   return urlLine(ARTICLE_URL_LINE_RE, rowText);
 }
 
+// 「本篇」的網址列＝**系統寫的那一行**：mbbsd/edit.c#addsimplesignature 以「※ 發信站: …」收尾，
+// 發文時 bbs.c（QUERY_ARTICLE_URL）用 file_appendf 緊接著補「※ 文章網址: …」⇒ 前一列一定是
+// 發信站。內文裡貼的同板網址（系列文的前情提要）沒有這個前一列，不算本篇；前一列看不到
+// （捲出畫面）也不算 ⇒ 呼叫端退回按 Q。prevText＝同一份畫面／累積頁的上一列。
+const POST_ORIGIN_LINE_RE = /^\s*※\s*發信站\s*[:：]/;
+export function parseOwnArticleUrlLine(prevText, rowText) {
+  if (!prevText || !POST_ORIGIN_LINE_RE.test(prevText)) return null;
+  return parseArticleUrlLine(rowText);
+}
+
 // 轉錄文的標頭列（列首）。pttbbs 三種寫法：
 //   mbbsd/bbs.c:2212  ※ [本文轉錄自 <board> 看板 #<aid> ]
 //   mbbsd/bbs.c:2195  ※ [本文轉錄自某隱形看板]
