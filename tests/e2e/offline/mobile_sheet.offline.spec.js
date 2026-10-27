@@ -93,6 +93,9 @@ test.describe('手機 bottom sheet', () => {
     await page.keyboard.press('Tab');
     await expect.poll(activeOutline).not.toBe('none');
 
+    // sheet 開場動畫可能先停幾幀再滑（同 #232 的 Mantine Modal），Playwright 的 stable 會提早放行，
+    // tap 落在還在滑的按鈕旁邊 ⇒ 設定沒開。動畫停了再點。
+    await waitRectStable(page, '[data-key="__settings"]');
     await byKey(page, '__settings').tap();
     const close = page.locator('.mantine-Modal-close');
     await expect(close).toBeFocused();
