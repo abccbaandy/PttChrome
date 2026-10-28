@@ -17,6 +17,7 @@ import { buildDeepLink, stripDeepLink } from './deep_link';
 import { parseStatusRow } from './string_util';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
+import { serializedOpHint } from './serialized_op_gate';
 
 export function DeepLinkController(core, view, termBuf) {
   this._core = core;
@@ -71,7 +72,9 @@ DeepLinkController.prototype = {
 
   _hold: function(target) {
     this._pending = target;
-    this._hint('登入後將跳至 #' + target.aid + ' (' + target.board + ')…', 6000);
+    // 已登入才收著＝前一個操作還在線上（見 _canNavigate），「登入後」對使用者是錯的話。
+    const when = this._loggedIn ? '目前操作完成後將跳至 #' : '登入後將跳至 #';
+    this._hint(when + target.aid + ' (' + target.board + ')…', 6000);
     return 'pending';
   },
 
@@ -263,7 +266,12 @@ DeepLinkController.prototype = {
     if (this._core.connectState !== 1) return false;
     if (!this._loggedIn) return false;
     const nav = this._core.aidNavigation;
-    return !!nav && !nav.active;
+    if (!nav || nav.active) return false;
+    // 別的程式化鍵序列在線上（長推文逐則送出、登出、找未讀、設為已讀…）：交接／hashchange／
+    // launchQueue 跟這個分頁在做什麼無關、隨時會到，AID 跳文一出發就 flush 掉對方 in-flight
+    // 那一步再插進自己的鍵（長推文送到一半斷掉、登出確認框被打掉）。使用者自己的鍵早被
+    // 同一道擋著；這裡收著，等它做完的下一次 settle 再跳。
+    return !serializedOpHint(this._core);
   },
 
   _dispatch: function(target, opts) {

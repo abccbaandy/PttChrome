@@ -242,6 +242,42 @@ describe("已登入", () => {
     expect(h.nav.externalCalls).toHaveLength(1);
   });
 
+  // 交接（別的分頁把連結交過來）、hashchange、PWA launchQueue 都跟這個分頁正在做什麼無關，
+  // 隨時會到。線路上若正跑著別的程式化鍵序列（長推文逐則送出、登出、找未讀…），AID 跳文
+  // 一出發就 flush 掉對方 in-flight 的那一步、再把自己的鍵插進去：長推文送到一半斷掉、
+  // 登出的確認框被打掉。使用者自己按的鍵早就被 serialized_op_gate 擋著，外部入口要同一道。
+  test.each([
+    ["長推文送出中", core => { core.longPush = { active: true }; }, core => { core.longPush.active = false; }],
+    ["登出中", core => { core.logout = { active: true }; }, core => { core.logout.active = false; }],
+    ["找第一篇未讀中", core => { core.unreadJumpInFlight = true; }, core => { core.unreadJumpInFlight = false; }],
+    ["設為已讀中", core => { core.markAllReadInFlight = true; }, core => { core.markAllReadInFlight = false; }]
+  ])("別的鍵序列在線上（%s）→ 收著不派工，做完後下一次 settle 才跳", (_name, busy, done) => {
+    const h = makeHarness();
+    h.arriveAtMainMenu();
+    busy(h.core);
+    expect(h.ctl.request(TARGET, { source: "handoff" })).toBe("pending");
+    expect(h.nav.externalCalls).toEqual([]);
+    expect(h.nav.startCalls).toEqual([]);
+    expect(h.autoLogin.stopCalls).toBe(0);
+    // 還在忙：settle 不派工
+    h.settle();
+    expect(h.nav.externalCalls).toEqual([]);
+    done(h.core);
+    h.settle();
+    expect(h.nav.externalCalls).toEqual([{ aid: TARGET.aid, board: TARGET.board }]);
+    expect(h.ctl.hasPending()).toBe(false);
+  });
+
+  test("已登入但忙 → 提示不說「登入後」（人早就登入了）", () => {
+    const h = makeHarness();
+    h.arriveAtMainMenu();
+    h.core.longPush = { active: true };
+    h.ctl.request(TARGET);
+    const last = h.hints[h.hints.length - 1];
+    expect(last).not.toMatch(/登入後/);
+    expect(last).toContain("#" + TARGET.aid);
+  });
+
   test("派工失敗（startExternal 回 false）→ 目標放回去，不會被吃掉", () => {
     const h = makeHarness();
     h.arriveAtMainMenu();
