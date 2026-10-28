@@ -328,6 +328,10 @@ debug 錄製，`render/merge_buttons.js` 的純 `button`）在點擊優先權表
 
 滾輪關閉時 `mouse_scroll` **直接 return，不 preventDefault**（語意＝我們完全不碰）。
 
+原生畫面的滾輪翻頁（PgUp／PgDn）與中鍵「左方向鍵」在 `inputPrompt`（`isPromptPending()`）時**不送**：
+推文型別選單的 `vkey` 收到它們一樣當成「推」（同點列），輸入欄則白送。事件照樣吞掉（翻頁沒有意義）。
+守護：`tests/unit/ptt_src_screens.test.js`（upstream 推文畫面）。
+
 ### 重畫之後的重算（`term_buf.refreshMouseAction`）
 
 `notify()` 的每個 `changed` 幀都 `clearHighlight()`，把 `mouseAction` 清成 `none`。重算原本
