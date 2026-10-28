@@ -17,7 +17,9 @@
 // pressanykey(5) 之後落在判不出的畫面 ⇒ 黏在 5 ⇒ 返回手勢被擋、閃離站提示，直到進
 // 一篇文章（每幀判得出 3）才恢復。所以 5 要再問 buf.isPassScreenNow()：本幀已不是
 // pass 畫面 ⇒ 5 是殘留，不擋。真的 pass 畫面照舊擋（逃生門語意不變）。
-//
+
+import { classifyPushScreen } from './push_screen';
+
 // 回傳擋下的原因（null＝可送）；history_back_guard 擋下時寫進 debugRecorder，
 // 下一次「有時失效」的錄製檔可以直接看出是哪一道。
 export function navKeyBlockReason(core) {
@@ -34,6 +36,12 @@ export function navKeyBlockReason(core) {
   // PTT 正開著輸入框（vgetstring 的反白輸入欄）：左方向鍵只會被輸入框吃掉，
   // 使用者的手勢等於石沉大海。同一個事實也關掉滑鼠的可點區（見 docs/mouse.md）。
   if (buf.isCursorOnInputField && buf.isCursorOnInputField()) return 'inputField';
+  // 推文型別選單（bbs.c#recommend 的 vkey()）：不是輸入框、pageState 黏在 2／3，但收到非數字
+  // 一律當預設的「推」並前進到內容輸入列 ⇒ 返回手勢的 ←、邊緣翻頁的 PgUp 都會變成「選了推」。
+  // 這個選單沒有「取消」鍵，所以不送（同輸入框：這一下我們用不到）。
+  if (typeof buf.getRowText === 'function' &&
+      classifyPushScreen([buf.getRowText(buf.rows - 1, 0, buf.cols)], 1).kind === 'typeMenu')
+    return 'pushTypeMenu';
   return null;
 }
 

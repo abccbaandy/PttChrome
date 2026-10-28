@@ -70,6 +70,35 @@ describe("黏住的 pageState 5", () => {
   });
 });
 
+// 推文型別選單（bbs.c#recommend：底列「您覺得這篇文章 1.值得推薦 … [1]? 」，type = vkey()）不是
+// 輸入框、pageState 也黏在 3（文章）或 2（列表的 X）⇒ 舊版照送。vkey 收到非數字一律當預設的
+// 「推」並前進到內容輸入列：返回手勢／邊緣翻頁本來要「離開」，結果是選了推。
+describe("推文型別選單", () => {
+  const TYPE_MENU = "您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ";
+  const bufWithLast = (pageState, last) => ({
+    pageState,
+    rows: 24,
+    cols: 80,
+    isCursorOnInputField: () => false,
+    getRowText: (r) => (r === 23 ? last : ""),
+  });
+
+  test("文章（黏 3）與列表（黏 2）上底列是型別選單 ⇒ 不送", () => {
+    for (const st of [2, 3]) {
+      expect(navKeyAllowed(core({ buf: bufWithLast(st, TYPE_MENU) }))).toBe(false);
+      expect(navKeyBlockReason(core({ buf: bufWithLast(st, TYPE_MENU) }))).toBe("pushTypeMenu");
+    }
+    // 不能噓的板少了「2.」那段
+    expect(navKeyAllowed(core({ buf: bufWithLast(3, "您覺得這篇文章 1.值得推薦 3.只加→註解 [1]? ") }))).toBe(false);
+  });
+
+  test("一般 pager 狀態列、文中引用到同一句（不在行首）⇒ 照送", () => {
+    const pager = "  瀏覽 第 1/3 頁 ( 33%)  目前顯示: 第 01~22 行  (y)回應(X%)推文(h)說明(←)離開 ";
+    expect(navKeyAllowed(core({ buf: bufWithLast(3, pager) }))).toBe(true);
+    expect(navKeyAllowed(core({ buf: bufWithLast(3, "推 someone: 您覺得這篇文章 1.值得推薦") }))).toBe(true);
+  });
+});
+
 describe("navKeyBlockReason（debug log 用：擋下時說得出是哪一道）", () => {
   test("各道閘門的原因字串", () => {
     expect(navKeyBlockReason(null)).toBe("noCore");
