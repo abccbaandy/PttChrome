@@ -46,6 +46,29 @@ describe("shouldShowHint", () => {
   });
 });
 
+describe("TermView.hideListHint", () => {
+  test("收掉顯示中的提示，原本的計時不會再改它", () => {
+    vi.useFakeTimers();
+    try {
+      const v = fakeView(true);
+      flash.call(v, "跳至 #1gIeu-3A (Android)…", 15000);
+      const el = document.querySelector(".ListHint");
+      expect(el.style.opacity).toBe("1");
+      TermView.prototype.hideListHint.call(v);
+      expect(el.style.opacity).toBe("0");
+      expect(v._listHintTimer).toBeNull();
+      // 之後再閃照常顯示
+      flash.call(v, "下一則");
+      expect(el.style.opacity).toBe("1");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  test("還沒有提示元素也不會炸", () => {
+    expect(() => TermView.prototype.hideListHint.call(fakeView(true))).not.toThrow();
+  });
+});
+
 describe("TermView.flashListHint", () => {
   test("開關關掉：一般提示不出現", () => {
     const v = fakeView(false);

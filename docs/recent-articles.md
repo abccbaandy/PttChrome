@@ -14,7 +14,8 @@ pref `enableRecentArticles`，預設開。
 
 - **記的時候一個 byte 都不送**：文章身分＝看板＋AID，取自 `aid_navigation.findLocalPostAid`（只讀文末「※ 文章網址:」那一列，不按 `Q`）。讀不到網址列就不記：好讀長文還沒捲到文末網址列、轉錄文（網址是原文的）、站內信／精華區（沒有看板）。標題取 `view._articleTitle`。
 - 同一篇讀很久只記一次；離開文章（pageState 不是 3）再進來，排回最前面。
-- **開回去走既有入口**：`deepLinkController.request({ board, aid })`，跟指令面板貼文章網址同一條（登入前暫存、AID 跳文、閱讀紀錄 `deep-link-jump`／`aid-jump`、忙碌提示都由那條負責）。`request` 不收 ⇒ 提示「現在開不了這篇」。
+- **開回去走既有入口**：`deepLinkController.request({ board, aid })`，跟指令面板貼文章網址同一條（登入前暫存、AID 跳文、閱讀紀錄 `deep-link-jump`／`aid-jump`、忙碌提示都由那條負責）。`request` 不收 ⇒ 提示「現在開不了這篇」。首頁儀表板與指令面板的文章項目都走 `open`（不直接呼叫 `request`）。
+- **落地不閃「已跳至 #AID」**：`open` 帶 `{ quietLanding: true }`，AID 跳文成功落地時只收掉「跳至…」進度提示（`aid_navigation._landHint` → `term_view.hideListHint`），文章出現就是回應；讀到一半的那篇頂端另有「接著上次讀到的地方」，兩張疊在內文上只是噪音。跳文失敗的提示照舊；等登入（`'pending'`）那條、貼網址、外部連結都照舊閃。
 - 紀錄在 localStorage `pttchrome.recentArticles.v1`（`{ recent: [...], later: [...] }`，每筆 `{ board, aid, title, at }`），不寫 prefs、不上雲。每次讀 `state` 都比對 storage 原文（別的分頁寫的讀得到）。
 - 從連結收的稍後再讀沒有標題（畫面上只有 AID），先顯示 `#AID`，讀到那篇時補上。
 - 只是清單與入口：記的時候不送鍵、開回去是使用者按的 ⇒ 不在安全模式名單內。

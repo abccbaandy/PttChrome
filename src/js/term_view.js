@@ -2429,6 +2429,14 @@ TermView.prototype = {
     }, ms || 1800);
   },
 
+  // 收掉目前的 flashListHint（淡出，同計時到期）。給「落地本身就是回應」的入口收進度提示用
+  // （aid_navigation._landHint）。
+  hideListHint: function() {
+    if (this._listHintTimer) clearTimeout(this._listHintTimer);
+    this._listHintTimer = null;
+    if (this._listHintEl) this._listHintEl.style.opacity = '0';
+  },
+
   // Reusable list "loading" indicator (v5/M4, contract #4): shown while a
   // serialized transaction freezes the render and while a demand prefetch is
   // filling past a window edge (list_session._setLoading). Small fixed pill in
