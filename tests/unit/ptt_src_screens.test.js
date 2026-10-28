@@ -498,6 +498,26 @@ describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", (
     expect(buf.isCursorOnInputField()).toBe(true);
   });
 
+  // ^X 的「檔案處理」（edit.c#write_file）：getdata(2, 0, "確定要儲存檔案嗎？ ")。vgetstring 的 ^C
+  // 是「清空並送出」，而這裡的空答案落到 switch 之外＝第 1 列寫的 [S]（發文／發信／存檔）。
+  // 點空白處送 ^C 就等於替使用者把文章發出去。
+  test("編輯器的「檔案處理」輸入欄：點空白處不送 ^C（空答案＝存檔／發文）", () => {
+    const { buf, rowTexts } = screenAt(editorFx, "save-menu");
+    expect(rowTexts[0]).toContain("檔案處理");
+    expect(rowTexts[2]).toContain("確定要儲存檔案嗎");
+    expect(buf.cur_y).toBe(2);
+    expect(buf.isCursorOnInputField()).toBe(true);
+    expect(buf.dismissTarget()).toBeNull();
+    // 一鍵登出的逃生同一個判斷：不送 ^C（改送 ←，在輸入欄裡只移游標 ⇒ 畫面沒變 ⇒ 停手）。
+    const esc = logoutEscapeKey({
+      row0: rowTexts[0],
+      lastRowText: rowTexts[buf.rows - 1],
+      cursorOnInputField: buf.isCursorOnInputField(),
+      inputPromptText: buf.inputPromptText(),
+    });
+    expect(esc.bytes).not.toBe("\x03");
+  });
+
   // 上傳完的網址插到哪：image_upload.decideInsertMode（底列分類共用 classifyPushScreen）。
   test("圖片上傳插入位置：編輯器與推文內容列送字，型別選單／確定／列表一律剪貼簿", () => {
     const mode = (fx, name) => {

@@ -295,10 +295,12 @@ export const SCENES = [
   {
     // 編輯器（edit.c）：在自己的文章上按 E ⇒ vedit，底列「 編輯文章 」caption＋右側狀態框
     // （插入／取代、旗標、行:欄）。term_buf.setPageState 靠它認 pageState 6。
+    // ^X ⇒ edit.c#write_file 的「檔案處理」：getdata(2, 0, "確定要儲存檔案嗎？ ")，空答案＝[S] 存檔
+    // ⇒ 點空白處關框不可以送 ^C（vgetstring 的 ^C 清空送出＝存檔／發文，screen_dismiss）。
     file: 'editor',
     entry: 'read:Mine',
     rows: 24,
-    steps: [{ name: 'list' }, { keys: 'E', name: 'edit' }],
+    steps: [{ name: 'list' }, { keys: 'E', name: 'edit' }, { keys: '\x18', name: 'save-menu' }],
   },
   {
     // 選看板 prompt 的自動完成（namecomplete）：打 M 再按空白 ⇒ Mine／Movie 兩個候選，列出清單；

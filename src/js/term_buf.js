@@ -1614,6 +1614,16 @@ TermBuf.prototype = {
     return end - start + 1;
   },
 
+  // 游標所在那條反白輸入欄**左邊**的提示字（getdata 的 prompt）；不在輸入欄上回 ''。
+  // screen_dismiss 用它判斷「空答案是不是取消」。
+  inputPromptText: function() {
+    if (!this.isCursorOnInputField()) return '';
+    var line = this.lines[this.cur_y];
+    var start = this.cur_x;
+    while (start > 0 && isReversedCell(line[start - 1])) --start;
+    return this.getRowText(this.cur_y, 0, start);
+  },
+
   // 這一幀有沒有一個「滑鼠關得掉的框」（pressanykey／vmsg 橫幅／vgetstring 輸入
   // 欄）→ { kind, bytes }，沒有回 null。判斷本身在純函式
   // screen_dismiss.resolveDismiss（pttbbs 出處逐條在那裡），這裡只餵事實。
@@ -1623,7 +1633,8 @@ TermBuf.prototype = {
   dismissTarget: function() {
     return resolveDismiss({
       lastRowText: this.getRowText(this.rows - 1, 0, this.cols),
-      cursorOnInputField: this.isCursorOnInputField()
+      cursorOnInputField: this.isCursorOnInputField(),
+      inputPromptText: this.inputPromptText()
     });
   },
 
