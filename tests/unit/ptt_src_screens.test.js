@@ -497,6 +497,25 @@ describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", (
     expect(reason("push-1")).toBe("pushTypeMenu");
     expect(reason("push-2")).toBe("inputField");
   });
+
+  // 滑鼠點列（mouse_regions）與游標底色（cursor_highlight）同一個道理：型別選單開著時下方的列表
+  // 是殘影，點下去送的方向鍵＋⏎ 會被 vkey 當成「推」。跟輸入框同一條早退（buf.isPromptPending）。
+  test("滑鼠：列表的文章列點得下去，型別選單與推文內容列整幀不可點", () => {
+    const at = (name) => {
+      const { buf } = screenAt(pushFx, name);
+      buf.useMouseBrowsing = true;
+      return buf;
+    };
+    const list = at("list");
+    const row = list.cur_y; // 列表游標所在的文章列
+    expect(list.isPromptPending()).toBe(false);
+    expect(list._resolveMouseRegionAt(40, row).action).not.toBe("none");
+    for (const name of ["push-1", "push-2"]) {
+      const buf = at(name);
+      expect(buf.isPromptPending()).toBe(true);
+      expect(buf._resolveMouseRegionAt(40, row).action).toBe("none");
+    }
+  });
 });
 
 describe("upstream pttbbs 產的選看板自動完成（name.c#generalnamecomplete）", () => {

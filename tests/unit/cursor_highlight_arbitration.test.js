@@ -41,9 +41,9 @@ function makeView({ listRenderMode = "native", styles } = {}) {
     highlightCursor: true,
     nowHighlight: -1,
     BBSWin: { style: { cursor: "auto" } },
-    // 真 TermBuf 的輸入框偵測（見 term_buf.isCursorOnInputField）。預設關，
-    // 想模擬「PTT 開著輸入框」的幀就改成回 true。
-    isCursorOnInputField: () => false,
+    // 真 TermBuf 的 prompt 偵測（見 term_buf.isPromptPending：輸入框或推文型別選單）。
+    // 預設關，想模擬「PTT 開著輸入框」的幀就改成回 true。
+    isPromptPending: () => false,
   };
   v.componentScreen = { setCursorHighlight: (h) => applied.push(h.row) };
   return { v, applied };
@@ -206,7 +206,7 @@ describe("onListMouseMove 與仲裁的銜接", () => {
 describe("applyCursorHighlight：PTT 開著輸入框", () => {
   test("原生畫面：鍵盤與滑鼠來源都不上色", () => {
     const { v, applied } = makeView();
-    v.buf.isCursorOnInputField = () => true;
+    v.buf.isPromptPending =() => true;
     v.buf.cur_y = 1; // vgetstring 把游標移進 row 1 的輸入欄
     v.applyCursorHighlight();
     expect(applied[applied.length - 1]).toBe(-1);
@@ -218,18 +218,18 @@ describe("applyCursorHighlight：PTT 開著輸入框", () => {
 
   test("輸入框關掉後底色照舊回來", () => {
     const { v, applied } = makeView();
-    v.buf.isCursorOnInputField = () => true;
+    v.buf.isPromptPending =() => true;
     v.applyCursorHighlight();
     expect(applied[applied.length - 1]).toBe(-1);
 
-    v.buf.isCursorOnInputField = () => false;
+    v.buf.isPromptPending =() => false;
     v.applyCursorHighlight();
     expect(applied[applied.length - 1]).toBe(5);
   });
 
   test("列表好讀：server 真游標停在反白格也不影響虛擬視窗的光棒", () => {
     const { v, applied } = makeView({ listRenderMode: "buffer" });
-    v.buf.isCursorOnInputField = () => true;
+    v.buf.isPromptPending =() => true;
     v.applyCursorHighlight();
     expect(applied[applied.length - 1]).toBe(8);
   });

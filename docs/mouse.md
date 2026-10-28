@@ -93,9 +93,12 @@ PTT server 時整張表都不作數，一律回 `NONE`。一條早退同時關�
 最後五列是 **`mouseEdgePaging` 開著時**才成立（見下方「邊緣翻頁區」）；關掉時整張表
 逐格等同 2026-09 之前，回歸鎖在 `tests/unit/mouse_regions.test.js`。
 | **任何 pageState** | `dismiss`（框開著：pressanykey／vmsg 橫幅／vgetstring 輸入欄） | `none`（送鍵不走這條，見下） | `pointer` | 不上色 |
-| **任何 pageState** | `inputPrompt`（PTT 開著輸入框） | `none` | `auto` | 不上色 |
+| **任何 pageState** | `inputPrompt`（PTT 開著輸入框或推文型別選單） | `none` | `auto` | 不上色 |
 
-**`inputPrompt` ＝ `term_buf.isCursorOnInputField()`**（游標所在格是**白底黑字**，且該列不是從 col 0 就反白的狀態列）：PTT 的輸入框
+**`inputPrompt` ＝ `term_buf.isPromptPending()`**：`isCursorOnInputField()`，或底列是推文型別選單
+（`push_screen.classifyPushScreen` 的 `typeMenu`；`bbs.c` 的 `vkey`，數字以外的鍵一律當「推」
+前進到內容列，所以點列送的方向鍵＋⏎ 會變成選了推）。
+**`isCursorOnInputField()`**（游標所在格是**白底黑字**，且該列不是從 col 0 就反白的狀態列）：PTT 的輸入框
 一律由 `mbbsd/vtuikit.c#vgetstring` 以 `VCLR_INPUT_FIELD`（`ESC[0;7m`）畫成反白欄，
 並把游標 `move` 進欄內（見 `docs/pttbbs-screen-protocol.md` §5）。這種畫面只重畫最上面
 一兩列，下方的列表／選單整片殘留 ⇒ `pageState` 黏著、看起來還可以點，但那一點送出的
