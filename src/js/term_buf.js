@@ -20,6 +20,7 @@ import {
 } from './mouse_regions';
 import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
+import { classifyPushScreen } from './push_screen';
 import { parseMenuItemRow, isMenuScreen } from './menu_items';
 import { isMailListFooter, isMailListRows } from './mail_list';
 import { footerCaption, isEditorFooter } from './screen_captions';
@@ -1581,6 +1582,17 @@ TermBuf.prototype = {
     return true;
   },
 
+  // PTT 正在等使用者回答底列的 prompt：vgetstring 輸入欄，或推文型別選單
+  // （bbs.c#recommend 的 vkey：不是輸入欄，數字以外的鍵一律當「推」前進到內容列）。
+  // 兩者畫面上方都是殘影、pageState 也黏在原畫面 ⇒ 滑鼠點列／游標底色／功能鍵都不該
+  // 生效（resolveMouseRegion、resolveHighlightRow 的 inputPrompt）。nav_key_gate 另外
+  // 分兩個 reason 回報，判準相同。
+  isPromptPending: function() {
+    if (this.isCursorOnInputField()) return true;
+    return classifyPushScreen(
+      [this.getRowText(this.rows - 1, 0, this.cols)], 1).kind === 'typeMenu';
+  },
+
   // 游標所在那條反白輸入欄有幾格；不在輸入欄上回 null。
   // 欄寬＝vgetstring 的 len（vfill(len,…) 整欄重畫，已打的字也是同一個反白色），
   // 推文輸入列上就是 bbs.c#recommend 的 maxlength ⇒ 長推文的單則上限以它為準
@@ -1716,7 +1728,7 @@ TermBuf.prototype = {
       // 同 _overAnchor 的快取語意）。只有 pageState 3 看。
       pusherRange: this._pusherRange || null,
       // PTT 開著輸入框 ⇒ 這一幀什麼都不能點也不上色（見 resolveMouseRegion）。
-      inputPrompt: this.isCursorOnInputField(),
+      inputPrompt: this.isPromptPending(),
       // 框開著（pressanykey／vmsg／輸入欄）⇒ 整片是「點空白處關框」的目標，
       // 只換指標。**送鍵不在這條路上**（見 App.mouse_click 的說明）。
       dismiss: this.dismissTarget(),
