@@ -127,7 +127,7 @@ rewrite: https://abccbaandy.github.io/PttChrome/#$1
 
 ```
 request(target) → _canNavigate() ? _dispatch : _hold（存記憶體，等 screenSettled）
-_canNavigate  = connectState===1 && _loggedIn && !aidNavigation.active
+_canNavigate  = connectState===1 && _loggedIn && !aidNavigation.active && !serializedOpHint(core)
 _loggedIn     = 這次連線的 screenSettled 看過 row0 是主功能表（`aid_navigation.isMainMenuRow`，【X】與 ` X ` 兩種形狀都吃）
 _dispatch     = autoLogin.stop()
                 → startedEasyReading ? aidNavigation.start()      // 有原文 ⇒ 有返回 pill
@@ -143,6 +143,10 @@ reset()       ← App.onClose：清 pending 與 _loggedIn
   有『請按任意鍵』就送空白鍵」分支（`auto_login.js:407`）會踩到進板畫面，打亂
   CommandQueue 正在等的那一幀。它自己看到主功能表也會 stop，但我們可能比它的下一次
   輪詢更早離開主功能表。
+- **別的鍵序列在線上就收著**（`serializedOpHint`：長推文、登出、找未讀、設為已讀、搜尋、重新整理…）。
+  交接／hashchange／launchQueue 跟這個分頁在做什麼無關、隨時會到；AID 跳文一出發就 flush 掉對方
+  in-flight 那一步再插進自己的鍵（長推文送到一半斷掉、登出確認框被打掉）。等它做完的下一次
+  settle 才跳；已登入時提示改說「目前操作完成後將跳至…」。登出成功會斷線 ⇒ `reset()` 丟掉，不會跳。
 - 登入偵測掛 `termBuf` 的 `screenSettled`，**不是**接進 AutoLogin：手動登入不經過它。
 - `startExternal` vs `start`：見 `aid_navigation.js`。前者不 gate `startedEasyReading`、
   不按 Q（沒有原文錨點可升級）、`beginJump(null, …)` ⇒ 跳完沒有返回 pill。
