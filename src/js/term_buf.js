@@ -1578,6 +1578,12 @@ TermBuf.prototype = {
     if (this.cur_y === this.rows - 1) {
       var text = this.getRowText(this.cur_y, 0, this.cols);
       if (parseStatusRow(text) || footerCaption(text) != null) return false;
+    } else if (this.cur_y < this.rows - 2 && this.isEditorScreenNow()) {
+      // 編輯器（底列是「編輯文章」狀態列）：游標在內文裡，那格的白底黑字是文章自己的顏色
+      // （Ctrl-V 彩色預覽、水平捲動時的區塊選取），不是輸入欄。編輯器的 prompt 都是
+      // getdata(b_lines…) 或彩色模式色碼的 getdata(b_lines - 1…)，所以只排除倒數兩列以上。
+      // 誤認 ⇒ 點空白處送 ^C ＝ edit.c 的「插入色碼」，草稿被改。
+      return false;
     }
     return true;
   },
