@@ -88,7 +88,7 @@ import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown }
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
-import { isAndroidApp, androidImeInset, onAndroidIme } from './android_bridge';
+import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp } from './android_bridge';
 import { shouldWarnBeforeUnload } from './unload_guard';
 import {
   IMAGE_PROXY_SITES,
@@ -510,9 +510,11 @@ export const App = function() {
 };
 
 // 按鍵列「登出」鈕（確認過後）。回 true ＝登出序列開始了。
-App.prototype.startLogout = function() {
+// opts.quitApp（「登出並關閉 App」）：登出完由 onClose 關 APK；本來就沒連線＝沒東西要登出，直接關。
+App.prototype.startLogout = function(opts) {
+  if (opts && opts.quitApp && !this.isConnected()) return quitAndroidApp();
   if (!this.isConnected() || serializedOpHint(this)) return false;
-  return this.logout.start();
+  return this.logout.start(opts);
 };
 
 App.prototype.isConnected = function() {
@@ -654,7 +656,7 @@ App.prototype.onClose = function() {
   console.info("pttchrome onClose");
   this.debugRecorder?.log('app.onClose');
   // 先問：這次斷線是不是我們自己登出造成的（要在下面 disable 清佇列之前收攤）。
-  const loggedOut = this.logout.onConnectionClosed();
+  const { loggedOut, quitApp } = this.logout.onConnectionClosed();
   if (this.timerEverySec) {
     this.timerEverySec.cancel();
   }
@@ -711,6 +713,12 @@ App.prototype.onClose = function() {
     this.enableProxyAndReconnect();
   };
   const container = document.getElementById('reactAlert');
+  // 「登出並關閉 App」：上面的收攤（閱讀紀錄、列表 session…）照做完，App 直接結束、不畫提示。
+  // 關不了（不該發生：按鈕只在 androidCanQuit 時出現）就退回一般的「已登出」。
+  if (quitApp && quitAndroidApp()) {
+    this.updateTabIcon('disconnect');
+    return;
+  }
   if (loggedOut) {
     // 正常登出：不是連線失敗，不跑診斷，只給「已登出／重新連線」。
     renderInto(container, <MantineRoot><ConnectionAlert

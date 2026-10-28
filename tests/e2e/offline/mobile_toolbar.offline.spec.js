@@ -144,17 +144,46 @@ test.describe('手機底部工具列（離線重放）', () => {
     await expect(page.locator('#mobileAppBar [data-key="__busy"]')).toHaveCount(0);
   });
 
-  test('更多：選取模式、設定、登出二段確認', async ({ page }) => {
+  test('更多：選取模式、設定、登出確認（全螢幕，點空白取消）', async ({ page }) => {
     await bootOffline(page, ptt);
     await byKey(page, '__more').tap();
     await byKey(page, '__select').tap();
     expect(await page.evaluate(() => window.__app.mobileSelectMode)).toBe(true);
     await byKey(page, '__more').tap();
+    await collectSent(page);
     await byKey(page, '__logout').tap();
-    await expect(byKey(page, '__logoutYes')).toBeVisible();
-    await byKey(page, '__logoutNo').tap();
+    const confirm = byKey(page, '__logoutConfirm');
+    await expect(confirm).toBeVisible();
+    await expect(byKey(page, '__logoutOnly')).toBeVisible();
+    // 不是 APK ⇒ 沒有「登出並關閉 App」。
+    await expect(byKey(page, '__logoutQuit')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__app.modalShown)).toBe(true);
+    // 點空白處（左上角，離按鈕最遠）＝取消：浮層消失、沒送任何 byte、沒有開始登出。
+    await page.touchscreen.tap(8, 8);
+    await expect(confirm).toHaveCount(0);
+    expect(await page.evaluate(() => window.__app.logout.active)).toBe(false);
+    expect(await sentText(page)).toBe('');
+    await byKey(page, '__more').tap();
     await byKey(page, '__settings').tap();
     await expect(page.locator('.mantine-Modal-content').first()).toBeVisible();
+  });
+
+  test('登出確認：APK 宣告 quitApp ⇒ 有「登出並關閉 App」，按下開始登出並記著要關 App', async ({ page }) => {
+    await bootOffline(page, ptt);
+    // 只開 bridge 的宣告（連線位址不動）：按鈕是否出現在 render 當下現讀。
+    await page.evaluate(() => {
+      window.__PTT_ANDROID__ = Object.freeze({ version: 'e2e', site: '', quitApp: true });
+      window.PttAndroid = { postMessage() {}, addEventListener() {} };
+    });
+    await byKey(page, '__more').tap();
+    await byKey(page, '__logout').tap();
+    await expect(byKey(page, '__logoutQuit')).toBeVisible();
+    await byKey(page, '__logoutQuit').tap();
+    await expect(byKey(page, '__logoutConfirm')).toHaveCount(0);
+    expect(await page.evaluate(() => ({ active: window.__app.logout.active, quitApp: window.__app.logout.quitApp }))).toEqual({
+      active: true,
+      quitApp: true,
+    });
   });
 
   test.describe('文章好讀', () => {

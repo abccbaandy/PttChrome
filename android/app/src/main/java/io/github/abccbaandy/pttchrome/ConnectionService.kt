@@ -18,8 +18,8 @@ import java.security.SecureRandom
  * 前景服務：持有 [LocalWebSocketProxy]（也就是持有到 PTT 的連線本體）。
  * 有前景服務的 process 不會在切到背景幾秒後被系統凍結／砍連線，這是整個 APK 存在的理由。
  *
- * 生命週期：MainActivity 開啟時 start＋bind；使用者從通知按「中斷連線並關閉」或
- * Activity 真的結束（isFinishing）時停掉。
+ * 生命週期：MainActivity 開啟時 start＋bind；使用者從通知按「中斷連線並關閉」、網頁的
+ * 「登出並關閉 App」（[quit]）或 Activity 真的結束（isFinishing）時停掉。
  */
 class ConnectionService : Service() {
     inner class LocalBinder : Binder() {
@@ -51,10 +51,7 @@ class ConnectionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_QUIT) {
-            proxy.disconnectAll()
-            onQuitRequested?.invoke()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            quit()
             return START_NOT_STICKY
         }
         val n = notification(proxy.activeSessions > 0)
@@ -65,6 +62,17 @@ class ConnectionService : Service() {
         }
         // 被系統砍掉後不要自己復活：WebView（網頁端狀態）已經不在，空有 proxy 沒有意義。
         return START_NOT_STICKY
+    }
+
+    /**
+     * 中斷連線並關掉整個 App。兩個入口共用：通知的「中斷連線並關閉」（[ACTION_QUIT]）與網頁的
+     * 「登出並關閉 App」（bridge 'quitApp'，網頁已先走完 PTT 正常登出、server 關了線）。
+     */
+    fun quit() {
+        proxy.disconnectAll()
+        onQuitRequested?.invoke()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

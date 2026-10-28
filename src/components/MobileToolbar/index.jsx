@@ -34,6 +34,8 @@ import {
 } from "../../js/quick_search";
 import { readSelectionText } from "../../render/screen_chunk";
 import MobileSheet from "../MobileSheet";
+import LogoutConfirm from "../LogoutConfirm";
+import { androidCanQuit } from "../../js/android_bridge";
 import {
   MOBILE_KEYPAD_ROWS,
   MOBILE_KEYPAD_EXTRA_ROW,
@@ -94,9 +96,6 @@ const haptic = () => {
   }
 };
 
-// 登出確認的自動復原時間：按了第一下之後沒動作就收回，防口袋誤觸。
-export const LOGOUT_CONFIRM_MS = 3000;
-
 // 重整倒數的重讀間隔：秒數靠 Math.ceil 取整，250ms 讓跳秒最多晚 1/4 秒。
 export const COOLDOWN_TICK_MS = 250;
 
@@ -119,6 +118,7 @@ export const MobileToolbar = ({
   const [panel, setPanel] = useState(null);
   // 「更多」開著時的分組（stableMoreSplit）；收起時清掉。
   const moreSplitRef = useRef(null);
+  // 登出的全螢幕確認開著（components/LogoutConfirm）。
   const [confirmLogout, setConfirmLogout] = useState(false);
   // 「更多」裡的圖片上傳兩項跟著總開關 enableImageUpload（同桌機右鍵選單）：開 sheet
   // 當下現讀偏好；收起時不重算，退場動畫中項目才不會跳掉。
@@ -152,12 +152,6 @@ export const MobileToolbar = ({
       setContext(c || EMPTY_TOOLBAR_CONTEXT),
     );
   }, [pttchrome]);
-
-  useEffect(() => {
-    if (!confirmLogout) return undefined;
-    const t = setTimeout(() => setConfirmLogout(false), LOGOUT_CONFIRM_MS);
-    return () => clearTimeout(t);
-  }, [confirmLogout]);
 
   // 按鍵面板蓋住的高度回報給 App（終端機排在它上面，見 setMobileKeysPanelInset）。
   const visible = mobile && !hidden;
@@ -193,7 +187,6 @@ export const MobileToolbar = ({
     (name) => {
       const k = TOOLBAR_KEYS[name];
       setPanel(null);
-      setConfirmLogout(false);
       sendKey(k.key, k.mods);
     },
     [sendKey],
@@ -206,7 +199,6 @@ export const MobileToolbar = ({
     const s = bar && bar.state;
     if (s && s.available && s.folded && bar.expand()) {
       setPanel(null);
-      setConfirmLogout(false);
       return;
     }
     sendAction("push");
@@ -214,7 +206,6 @@ export const MobileToolbar = ({
 
   const togglePanel = useCallback(
     (p) => {
-      setConfirmLogout(false);
       if (p === "more") {
         const prefs = readValuesWithDefault();
         setImageUploadEnabled(
@@ -245,7 +236,6 @@ export const MobileToolbar = ({
   const onQuickSearch = useCallback(
     (item) => {
       setPanel(null);
-      setConfirmLogout(false);
       window.open(
         buildQuickSearchUrl(item.urlTemplate, quickSearch.query),
         "_blank",
@@ -258,7 +248,6 @@ export const MobileToolbar = ({
   // 「更多」sheet 的關閉（遮罩、拖把手、系統返回）。引用穩定：MobileSheet 拿它登記
   // 系統返回的關閉函式。
   const closeMore = useCallback(() => {
-    setConfirmLogout(false);
     setPanel((cur) => (cur === "more" ? null : cur));
   }, []);
 
@@ -281,7 +270,6 @@ export const MobileToolbar = ({
   // 看板列表／主功能表＝看板），要換種類在彈窗上方切。
   const onSearch = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     if (onOpenSearch && context.search.length) onOpenSearch(context.search[0]);
   }, [onOpenSearch, context]);
 
@@ -289,7 +277,6 @@ export const MobileToolbar = ({
   // activation 內叫出 navigator.share（deep_link_controller.shareCurrentPostLink）。
   const onShare = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     const dl = pttchrome.deepLinkController;
     if (dl && typeof dl.shareCurrentPostLink === "function")
       dl.shareCurrentPostLink(context.appBar ? context.appBar.title : "");
@@ -298,7 +285,6 @@ export const MobileToolbar = ({
   // 跳到第一篇未讀：與桌機快捷鍵（預設 F7）同一個入口（unread_jump.js）。
   const onUnreadJump = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     const u = pttchrome.unreadJump;
     if (!u || typeof u.start !== "function") return;
     if (typeof pttchrome.noteUserAction === "function")
@@ -309,7 +295,6 @@ export const MobileToolbar = ({
   // 設為全部已讀：與桌機右鍵選單同一個入口（mark_all_read.js）。
   const onMarkAllRead = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     const m = pttchrome.markAllRead;
     if (!m || typeof m.start !== "function") return;
     if (typeof pttchrome.noteUserAction === "function")
@@ -325,14 +310,12 @@ export const MobileToolbar = ({
       : null;
   const onFollowOnly = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     const f = pttchrome.followOnly;
     if (f && typeof f.toggle === "function") f.toggle();
   }, [pttchrome]);
 
   const onEditorInput = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     const ed = pttchrome.editorInput;
     if (ed && typeof ed.open === "function") ed.open();
   }, [pttchrome]);
@@ -341,33 +324,28 @@ export const MobileToolbar = ({
   // （components/HelpMenu）。
   const onHelp = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     sendKey(TOOLBAR_KEYS.help.key);
   }, [sendKey]);
 
   // 全選／圖片上傳：與桌機右鍵選單同一組 App 入口（ContextMenu 的 menuHandlerByEventKey）。
   const onSelectAll = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     if (typeof pttchrome.doSelectAll === "function") pttchrome.doSelectAll();
   }, [pttchrome]);
 
   const onUploadImage = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     if (pttchrome.imageUpload) pttchrome.imageUpload.openFilePicker();
   }, [pttchrome]);
 
   const onUploadHistory = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     if (pttchrome.imageUpload) pttchrome.imageUpload.openPanel();
   }, [pttchrome]);
 
   // 重新整理：與桌機 F5 同一個入口（冷卻、忙碌提示都在 ScreenRefresh 裡）。
   const onRefresh = useCallback(() => {
     setPanel(null);
-    setConfirmLogout(false);
     const r = pttchrome.screenRefresh;
     if (!r || typeof r.refresh !== "function") return;
     if (typeof pttchrome.noteUserAction === "function")
@@ -403,11 +381,20 @@ export const MobileToolbar = ({
     if (onOpenSettings) onOpenSettings();
   }, [onOpenSettings]);
 
-  const onLogoutYes = useCallback(() => {
-    setConfirmLogout(false);
+  // 登出：先收掉「更多」、蓋上全螢幕確認（components/LogoutConfirm）。
+  const onLogout = useCallback(() => {
     setPanel(null);
-    if (typeof pttchrome.startLogout === "function") pttchrome.startLogout();
-  }, [pttchrome]);
+    setConfirmLogout(true);
+  }, []);
+  const cancelLogout = useCallback(() => setConfirmLogout(false), []);
+  const onLogoutConfirmed = useCallback(
+    (quitApp) => {
+      setConfirmLogout(false);
+      if (typeof pttchrome.startLogout === "function")
+        pttchrome.startLogout({ quitApp: !!quitApp });
+    },
+    [pttchrome],
+  );
 
   if (!visible) return null;
 
@@ -691,35 +678,13 @@ export const MobileToolbar = ({
         </div>
       );
     if (key === "__logout")
-      return confirmLogout ? (
-        <div key={key} className="mobileToolbarAsk" data-key="__logoutAsk">
-          <span>{i18n("mobileKeypad_logoutConfirm")}</span>
-          <button
-            type="button"
-            className="nomouse_command mobileToolbarMenuItem mobileKeypadDanger"
-            aria-label={i18n("mobileKeypad_logoutYes")}
-            data-key="__logoutYes"
-            onClick={onLogoutYes}
-          >
-            ✓
-          </button>
-          <button
-            type="button"
-            className="nomouse_command mobileToolbarMenuItem"
-            aria-label={i18n("mobileKeypad_logoutNo")}
-            data-key="__logoutNo"
-            onClick={() => setConfirmLogout(false)}
-          >
-            ✕
-          </button>
-        </div>
-      ) : (
+      return (
         <button
           key={key}
           type="button"
           className="nomouse_command mobileSheetItem mobileSheetDanger pttRipple"
           data-key="__logout"
-          onClick={() => setConfirmLogout(true)}
+          onClick={onLogout}
         >
           {i18n("mobileKeypad_logout")}
         </button>
@@ -816,6 +781,14 @@ export const MobileToolbar = ({
     >
       {panelEl}
       {moreSheet}
+      {confirmLogout ? (
+        <LogoutConfirm
+          pttchrome={pttchrome}
+          canQuit={androidCanQuit()}
+          onLogout={onLogoutConfirmed}
+          onCancel={cancelLogout}
+        />
+      ) : null}
       <nav className="nomouse_command mobileToolbarBar">
         {toolbarSlots(context).map((slot, i) => renderSlot(slot, i))}
       </nav>

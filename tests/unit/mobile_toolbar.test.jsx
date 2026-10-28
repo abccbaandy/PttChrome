@@ -8,7 +8,7 @@
 //  4. 工具列高度 ＝ MOBILE_TOOLBAR_PX（終端機可用高度扣的就是它）。
 import { render, fireEvent, act } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
-import { MobileToolbar, LOGOUT_CONFIRM_MS, HAPTIC_MS } from "../../src/components/MobileToolbar";
+import { MobileToolbar, HAPTIC_MS } from "../../src/components/MobileToolbar";
 import { MOBILE_TOOLBAR_PX } from "../../src/js/mobile_layout";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { readValuesWithDefault, writeValues } from "../../src/js/pref_storage";
@@ -545,14 +545,95 @@ describe("更多（bottom sheet）", () => {
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 
-  test("登出要二次確認；確認才呼叫 startLogout", async () => {
-    const core = makeCore();
-    renderBar(core);
-    await openMore();
-    fireEvent.click(byKey("__logout"));
-    expect(core.startLogout).not.toHaveBeenCalled();
-    fireEvent.click(byKey("__logoutYes"));
-    expect(core.startLogout).toHaveBeenCalledTimes(1);
+  // 登出確認＝全螢幕遮罩＋大按鈕（components/LogoutConfirm，類 Android 關機選單）。
+  describe("登出確認", () => {
+    afterEach(() => {
+      delete window.__PTT_ANDROID__;
+      delete window.PttAndroid;
+    });
+    const openConfirm = async (core) => {
+      renderBar(core);
+      await openMore();
+      fireEvent.click(byKey("__logout"));
+      expect(byKey("__logoutConfirm")).not.toBeNull();
+    };
+
+    test("按登出：收起「更多」、蓋上全螢幕確認，還不登出", async () => {
+      const core = makeCore();
+      await openConfirm(core);
+      expect(core.startLogout).not.toHaveBeenCalled();
+      await sheetClosed();
+      const r = byKey("__logoutConfirm").getBoundingClientRect();
+      expect(r.width).toBe(window.innerWidth);
+      expect(r.height).toBe(window.innerHeight);
+    });
+
+    test("點空白處＝取消，不登出", async () => {
+      const core = makeCore();
+      await openConfirm(core);
+      fireEvent.click(byKey("__logoutConfirm"));
+      expect(byKey("__logoutConfirm")).toBeNull();
+      expect(core.startLogout).not.toHaveBeenCalled();
+    });
+
+    test("「登出」＝只登出", async () => {
+      const core = makeCore();
+      await openConfirm(core);
+      fireEvent.click(byKey("__logoutOnly"));
+      expect(core.startLogout).toHaveBeenCalledWith({ quitApp: false });
+      expect(byKey("__logoutConfirm")).toBeNull();
+    });
+
+    test("不是 APK（或舊版 APK 沒宣告 quitApp）⇒ 沒有「登出並關閉 App」", async () => {
+      window.__PTT_ANDROID__ = { version: "1", site: "x" };
+      window.PttAndroid = { postMessage: vi.fn(), addEventListener: vi.fn() };
+      await openConfirm(makeCore());
+      expect(byKey("__logoutOnly")).not.toBeNull();
+      expect(byKey("__logoutQuit")).toBeNull();
+    });
+
+    test("APK 宣告 quitApp ⇒「登出並關閉 App」帶 quitApp 呼叫 startLogout", async () => {
+      window.__PTT_ANDROID__ = { version: "1", site: "x", quitApp: true };
+      window.PttAndroid = { postMessage: vi.fn(), addEventListener: vi.fn() };
+      const core = makeCore();
+      await openConfirm(core);
+      expect(byKey("__logoutQuit").textContent).toBe(i18n("mobileKeypad_logoutQuit"));
+      fireEvent.click(byKey("__logoutQuit"));
+      expect(core.startLogout).toHaveBeenCalledWith({ quitApp: true });
+    });
+
+    test("開著＝modal、系統返回＝取消；收起時兩者都撤銷", async () => {
+      const core = makeCore();
+      const sources = new Set();
+      core.setModalOpen = vi.fn((s, on) => (on ? sources.add(s) : sources.delete(s)));
+      const dismissers = [];
+      core.registerSheetDismiss = vi.fn((fn) => {
+        dismissers.push(fn);
+        return () => dismissers.splice(dismissers.indexOf(fn), 1);
+      });
+      await openConfirm(core);
+      await sheetClosed();
+      expect([...sources]).toEqual(["logoutConfirm"]);
+      expect(dismissers).toHaveLength(1);
+      act(() => dismissers[0]()); // 系統返回
+      expect(byKey("__logoutConfirm")).toBeNull();
+      expect(core.startLogout).not.toHaveBeenCalled();
+      expect(sources.size).toBe(0);
+      expect(dismissers).toHaveLength(0);
+    });
+
+    test("點擊不外洩到 window（不會被當成點終端機）", async () => {
+      const core = makeCore();
+      await openConfirm(core);
+      const onWin = vi.fn();
+      window.addEventListener("click", onWin);
+      try {
+        fireEvent.click(byKey("__logoutConfirm"));
+      } finally {
+        window.removeEventListener("click", onWin);
+      }
+      expect(onWin).not.toHaveBeenCalled();
+    });
   });
 
   // sheet 開著＝modal（遮罩點下去的 click 會到 window 上的 App 滑鼠入口，靠 modalShown
@@ -575,22 +656,6 @@ describe("更多（bottom sheet）", () => {
     await sheetClosed();
     expect(sources.size).toBe(0);
     expect(dismissers).toHaveLength(0);
-  });
-
-  test("登出確認沒動作會自己收回（防口袋誤觸）", async () => {
-    const core = makeCore();
-    renderBar(core);
-    await openMore();
-    vi.useFakeTimers();
-    try {
-      fireEvent.click(byKey("__logout"));
-      expect(byKey("__logoutYes")).not.toBeNull();
-      act(() => vi.advanceTimersByTime(LOGOUT_CONFIRM_MS + 10));
-      expect(byKey("__logoutYes")).toBeNull();
-      expect(byKey("__logout")).not.toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 

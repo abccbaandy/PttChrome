@@ -224,6 +224,8 @@ class MainActivity : ComponentActivity() {
             .put("version", BuildConfig.VERSION_NAME)
             .put("site", site)
             .put("restored", restoringRenderer)
+            // 認得 bridge 'quitApp'：網頁據此才給「登出並關閉 App」（舊版 APK 沒有這個欄位）。
+            .put("quitApp", true)
         restoringRenderer = false
         WebViewCompat.addDocumentStartJavaScript(
             wv, "window.__PTT_ANDROID__ = Object.freeze($config);", origins
@@ -239,6 +241,12 @@ class MainActivity : ComponentActivity() {
                 }
                 "saveFile" -> {
                     saveFile(request) { reply.postMessage(it.toString()) }
+                    return@addWebMessageListener
+                }
+                "quitApp" -> {
+                    // 「登出並關閉 App」：網頁已走完 PTT 正常登出。跟通知的「中斷連線並關閉」同一條；
+                    // 服務還沒綁上（不該發生）就只收掉畫面。不回覆：Activity 馬上結束。
+                    service?.quit() ?: finishAndRemoveTask()
                     return@addWebMessageListener
                 }
                 "notify" -> {

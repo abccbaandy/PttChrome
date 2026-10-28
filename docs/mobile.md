@@ -73,7 +73,7 @@
     手機只在整段都被收起時浮出「這一段沒有」，見 `docs/list-row-filter.md`「只看關注」）／設為全部已讀（文章列表才有）／操作說明（底列有 `(h)說明` 才有、主功能表不給（同 `contentTools`），送 h；底列在卡片／好讀文章
     畫面被收起、點不到原生提示，見 `docs/help-menu.md`）／分享／文章導覽／選取模式／全選／
     上傳圖片＋圖片上傳紀錄（跟 `enableImageUpload`，開 sheet 時現讀；全選與這兩項主功能表不給＝`contentTools`，
-    那裡沒內容可選、上傳只能退回剪貼簿，卻會把 sheet 撐到蓋住整個選單）／設定／登出（inline 二段確認，`LOGOUT_CONFIRM_MS` 無動作自動收回）。
+    那裡沒內容可選、上傳只能退回剪貼簿，卻會把 sheet 撐到蓋住整個選單）／設定／登出（全螢幕確認，見「一鍵登出」）。
     全選、圖片上傳、設為全部已讀在桌機是右鍵選單項；手機長按選單**不放**（`ContextSheet` 傳 `mobile: true` 給
     `context_menu_entries`），集中在「更多」。設為全部已讀放這裡不必指定哪一列：`v` 的 `(V)已讀` 分支
     （`brc_toggle_all_read`）不看游標所在那篇；要指定某一列的「前已讀後未讀」與看板列表的「<板名> 設為已讀」
@@ -247,7 +247,13 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 前置同 `aid_navigation._begin`（autoLogin.stop、好讀 functionMode、兩個列表 session beginExternalNavigation）；
   `serialized_op_gate` 期間吞使用者鍵。完成判定：`App.onClose` → `logout.onConnectionClosed()` 為真 ⇒
   `ConnectionAlert loggedOut`（藍色「已登出」＋重新連線，不跑連線失敗診斷）。
-- 守護：unit `logout_session.test.js`（byte 序列＋停手條件）。live e2e 不跑（會斷掉共用登入 session）。
+- 確認 UI（`components/LogoutConfirm`，類 Android 關機選單）：按「更多」的登出先收 sheet，再蓋全螢幕遮罩＋中間大按鈕。
+  點空白處／系統返回（`registerSheetDismiss`）＝取消；「登出」＝只登出；「登出並關閉 App」只在 APK 宣告
+  `quitApp` 時出現（`android_bridge.js#androidCanQuit`），登出成功（server 關線）後關 App，失敗不關
+  （流程見 `docs/android-app.md`「登出並關閉 App」）。開著＝modal（具名來源 `logoutConfirm`）。不設自動收回：
+  全螢幕＋點空白取消已經防誤觸。
+- 守護：unit `logout_session.test.js`（byte 序列＋停手條件＋quitApp 旗標）、`mobile_toolbar.test.jsx`「登出確認」、
+  `logout_quit_app.test.js`；offline e2e `mobile_toolbar`。live e2e 不跑（會斷掉共用登入 session）。
 
 ## 推文卡片（`render/comment_card.js`）
 

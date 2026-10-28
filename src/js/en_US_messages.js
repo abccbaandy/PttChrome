@@ -1850,14 +1850,11 @@ export const en_US = {
   "mobileKeypad_logout": {
     "message": "Log out"
   },
-  "mobileKeypad_logoutConfirm": {
-    "message": "Log out?"
+  "mobileKeypad_logoutQuit": {
+    "message": "Log out and close app"
   },
-  "mobileKeypad_logoutYes": {
-    "message": "Log out"
-  },
-  "mobileKeypad_logoutNo": {
-    "message": "Cancel"
+  "mobileKeypad_logoutCancelHint": {
+    "message": "Tap anywhere else to cancel"
   },
   "mobileKeypad_select": {
     "message": "Selection mode (long-press to select text)"

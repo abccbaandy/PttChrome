@@ -20,7 +20,7 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | 檔案 | 職責 |
 |---|---|
 | `android/app/src/main/java/.../MainActivity.kt` | WebView 設定、注入、返回鍵、檔案選擇、renderer 被回收時重建 |
-| `.../ConnectionService.kt` | 前景服務＋通知（「中斷連線並關閉」） |
+| `.../ConnectionService.kt` | 前景服務＋通知（「中斷連線並關閉」；網頁「登出並關閉 App」共用 `quit()`） |
 | `.../LocalWebSocketProxy.kt` | loopback 中繼（session 生命週期） |
 | `.../WsProtocol.kt` | RFC 6455 握手／frame 純邏輯（JVM test 守護） |
 | `.../CredentialBridge.kt` | Credential Manager：get/create password、雲端同步 Google 登入（ID token）／登出 |
@@ -49,6 +49,15 @@ WebView  https://abccbaandy.github.io/PttChrome/
 - 設定「連線 → BBS proxy」：不生效，改顯示說明（`options_androidProxyNote`）。
 - 連線失敗提示不做 Origin／proxy 診斷（`pttchrome.jsx` onClose：`isAndroidApp()` 時不給 `diagnose`）。
 - Web Notification（WebView 沒有）：水球通知改走 bridge `notify` → `MessageNotifier.kt`（獨立頻道「水球」，使用者可在系統設定單獨關）。WebView 切到背景不一定有 blur ⇒ 網頁在 APK 每則都送（`App.onData` 閘門），**前景與否由原生判斷**（`Lifecycle.State.STARTED`），回到前景（`onStart`）把跳過的收掉。仍受網頁「水球通知」開關控制。守護：`android_bridge.test.js`、`background_notification.test.js`、`waterball_notify_gate.test.js`、JVM `MessageNotifierTest`。真機 `unknown`。
+
+## 登出並關閉 App
+- 網頁登出確認（手機「更多」→ 登出，`components/LogoutConfirm`）的「登出並關閉 App」：先走完 PTT 正常登出
+  （`logout_session.js`，**不可以直接斷線**，見 `docs/mobile.md`「一鍵登出」），server 關線 → `App.onClose` 看到
+  `onConnectionClosed().quitApp` → bridge `quitApp` → `ConnectionService.quit()`（與通知的「中斷連線並關閉」同一條：
+  disconnectAll → `finishAndRemoveTask` → stopForeground → stopSelf）。登出失敗不關。按下時本來就沒連線 ⇒ 直接關。
+- 網頁與 APK 分開發佈：原生在 `__PTT_ANDROID__` 宣告 `quitApp: true`，網頁 `androidCanQuit()` 看到才給這顆
+  （舊版 APK 不認得 op，給了按下去沒反應）。
+- 守護：`tests/unit/android_quit_app.test.js`（原生靜態掃描）、`logout_quit_app.test.js`、`android_bridge.test.js`。
 
 ## 檔案下載（錄製檔／設定備份匯出）
 - WebView 不處理 `a[download]`／`blob:` 下載：點了靜默無反應（原生端也讀不到 `blob:` 網址，裝 `DownloadListener` 沒用）。

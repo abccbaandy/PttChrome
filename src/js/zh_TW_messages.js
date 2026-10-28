@@ -1849,14 +1849,11 @@
   "mobileKeypad_logout": {
     "message": "登出"
   },
-  "mobileKeypad_logoutConfirm": {
-    "message": "確定登出？"
+  "mobileKeypad_logoutQuit": {
+    "message": "登出並關閉 App"
   },
-  "mobileKeypad_logoutYes": {
-    "message": "確定登出"
-  },
-  "mobileKeypad_logoutNo": {
-    "message": "取消"
+  "mobileKeypad_logoutCancelHint": {
+    "message": "點空白處取消"
   },
   "mobileKeypad_select": {
     "message": "選取模式（長按選字複製）"
