@@ -42,6 +42,10 @@ DeepLinkController.prototype = {
   // 通知發在跳轉**之前**：接手的分頁若還沒登入，_hold() 會把目標收著等登入，落地
   // 可能永遠不會發生 —— 但使用者仍然得先知道有東西在等他。順序上 _hold 的
   // 「登入後將跳至…」橫幅會蓋在後面，讀起來剛好是「收到了 → 登入後會跳」。
+  //
+  // opts.quietLanding：落地不閃「已跳至 #AID」（最近讀過／稍後再讀開回去，見
+  // aid_navigation._landHint）。只作用在當場開跳；等登入的那條照舊閃（那時使用者剛看完
+  // 「登入後將跳至…」，落地確認不是噪音）。
   request: function(target, opts) {
     if (!target || !target.board || !target.aid) return null;
     if (opts && opts.source === 'handoff' && this._view &&
@@ -49,7 +53,7 @@ DeepLinkController.prototype = {
       this._view.notifyDeepLinkHandoff(target);
     if (this._canNavigate()) {
       this._pending = null;
-      return this._dispatch(target) ? 'navigating' : this._hold(target);
+      return this._dispatch(target, opts) ? 'navigating' : this._hold(target);
     }
     return this._hold(target);
   },
@@ -262,8 +266,10 @@ DeepLinkController.prototype = {
     return !!nav && !nav.active;
   },
 
-  _dispatch: function(target) {
+  _dispatch: function(target, opts) {
     const nav = this._core.aidNavigation;
+    // 只在要求時才帶（其餘呼叫維持原本的參數形狀）。
+    const quiet = opts && opts.quietLanding ? { quietLanding: true } : null;
     // AutoLogin 用 500ms 輪詢自走，且它的「歡迎畫面 → 送空白鍵」分支只認畫面
     // 上有沒有「請按任意鍵」——而進板畫面正好長那樣。跳轉一旦開始，它每一次
     // 誤送都會打亂 CommandQueue 正在等的那一幀。它自己也是看到主功能表才收
@@ -274,14 +280,14 @@ DeepLinkController.prototype = {
     // 狀態列證明是 pager、看得出看板。其餘（列表、主功能表…）用 startExternal：
     // 出發點取自閱讀紀錄（文章列表 ⇒ 返回回到那份列表，見 externalOriginAnchor）。
     if (this._termBuf.startedEasyReading) {
-      nav.start(target.aid, target.board);
+      nav.start(target.aid, target.board, quiet);
       return nav.active;
     }
     if (this._inNativePager()) {
-      nav.start(target.aid, target.board, { inPager: true });
+      nav.start(target.aid, target.board, Object.assign({ inPager: true }, quiet));
       return nav.active;
     }
-    return nav.startExternal(target.aid, target.board);
+    return nav.startExternal(target.aid, target.board, null, quiet);
   },
 
   _inNativePager: function() {

@@ -215,6 +215,20 @@ describe("AidNavigation", () => {
     expect(hints[hints.length - 1]).toContain("已跳至");
   });
 
+  test("文章裡開跳＋quietLanding（最近讀過，P51）：落地不閃「已跳至」，進度提示收掉", () => {
+    const { nav, queue, sent, hints, view } = makeHarness();
+    view.hideListHint = vi.fn();
+    nav.start("1gIeu-3A", "Android", { quietLanding: true });
+    answerOriginInfo(queue, "1gKF7GO4");
+    settle(queue, facts("clean-list", { boardName: "android" }));
+    settle(queue, facts("clean-list", { boardName: "android", cursorRowNum: 123, curY: 10 }));
+    settle(queue, facts("article"));
+    expect(nav.active).toBe(false);
+    expect(sent).toEqual(["Q", " sAndroid\r\f", "#1gIeu-3A\r\f", "\r\f"]);
+    expect(hints.some((m) => m.includes("已跳至"))).toBe(false);
+    expect(view.hideListHint).toHaveBeenCalledTimes(1);
+  });
+
   test("no board → refuses to start, nothing sent", () => {
     const { nav, sent, hints } = makeHarness();
     nav.start("1gIeu-3A", null);
@@ -1295,6 +1309,43 @@ describe("startExternal（deep link）", () => {
     settle(h.queue, facts("article"));
     expect(h.nav.active).toBe(false);
     expect(h.hints[h.hints.length - 1]).toContain("已跳至");
+  });
+
+  // P51：從最近讀過／稍後再讀開回去（recent_articles.open 帶 quietLanding）落地不閃
+  // 「已跳至 #AID」，但 15 秒的「跳至…」進度提示一樣要收掉，不能一路蓋進文章。
+  test("quietLanding：落地不閃「已跳至」，只收掉進度提示；送的鍵不變", () => {
+    const h = makeHarness();
+    h.view.hideListHint = vi.fn();
+    atMainMenu(h);
+    expect(h.nav.startExternal("1gIeu-3A", "Android", null, { quietLanding: true })).toBe(true);
+    expect(h.hints).toEqual(["跳至 #1gIeu-3A (Android)…"]);
+    settle(h.queue, facts("clean-list", { boardName: "android" }));
+    settle(h.queue, facts("clean-list", { boardName: "android", cursorRowNum: 123, curY: 10 }));
+    settle(h.queue, facts("article"));
+    expect(h.nav.active).toBe(false);
+    expect(h.sent).toEqual(["sAndroid\r\f", "#1gIeu-3A\r\f", "\r\f"]);
+    expect(h.hints.some((m) => m.includes("已跳至"))).toBe(false);
+    expect(h.view.hideListHint).toHaveBeenCalledTimes(1);
+    // 下一趟沒帶 ⇒ 照舊閃確認（旗標跟著 run，不會黏住）。
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "Android");
+    settle(h.queue, facts("clean-list", { boardName: "android" }));
+    settle(h.queue, facts("clean-list", { boardName: "android", cursorRowNum: 123, curY: 10 }));
+    settle(h.queue, facts("article"));
+    expect(h.hints[h.hints.length - 1]).toBe("已跳至 #1gIeu-3A");
+    expect(h.view.hideListHint).toHaveBeenCalledTimes(1);
+  });
+
+  test("quietLanding：跳文失敗的提示照舊出現", () => {
+    const h = makeHarness();
+    h.view.hideListHint = vi.fn();
+    atMainMenu(h);
+    h.nav.startExternal("1gIeu-3A", "Android", null, { quietLanding: true });
+    // 板跳之後一直沒有落地 ⇒ probe 逾時走 _fail。
+    vi.advanceTimersByTime(60000);
+    expect(h.nav.active).toBe(false);
+    expect(h.hints[h.hints.length - 1]).toContain("AID 跳文失敗");
+    expect(h.view.hideListHint).not.toHaveBeenCalled();
   });
 
   test("「找不到這個文章代碼」畫面仍判 miss（游標停在末列的 pressanykey）", () => {

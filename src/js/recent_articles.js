@@ -474,7 +474,9 @@ RecentArticles.prototype = {
   open: function(entry) {
     const dl = this._core && this._core.deepLinkController;
     if (!entry || !dl || typeof dl.request !== 'function') return false;
-    const res = dl.request({ board: entry.board, aid: entry.aid });
+    // 落地不閃「已跳至 #AID」（P51）：開回自己清單上的那篇，文章出現就是回應；讀到一半的
+    // 還有頂端「接著上次讀到的地方」，兩張提示疊在內文上（手機一上一下）只是噪音。
+    const res = dl.request({ board: entry.board, aid: entry.aid }, { quietLanding: true });
     const key = recentKey(entry.board, entry.aid);
     const line = key ? this.savedLine(key) : null;
     this._resume =

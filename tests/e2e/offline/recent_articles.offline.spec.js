@@ -115,6 +115,15 @@ test.describe('最近讀過／稍後再讀', () => {
         localStorage.setItem(k, JSON.stringify({ recent: [{ board, aid, title: '測試', at: 1, line }], later: [] })),
       { k: KEY, board, aid, line: LINE }
     );
+    // 每次狀態提示亮起時記下文字（P51：開回去落地不閃「已跳至 #AID」）。
+    await page.evaluate(() => {
+      window.__shownHints = [];
+      new MutationObserver(() => {
+        const el = document.querySelector('.ListHint');
+        const t = el && el.style.opacity === '1' ? el.textContent : null;
+        if (t && window.__shownHints[window.__shownHints.length - 1] !== t) window.__shownHints.push(t);
+      }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+    });
     await page.evaluate(({ board, aid }) => window.__app.recentArticles.open({ board, aid }), { board, aid });
 
     await page.waitForFunction(() => {
@@ -124,6 +133,11 @@ test.describe('最近讀過／稍後再讀', () => {
     const toast = page.locator('#recentResume');
     await expect(toast).toBeVisible();
     await expect(toast).toContainText(await label(page, 'recent_resumeHint'));
+    // 進度提示有亮過（跳文真的跑了），落地後收掉，沒有另一張「已跳至」疊在內文上。
+    const shown = await page.evaluate(() => window.__shownHints);
+    expect(shown).toContain('跳至 #' + aid + ' (' + board + ')…');
+    expect(shown.filter((t) => t.startsWith('已跳至'))).toEqual([]);
+    await expect(page.locator('.ListHint')).toHaveCSS('opacity', '0');
     // 好讀的一次性還原：累積到位才捲（量節點，頂端那一列就是上次的那一列）。
     await expect
       .poll(() => page.evaluate(() => Math.floor(window.__app.view.currentLineIndex())), { timeout: 10000 })

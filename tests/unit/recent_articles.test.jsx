@@ -172,7 +172,11 @@ describe("控制器", () => {
     const core = fakeCore();
     const ra = new RecentArticles(core, memStorage());
     expect(ra.open(A2)).toBe(true);
-    expect(core.deepLinkController.request).toHaveBeenCalledWith({ board: A2.board, aid: A2.aid });
+    // quietLanding（P51）：落地不閃「已跳至 #AID」，文章出現就是回應。
+    expect(core.deepLinkController.request).toHaveBeenCalledWith(
+      { board: A2.board, aid: A2.aid },
+      { quietLanding: true },
+    );
     core.deepLinkController.request.mockReturnValueOnce(null);
     expect(ra.open(A2)).toBe(false);
   });
@@ -442,7 +446,10 @@ describe("儀表板", () => {
     expect(document.querySelector(`[data-home-article="${recentKey(A1.board, A1.aid)}"]`).textContent).toContain(A1.title);
 
     fireEvent.click(document.querySelector(`[data-home-articles="recent"] [data-home-article]`));
-    expect(core.deepLinkController.request).toHaveBeenCalledWith({ board: A1.board, aid: A1.aid });
+    expect(core.deepLinkController.request).toHaveBeenCalledWith(
+      { board: A1.board, aid: A1.aid },
+      { quietLanding: true },
+    );
 
     core.deepLinkController.request.mockReturnValueOnce(null);
     fireEvent.click(document.querySelector(`[data-home-articles="recent"] [data-home-article]`));

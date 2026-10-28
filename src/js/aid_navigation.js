@@ -353,6 +353,14 @@ AidNavigation.prototype = {
     if (this._view.flashListHint) this._view.flashListHint(msg, ms || 4000, level);
   },
 
+  // 成功落地的確認。run.quietLanding（從最近讀過／稍後再讀開回去，P51）：文章開起來本身
+  // 就是回應，那邊頂端另有「接著上次讀到的地方」⇒ 不再疊一張「已跳至」，只把 15 秒的
+  // 進度提示收掉（不收的話它會一路蓋進打開的文章）。失敗提示走 _fail，不受影響。
+  _landHint: function(run, msg) {
+    if (!run.quietLanding) return this._hint(msg, 1200);
+    if (this._view.hideListHint) this._view.hideListHint();
+  },
+
   _fail: function(msg) {
     this.active = false;
     this.opHint = null;
@@ -473,6 +481,7 @@ AidNavigation.prototype = {
   // never parsed — nothing to navigate to, tell the user instead of guessing.
   // opts.inPager：呼叫端已證明畫面是 pager（deep link 收到時人在原生 pmore 讀文），
   // 不必等好讀開著。
+  // opts.quietLanding：落地不閃「已跳至 #AID」（只收掉進度提示），見 _landHint。
   start: function(aid, board, opts) {
     if (this.active) {
       // 另一趟還在跑（例：跳轉途中又點了一個 AID 連結）：不排隊，但吞掉點擊不得無聲
@@ -510,6 +519,7 @@ AidNavigation.prototype = {
     run.originLineIndex = lineIndex;
     run.originList = bm.list;
     run.listOpened = listOpened;
+    run.quietLanding = !!(opts && opts.quietLanding);
     this._begin(run);
   },
 
@@ -617,7 +627,8 @@ AidNavigation.prototype = {
   //     anchor.
   //   - Q is skipped: there is no article to ask about.
   // Returns whether the run was started (false = busy / bad arguments).
-  startExternal: function(aid, board, onEnd) {
+  // opts.quietLanding：同 start()。
+  startExternal: function(aid, board, onEnd, opts) {
     if (this.active) return false;
     if (!aid || !board) return false;
     this._onRunEnd = onEnd || null;
@@ -627,6 +638,7 @@ AidNavigation.prototype = {
     const run = makeRun({ board: board, kind: 'aid', aid: aid }, 'forward');
     run.originLineIndex = null;
     run.external = true;
+    run.quietLanding = !!(opts && opts.quietLanding);
     this._begin(run);
     return true;
   },
@@ -1947,7 +1959,7 @@ AidNavigation.prototype = {
           // Replace the long-lived "跳至…" progress banner (15s) with a short
           // confirmation so it fades right away instead of lingering into the
           // opened article.
-          self._hint('已跳至 #' + run.target.aid, 1200);
+          self._landHint(run, '已跳至 #' + run.target.aid);
         }
         recordFor(self._core).releaseExternal();
         self._endRun({ ok: true });

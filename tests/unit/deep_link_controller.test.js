@@ -198,6 +198,30 @@ describe("已登入", () => {
     expect(h.nav.externalCalls).toEqual([]);
   });
 
+  // P51：最近讀過／稍後再讀開回去帶 quietLanding，三個入口都要原樣帶到 aid_navigation。
+  test("quietLanding 帶到 start／startExternal（落地不閃「已跳至」）", () => {
+    const h = makeHarness();
+    h.arriveAtMainMenu();
+    const ext = [];
+    h.nav.startExternal = function(aid, board, onEnd, opts) {
+      ext.push(opts);
+      this.active = true;
+      return true;
+    };
+    expect(h.ctl.request(TARGET, { quietLanding: true })).toBe("navigating");
+    expect(ext).toEqual([{ quietLanding: true }]);
+
+    const h2 = makeHarness({ startedEasyReading: true });
+    h2.arriveAtMainMenu();
+    const starts = [];
+    h2.nav.start = function(aid, board, opts) {
+      starts.push(opts);
+      this.active = true;
+    };
+    h2.ctl.request(TARGET, { quietLanding: true });
+    expect(starts).toEqual([{ quietLanding: true }]);
+  });
+
   test("跳轉派工前先關掉 AutoLogin 的輪詢", () => {
     // AutoLogin 的「看到請按任意鍵就送空白」分支會踩進板畫面，打亂
     // CommandQueue 正在等的那一幀。

@@ -1191,10 +1191,16 @@ export const ContextMenu = ({ pttchrome }) => {
       if (typeof pttchrome.noteUserAction === "function")
         pttchrome.noteUserAction();
       switch (item.kind) {
-        case "article":
-          if (!pttchrome.deepLinkController?.request(item.target))
-            hint(i18n("palette_failed"), HINT_ERROR);
+        case "article": {
+          // 最近讀過／稍後再讀的項目走 recentArticles.open（跟首頁儀表板同一條：接著上次讀到的
+          // 地方、落地不閃「已跳至」）；貼網址的照舊直接 deep link。
+          const recent = item.source ? pttchrome.recentArticles : null;
+          const ok = recent
+            ? recent.open(item.target)
+            : pttchrome.deepLinkController?.request(item.target);
+          if (!ok) hint(i18n("palette_failed"), HINT_ERROR);
           return;
+        }
         case "board":
           onSearchConfirm({ kind: "board", text: item.text });
           return;

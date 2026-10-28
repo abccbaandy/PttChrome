@@ -124,6 +124,27 @@ test("貼文章網址 + Enter ⇒ deepLinkController.request，面板關掉", as
   await waitFor(() => expect(pttchrome.setModalOpen).toHaveBeenLastCalledWith("contextMenu", false));
 });
 
+// 最近讀過的項目跟首頁儀表板同一條（recentArticles.open：接著上次讀到的地方、落地不閃
+// 「已跳至」），不是直接 deep link。
+test("最近讀過的文章 + Enter ⇒ recentArticles.open，不直接 deep link", async () => {
+  const pttchrome = makePttchrome();
+  const entry = { board: "Gossiping", aid: AID, title: "[問卦] 一", at: 1 };
+  pttchrome.recentArticles = {
+    state: { recent: [entry], later: [] },
+    open: vi.fn(() => true),
+    toggleLater: vi.fn(),
+    onChange: () => () => {},
+  };
+  mount(pttchrome);
+  openPalette(pttchrome);
+  await waitFor(() => expect(input()).not.toBeNull());
+  type("問卦");
+  expect(itemIds()[0]).toBe("recent:gossiping/" + AID);
+  key("Enter");
+  expect(pttchrome.recentArticles.open).toHaveBeenCalledWith({ board: "Gossiping", aid: AID });
+  expect(pttchrome.deepLinkController.request).not.toHaveBeenCalled();
+});
+
 test("↓ 移到下一項再 Enter；點一下也能執行", async () => {
   const pttchrome = makePttchrome();
   mount(pttchrome);
