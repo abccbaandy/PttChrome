@@ -81,7 +81,7 @@ import { SearchStatus, isSearchStatusTarget } from './search_status';
 import { FollowOnly, isFollowOnlyTarget } from './follow_only';
 import { ListFastScroll, isListFastScrollTarget } from './list_fast_scroll';
 import { EditorInput, isEditorInputTarget } from './editor_input';
-import { inputModeFor, isListCardBodyTarget, isTouchCardMultiTap, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
+import { inputModeFor, isListCardBodyTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
 import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
@@ -403,6 +403,13 @@ export const App = function() {
   this._lastPointerType = null;
   window.addEventListener('pointerdown', function(e) {
     self._lastPointerType = e.pointerType;
+    // 手指點在終端機上、畫面還留著選取：先收掉，這一下照一般 tap 走（見 touchTapClearsSelection）。
+    if (touchTapClearsSelection({
+      pointerType: e.pointerType,
+      selectionCollapsed: window.getSelection().isCollapsed,
+      onTerminal: !self.modalShown && !!(e.target && e.target.closest && e.target.closest('#mainContainer'))
+    }))
+      window.getSelection().removeAllRanges();
   }, true);
 
   window.addEventListener('mousedown', function(e) {
