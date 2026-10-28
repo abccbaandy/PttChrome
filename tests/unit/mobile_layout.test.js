@@ -23,6 +23,7 @@ import {
   saveFloatPos,
   FLOAT_TOOLS_DEFAULT_POS,
   FLOAT_TOOLS_POS_STORAGE_KEY,
+  touchTapClearsSelection,
 } from "../../src/js/mobile_layout";
 import { KeyMap } from "../../src/js/term_keyboard";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
@@ -356,5 +357,22 @@ describe("浮動工具「⋯」位置（泛用版）", () => {
     expect(
       loadFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, FLOAT_TOOLS_DEFAULT_POS, { getItem: () => "[" }),
     ).toEqual(FLOAT_TOOLS_DEFAULT_POS);
+  });
+});
+
+// real-input: tests/e2e/offline/mobile_native_list_tap.offline.spec.js（留著選取時真觸控 tap 原生列表一列）
+describe("touchTapClearsSelection：手指點終端機時先收掉留著的選取", () => {
+  test("觸控＋有選取＋點在終端機上 ⇒ 收", () => {
+    expect(touchTapClearsSelection({ pointerType: "touch", selectionCollapsed: false, onTerminal: true })).toBe(true);
+  });
+
+  test("滑鼠／筆不收（桌機點一下只收選取是原生語意，由瀏覽器自己做）", () => {
+    expect(touchTapClearsSelection({ pointerType: "mouse", selectionCollapsed: false, onTerminal: true })).toBe(false);
+    expect(touchTapClearsSelection({ pointerType: "pen", selectionCollapsed: false, onTerminal: true })).toBe(false);
+  });
+
+  test("沒有選取、或點在終端機以外（右鍵選單的「複製」要用選取）⇒ 不動", () => {
+    expect(touchTapClearsSelection({ pointerType: "touch", selectionCollapsed: true, onTerminal: true })).toBe(false);
+    expect(touchTapClearsSelection({ pointerType: "touch", selectionCollapsed: false, onTerminal: false })).toBe(false);
   });
 });

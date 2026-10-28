@@ -297,6 +297,20 @@ export function isTouchCardMultiTap({ detail, pointerType, target }) {
   return isListCardBodyTarget(target) || menuCardTargetRow(target) >= 0;
 }
 
+// 手指 tap 在終端機上時，畫面還留著選取（選取模式長按選了字、複製完沒收）⇒ 在 pointerdown
+// 就先把選取收掉，讓這一下照一般 tap 走。不收的話滑鼠的語意會套到觸控上：
+//   - 相容 mousemove 看到選取 ⇒ 底色不跟（App.mouse_move）；mousedown 看到選取 ⇒ 這一下只算
+//     「點掉選取」（SkipMouseClick），click 不送指令；
+//   - 底色改在 mouseup（選取已被瀏覽器收掉）才移 ⇒ 手指下的列被重畫，Chromium 把 click 發給
+//     脫離文件的舊節點（tests/e2e/README.md「改寫時量到的瀏覽器事實」）。
+//   ⇒ 底色移到那一列、文章沒開，再點一次才開。tap 本來就會收掉選取（瀏覽器在 mousedown 收），
+//   提早到 pointerdown 收（這時換節點不吃 tap）只是讓 app 看到的跟瀏覽器一致。
+// 滑鼠不動：桌機點一下只收選取、不順便開文／翻頁是原生語意。終端機以外（選單、對話框、
+// 浮層）不動：右鍵選單的「複製」要用到選取。
+export function touchTapClearsSelection({ pointerType, selectionCollapsed, onTerminal }) {
+  return pointerType === 'touch' && !selectionCollapsed && !!onTerminal;
+}
+
 // 手機主功能表（Phase 5）的 `.main` 高與上緣位移。grid 幾何是「80 欄塞滿寬」⇒ 直式手機上
 // chh*rows 只佔可視高的六成左右，而大按鈕（固定 px 高）比格線列高得多 ⇒ 把 `.main`
 // 撐到整個可視高（扣軟鍵盤／工具列 inset），貼頂；可視高本來就不夠時退回格線規則
