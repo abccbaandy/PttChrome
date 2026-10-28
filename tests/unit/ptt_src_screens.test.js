@@ -52,6 +52,7 @@ import pushOwnerFx from "./fixtures/ptt_src_screens/push_owner.json";
 import pushSearchFx from "./fixtures/ptt_src_screens/push_search.json";
 import { pushMaxBytes } from "../../src/js/long_push";
 import { navKeyBlockReason } from "../../src/js/nav_key_gate";
+import { App } from "../../src/js/pttchrome";
 import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
@@ -496,6 +497,37 @@ describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", (
     expect(screenAt(pushFx, "push-1").buf.pageState).toBe(screenAt(pushFx, "list").buf.pageState);
     expect(reason("push-1")).toBe("pushTypeMenu");
     expect(reason("push-2")).toBe("inputField");
+  });
+
+  // 原生畫面的滾輪（PgUp／PgDn）與中鍵「左方向鍵」：型別選單 vkey 收到它們一樣當成「推」。
+  test("滾輪翻頁、中鍵 ←：列表照送，型別選單與推文內容列不送", () => {
+    const appAt = (name) => {
+      const app = Object.create(App.prototype);
+      app.modalShown = false;
+      app.mouseButtons = { syncFromButtons() {}, right: false, left: false };
+      app.aidNavigation = { active: false };
+      app._onUploadLayer = () => false;
+      app.mouseGates = () => ({ wheel: true, wheelSmoothScroll: false, middleClick: 2 });
+      app.buf = screenAt(pushFx, name).buf;
+      app.view = { useEasyReadingMode: false, _send: vi.fn() };
+      app.CmdHandler = { setAttribute() {} };
+      app.setBBSCmd = vi.fn();
+      return app;
+    };
+    const wheel = { deltaX: 0, deltaY: 120, buttons: 0, preventDefault() {}, stopPropagation() {} };
+    const middle = { button: 1, target: document.body };
+    const list = appAt("list");
+    list.mouse_scroll(wheel);
+    expect(list.setBBSCmd).toHaveBeenCalledWith("doPageDown");
+    list.middleMouse_down(middle);
+    expect(list.view._send).toHaveBeenCalledWith("\x1b[D");
+    for (const name of ["push-1", "push-2"]) {
+      const app = appAt(name);
+      app.mouse_scroll(wheel);
+      app.middleMouse_down(middle);
+      expect(app.setBBSCmd).not.toHaveBeenCalled();
+      expect(app.view._send).not.toHaveBeenCalled();
+    }
   });
 
   // 滑鼠點列（mouse_regions）與游標底色（cursor_highlight）同一個道理：型別選單開著時下方的列表

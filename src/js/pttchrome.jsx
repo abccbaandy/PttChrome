@@ -2769,7 +2769,9 @@ App.prototype.middleMouse_down = function(e) {
       this.doPaste();
       return false;
     } else if (middle === 2) {
-      this.view._send('\x1b[D');
+      // 底列 prompt（輸入欄、推文型別選單）開著：← 會被型別選單當成「推」⇒ 不送（同滾輪）。
+      if (!(this.buf.isPromptPending && this.buf.isPromptPending()))
+        this.view._send('\x1b[D');
       return false;
     }
   }
@@ -2979,10 +2981,12 @@ App.prototype.mouse_scroll = function(e) {
     return;
   }
 
-  this.setBBSCmd(up ? 'doPageUp' : 'doPageDown');
-
   e.stopPropagation();
   e.preventDefault();
+  // PTT 正等著底列的 prompt（輸入欄、推文型別選單）：PgUp／PgDn 會被型別選單的 vkey 當成
+  // 「推」前進到內容列（輸入欄則什麼都不做）。上方是殘影，翻頁沒有意義 ⇒ 不送（同滑鼠點列）。
+  if (!(this.buf.isPromptPending && this.buf.isPromptPending()))
+    this.setBBSCmd(up ? 'doPageUp' : 'doPageDown');
 
   // 按住右鍵滾輪不再是被設定的手勢，但瀏覽器仍會在放開右鍵時發 contextmenu ⇒
   // 翻完頁還跳出選單。這個旗標是 ContextMenu/index.jsx 唯一的消費者，留著。
