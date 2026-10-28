@@ -51,6 +51,7 @@ import pushAgainFx from "./fixtures/ptt_src_screens/push_again.json";
 import pushOwnerFx from "./fixtures/ptt_src_screens/push_owner.json";
 import pushSearchFx from "./fixtures/ptt_src_screens/push_search.json";
 import { pushMaxBytes } from "../../src/js/long_push";
+import { navKeyBlockReason } from "../../src/js/nav_key_gate";
 import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
@@ -484,6 +485,17 @@ describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", (
     expect(mode(pushFlowFx, "confirm")).toBe("clipboard");
     expect(mode(editorFx, "list")).toBe("clipboard");
     expect(mode(articleFx, "article")).toBe("clipboard");
+  });
+
+  // 返回手勢／邊緣翻頁的方向鍵（nav_key_gate）：型別選單 vkey 收到 ← 會當成「推」前進到輸入列。
+  // 列表按 X 之後 pageState 黏在列表（setPageState 沒有 reset 分支），只靠 pageState 擋不住。
+  test("返回手勢：列表照送，型別選單與推文內容列不送", () => {
+    const reason = (name) =>
+      navKeyBlockReason({ modalShown: false, conn: { isConnected: true }, buf: screenAt(pushFx, name).buf });
+    expect(reason("list")).toBe(null);
+    expect(screenAt(pushFx, "push-1").buf.pageState).toBe(screenAt(pushFx, "list").buf.pageState);
+    expect(reason("push-1")).toBe("pushTypeMenu");
+    expect(reason("push-2")).toBe("inputField");
   });
 });
 

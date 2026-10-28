@@ -76,6 +76,45 @@ int __wrap_poll(struct pollfd *fds, nfds_t n, int timeout)
     return __real_poll(fds, n, timeout);
 }
 
+// 板主：upstream 653523c 起 boardheader_t 的 BM 字串改成 moderators[]（使用者編號），畫面由
+// cache.c#board_format_moderators 換回 id：先 passwd_query（沒有 .PASSWDS 就 exit(1)），
+// 查不到且 firstlogin＝0 才退回 getuserid（SHM->userid）。driver 不造 .PASSWDS ⇒ 以
+// --wrap=passwd_query 一律回「查不到」，id 寫在 SHM->userid。新舊 upstream 都要編得過：
+// generate.sh 看 header 有沒有 moderators[] 決定 BH_MODERATORS。
+int __wrap_passwd_query(int num, userec_t *buf)
+{
+    (void)num;
+    (void)buf;
+    return -1;
+}
+
+static void set_moderators(boardheader_t *bh, const char *bms)
+{
+#if BH_MODERATORS
+    char tmp[IDLEN * 3 + 3];
+    STRLCPY(tmp, bms);
+    int m = 0;
+    for (char *save = NULL, *id = strtok_r(tmp, "/", &save); id && m < MAX_BMs;
+         id = strtok_r(NULL, "/", &save)) {
+        int uid = 0;
+        for (int i = 0; i < MAX_USERS && SHM->userid[i][0]; i++)
+            if (!strcasecmp(SHM->userid[i], id)) uid = i + 1;
+        if (!uid) {
+            int i = 0;
+            while (i < MAX_USERS && SHM->userid[i][0]) i++;
+            if (i == MAX_USERS) die("userid full");
+            STRLCPY(SHM->userid[i], id);
+            uid = i + 1;
+        }
+        bh->moderators[m].unum = uid;
+        bh->moderators[m].firstlogin = 0;
+        m++;
+    }
+#else
+    STRLCPY(bh->BM, bms);
+#endif
+}
+
 // 輸出要可重現（fixture 進 repo，有 diff＝upstream 改了畫面）：時間釘死。
 // 執行檔自己定義的 time() 會蓋過 libc 的（動態連結的符號解析先找執行檔）。
 #define FIXED_NOW 1790500000 /* 2026-09-27 (UTC) */
@@ -148,7 +187,7 @@ static void seed(const char *path)
             STRLCPY(bh->brdname, f[1]);
             STRLCPY(bh->bclass, f[2]);
             STRLCPY(bh->desc, f[3]);
-            STRLCPY(bh->BM, f[4]);
+            set_moderators(bh, f[4]);
             bh->nuser = 42;
             // 分類看板：G＝群組（目錄，BRD_GROUPBOARD）；parent＝所屬群組（gid，
             // cache.c#resolve_board_group 依它串子清單）。主功能表 C 的根是 bid 1。

@@ -40,10 +40,13 @@ done
 # 新舊 upstream 都要編得過 ⇒ 看 header 決定 driver 寫哪個欄位。
 RATING_RE='^[[:space:]]*int16_t[[:space:]]+rating;'
 if grep -Eq "$RATING_RE" ../include/pttstruct.h; then FH_RATING=rating; else FH_RATING=recommend; fi
-clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
-# --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）。
+# boardheader_t 的板主：upstream 653523c 把 char BM[] 換成 user_t moderators[]（見 driver.c#set_moderators）。
+if grep -Eq '^[[:space:]]*user_t[[:space:]]+moderators\[' ../include/pttstruct.h; then BH_MODERATORS=1; else BH_MODERATORS=0; fi
+clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
+# --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）；
+# passwd_query 一律「查不到」（板主 id 從 SHM->userid 來，見 driver.c#set_moderators）。
 # shellcheck disable=SC2086
-clang -o "$OUT/driver" -Wl,--wrap=read,--wrap=select,--wrap=poll "$OUT/driver.o" "$OUT/mbbsd_nomain.o" $OBJS "$OUT/vers.o" \
+clang -o "$OUT/driver" -Wl,--wrap=read,--wrap=select,--wrap=poll,--wrap=passwd_query "$OUT/driver.o" "$OUT/mbbsd_nomain.o" $OBJS "$OUT/vers.o" \
   -L../common/bbs -L../common/sys -L../common/osdep -lcmbbs -lcmsys -losdep -lrt -pthread || exit 2
 
 iconv -f UTF-8 -t BIG5 "$HERE/seed.tsv" >"$OUT/seed.big5" || exit 2
