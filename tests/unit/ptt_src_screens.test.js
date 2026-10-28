@@ -469,6 +469,35 @@ describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", (
     expect(buf.pageState).toBe(6);
   });
 
+  // 編輯器內文本身可以是白底黑字（Ctrl-V 彩色預覽下的 ESC[30;47m、水平捲動時的區塊選取
+  // ESC[0;7m 跟在「<」後面）：游標停在那種字上不是輸入欄。誤認的後果是點空白處送 ^C，
+  // 在編輯器裡是「插入色碼」（edit.c#edit_cmd_ansi_code → insert_ansi_code：非彩色模式直接
+  // 插入 ESC[m、彩色模式開色碼 prompt）⇒ 草稿被改。
+  const paint = (buf, bytes) => {
+    new AnsiParser(buf).feed(bytes);
+    buf.notify();
+    clearTimeout(buf.timerUpdate);
+    if (buf._settleTimer) clearTimeout(buf._settleTimer);
+  };
+
+  test("內文的白底黑字不是輸入欄：點空白處不送 ^C", () => {
+    const { buf } = screenAt(editorFx, "edit");
+    paint(buf, "\x1b[5;11H\x1b[30;47mAB\x1b[m\x1b[5;11H");
+    expect(buf.isEditorScreenNow()).toBe(true);
+    expect(buf.cur_y).toBe(4);
+    expect(buf.isCursorOnInputField()).toBe(false);
+    expect(buf.dismissTarget()).toBeNull();
+  });
+
+  // 彩色模式的 ^C 色碼 prompt 是 getdata(b_lines - 1, …)：底列的「編輯文章」還在，輸入欄在倒數
+  // 第二列 ⇒ 那一列照舊認得是輸入欄（點空白處送 ^C 取消它）。
+  test("彩色模式的色碼 prompt（倒數第二列）照舊是輸入欄", () => {
+    const { buf } = screenAt(editorFx, "edit");
+    paint(buf, "\x1b[23;1H\x1b[mcolor: \x1b[0;7m   \x1b[m\x1b[23;8H");
+    expect(buf.isEditorScreenNow()).toBe(true);
+    expect(buf.isCursorOnInputField()).toBe(true);
+  });
+
   // 上傳完的網址插到哪：image_upload.decideInsertMode（底列分類共用 classifyPushScreen）。
   test("圖片上傳插入位置：編輯器與推文內容列送字，型別選單／確定／列表一律剪貼簿", () => {
     const mode = (fx, name) => {

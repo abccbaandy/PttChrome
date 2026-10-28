@@ -106,6 +106,9 @@ Enter 會被輸入框吃掉（等於替使用者送出搜尋／進錯看板）�
 底色端由 `cursor_highlight.resolveHighlightRow` 用**同一個事實**關掉，兩邊一起動才守得住
 「可點區＝底色區」。守護：`tests/unit/mouse_regions.test.js`、`cursor_highlight.test.js`、
 `cursor_highlight_arbitration.test.js`、`term_buf_input_field.test.js`。
+例外：**編輯器**（底列是「編輯文章」狀態列）裡游標在倒數兩列以上 ⇒ 不是輸入欄。內文本身可以是白底黑字
+（Ctrl-V 彩色預覽、水平捲動時的區塊選取），誤認就會點空白處送 `^C`，在編輯器是「插入色碼」、改到草稿；
+編輯器的 prompt 只在 `b_lines`／`b_lines - 1`（彩色模式的色碼 prompt）。守護：`ptt_src_screens.test.js`。
 
 **左 7 欄（`EXIT_COL_END`）的退出帶三種畫面共用**，且**不看點擊範圍設定**
 （使用者 2026-08 定案）：它是一個固定手勢，不是「哪一欄算內容」的欄位判定。
