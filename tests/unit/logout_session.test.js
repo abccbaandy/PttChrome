@@ -140,9 +140,20 @@ describe("完整流程", () => {
     expect(h.queue.current.probe).toBe(false);
     expect(h.session.awaitingClose).toBe(true);
 
-    expect(h.session.onConnectionClosed()).toBe(true);
+    expect(h.session.onConnectionClosed()).toEqual({ loggedOut: true, quitApp: false });
     expect(h.session.active).toBe(false);
     expect(serializedOpHint(h.core)).toBe(null);
+  });
+
+  test("「登出並關閉 App」：同一組 byte，server 關線後回報 quitApp", () => {
+    const h = makeHarness(MAIN_MENU);
+    expect(h.session.start({ quitApp: true })).toBe(true);
+    h.respond(CONFIRM);
+    h.respond(STAY);
+    expect(h.sent).toEqual([KEY_GOODBYE, KEY_CONFIRM, " "]);
+    expect(h.session.onConnectionClosed()).toEqual({ loggedOut: true, quitApp: true });
+    // 用過就清：下一次（重連後）的斷線不會再關 App。
+    expect(h.session.onConnectionClosed()).toEqual({ loggedOut: false, quitApp: false });
   });
 
   test("已在主選單 ⇒ 第一鍵就是 G⏎（不送 ←）", () => {
@@ -189,6 +200,22 @@ describe("停手條件（不盲送）", () => {
     expect(h.sent).not.toContain(KEY_GOODBYE);
   });
 
+  test("「登出並關閉 App」中途失敗 ⇒ 之後的斷線不關 App（停在原生畫面讓使用者處理）", () => {
+    const h = makeHarness(ARTICLE);
+    h.session.start({ quitApp: true });
+    expect(h.respond(ARTICLE)).toBe(false);
+    h.miss();
+    expect(h.session.active).toBe(false);
+    expect(h.session.quitApp).toBe(false);
+    expect(h.session.onConnectionClosed()).toEqual({ loggedOut: false, quitApp: false });
+  });
+
+  test("中途斷線（還沒等關線）⇒ 不關 App", () => {
+    const h = makeHarness(ARTICLE);
+    h.session.start({ quitApp: true });
+    expect(h.session.onConnectionClosed()).toEqual({ loggedOut: false, quitApp: false });
+  });
+
   test("G⏎ 之後沒出現確認列 ⇒ 不送 y", () => {
     const h = makeHarness(MAIN_MENU);
     h.session.start();
@@ -214,7 +241,7 @@ describe("停手條件（不盲送）", () => {
   test("中途斷線（不是在等關線）⇒ 不算登出", () => {
     const h = makeHarness(ARTICLE);
     h.session.start();
-    expect(h.session.onConnectionClosed()).toBe(false);
+    expect(h.session.onConnectionClosed()).toEqual({ loggedOut: false, quitApp: false });
     // 之後佇列被清（onFlushed）不再冒出失敗提示。
     h.queue.current.onFlushed();
     expect(h.hints.some((m) => m.indexOf("登出失敗") === 0)).toBe(false);

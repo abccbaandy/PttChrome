@@ -9,6 +9,8 @@ import {
   requestAndroid,
   openAppSettings,
   androidNotify,
+  androidCanQuit,
+  quitAndroidApp,
   androidImeInset,
   onAndroidIme,
   IME_EVENT,
@@ -16,10 +18,10 @@ import {
 } from "../../src/js/android_bridge";
 
 // 回傳 { sent, respond }：sent＝網頁送出的訊息；respond(obj)＝模擬原生回覆。
-function installAndroid({ site = "wstelnet://127.0.0.1:4321/bbs/tok" } = {}) {
+function installAndroid({ site = "wstelnet://127.0.0.1:4321/bbs/tok", extra = {} } = {}) {
   const listeners = [];
   const sent = [];
-  window.__PTT_ANDROID__ = { version: "1", site };
+  window.__PTT_ANDROID__ = { version: "1", site, ...extra };
   window.PttAndroid = {
     postMessage: str => sent.push(JSON.parse(str)),
     addEventListener: (type, fn) => {
@@ -130,6 +132,29 @@ describe("androidNotify（水球系統通知）", () => {
 
   test("不是 APK：什麼都不送", () => {
     expect(androidNotify({ title: "a", body: "b", tag: "c" })).toBe(false);
+  });
+});
+
+// 網頁與 APK 分開發佈：舊版 APK 不認得 quitApp ⇒ 沒宣告就不給「登出並關閉 App」。
+describe("quitApp（登出並關閉 App）", () => {
+  test("APK 宣告 quitApp ⇒ 可以關、送出 quitApp", () => {
+    const { sent } = installAndroid({ extra: { quitApp: true } });
+    expect(androidCanQuit()).toBe(true);
+    expect(quitAndroidApp()).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ op: "quitApp" });
+  });
+
+  test("舊版 APK（沒宣告）⇒ 不能關、什麼都不送", () => {
+    const { sent } = installAndroid();
+    expect(androidCanQuit()).toBe(false);
+    expect(quitAndroidApp()).toBe(false);
+    expect(sent).toHaveLength(0);
+  });
+
+  test("不是 APK ⇒ 不能關", () => {
+    expect(androidCanQuit()).toBe(false);
+    expect(quitAndroidApp()).toBe(false);
   });
 });
 

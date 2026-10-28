@@ -120,6 +120,7 @@
 
 - **手機版面（Android Chrome）** — 畫面自動塞滿螢幕，有 App 式標題列（點一下捲回頂端）與底部導覽列，列表、信箱與推文改成好點的卡片，長按推文就能整則複製，字級可另外調整。
 - **Android App** — 切到背景也不斷線、收到水球跳系統通知，LINE、Telegram 裡的 PTT 文章連結直接在 App 開啟；APK 在 [GitHub Releases](../../releases)。
+- **一鍵登出並關閉 App** — 登出時跳出全螢幕確認，可選只登出，或在 Android App 登出完直接關掉 App。
 
 ### ⚙️ 設定
 

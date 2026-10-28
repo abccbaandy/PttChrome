@@ -20,6 +20,10 @@
 //     水球的系統通知（WebView 沒有 Web Notification）。網頁每則都送，**前景與否由原生判斷**
 //     （App 在前景 ⇒ 不跳、ok:false；回到前景時把跳過的收掉，MessageNotifier.kt）。tag＝寄件人，
 //     同一人只留最新一則。舊版 APK 不回覆這個 op ⇒ 呼叫端不等結果。
+//   → { id, op: 'quitApp' }                              （不回覆：App 直接結束）
+//     「登出並關閉 App」（logout_session 走完、server 關線後由 App.onClose 呼叫）：原生走跟通知列
+//     「中斷連線並關閉」同一條 ConnectionService.quit()。網頁與 APK 分開發佈 ⇒ 只在 config.quitApp
+//     為 true（認得這個 op 的 APK 才宣告）時才給這個選項（androidCanQuit）。
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
 // googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
 //   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider
@@ -134,6 +138,19 @@ export function openAppSettings() {
 export function androidNotify({ title, body, tag }) {
   if (!androidBridgeAvailable()) return false;
   requestAndroid('notify', { title, body, tag }).catch(() => null);
+  return true;
+}
+
+// 這個 APK 認得 'quitApp'（見檔頭）。
+export function androidCanQuit() {
+  const c = config();
+  return !!(c && c.quitApp === true) && androidBridgeAvailable();
+}
+
+// 關掉 App（見檔頭 'quitApp'）。不等回覆；回 false ＝這個環境關不了。
+export function quitAndroidApp() {
+  if (!androidCanQuit()) return false;
+  requestAndroid('quitApp').catch(() => null);
   return true;
 }
 

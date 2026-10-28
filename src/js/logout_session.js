@@ -82,6 +82,8 @@ export function LogoutSession(core, view, termBuf, queue) {
   this.active = false;
   // 最後一鍵已送出、在等 server 關線 ⇒ App.onClose 看到它就知道這次斷線是登出。
   this.awaitingClose = false;
+  // 「登出並關閉 App」：登出成功（server 關線）後 App.onClose 關掉 APK。失敗就不關。
+  this.quitApp = false;
   this.opHint = '';
   this._closeTimer = null;
 }
@@ -117,6 +119,7 @@ LogoutSession.prototype = {
     if (!this.active) return;
     this.active = false;
     this.awaitingClose = false;
+    this.quitApp = false;
     this._clearCloseTimer();
     this.opHint = '';
     this._hint('登出失敗：' + msg + '（已停在原生畫面，可手動操作）', 6000, HINT_ERROR);
@@ -129,13 +132,14 @@ LogoutSession.prototype = {
     }
   },
 
-  // 回 true ＝開始了。沒連線／已在跑 ⇒ false。
-  start: function() {
+  // 回 true ＝開始了。沒連線／已在跑 ⇒ false。opts.quitApp ＝登出完關掉 App。
+  start: function(opts) {
     if (this.active) return false;
     const core = this._core;
     if (!core || (core.isConnected && !core.isConnected())) return false;
     this.active = true;
     this.awaitingClose = false;
+    this.quitApp = !!(opts && opts.quitApp);
     this.opHint = '登出中，請稍候…';
     this._hint(this.opHint, 8000);
     // 登出途中自動登入不可以插手（它會在主選單以外的畫面送帳密）。
@@ -273,16 +277,19 @@ LogoutSession.prototype = {
     }, CLOSE_WAIT_MS + 500);
   },
 
-  // App.onClose 呼叫。回 true ＝這次斷線是我們登出造成的（App 改顯示「已登出」）。
+  // App.onClose 呼叫。loggedOut ＝這次斷線是我們登出造成的（App 改顯示「已登出」）；
+  // quitApp ＝使用者選了「登出並關閉 App」（只在 loggedOut 時為真）。
   onConnectionClosed: function() {
-    const wasLogout = this.active && this.awaitingClose;
+    const loggedOut = this.active && this.awaitingClose;
+    const quitApp = loggedOut && this.quitApp;
     this.reset();
-    return wasLogout;
+    return { loggedOut: loggedOut, quitApp: quitApp };
   },
 
   reset: function() {
     this.active = false;
     this.awaitingClose = false;
+    this.quitApp = false;
     this.opHint = '';
     this._clearCloseTimer();
   }

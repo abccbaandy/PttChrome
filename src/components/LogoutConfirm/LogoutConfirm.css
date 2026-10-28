@@ -1,0 +1,89 @@
+/* 登出確認（components/LogoutConfirm）：全螢幕遮罩＋中間一欄大按鈕，類 Android 關機選單。
+   恆為暗色（同 App Bar／底部導覽／sheet）。 */
+.logoutConfirm {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 16px;
+  background: rgba(10, 10, 14, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #e6e6ea;
+  animation: logoutConfirmIn 160ms ease-out;
+  touch-action: none;
+}
+
+@keyframes logoutConfirmIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logoutConfirm {
+    animation: none;
+  }
+}
+
+.logoutConfirmActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+.logoutConfirmAction {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 160px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.logoutConfirmIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #3a3a44;
+  color: #f2f2f5;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.logoutConfirmAction:active .logoutConfirmIcon {
+  background: #4a4a56;
+}
+
+.logoutConfirmDanger .logoutConfirmIcon {
+  background: #b3261e;
+  color: #fff;
+}
+
+.logoutConfirmDanger:active .logoutConfirmIcon {
+  background: #c9372e;
+}
+
+/* 提示字點下去也算點空白（穿透到遮罩）。 */
+.logoutConfirmHint {
+  color: #a0a0aa;
+  font-size: 13px;
+  pointer-events: none;
+}
