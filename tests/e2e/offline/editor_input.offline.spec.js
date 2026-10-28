@@ -10,11 +10,13 @@ const { bootOffline, feedRaw } = require('../helpers/replay');
 const { waitRectStable } = require('../helpers/layout');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const screens = require('../../unit/fixtures/ptt_src_screens/editor.json');
+// 場景在編輯器之後還有 ^X「檔案處理」那一幀：只餵到編輯器畫面為止。
+const EDITOR_FRAMES = screens.frames.slice(0, screens.frames.findIndex((f) => f.name === 'edit') + 1);
 
 const CHIP = '#editorInputChip';
 
 async function enterEditor(page) {
-  for (const f of screens.frames) await feedRaw(page, f.bytes);
+  for (const f of EDITOR_FRAMES) await feedRaw(page, f.bytes);
   await page.waitForFunction(() => window.__app.buf.pageState === 6);
 }
 

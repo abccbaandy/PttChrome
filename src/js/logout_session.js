@@ -52,13 +52,17 @@ export function isGoodbyeConfirm(rowTexts) {
   return CONFIRM_RE.test(rows[n - 1] || '') || CONFIRM_RE.test(rows[n - 2] || '');
 }
 
-// 逃生階段這一步該送什麼。screen ＝ { row0, lastRowText, cursorOnInputField }。
+// 逃生階段這一步該送什麼。screen ＝ { row0, lastRowText, cursorOnInputField, inputPromptText }。
 //   { menu: true }  已在主功能表 ⇒ 不送任何逃生鍵，直接進 Goodbye
 //   { bytes }       要送的那一鍵
 export function logoutEscapeKey(screen) {
   const s = screen || {};
   if (isMainMenuRow(s.row0 || '')) return { menu: true };
-  const d = resolveDismiss({ lastRowText: s.lastRowText, cursorOnInputField: s.cursorOnInputField });
+  const d = resolveDismiss({
+    lastRowText: s.lastRowText,
+    cursorOnInputField: s.cursorOnInputField,
+    inputPromptText: s.inputPromptText
+  });
   if (d) return { bytes: d.bytes };
   return { bytes: KEY_LEFT };
 }
@@ -98,7 +102,8 @@ LogoutSession.prototype = {
     return {
       row0: buf.getRowText(0, 0, buf.cols),
       lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
-      cursorOnInputField: !!(buf.isCursorOnInputField && buf.isCursorOnInputField())
+      cursorOnInputField: !!(buf.isCursorOnInputField && buf.isCursorOnInputField()),
+      inputPromptText: buf.inputPromptText ? buf.inputPromptText() : ''
     };
   },
 

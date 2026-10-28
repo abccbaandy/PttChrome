@@ -23,9 +23,13 @@
 // 所以一律用**空白鍵**。
 //
 // C. vgetstring 輸入欄：vtuikit.c:1346 `case Ctrl('C'): rt.icurr=rt.iend=0;
-//    buf[0]=0; abort=1;` ⇒ getdata 回 0 ⇒ 呼叫端一律當「取消」。指紋沿用
+//    buf[0]=0; abort=1;` ⇒ getdata 回 0、答案是空字串。指紋沿用
 //    term_buf.isCursorOnInputField()（游標所在格白底黑字、且該列不是從 col 0
 //    就反白），source 校準見該函式的註解。
+//    **空答案不一定是取消**：呼叫端拿空字串走預設值。`[y/N]`、`[Q]` 的預設是不做，
+//    但 edit.c#write_file 的「確定要儲存檔案嗎？」空答案落到 switch 之外＝[S] 存檔／發文／
+//    發信，`[Y/n]` 是 Y、暫存檔的 `(0-9)[0]` 是讀進 0 號。所以只有提示看得出空答案＝不做
+//    才送 ^C（emptyAnswerCommits），其餘不關（認不出 ⇒ 原生，使用者自己按鍵）。
 //
 // ---- 為什麼不可以「點空白就送一個安全鍵」----
 // **沒有安全鍵**。`Ctrl-C` 在文章列表是 ClearTagList()（mbbsd/read.c:950-955，
@@ -59,18 +63,44 @@ const PAUSE_TEXT = '請按任意鍵繼續';
 // BBS 的寫法，**不在 pttbbs 原始碼裡**）。它字面就指名空白鍵，收尾鍵與 A 相同。
 const PAUSE_TEXT_ALT = '請按 空白鍵 繼續';
 
+// edit.c#write_file：getdata(2, 0, "確定要儲存檔案嗎？ ", …)，[S] 寫在第 1 列不在提示裡。
+const SAVE_FILE_PROMPT_RE = /確定要儲存檔案嗎/;
+// 提示裡最後一個 [..]：getdata 慣例把預設答案寫在這裡（`[y/N]`、`[Q]`、`[S]`、`[0]`）。
+const DEFAULT_BRACKET_RE = /\[([^\[\]]{1,16})\][^\[\]]*$/;
+
+// 輸入欄的提示看得出「空答案（^C）會照預設值做事」嗎？做事＝不可以拿 ^C 關。
+//   [a/B] 形式 ⇒ 預設是大寫那個；[X] 形式 ⇒ 預設就是 X；預設是 N／Q（不做）才算安全。
+//   沒有 [..] 的自由輸入（搜尋字串、看板名）⇒ 空答案＝放棄，安全。
+export function emptyAnswerCommits(promptText) {
+  const p = String(promptText == null ? '' : promptText);
+  if (SAVE_FILE_PROMPT_RE.test(p)) return true;
+  const m = DEFAULT_BRACKET_RE.exec(p);
+  if (!m) return false;
+  const inner = m[1].trim();
+  let def;
+  if (inner.indexOf('/') >= 0) {
+    const caps = inner.split('/').map(s => s.trim()).filter(s => /^[A-Z]$/.test(s));
+    if (caps.length === 0) return false; // [y/n]：沒有預設
+    def = caps[0];
+  } else {
+    def = inner;
+  }
+  return !/^[NnQq]$/.test(def);
+}
+
 // 這一幀「有沒有一個滑鼠關得掉的框」。
 //   lastRowText         buf.getRowText(rows - 1, 0, cols)
 //   cursorOnInputField  buf.isCursorOnInputField()
+//   inputPromptText     buf.inputPromptText()（輸入欄左邊的提示字）
 // 回 null ＝沒有框（**預設就是什麼都不做**）。
 //
 // 判斷順序刻意讓**輸入欄優先**：vans/getdata 的提示（` 確定[y/N]:`、
 // `要使用小天使匿名推文嗎？ [Y/n]:`）畫在同一列，光看文字分不出來，
-// 但游標在不在反白欄裡是確定的。
+// 但游標在不在反白欄裡是確定的。空答案會做事的輸入欄回 null（見 C）。
 export function resolveDismiss(input) {
   const o = input || {};
   if (o.cursorOnInputField)
-    return { kind: DISMISS_INPUT, bytes: KEY_ABORT };
+    return emptyAnswerCommits(o.inputPromptText) ? null : { kind: DISMISS_INPUT, bytes: KEY_ABORT };
   const last = String(o.lastRowText == null ? '' : o.lastRowText);
   if (last.indexOf(PAUSE_TEXT) >= 0 || last.indexOf(PAUSE_TEXT_ALT) >= 0)
     return { kind: DISMISS_ANY_KEY, bytes: KEY_DISMISS };

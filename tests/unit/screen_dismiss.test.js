@@ -63,6 +63,26 @@ describe("resolveDismiss：這一幀有沒有滑鼠關得掉的框", () => {
     ).toBe(DISMISS_INPUT);
   });
 
+  // ^C ＝清空送出，呼叫端拿空答案走預設值：預設是「不做」才可以拿它關框。
+  test.each([
+    // 預設是不做 ⇒ 送 ^C
+    ["設定所有文章 (U)未讀 (V)已讀 (W)前已讀後未讀 (Q)取消？[Q] ", true],
+    ["您確定要離開【 批踢踢實業坊 】嗎(Y/N)？[N] ", true],
+    ["確定要推嗎？[y/N]: ", true],
+    ["搜尋標題: ", true],
+    ["[y/n] ", true],
+    // 空答案會做事 ⇒ 不關
+    ["確定要儲存檔案嗎？ ", false],
+    ["要使用小天使匿名推文嗎？ [Y/n]: ", false],
+    ["請選擇暫存檔 (0-9)[0]: ", false],
+    ["暫存檔已有資料 (A)附加 (W)覆寫 (Q)取消？[A] ", false],
+    ["您有一篇文章尚未完成，(S)寫入暫存檔 (Q)算了？[S] ", false],
+  ])("輸入欄提示「%s」→ 可以送 ^C：%s", (prompt, dismissable) => {
+    const d = resolveDismiss({ lastRowText: "", cursorOnInputField: true, inputPromptText: prompt });
+    if (dismissable) expect(d).toEqual({ kind: DISMISS_INPUT, bytes: KEY_ABORT });
+    else expect(d).toBeNull();
+  });
+
   test("NEGATIVE：沒有框時一律 null（沒有「安全鍵」可送）", () => {
     expect(resolveDismiss({ lastRowText: ARTICLE_FOOTER })).toBeNull();
     expect(resolveDismiss({ lastRowText: LIST_FOOTER })).toBeNull();

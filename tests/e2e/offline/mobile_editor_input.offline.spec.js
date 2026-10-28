@@ -5,12 +5,14 @@ const ptt = require('../helpers/ptt');
 const { bootOffline, feedRaw } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const screens = require('../../unit/fixtures/ptt_src_screens/editor.json');
+// 場景在編輯器之後還有 ^X「檔案處理」那一幀：只餵到編輯器畫面為止。
+const EDITOR_FRAMES = screens.frames.slice(0, screens.frames.findIndex((f) => f.name === 'edit') + 1);
 
 test.describe('編輯器輸入框（手機，離線）', () => {
   test('工具列「輸入框」→ sheet 打字 → 插入 ⇒ 整段送進編輯器', async ({ page }) => {
     test.setTimeout(60000);
     await bootOffline(page, ptt);
-    for (const f of screens.frames) await feedRaw(page, f.bytes);
+    for (const f of EDITOR_FRAMES) await feedRaw(page, f.bytes);
     await page.waitForFunction(() => window.__app.buf.pageState === 6);
     const btn = page.locator('[data-key="__editorInput"]');
     await expect(btn).toBeVisible();

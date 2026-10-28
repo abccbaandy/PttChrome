@@ -951,7 +951,7 @@ pageState 5 走 `default`、對 `inputPrompt` 更是整幀早退，使用者只�
 |---|---|---|---|
 | pressanykey | 含 `請按任意鍵繼續`（`VMSG_PAUSE`，左右是 `▄` padding） | **空白鍵** | `proto.h:657` `pressanykey()=vmsg(NULL)` → `vtuikit.c:328` |
 | vmsg 橫幅 | ` ◆ <訊息>` ＋右靠 ` [按任意鍵繼續]`（`push_screen.parseVmsgText`） | **空白鍵** | `vtuikit.c:439-455`、`vtuikit.h:41-42` |
-| vgetstring 輸入欄 | `buf.isCursorOnInputField()`（游標格白底黑字、該列非整列反白） | **`Ctrl-C`**（`\x03`） | `vtuikit.c:1346` `case Ctrl('C')` ⇒ abort ⇒ `getdata` 回 0 |
+| vgetstring 輸入欄 | `buf.isCursorOnInputField()`（游標格白底黑字、該列非整列反白） | **`Ctrl-C`**（`\x03`），但**空答案會做事的不關**（`emptyAnswerCommits`） | `vtuikit.c:1346` `case Ctrl('C')` ⇒ abort ⇒ `getdata` 回 0、答案是空字串 |
 
 判斷順序**輸入欄優先**：`vans`／`getdata` 的提示與訊息列長得像，但游標在不在反白欄
 裡是確定的。
@@ -965,6 +965,11 @@ pageState 5 走 `default`、對 `inputPrompt` 更是整幀早退，使用者只�
 
 ### 幾個不可以踩的地方
 
+- **`^C` 不等於取消**：它是「清空並送出」，呼叫端拿空答案走預設值。`edit.c#write_file` 的
+  「確定要儲存檔案嗎？」空答案＝第 1 列的 `[S]`（發文／發信／存檔）、`[Y/n]` 是 Y、暫存檔 `(0-9)[0]`
+  是讀進 0 號 ⇒ 只有提示看得出預設是不做（`[y/N]`、`[Q]`、沒有 `[..]` 的自由輸入）才送 `^C`，
+  其餘回 `null`、留給使用者自己按（`screen_dismiss.emptyAnswerCommits`，提示字取
+  `term_buf.inputPromptText()`；一鍵登出的逃生同一個判斷）。
 - **不可以「點空白就送一個安全鍵」**。**沒有安全鍵**：`Ctrl-C` 在文章列表是
   `ClearTagList()`（`read.c:950-955`，清掉標記清單）、空白鍵在文章裡是翻頁。
   `resolveDismiss` 回 `null` 就是什麼都不做。
