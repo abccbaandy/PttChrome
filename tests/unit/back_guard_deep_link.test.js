@@ -62,6 +62,10 @@ function makeWin(href) {
       },
     },
     // 真實順序無關的寫法：popstate 與 hashchange 都發，測試不依賴誰先誰後。
+    // `deferHashchange`：規範上 hashchange 是另外排的 task，計時器可能先跑
+    // ⇒ 先收進 pendingHash，由測試決定何時派發。
+    deferHashchange: false,
+    pendingHash: [],
     _go(delta) {
       const from = w.stack[w.index];
       const next = w.index + delta;
@@ -70,7 +74,17 @@ function makeWin(href) {
       const to = w.stack[w.index];
       w.location.href = to.url;
       w.fire("popstate", { state: to.state });
-      if (frag(from.url) !== frag(to.url)) w.fire("hashchange", {});
+      if (frag(from.url) === frag(to.url)) return;
+      if (w.deferHashchange) w.pendingHash.push(() => w.fire("hashchange", {}));
+      else w.fire("hashchange", {});
+    },
+    // 使用者在網址列改 fragment ＝ 新的 entry（state 為 null）＋hashchange。
+    userFragmentNav(url) {
+      w.stack = w.stack.slice(0, w.index + 1);
+      w.stack.push({ url, state: null });
+      w.index = w.stack.length - 1;
+      w.location.href = url;
+      w.fire("hashchange", {});
     },
     addEventListener(type, fn) {
       (listeners[type] = listeners[type] || []).push(fn);
@@ -141,10 +155,31 @@ test("靜音窗口關掉之後，使用者真的貼一條新連結照樣跳", ()
   t.requests.length = 0;
 
   // 使用者在網址列貼上另一篇 ⇒ hashchange（不是我們造成的）。
-  t.win.location.href = BASE + "#Gossiping/1abcdefg";
-  t.win.fire("hashchange", {});
+  t.win.userFragmentNav(BASE + "#Gossiping/1abcdefg");
   expect(t.requests).toHaveLength(1);
   expect(t.requests[0].aid).toBe("1abcdefg");
+});
+
+// 回歸鎖（nightly flaky hunt）：forward() 的 traversal 落地得晚（機器忙），
+// hashchange 那個 task 排在靜音窗口的計時器**之後**才跑。時間窗擋不住它 ⇒
+// 被當成新連結拉回文章，consume 的 replaceState(null) 還把 sentinel 的 state
+// 洗掉（之後認不出自己那一層，下一次返回直接離站）。
+test("traversal 晚落地、hashchange 排在靜音窗口之後：仍不當 deep link，也不洗掉 sentinel", () => {
+  const t = setup();
+  t.win.fire("pointerdown", {});
+  const id = t.win.history.state.pttchromeBackGuard;
+  t.win.history.replaceState(t.win.history.state, "", ARTICLE);
+  t.win.deferHashchange = true;
+
+  t.win.history.back();
+  // 窗口先到期，hashchange 才派發（此時已站回 sentinel、網址是文章）。
+  t.timers.splice(0).forEach((fn) => fn());
+  t.win.pendingHash.splice(0).forEach((fn) => fn());
+
+  expect(t.keys).toEqual(["ArrowLeft"]);
+  expect(t.requests).toEqual([]);
+  expect(t.win.history.state && t.win.history.state.pttchromeBackGuard).toBe(id);
+  expect(t.win.location.href).toBe(ARTICLE);
 });
 
 test("網址列鏡像不可以洗掉 sentinel 的 state（洗掉就認不出自己那一層）", () => {
