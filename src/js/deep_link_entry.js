@@ -41,6 +41,12 @@ export function installDeepLink(app, win) {
     // （2026-09-05 實機回報）。理由與窗口長度見 self_navigation.js，
     // 回歸鎖 tests/unit/back_guard_deep_link.test.js。
     if (isSelfNavigating()) return null;
+    // 時間窗之外的第二道：落在 sentinel 那一層＝我們自己的 traversal（使用者在
+    // 網址列改 fragment 會建立 state 為 null 的新 entry，不會站在 sentinel 上）。
+    // forward() 落地得晚時 hashchange 那個 task 可能排在窗口計時器之後才跑；
+    // 只靠時間窗的話，這裡還會 replaceState(null) 把 sentinel 的 state 洗掉。
+    const st = w.history && w.history.state;
+    if (st && st.pttchromeBackGuard) return null;
     const href = w.location.href;
     const target = parseDeepLink(href);
     if (!target) return null;
