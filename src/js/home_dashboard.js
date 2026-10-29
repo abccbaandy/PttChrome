@@ -31,7 +31,7 @@ import {
   parseBoardListNum
 } from './board_list_parse';
 import { charCells } from './string_util';
-import { submitSerializedSteps, beginInFlight, endInFlight, searchGateFacts, submitSearch } from './article_search';
+import { submitSerializedSteps, beginInFlight, endInFlight, searchGateFacts, submitSearch, submitBlockedHint } from './article_search';
 import { serializedOpHint } from './serialized_op_gate';
 import { isRefreshKeyEvent } from './screen_refresh';
 import { readEffectivePrefs } from './pref_storage';
@@ -574,7 +574,7 @@ HomeDashboard.prototype = {
     const sent = submitSearch(core, 'board', name, {
       onFail: () => this._hint('開不了看板 ' + name + '（已停在原生畫面）', 0, HINT_ERROR)
     });
-    if (!sent) this._hint(serializedOpHint(core) || '指令處理中，請稍候再試');
+    if (!sent) this._hint(submitBlockedHint(core));
     return sent;
   },
 
@@ -607,7 +607,7 @@ HomeDashboard.prototype = {
     const sent = submitSerializedSteps(core, steps, { kind: 'home-mail' });
     if (!sent) {
       finish('cancel');
-      this._hint(serializedOpHint(core) || '指令處理中，請稍候再試');
+      this._hint(submitBlockedHint(core));
     }
     return sent;
   },

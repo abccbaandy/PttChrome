@@ -18,6 +18,7 @@ import { rowHasTitle, MAIN_MENU } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { SLOW_STEP_BUDGET } from './aid_navigation';
+import { serializedOpHint } from './serialized_op_gate';
 
 // 種類 → PTT 端的按鍵。`?` 與 `/` 是同一個指令（read.c:1430-1431），送出一律用 `/`。
 // `Z` 是推文數（大寫；小寫 z 是精華區，bbs.c:4406）。
@@ -261,6 +262,7 @@ export function submitSearch(core, kind, text, cb) {
     }
   });
   if (!built || !core) return false;
+  if (promptPendingNow(core)) return false;
   bm = recordFor(core).begin(kind === 'board' ? 'board-search' : 'article-search');
   // 列表好讀接管中：凍結交易、結果列表一落地就回好讀（最後一步從 prompt 送出，
   // 見 list_session._beginLandingTransaction）。認不出（找不到的 vmsg、進板畫面）
@@ -270,6 +272,20 @@ export function submitSearch(core, kind, text, cb) {
   return false;
 }
 
+// PTT 正等著一個 prompt（輸入欄、推文型別選單；term_buf.isPromptPending，本幀事實）。
+// 浮在畫面上的入口（看板分頁、首頁卡片、工具列、指令面板）在使用者自己按出 prompt 之後
+// 還按得到：這時送多步序列的第一個鍵，會被打進輸入欄（「跳至第幾項」「搜尋標題」）或被
+// vans／getans 的一鍵 prompt 當成答案（[Y/n] 預設 Y 的 prompt 上 s 就是 Y）。認不出＝不送。
+export const PROMPT_PENDING_HINT = '請先完成或取消目前的輸入，再操作';
+export function promptPendingNow(core) {
+  const buf = core && core.buf;
+  return !!(buf && typeof buf.isPromptPending === 'function' && buf.isPromptPending());
+}
+// submitSearch／submitSerializedSteps 回 false 時給使用者的提示（呼叫端共用）。
+export function submitBlockedHint(core, fallback) {
+  if (promptPendingNow(core)) return PROMPT_PENDING_HINT;
+  return serializedOpHint(core) || fallback || '指令處理中，請稍候再試';
+}
 // submitSearch 的送出半段：多步序列（每步 {keys, kind, expect, onDone, onFail}）交給
 // 「現在誰在畫列表」。opts.kind ＝ passthrough 的診斷名稱，opts.flag ＝在途旗標欄位名
 // （預設 'searchInFlight'），opts.resumeOnLanding ＝列表好讀時走凍結交易、落地即回好讀
@@ -277,6 +293,8 @@ export function submitSearch(core, kind, text, cb) {
 // 佔住／沒有佇列）。
 export function submitSerializedSteps(core, built, opts) {
   if (!built || !built.length || !core) return false;
+  // 第一步就會送鍵：prompt 開著時一個 byte 都不送（見 promptPendingNow）。
+  if (promptPendingNow(core)) return false;
   const o = opts || {};
   const flag = o.flag || 'searchInFlight';
   const steps = trackInFlight(core, built, flag);

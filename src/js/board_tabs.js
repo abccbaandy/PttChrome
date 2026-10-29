@@ -16,9 +16,8 @@
 import { readEffectivePrefs } from './pref_storage';
 import { parseBoardName } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
-import { submitSearch } from './article_search';
+import { submitSearch, submitBlockedHint } from './article_search';
 import { searchListMode } from './search_status';
-import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
 
 export const BOARD_TABS_ID = 'boardTabs';
@@ -204,7 +203,7 @@ BoardTabs.prototype = {
     const sent = submitSearch(core, 'board', name, {
       onFail: () => this._hint('開不了看板 ' + name + '（已停在原生畫面）', 0, HINT_ERROR),
     });
-    if (!sent) this._hint(serializedOpHint(core) || '指令處理中，請稍候再試');
+    if (!sent) this._hint(submitBlockedHint(core));
     return sent;
   },
 

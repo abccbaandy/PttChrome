@@ -18,7 +18,7 @@ import {
   boardMarkReadTargetOfText,
   BRD_HEADER_ROWS
 } from './board_list_parse';
-import { submitSerializedSteps } from './article_search';
+import { submitSerializedSteps, submitBlockedHint } from './article_search';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
 import { MARK_ALL_READ_FLAG } from './mark_all_read';
@@ -118,7 +118,7 @@ BoardMarkRead.prototype = {
       }
     ];
     if (!submitSerializedSteps(core, steps, { kind: 'board-mark-read', flag: MARK_ALL_READ_FLAG })) {
-      this._hint('指令處理中，請稍候再試');
+      this._hint(submitBlockedHint(core, '指令處理中，請稍候再試'));
       return false;
     }
     return true;

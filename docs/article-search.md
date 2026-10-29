@@ -36,6 +36,11 @@
 ## 送出（`submitSearch`）
 
 兩步，第二步只在第一步 `expect`（prompt 幀）成立後才排；prompt 沒出現 ⇒ `onFail`，關鍵字**絕不送**（字母會落回列表按鍵）。
+- **PTT 正等著 prompt 時不出發**：`submitSearch`／`submitSerializedSteps`（F5 重整、找未讀、全部已讀、首頁抓我的最愛也走它）
+  先問本幀 `buf.isPromptPending()`（輸入欄、推文型別選單），開著 ⇒ 回 false、一個 byte 都不送。看板分頁、首頁看板卡片這類浮在
+  畫面上的入口在使用者自己按出「跳至第幾項」「搜尋標題」之後還按得到，第一個鍵會被打進輸入欄或被一鍵 prompt 當答案。
+  呼叫端的提示一律 `submitBlockedHint(core, fallback)`（prompt 開著＝「請先完成或取消目前的輸入」，否則 serializedOpHint／fallback）。
+  守護 `ptt_src_screens.test.js`（upstream 的 search_prompts／push 畫面）。
 - `activeListSession()` 有值 ⇒ `session._beginPassthroughBytes(steps, {kind:'search', resumeOnLanding:true})`（列表好讀：凍結交易＋cursor sync 腿，結果列表一落地就回好讀，找不到的 vmsg／進板畫面認不出 ⇒ 停原生鏡像交給探針，見 `docs/easy-reading-list.md`「落地即回好讀」；看板列表 session 2026-10 起也收陣列，kind 自動帶 `brd-` 前綴＝佇列所有權）。第二步的落地＝prompt 消失（打字回顯那一幀 prompt 還在，不算），預算 `aid_navigation.SLOW_STEP_BUDGET`（要等 server 的搜尋服務／進板）。session `opening`／`functionMode+frozen` ⇒ 回 false，呼叫端提示。
 - 否則直接 `commandQueue.enqueue`（`list_session._onScreenSettled` 驅動 onSettle）。
 - 關鍵字 `ansiHalfColorConv(u2b(text))`（queue 綁 raw `conn.send`）。

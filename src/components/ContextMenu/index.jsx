@@ -87,6 +87,7 @@ import {
   availableSearchKinds,
   normalizeSearchText,
   searchGateFacts,
+  submitBlockedHint,
   submitSearch,
 } from "../../js/article_search";
 import { rememberSearch } from "../../js/search_history";
@@ -1175,7 +1176,7 @@ export const ContextMenu = ({ pttchrome }) => {
       // 背景的看板 prompt 已經開著：直接在上面送出。開不出來／已丟失才走一般兩步。
       if (bridge && bridge.submit(value, cb)) return;
       const sent = submitSearch(pttchrome, kind, value, cb);
-      if (!sent) hint(serializedOpHint(pttchrome) || i18n("searchModal_busy"));
+      if (!sent) hint(submitBlockedHint(pttchrome, i18n("searchModal_busy")));
     },
     [pttchrome, update],
   );
