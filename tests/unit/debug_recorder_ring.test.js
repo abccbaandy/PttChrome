@@ -245,6 +245,8 @@ describe("DebugRecorder 背景模式（真 TermBuf／AnsiParser）", () => {
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const app = makeApp();
+    // 只驗錄製器：不把 12.8MB 真的餵進 TermBuf 解析（CI 上會超過 5 秒 testTimeout）。
+    app.onData = () => {};
     const rec = new DebugRecorder(app, { windowMs: RING_WINDOW_MS });
     rec.start();
     const trim = vi.spyOn(rec, "_trim");
