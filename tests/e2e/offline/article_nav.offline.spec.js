@@ -9,8 +9,11 @@ const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayCassette } = require('../helpers/replay');
 const { startCapture, takeCapture } = require('../helpers/capture');
 const { waitPreviewsSettled, waitRectStable, waitScrollStable } = require('../helpers/layout');
+const { commentMarkDrift } = require('../helpers/article_nav');
 
 const article = loadCassette('stock-huang');
+// 30 張圖、推文在文末：行內圖片讓列高極不均，列號比例與像素比例差最多。
+const manyImages = loadCassette('cchat-many-images');
 const nav = (page) => page.locator('#articleNav');
 const scrollTop = (page) => page.evaluate(() => window.__app.view.mainDisplay.scrollTop);
 
@@ -18,7 +21,7 @@ async function boot(page, prefs, opts = {}) {
   await page.setViewportSize({ width: 1280, height: 800 });
   await bootOffline(page, ptt, { articleNav: true });
   await ptt.applyPrefs(page, Object.assign({ enableEasyReading: true }, prefs || {}));
-  await replayCassette(page, article, { easyReading: opts.easyReading !== false });
+  await replayCassette(page, opts.cassette || article, { easyReading: opts.easyReading !== false });
   await waitPreviewsSettled(page);
 }
 
@@ -54,6 +57,20 @@ test.describe('文章導覽軸', () => {
     await waitScrollStable(page, '#BBSWindow > .main');
     expect(await scrollTop(page)).toBeGreaterThan(0);
     expect(await takeCapture(page)).toBe('');
+  });
+
+  // 症狀：「推」標在列號比例上，圖片多的文章離真正的推文區起點差一大截（滑塊用的是
+  // 像素比例，兩把尺）。原生捲軸不重複在 article_nav_scrollbar.offline.spec.js。
+  test('多圖長文：「推」與滑塊同一把尺（像素位置）', async ({ page }) => {
+    test.setTimeout(90000);
+    await boot(page, null, { cassette: manyImages });
+    await expect(nav(page)).toBeVisible();
+
+    // 開文時推文區在遠處的閉塊裡（估計值）；捲過去之後要貼齊真正的位置。
+    await nav(page).locator('[data-nav-kind="comments"]').click();
+    await waitScrollStable(page, '#BBSWindow > .main');
+    await waitPreviewsSettled(page);
+    await expect.poll(async () => (await commentMarkDrift(page)).drift, { timeout: 5000 }).toBeLessThanOrEqual(2);
   });
 
   test('原生 pmore（好讀關）⇒ 不出現', async ({ page }) => {
