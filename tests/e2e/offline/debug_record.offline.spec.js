@@ -230,9 +230,14 @@ test.describe('Debug 錄製模式（offline）', () => {
 
     // 指令面板也找得到（F4 → 打「錄製」）
     await page.keyboard.press('F4');
-    const paletteItem = page.getByText(await label(page, 'palette_saveDebugRecord'), { exact: true });
+    // 面板的輸入框拿到焦點才打字：Modal 掛上去、focus 移過去之前打的字落在終端機的 #t
+    // （CI 忙時看得到），查詢變空白，Enter 跑的是空白清單的第一項（打開設定頁）。
+    await expect(page.locator('input[name="commandPaletteQuery"]')).toBeFocused();
+    const paletteItem = page.locator('[data-palette-item="action:saveDebugRecord"]');
     await page.keyboard.type('錄製');
-    await expect(paletteItem).toBeVisible();
+    await expect(page.locator('input[name="commandPaletteQuery"]')).toHaveValue('錄製');
+    await expect(paletteItem).toHaveAttribute('aria-selected', 'true');
+    await expect(paletteItem).toContainText(await label(page, 'palette_saveDebugRecord'));
     const [fromPalette] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Enter')]);
     expect(fromPalette.suggestedFilename()).toMatch(/^ptt-debug-.*\.json$/);
 
