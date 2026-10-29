@@ -1373,6 +1373,11 @@ pmore 只在 `comments_start`（檔案最後一個 `※ ` 開頭行之後）且 
 （`pmore.c#mf_display_comment_header`）：`[N] ` ＋ id（原PO `1;36`，其他 `0;33`）＋ 右靠的 creation（`1;30`；
 塞不下從左逐段丟，全丟光就不印）；內容列的前 2 格空白換成 `│`。
 
+- **upstream 之後的變化（CONFIRMED @ e56edc3，新舊都吃）**：畫法搬到 `comments.c#comment_render_modern_header`／
+  `comment_render_body_prefix`；內容列縮排是 `│ `（多一格空白）。留言色彩主題（`bpref.comment_theme`，pmore 設定頁 `c`）：
+  經典醒目（預設）／單純易讀只換顏色；**典雅邊框**在標頭列前加 `╭ `（第一則）／`├ `（其他）、id 與 creation 之間用 `─` 填。
+  刪除的推文改成單列 `[N] id 留言已刪除`（本人刪）／`[N] id 留言不顯示 (<原因>)`（別人刪），沒有 creation、沒有內容列。
+  三種主題與刪除列都由 upstream 原始碼產的畫面守（`ptt_src_screens.test.js` 的 `modern_comments`）。
 - **終端推文仍是舊格式**：`bbs.c#comment` → `post.c#CommentAddRecord` 寫的是 `FormatCommentString` 那一列。
   ⇒ 一篇文章可以「上半舊格式、下半新格式」並存；兩種都要認。
 - client：`comment_parse.parseModernCommentHeader`（要求列尾 creation，80 欄下一定塞得下；id 照 `is_validuserid`）、

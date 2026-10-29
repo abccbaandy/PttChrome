@@ -43,7 +43,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 `B` 開看板（之後的 A／G／N 屬於它）、`A` 一篇文章（flags `m` 標記、`b` 置底、`g` 收入文摘＝照 `bbs.c#good_post` 複製成 G 檔並 append 到 `fn_mandex`）、`E <owner> <title>` 看板精華區
 一個檔案項目（`man/boards/<c>/<板>`；檔案 mtime 釘在 `FIXED_NOW`，列表的日期欄讀它）、`G <count> <owner> <title>`
 批次產生、`N` 一列進板畫面、`F` 加進我的最愛、`W <userid> <text>` 一顆水球（只有 `wmsg` 入口會送進
-`currutmp`，其他場景的畫面不受影響）、`L <owner> <date> <title>` tester 信箱裡的一封信（只有列表）。
+`currutmp`，其他場景的畫面不受影響）、`L <owner> <date> <title>` tester 信箱裡的一封信（只有列表）、`T <text>` 接在上一個 A 的文章檔尾的一列（原樣，含行首空白；
+發信站「※ 」列與 post.svc 新格式推文用）。
 格式細節在 `driver.c` 檔頭。
 
 - **置底**：upstream 現行的置底是 `boardheader_t.bottom[]` 裡的 AID 參照（指回 `.DIR` 裡掛
@@ -94,6 +95,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `reply_prompt` | `read:Test`／24 | `1⏎` `⏎` `y` | 文章裡 y 的「回應至 (F)看板 (M)作者信箱…」畫在倒數第二列：狀態列照樣認得（pageState 3）、游標在輸入欄、不攔 X、上傳網址走剪貼簿、編輯器輸入框不出現 |
 | `post_flow` | `read:Test`／24 | `^P` | 發文的種類 prompt：不是 clean-list、不是編輯器（pageState 不是 6）、上傳網址走剪貼簿 |
 | `class_list` | `menu`／24 | `⏎` `⏎` | 分類根（row 0【分類看板】）不是可接管的看板列表；進群組後認成 `class` 變體、可接管、列解析得出板名 |
+| `modern_comments` | `read:Comment`／24 | `⏎` `o` `c` `q` `o` `c` `q` | 新格式推文（seed 的 `T` 列接在檔尾：「※ 」列之後的 `[N] id creation`＋`  內容`，含刪除的兩種）× 留言色彩主題三種（經典醒目／單純易讀／典雅邊框）：`annotateComment` 六則標頭都認、黑名單連內容列一起藏、原PO id 欄落在畫面上的 id、`parseArticleLines` 接上內容 |
 
 **加場景**：`scenes.mjs` 加一筆（第一步不送鍵；要斷言的幀取 name）→ 必要時 seed／driver 入口 →
 `sh tools/ptt-src-screens/generate.sh` → 在 test 加 describe。鍵只用 upstream 鍵表裡的鍵。

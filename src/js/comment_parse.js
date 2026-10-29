@@ -163,14 +163,31 @@ export function isBlacklistableUserId(id) {
 // 舊格式（推/噓/→ 單列）與新格式可以同一篇並存（舊推文留在檔案裡，post.svc 之後
 // 追加的才是新格式），所以兩條都要吃。新格式自帶樓號 ⇒ 不吃本地 FloorCounter、
 // 不畫樓層徽章；一則推文跨多列 ⇒ 黑名單要連 `│` 內容列一起藏（ModernCommentThread）。
+//
+// upstream 之後的變化（CONFIRMED @ pttbbs e56edc3，同樣新舊都吃）：
+// - 留言色彩主題（comments.c#comment_themes，pmore 設定頁 c）：經典醒目／單純易讀只換顏色；
+//   典雅邊框在標頭列前加 `╭ `（第一則）／`├ `（其他），id 與 creation 之間用 `─` 填。
+// - 刪除的推文（engine.go#RenderFullPostText）改成單列 `[N] id 留言已刪除`（本人刪）或
+//   `[N] id 留言不顯示 (<原因>)`（別人刪），沒有 creation、沒有內容列。
+//   comment_render_modern_header 認「留言」開頭，照樣畫成標頭列。
+// 兩者都由 upstream 原始碼產的畫面守（ptt_src_screens.test.js 的 modern_comments）。
 const MODERN_COMMENT_HEADER_RE =
-  /^\[(\d+)\] ([A-Za-z][0-9A-Za-z]{1,11}) .*\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}\s*$/;
+  /^((?:[╭├] )?)\[(\d+)\] ([A-Za-z][0-9A-Za-z]{1,11}) (?:.*\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}|(留言已刪除|留言不顯示 \(.*\)))\s*$/;
 export const MODERN_COMMENT_BODY_MARK = '│';
 export function parseModernCommentHeader(text) {
-  if (!text || text.charCodeAt(0) !== 0x5b) return null;
+  if (!text) return null;
+  const c0 = text.charCodeAt(0);
+  if (c0 !== 0x5b && c0 !== 0x256d && c0 !== 0x251c) return null; // [ ╭ ├
   const m = MODERN_COMMENT_HEADER_RE.exec(text);
   if (!m) return null;
-  return { seq: parseInt(m[1], 10), userid: m[2].toLowerCase(), idCol: m[1].length + 3 };
+  const h = {
+    seq: parseInt(m[2], 10),
+    userid: m[3].toLowerCase(),
+    user: m[3],
+    idCol: cellColOf(text, m[1].length) + m[2].length + 3,
+  };
+  if (m[4]) h.deleted = m[4];
+  return h;
 }
 
 // 新格式一則推文的「目前這一則」狀態：標頭列設定，緊接的 `│` 內容列沿用，其他列結束。

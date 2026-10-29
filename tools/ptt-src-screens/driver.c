@@ -17,6 +17,7 @@
 //   A <owner> <date> <recommend> <flags> <title>          一篇文章；flags: m=marked b=置底 g=收入文摘
 //   G <count> <owner> <title>                             批次 count 篇「<title> <i>」（無內文）
 //   N <text>                                              一列進板畫面（notes）
+//   T <text>                                              接在上一個 A 的文章檔尾的一列（原樣）
 //   E <owner> <title>                                     看板精華區的一個檔案項目
 //   F <brdname>                                           加進我的最愛
 //   L <owner> <date> <title>                              tester 信箱裡的一封信（只有列表）
@@ -170,6 +171,7 @@ static void seed(const char *path)
     int bid = 0;
     char bname[IDLEN + 1] = "";
     int serial = 0, bottoms = 0;
+    char last_article[PATHLEN] = ""; // T 列接在這篇的檔尾
     while (fgets(line, sizeof(line), fp)) {
         line[strcspn(line, "\n")] = 0;
         char *f[8] = {0};
@@ -258,6 +260,7 @@ static void seed(const char *path)
                 fprintf(af, "\nbody\n");
                 fclose(af);
             }
+            STRLCPY(last_article, fpath);
             // 收入文摘：同 bbs.c#good_post——檔名首字換成 G 複製一份、filemode 清零後
             // append 到看板的 fn_mandex（文摘模式的 .DIR，stuff.c#setbdir），原文掛 FILE_DIGEST。
             if (strchr(f[4], 'g')) {
@@ -311,6 +314,14 @@ static void seed(const char *path)
             fclose(nf);
             // Read() 只在 bupdate 非 0 時畫進板畫面（bbs.c#Read 的 board_note_time）。
             SHM->bcache[bid - 1].bupdate = FIXED_NOW;
+        } else if (f[0][0] == 'T' && n >= 2) {
+            // 文章檔尾的一列（原樣，含行首空白）：發信站「※ 」列與 post.svc 的新格式推文
+            // （"[N] id creation"＋"  內容"）。pmore 從最後一個「※ 」列之後畫成推文。
+            if (!last_article[0]) die("T before A");
+            FILE *tf = fopen(last_article, "a");
+            if (!tf) die("article append");
+            fprintf(tf, "%s\n", f[1]);
+            fclose(tf);
         } else if (f[0][0] == 'F' && n >= 2) {
             if (fav_count >= MAX_FAV) die("too many favs");
             STRLCPY(fav_names[fav_count], f[1]);

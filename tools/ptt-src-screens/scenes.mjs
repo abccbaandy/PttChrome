@@ -408,4 +408,23 @@ export const SCENES = [
     rows: 24,
     steps: [{ name: 'list' }, { keys: '\x10', name: 'post' }],
   },
+  {
+    // 新格式推文（post.svc 寫回檔案的 "[N] id creation"＋"  內容"，含刪除的兩種）：pmore 在最後一個
+    // 「※ 」列之後改畫（comments.c#comment_render_modern_header／comment_render_body_prefix）。
+    // 留言色彩主題三種（pmore 設定頁 c 循環）：經典醒目 → 單純易讀 → 典雅邊框（標頭前多「╭ 」／「├ 」、
+    // id 與時間之間用 ─ 填）。comment_parse 的新格式認法靠它守。
+    file: 'modern_comments',
+    entry: 'read:Comment',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '\r', name: 'classic' },
+      { keys: 'o' },
+      { keys: 'c' },
+      { keys: 'q', name: 'simple' },
+      { keys: 'o' },
+      { keys: 'c' },
+      { keys: 'q', name: 'bordered' },
+    ],
+  },
 ];
