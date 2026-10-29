@@ -17,7 +17,7 @@ import { buildDeepLink, stripDeepLink } from './deep_link';
 import { parseStatusRow } from './string_util';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
-import { serializedOpHint } from './serialized_op_gate';
+import { serializedOpHint, promptPendingNow } from './serialized_op_gate';
 
 export function DeepLinkController(core, view, termBuf) {
   this._core = core;
@@ -271,7 +271,10 @@ DeepLinkController.prototype = {
     // launchQueue 跟這個分頁在做什麼無關、隨時會到，AID 跳文一出發就 flush 掉對方 in-flight
     // 那一步再插進自己的鍵（長推文送到一半斷掉、登出確認框被打掉）。使用者自己的鍵早被
     // 同一道擋著；這裡收著，等它做完的下一次 settle 再跳。
-    return !serializedOpHint(this._core);
+    if (serializedOpHint(this._core)) return false;
+    // 使用者自己按出來的 prompt（文章裡的「:」「/」、X 型別選單，列表的「跳至第幾項」）開著：
+    // 出發的第一個鍵會被打進輸入欄或當成答案。同樣收著，使用者送出／取消之後的 settle 再跳。
+    return !promptPendingNow({ buf: this._termBuf });
   },
 
   _dispatch: function(target, opts) {

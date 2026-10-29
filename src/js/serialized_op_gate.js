@@ -40,3 +40,12 @@ export function serializedOpHint(core) {
   return null;
 }
 
+// PTT 正等著一個 prompt（輸入欄、推文型別選單；term_buf.isPromptPending，本幀事實）。
+// 跟上面的序列閘門不同：這是**使用者自己**按出來的 prompt，使用者的鍵照常送；只有替使用者
+// 送多步序列的入口（submitSearch／submitSerializedSteps、AID 連結跳文）要在這裡停手——
+// 第一個鍵會被打進輸入欄，或被一鍵 prompt／型別選單當成答案。
+export const PROMPT_PENDING_HINT = '請先完成或取消目前的輸入，再操作';
+export function promptPendingNow(core) {
+  const buf = core && core.buf;
+  return !!(buf && typeof buf.isPromptPending === 'function' && buf.isPromptPending());
+}
