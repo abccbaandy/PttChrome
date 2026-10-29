@@ -419,8 +419,8 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
    list_scroll.js 的位置↔scrollTop 是純乘除，卡片高一變整套捲動就錯位。
    兩行內容各 1em，剩下 0.5em 是卡片間距：用 border-box 固定高內的 padding-block
    （不改外框高度）；**不可以**用 margin／border（會加在固定高之外）。分隔線用 inset
-   box-shadow（不佔版面）。間距落在 .listCardBody 之外 ⇒ 點到間距不開文
-   （App.mouse_click 的 listCards 分支，防誤點）。守護 tests/unit/list_card_css.test.js。
+   box-shadow（不佔版面）。間距落在 .listCardBody 之外，但仍是同一張卡片 ⇒ 點到間距照樣開
+   那一筆（mobile_layout.isListCardTarget）。守護 tests/unit/list_card_css.test.js。
    每行單行＋省略號；游標底色的 class 下在 .listCardBody（整張卡片上色）。 */
 .main.mobileListCards .listBodyView > span.listCard {
   display: block;

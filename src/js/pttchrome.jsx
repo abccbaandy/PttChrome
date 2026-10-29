@@ -88,7 +88,7 @@ import { SearchStatus, isSearchStatusTarget } from './search_status';
 import { FollowOnly, isFollowOnlyTarget } from './follow_only';
 import { ListFastScroll, isListFastScrollTarget } from './list_fast_scroll';
 import { EditorInput, isEditorInputTarget } from './editor_input';
-import { inputModeFor, isListCardBodyTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
+import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
 import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
@@ -2726,10 +2726,10 @@ App.prototype.mouse_click = function(e) {
             rowFromClientY(e.clientY, this.gridGeometry()),
             lpos.col
           );
-          // 只有點在卡片本體才開文：卡片間距（padding）防誤點，視口以外（header／
-          // footer 已收起）什麼都不是。見 mobile_layout.isListCardBodyTarget。
+          // 點在卡片上（含上下間距）才開文：視口以外（header／footer 已收起）什麼都
+          // 不是。見 mobile_layout.isListCardTarget。
           if (this.view.listCards) {
-            if (isListCardBodyTarget(e.target)) {
+            if (isListCardTarget(e.target)) {
               this._traceListTap('card', e);
               this.noteUserAction();
               this._noteListOpenClick(clickOwner, e.target);

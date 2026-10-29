@@ -13,7 +13,7 @@ import { row, seg, color, listRow } from "./helpers/screen_fixtures";
 import {
   listRowSpan,
   listPageRows,
-  isListCardBodyTarget,
+  isListCardTarget,
   isTouchCardMultiTap,
   listViewportGeometry,
   listFillRows,
@@ -437,23 +437,26 @@ describe("listViewportGeometry（term_view／clientToPos／_pageRows 同源）",
     });
   });
 
-  // 防誤點：點到卡片間距（.listCard 的 padding）或視口外的留白不開文，點卡片本體才開。
-  test("isListCardBodyTarget：只有卡片本體（視口外的留白、間距都不開文）", () => {
+  // 卡片上下的間距（.listCard 的 padding-block）也是那張卡片：一張卡片 3em 裡有 0.6em 是間距，
+  // 舊版只認本體 ⇒ 每五下 tap 就有一下落在間距、底色移過去卻不開文（debug 錄製留痕
+  // listTap outcome 'not-card'、target 'listCard'）。原生 App 的清單整列都點得到。
+  // 視口外的留白（header／footer 收起後的 .main）照舊不開。
+  test("isListCardTarget：整張卡片（含上下間距）都算，視口外的留白不算", () => {
     document.body.innerHTML =
       '<div class="main"><div class="listBodyView"><span class="listCard" id="card">' +
       '<span class="listCardBody"><span class="listCardLine" id="line">x</span></span>' +
       '</span></div><span id="blank">x</span></div>';
-    expect(isListCardBodyTarget(document.getElementById("line"))).toBe(true);
-    expect(isListCardBodyTarget(document.querySelector(".listCardBody"))).toBe(true);
-    expect(isListCardBodyTarget(document.getElementById("card"))).toBe(false);
-    expect(isListCardBodyTarget(document.getElementById("blank"))).toBe(false);
-    expect(isListCardBodyTarget(document.querySelector(".main"))).toBe(false);
-    expect(isListCardBodyTarget(null)).toBe(false);
+    expect(isListCardTarget(document.getElementById("line"))).toBe(true);
+    expect(isListCardTarget(document.querySelector(".listCardBody"))).toBe(true);
+    expect(isListCardTarget(document.getElementById("card"))).toBe(true);
+    expect(isListCardTarget(document.getElementById("blank"))).toBe(false);
+    expect(isListCardTarget(document.querySelector(".main"))).toBe(false);
+    expect(isListCardTarget(null)).toBe(false);
     document.body.innerHTML = "";
   });
 
-  // real-input: tests/e2e/offline/mobile_list_cards.offline.spec.js（觸控連點 tap 卡片本體）
-  test("isTouchCardMultiTap：只有觸控的第二下（detail ≥ 2）落在卡片本體／大按鈕才擋選字", () => {
+  // real-input: tests/e2e/offline/mobile_list_cards.offline.spec.js（觸控連點 tap 卡片）
+  test("isTouchCardMultiTap：只有觸控的第二下（detail ≥ 2）落在卡片（含間距）／大按鈕才擋選字", () => {
     document.body.innerHTML =
       '<div class="main"><div class="listBodyView"><span class="listCard" id="card">' +
       '<span class="listCardBody"><span class="listCardLine" id="line">x</span></span>' +
@@ -462,11 +465,11 @@ describe("listViewportGeometry（term_view／clientToPos／_pageRows 同源）",
     expect(isTouchCardMultiTap(at("line"))).toBe(true);
     expect(isTouchCardMultiTap(at("menu"))).toBe(true);
     expect(isTouchCardMultiTap(at("line", { detail: 3 }))).toBe(true);
-    // 第一下、滑鼠雙擊（原生選字不准擋）、筆、卡片間距、卡片以外：都不擋。
+    expect(isTouchCardMultiTap(at("card"))).toBe(true);
+    // 第一下、滑鼠雙擊（原生選字不准擋）、筆、卡片以外：都不擋。
     expect(isTouchCardMultiTap(at("line", { detail: 1 }))).toBe(false);
     expect(isTouchCardMultiTap(at("line", { pointerType: "mouse" }))).toBe(false);
     expect(isTouchCardMultiTap(at("line", { pointerType: null }))).toBe(false);
-    expect(isTouchCardMultiTap(at("card"))).toBe(false);
     expect(isTouchCardMultiTap(at("blank"))).toBe(false);
     document.body.innerHTML = "";
   });

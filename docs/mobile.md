@@ -309,8 +309,10 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   （游標底色的 class 下在這裡 ⇒ 整張卡片上色）。
 - 點擊：`App.clientToPos` 的 body 列號除數換成卡片高（`listRowSpan`）；`App.mouse_click` 在 listCards 下
   不做退出帶／邊緣翻頁，點卡片本體＝ `onMouseClick(row, LIST_TITLE_COL_START)`（走 session 的列點擊開文
-  合約）；**只有點在卡片本體才開**（`mobile_layout.isListCardBodyTarget`）：間距防誤點、視口外的 `.main` 留白
-  （footer 收起後）不落回列號換算；`clientToPos` 的 footer 分支在 listCards 下關閉。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵面板的 ←。
+  合約）；**整張卡片都點得到，含上下間距**（`mobile_layout.isListCardTarget`）：間距佔卡片高的 1/5，只認本體的話
+  每五下 tap 就有一下落空（底色移過去、文章沒開；debug 錄製留痕 `listTap` outcome `not-card`、target `listCard`），
+  原生 App 的清單整列都點得到。間距在卡片固定高之內 ⇒ `clientToPos` 的列號換算落在同一張。視口外的 `.main` 留白
+  （footer 收起後）不算、不落回列號換算；`clientToPos` 的 footer 分支在 listCards 下關閉。`term_view.listEdgeRegion`／`onListMouseMove` 同樣關掉以 col 判斷的部分。退出用按鍵面板的 ←。
 - **卡片的游標底色變動只搬 class、不准重畫**（`render/screen.js#setCursorHighlight`：listCards 下一律走快路徑，
   **含「從沒有底色到有底色」**——NO_HIGHLIGHT 的 col 是 0、卡片底色的 col 是可點起始欄，只比 col 會漏掉這一下；
   卡片本體不吃 col，`_toggleRowClass` 在卡片只掛 `.listCardBody`，與重畫的 DOM 一致）。理由：tap 的相容事件是
@@ -319,9 +321,9 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   （症狀：底色移過去了卻沒開文，再點一次才開）。守護 `list_card.test.js`（比節點身分，`toEqual` 只比結構會放過）、
   `mobile_list_cards`「畫面上有選取時 tap 卡片」「畫面沒有底色＋有選取時 tap 卡片」。
 - **觸控連點的第二下落在卡片上不准選字**（`mobile_layout.isTouchCardMultiTap`，`App.mouse_down` 依同一下 pointerdown 的
-  pointerType 判斷後 preventDefault）：第一下落在卡片間距（不開、底色已移過去），馬上補點本體 ⇒ 第二下是 `detail=2`，
+  pointerType 判斷後 preventDefault）：連點同一張卡片（或先點一張、馬上補點）⇒ 第二下是 `detail=2`，
   瀏覽器預設選字 ⇒ mouseup 把字複製進剪貼簿、`mouse_click` 看到選取不處理 ⇒ 再點一次才開。主功能表／信箱大按鈕同理。
-  只擋觸控：滑鼠雙擊選字是原生行為（`docs/enhanced-addon.md` 踩坑 A）。守護 `list_card.test.js`、`mobile_list_cards`「觸控連點」。
+  只擋觸控：滑鼠雙擊選字是原生行為（`docs/enhanced-addon.md` 踩坑 A）。守護 `list_card.test.js`、`mobile_list_cards`「觸控連點」「tap 卡片上／下方間距」。
 - **開啟中回饋**（P45）：開文交易一開始（`ListSession._beginOpen`／`_beginOpenPinned`）游標那張卡片
   （`onMouseClick` 先把選取移過去）就掛 `listCardOpening`（藍底＋標題行右側小轉圈），不必等 PTT 回文章畫面。
   走游標底色同一條管線（`cursor_highlight.withListOpening` → `term_view.applyCursorHighlight`）⇒ 只搬 class、
