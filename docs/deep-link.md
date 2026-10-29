@@ -127,7 +127,7 @@ rewrite: https://abccbaandy.github.io/PttChrome/#$1
 
 ```
 request(target) → _canNavigate() ? _dispatch : _hold（存記憶體，等 screenSettled）
-_canNavigate  = connectState===1 && _loggedIn && !aidNavigation.active && !serializedOpHint(core)
+_canNavigate  = connectState===1 && _loggedIn && !aidNavigation.active && !serializedOpHint(core) && !promptPendingNow(buf)
 _loggedIn     = 這次連線的 screenSettled 看過 row0 是主功能表（`aid_navigation.isMainMenuRow`，【X】與 ` X ` 兩種形狀都吃）
 _dispatch     = autoLogin.stop()
                 → startedEasyReading ? aidNavigation.start()      // 有原文 ⇒ 有返回 pill
@@ -143,6 +143,8 @@ reset()       ← App.onClose：清 pending 與 _loggedIn
   有『請按任意鍵』就送空白鍵」分支（`auto_login.js:407`）會踩到進板畫面，打亂
   CommandQueue 正在等的那一幀。它自己看到主功能表也會 stop，但我們可能比它的下一次
   輪詢更早離開主功能表。
+- **使用者自己按出的 prompt 開著也收著**（`serialized_op_gate.promptPendingNow`：文章的「:」「/」、X 型別選單、列表的「跳至第幾項」）：
+  出發的第一個鍵會被打進輸入欄或當成答案。文章裡點 #AID（`aid_navigation.start`）同一條，直接提示「請先完成或取消目前的輸入」。
 - **別的鍵序列在線上就收著**（`serializedOpHint`：長推文、登出、找未讀、設為已讀、搜尋、重新整理…）。
   交接／hashchange／launchQueue 跟這個分頁在做什麼無關、隨時會到；AID 跳文一出發就 flush 掉對方
   in-flight 那一步再插進自己的鍵（長推文送到一半斷掉、登出確認框被打掉）。等它做完的下一次

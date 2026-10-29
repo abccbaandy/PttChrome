@@ -100,6 +100,8 @@ import {
   PROMPT_PENDING_HINT,
 } from "../../src/js/article_search";
 import { BoardTabs } from "../../src/js/board_tabs";
+import { AidNavigation } from "../../src/js/aid_navigation";
+import { DeepLinkController } from "../../src/js/deep_link_controller";
 import { toolbarContextFromFacts } from "../../src/js/mobile_toolbar";
 import {
   refreshTargetFromFacts,
@@ -1312,5 +1314,40 @@ describe("upstream pttbbs 產的 prompt 開著時，替使用者送的多步序�
     expect(tabs.open("Movie")).toBe(false);
     expect(sent).toEqual([]);
     expect(hints).toEqual([PROMPT_PENDING_HINT]);
+  });
+});
+
+// 文章裡的 #AID 連結在原生畫面（含好讀切原生鏡像）也畫得出來，使用者按出「:」跳行、「/」搜尋、
+// X 推文型別選單後還點得到；外部連結（別的分頁交接、hashchange）也隨時會到。AID 跳文出發的
+// 第一個鍵（離開文章）會被打進輸入欄或被型別選單當成「推」⇒ 本幀有 prompt 就不出發。
+describe("upstream pttbbs 產的文章 prompt 開著時，AID 跳文不出發", () => {
+  const PROMPTS = [
+    [articlePromptsFx, "goto"],
+    [articlePromptsFx, "search"],
+    [articlePromptsFx, "search-typed"],
+    [pushFx, "push-1"],
+  ];
+
+  test.each(PROMPTS.map(([fx, name]) => [name, fx]))("%s：點 #AID ⇒ 不送鍵、提示先完成輸入", (name, fx) => {
+    const { buf } = screenAt(fx, name);
+    buf.startedEasyReading = true;
+    const hints = [];
+    const begin = vi.fn();
+    const self = { active: false, _termBuf: buf, _hint: (m) => hints.push(m), _begin: begin };
+    AidNavigation.prototype.start.call(self, "1AAAAAAA", "Test");
+    expect(begin).not.toHaveBeenCalled();
+    expect(hints).toEqual([PROMPT_PENDING_HINT]);
+  });
+
+  test("外部連結：prompt 開著先收著，文章畫面（對照組）才出發", () => {
+    const can = (fx, name) =>
+      DeepLinkController.prototype._canNavigate.call({
+        _core: { connectState: 1, aidNavigation: { active: false } },
+        _loggedIn: true,
+        _termBuf: screenAt(fx, name).buf,
+      });
+    expect(can(articlePromptsFx, "article")).toBe(true);
+    for (const [fx, name] of PROMPTS) expect(can(fx, name)).toBe(false);
+    expect(can(searchPromptsFx, "title")).toBe(false);
   });
 });

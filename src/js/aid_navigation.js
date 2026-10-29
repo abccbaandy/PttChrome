@@ -71,7 +71,7 @@ import { isSubListFooter } from './screen_captions';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
-import { serializedOpHint } from './serialized_op_gate';
+import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -487,6 +487,13 @@ AidNavigation.prototype = {
       // 另一趟還在跑（例：跳轉途中又點了一個 AID 連結）：不排隊，但吞掉點擊不得無聲
       // （serialized_op_gate），提示跟其他送鍵入口同一句。
       this._hint(serializedOpHint({ aidNavigation: this }));
+      return;
+    }
+    // 原生文章（含好讀切到原生鏡像）也畫 #AID 連結：使用者按出「:」跳行、「/」搜尋、X 推文
+    // 型別選單之後還點得到。出發的第一個鍵（離開文章的 q／Q）會被打進輸入欄、或被型別選單
+    // 當成「推」⇒ 本幀有 prompt 就不出發（同 submitSerializedSteps）。
+    if (promptPendingNow({ buf: this._termBuf })) {
+      this._hint(PROMPT_PENDING_HINT);
       return;
     }
     if (!board) {

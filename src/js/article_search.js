@@ -18,7 +18,8 @@ import { rowHasTitle, MAIN_MENU } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { SLOW_STEP_BUDGET } from './aid_navigation';
-import { serializedOpHint } from './serialized_op_gate';
+import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
+export { PROMPT_PENDING_HINT, promptPendingNow };
 
 // 種類 → PTT 端的按鍵。`?` 與 `/` 是同一個指令（read.c:1430-1431），送出一律用 `/`。
 // `Z` 是推文數（大寫；小寫 z 是精華區，bbs.c:4406）。
@@ -276,11 +277,6 @@ export function submitSearch(core, kind, text, cb) {
 // 浮在畫面上的入口（看板分頁、首頁卡片、工具列、指令面板）在使用者自己按出 prompt 之後
 // 還按得到：這時送多步序列的第一個鍵，會被打進輸入欄（「跳至第幾項」「搜尋標題」）或被
 // vans／getans 的一鍵 prompt 當成答案（[Y/n] 預設 Y 的 prompt 上 s 就是 Y）。認不出＝不送。
-export const PROMPT_PENDING_HINT = '請先完成或取消目前的輸入，再操作';
-export function promptPendingNow(core) {
-  const buf = core && core.buf;
-  return !!(buf && typeof buf.isPromptPending === 'function' && buf.isPromptPending());
-}
 // submitSearch／submitSerializedSteps 回 false 時給使用者的提示（呼叫端共用）。
 export function submitBlockedHint(core, fallback) {
   if (promptPendingNow(core)) return PROMPT_PENDING_HINT;
