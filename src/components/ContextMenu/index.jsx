@@ -418,6 +418,17 @@ export const ContextMenu = ({ pttchrome }) => {
     pttchrome.setModalOpen("contextMenu", modalOpen);
   }, [pttchrome, modalOpen]);
 
+  // 設定頁蓋滿畫面（手機全螢幕、桌機 90% 高）：背景功能的狀態提示不該停在中間壓字
+  // （term_view.setHintDialogCover：一般提示先不顯示、錯誤貼底）。同樣由 render state 推導。
+  const settingsOpen = state.showsSettings;
+  useEffect(() => {
+    const view = pttchrome.view;
+    if (!view || typeof view.setHintDialogCover !== "function")
+      return undefined;
+    view.setHintDialogCover(settingsOpen);
+    return () => view.setHintDialogCover(false);
+  }, [pttchrome, settingsOpen]);
+
   // 送出進度由 LongPushSession 推上來（它是純 JS，不認得 React）。
   useEffect(() => {
     const session = pttchrome.longPush;
