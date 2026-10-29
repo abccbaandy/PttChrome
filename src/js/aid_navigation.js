@@ -482,6 +482,19 @@ AidNavigation.prototype = {
   // opts.inPager：呼叫端已證明畫面是 pager（deep link 收到時人在原生 pmore 讀文），
   // 不必等好讀開著。
   // opts.quietLanding：落地不閃「已跳至 #AID」（只收掉進度提示），見 _landHint。
+  // 原生文章（含好讀切到原生鏡像）也畫 #AID 連結、F9／「← 返回」、雙欄閱讀左欄、agent
+  // 工具都不看畫面上有沒有 prompt：使用者按出「:」跳行、「/」搜尋、X 推文型別選單之後
+  // 還按得到。出發的第一個鍵（離開文章的 q／Q、逃生前導的 ←）會被打進輸入欄、或被型別
+  // 選單當成「推」⇒ 本幀有 prompt 就不出發（同 submitSerializedSteps）。外部連結
+  // （startExternal）由 DeepLinkController._canNavigate 收著等下一次 settle；重整
+  // （refresh）的 refreshTargetFromFacts 遇輸入欄就不給目標；回到原處（startResume）
+  // 從新登入的畫面出發。
+  _promptBlocks: function() {
+    if (!promptPendingNow({ buf: this._termBuf })) return false;
+    this._hint(PROMPT_PENDING_HINT);
+    return true;
+  },
+
   start: function(aid, board, opts) {
     if (this.active) {
       // 另一趟還在跑（例：跳轉途中又點了一個 AID 連結）：不排隊，但吞掉點擊不得無聲
@@ -489,13 +502,7 @@ AidNavigation.prototype = {
       this._hint(serializedOpHint({ aidNavigation: this }));
       return;
     }
-    // 原生文章（含好讀切到原生鏡像）也畫 #AID 連結：使用者按出「:」跳行、「/」搜尋、X 推文
-    // 型別選單之後還點得到。出發的第一個鍵（離開文章的 q／Q）會被打進輸入欄、或被型別選單
-    // 當成「推」⇒ 本幀有 prompt 就不出發（同 submitSerializedSteps）。
-    if (promptPendingNow({ buf: this._termBuf })) {
-      this._hint(PROMPT_PENDING_HINT);
-      return;
-    }
+    if (this._promptBlocks()) return;
     if (!board) {
       this._hint('AID 跳文：無法判斷目標看板', 0, HINT_ERROR);
       return;
@@ -659,6 +666,7 @@ AidNavigation.prototype = {
   // onEnd({ ok, error? }) 在 run 結束時呼叫一次（成功或 _fail）。
   startBoard: function(board, opts, onEnd) {
     if (this.active || !board) return false;
+    if (this._promptBlocks()) return false;
     const num = opts && opts.num != null ? Number(opts.num) : null;
     if (num != null && !(num > 0)) return false;
     this._onRunEnd = onEnd || null;
@@ -678,6 +686,7 @@ AidNavigation.prototype = {
   // → ↑ 移到板尾畫面第 index 篇置底 → ⏎。置底文沒有編號、跳號跳不到，只能這樣走。
   startPinned: function(board, index, onEnd) {
     if (this.active || !board || !(Number.isInteger(index) && index >= 0)) return false;
+    if (this._promptBlocks()) return false;
     this._onRunEnd = onEnd || null;
     const run = makeRun({ board: board, kind: 'board', aid: null, end: true, pinnedIndex: index }, 'goto');
     run.external = true;
@@ -691,6 +700,7 @@ AidNavigation.prototype = {
   // 編號是位置，快照之後有人刪文／搬文，同一個編號就是別篇，開下去會把別篇記成讀過。
   startNum: function(board, num, onEnd, verify) {
     if (this.active || !board || !(num > 0)) return false;
+    if (this._promptBlocks()) return false;
     this._onRunEnd = onEnd || null;
     const target = { board: board, kind: 'num', aid: null, num: num };
     if (typeof verify === 'function') target.verify = verify;
@@ -708,6 +718,7 @@ AidNavigation.prototype = {
   // 不猜。只從已證明是 READING 的 pager 出發（← 在別的畫面意思不同）。
   startSubNum: function(board, num, verify, onEnd) {
     if (this.active || !board || !(num > 0) || typeof verify !== 'function') return false;
+    if (this._promptBlocks()) return false;
     if (this._pagerContext() !== 'reading') return false;
     this._onRunEnd = onEnd || null;
     const run = makeRun({ board: board, kind: 'num', aid: null, num: num, subList: true, verify: verify }, 'goto');
@@ -783,6 +794,7 @@ AidNavigation.prototype = {
   // toggled easy reading off), and the sequence drives the native screen anyway.
   back: function() {
     if (this.active) return;
+    if (this._promptBlocks()) return;
     const anchor = this._history.beginBack();
     if (!anchor) {
       this._hint('沒有可返回的文章', 0, HINT_ERROR);
