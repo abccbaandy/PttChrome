@@ -240,7 +240,7 @@ export function mobileTermGeometry({ width, height, dpr, surface, fontPx }) {
 // ---- Phase 4：列表卡片 -------------------------------------------------------
 
 // 一張卡片佔幾個列高：兩行內容（標題一行＋推文數・日期・作者一行，LIST_CARD_LINES）
-// ＋卡片間距（css `.listCard` 的 padding-block，防誤點；標題行另比次行高一點）。**固定高**是承重
+// ＋卡片間距（css `.listCard` 的 padding-block，分隔；標題行另比次行高一點）。**固定高**是承重
 // 條件：list_scroll.js 的「序列位置 ↔ scrollTop」是純乘除（每列等高），卡片模式下
 // 列高換成 LIST_CARD_ROWS*chh，那套數學原封不動（list_session/_rowHeight）。
 // 必須與 main.css `.listCard` 的 height（em）一致，守護 tests/unit/list_card_css.test.js。
@@ -278,23 +278,26 @@ export function listFillRows({ rows, headerRows, cards }) {
   return listPageRows(listViewportGeometry({ rows, headerRows, cards }).viewportRows, cards);
 }
 
-// 點的是卡片本體嗎（App.mouse_click 卡片模式只在這時開文）。卡片間距（`.listCard` 的
-// padding）不算 ⇒ 防誤點；header／footer 收起之後（listViewportGeometry），視口以外只剩
-// `.main` 的留白，同樣不能落回列號換算去開某一筆。
-export function isListCardBodyTarget(target) {
+// 點的是列表卡片嗎（App.mouse_click 卡片模式只在這時開文）。**整張卡片都算，含上下間距**
+// （`.listCard` 的 padding-block）：一張 3em 的卡片裡有 0.6em 是間距，只認本體的話每五下
+// tap 就有一下落空（底色移過去、文章沒開），原生 App 的清單整列都點得到。間距的列號換算
+// （App.clientToPos 以卡片高為除數，間距在卡片固定高之內）落在同一張卡片。
+// header／footer 收起之後（listViewportGeometry），視口以外只剩 `.main` 的留白，
+// 不能落回列號換算去開某一筆 ⇒ 不算。
+export function isListCardTarget(target) {
   if (!target || typeof target.closest !== 'function') return false;
-  return !!target.closest('.listBodyView .listCardBody');
+  return !!target.closest('.listBodyView .listCard');
 }
 
 // 觸控連點的第二下（mousedown detail ≥ 2：雙擊判定窗內、距離在 slop 內）落在卡片上
-// （列表卡片本體、主功能表／信箱的大按鈕）⇒ 要擋掉瀏覽器「雙擊選字」的預設動作。
+// （列表卡片、主功能表／信箱的大按鈕）⇒ 要擋掉瀏覽器「雙擊選字」的預設動作。
 // 否則 mousedown 先選到一個字 ⇒ mouseup 把它複製進剪貼簿、App.mouse_click 看到選取就不處理
 // ⇒「點了沒進去、再點一次才進去」。常見情境：第一下落在卡片間距（不開），馬上補點本體。
 // 只管觸控（滑鼠雙擊選字是原生行為，不准擋，見 docs/enhanced-addon.md 踩坑 A）；觸控的
 // 選字手勢是長按，不受影響。pointerType 取自同一下的 pointerdown（相容滑鼠事件沒有它）。
 export function isTouchCardMultiTap({ detail, pointerType, target }) {
   if (!(detail >= 2) || pointerType !== 'touch') return false;
-  return isListCardBodyTarget(target) || menuCardTargetRow(target) >= 0;
+  return isListCardTarget(target) || menuCardTargetRow(target) >= 0;
 }
 
 // 手指 tap 在終端機上時，畫面還留著選取（選取模式長按選了字、複製完沒收）⇒ 在 pointerdown
