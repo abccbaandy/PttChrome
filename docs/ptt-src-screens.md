@@ -22,7 +22,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 ```
 
 - 不架站、不登入、不需要 logind／Go 服務。`generate.sh` exit 2＝build／driver／場景問題（不是解析器壞）。
-- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs f3e3093）；nightly 換成 upstream HEAD 產的。
+- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs e56edc3）；nightly 換成 upstream HEAD 產的。
 - **輸出可重現**：driver 定義自己的 `time()`（執行檔的符號蓋過 libc），時間釘在 `FIXED_NOW`；同一份
   upstream 跑兩次 fixture 逐位元組相同。所以 fixture 有 diff＝upstream 改了畫面。
 

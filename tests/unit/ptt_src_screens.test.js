@@ -6,7 +6,7 @@
 // 這裡的每一個位元組都是 upstream 程式碼吐的。
 //
 // fixture 由 tools/ptt-src-screens/generate.sh 重產（場景表 scenes.mjs、種子 seed.tsv）。
-// 平常跑 repo 裡那份（產自 pttbbs f3e3093）；nightly（.github/workflows/ptt-src-screens.yml）
+// 平常跑 repo 裡那份（產自 pttbbs e56edc3）；nightly（.github/workflows/ptt-src-screens.yml）
 // 換成 upstream HEAD 產的。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
@@ -380,6 +380,15 @@ describe("upstream pttbbs 產的 pmore 設定頁（o 完整設定、\\ 快速設
     expect(parseRawModeFromPrefRow(rows("pref"))).toBe(MFDISP_RAW_NA);
     expect(parseRawModeFromPrefRow(rows("pref-cycled"))).toBe(MFDISP_RAW_NOANSI);
     expect(parseRawModeFromPrefRow(rows("quick"))).toBe(MFDISP_RAW_NOANSI);
+  });
+
+  test("完整設定頁多出「留言色彩主題」列（upstream f30655b，同樣三段＋*）不會被當成色彩顯示方式", () => {
+    for (const name of ["pref", "pref-cycled"]) {
+      const theme = rows(name).find((t) => t.includes("留言色彩主題"));
+      expect(theme, name).toMatch(/\*經典醒目 \| 單純易讀 \| 典雅邊框/);
+    }
+    // 循環的是色彩顯示方式：主題列的 * 停在第 0 段，讀到的仍是第 1 段（原始ANSI控制碼）
+    expect(parseRawModeFromPrefRow(rows("pref-cycled"))).toBe(MFDISP_RAW_NOANSI);
   });
 
   test("回到文章（含原始ANSI模式的檔頭）pmore 狀態列照樣認得", () => {
