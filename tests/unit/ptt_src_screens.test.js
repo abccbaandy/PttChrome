@@ -83,10 +83,12 @@ import { listModeOf } from "../../src/js/list_session";
 import {
   MFDISP_RAW_NA,
   MFDISP_RAW_NOANSI,
+  MFDISP_RAW_PLAIN,
   parseRawModeFromPrefRow,
   pmorePrefScreenSeen,
   rawModePrefRowVisible,
 } from "../../src/js/pmore_pref";
+import { CommandQueue } from "../../src/js/command_queue";
 import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
 import { pushGateFacts, shouldInterceptPushKey } from "../../src/js/long_push_gate";
 import { isSearchPromptFrame, searchGateFacts } from "../../src/js/article_search";
@@ -304,6 +306,32 @@ describe("upstream pttbbs 產的 pmore prompt（pmore.c#pmore_do_goto、pmore_se
     expect(target("article")).toEqual({ kind: "article", board: "Test" });
     for (const name of ["goto", "search", "search-typed"]) expect(target(name)).toBe(null);
     expect(target("landed")).toEqual({ kind: "article", board: "Test" });
+  });
+
+  // 開燈鈕（軌 B）替使用者送 `\` 叫 pmore 快速設定：浮動按鈕在 prompt 開著時還按得到，
+  // `\` 會打進跳行／搜尋輸入欄，推文型別選單（vkey）則當成「推」。
+  test("開燈切色彩模式：文章照送 `\\`，跳行／搜尋 prompt 與推文型別選單一個 byte 都不送", () => {
+    const fire = (buf) => {
+      const sent = [];
+      const hints = [];
+      const app = Object.create(App.prototype);
+      app.modalShown = false;
+      app.aidNavigation = { active: false };
+      app.longPush = { active: false };
+      app.easyReading = { _rawMode: null, _enterFunctionMode() {} };
+      app.buf = buf;
+      app.view = { useEasyReadingMode: false, _send: (d) => sent.push(d), flashListHint: (m) => hints.push(m) };
+      app.commandQueue = new CommandQueue({ send: (d) => sent.push(d) });
+      app.onLightsRawMode(MFDISP_RAW_PLAIN);
+      return { sent, hints };
+    };
+    expect(fire(at("article").buf).sent).toEqual(["\\"]);
+    expect(fire(at("landed").buf).sent).toEqual(["\\"]);
+    for (const buf of [at("goto").buf, at("search").buf, at("search-typed").buf, screenAt(pushFx, "push-1").buf]) {
+      const r = fire(buf);
+      expect(r.sent).toEqual([]);
+      expect(r.hints.length).toBe(1);
+    }
   });
 });
 

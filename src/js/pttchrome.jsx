@@ -1490,6 +1490,13 @@ App.prototype.onLightsRawMode = function(mode) {
     if (this.view.flashListHint) this.view.flashListHint(busyHint);
     return;
   }
+  // 開燈鈕浮在畫面上，文章裡按 X（推文型別選單）、`:` 跳行、`/` 搜尋時都還按得到：
+  // `\` 會被型別選單（vkey，非數字一律當「推」）收下、或打進輸入欄。本幀事實擋掉。
+  if (this.buf && this.buf.isPromptPending && this.buf.isPromptPending()) {
+    if (this.view.flashListHint)
+      this.view.flashListHint(i18n('lightsOn_promptPending'));
+    return;
+  }
   if (!this.commandQueue) return;
   if (this.commandQueue.inFlightKind) {
     if (this.view.flashListHint)

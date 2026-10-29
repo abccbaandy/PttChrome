@@ -773,6 +773,9 @@
   "lightsOn_switchFailed": {
     "message": "開燈失敗：叫不出 PTT 的色彩顯示模式設定頁，請稍後再試。"
   },
+  "lightsOn_promptPending": {
+    "message": "請先完成或取消目前的輸入（推文、跳行、搜尋），再切換開燈／關燈。"
+  },
   "debugRecord_start": {
     "message": "錄製"
   },
