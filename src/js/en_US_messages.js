@@ -723,6 +723,12 @@ export const en_US = {
   "options_debugMode_desc": {
     "message": "Adds a record button to the floating \"⋯\" tools at the bottom right (on every screen) to capture connection traffic and app state for bug reports. This setting is never saved and resets to off on page reload."
   },
+  "options_bgDebugRecord": {
+    "message": "Keep a rolling recording of the last 3 minutes"
+  },
+  "options_bgDebugRecord_desc": {
+    "message": "Continuously records the last 3 minutes of connection traffic in the background (kept in memory only, never uploaded). When a hard-to-reproduce bug happens, use \"Save last 3 min\" in the \"⋯\" tools or type \"record\" in the command palette to save what just happened."
+  },
   "mergeImageCaption_on": {
     "message": "Merge captions (image above)"
   },
@@ -773,6 +779,9 @@ export const en_US = {
   },
   "debugRecord_stop": {
     "message": "Stop recording"
+  },
+  "debugRecord_save": {
+    "message": "Save last 3 min"
   },
   "debugRecord_downloaded_warning": {
     "message": "Recording downloaded. It contains every key you typed (manually entered passwords cannot be auto-redacted); review before sharing."
@@ -1294,6 +1303,9 @@ export const en_US = {
   },
   "palette_safeModeOff": {
     "message": "Turn off safe mode"
+  },
+  "palette_saveDebugRecord": {
+    "message": "Save the last 3 minutes of recording"
   },
   "palette_setting": {
     "message": "Setting: {title}"

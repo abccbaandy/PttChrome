@@ -53,7 +53,14 @@ import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_ga
 import { effectivePrefs, readEffectivePrefs, readValuesWithDefault, writeValues } from './pref_storage';
 import { WIRE_UTF8, cursorPositionReport } from './wire_charset';
 import * as prefSync from './pref_sync';
-import { stopDebugRecording, toggleDebugRecording } from './debug_record_control';
+import {
+  stopDebugRecording,
+  toggleDebugRecording,
+  startBackgroundRecording,
+  stopBackgroundRecording,
+  saveBackgroundRecording,
+  isDebugRecording,
+} from './debug_record_control';
 import { diagnoseConnectFailure, probeWebSocket, siteToWsUrl } from './connection_probe';
 import {
   MFDISP_RAW_PLAIN,
@@ -272,6 +279,10 @@ export const App = function() {
   // 錄製鈕的點擊入口（render/screen.js 經 enhance.onDebugRecord 呼叫）。
   // **只指派這一次，引用從此不變**（同 onFunctionKey 的理由）。
   this.view.onDebugRecord = () => this.toggleDebugRecording();
+  // 背景錄製（pref bgDebugRecord，只留最後三分鐘）：唯一寫入點 setBackgroundRecording。
+  // 「存下最近 3 分鐘」鈕同樣收在「⋯」裡，入口引用同上只指派一次。
+  this.bgDebugRecord = false;
+  this.view.onDebugSave = () => this.saveBackgroundRecording();
 
   //new pref - start
   // 單位是毫秒（pref 存秒，onValuesPrefChange 乘 1000）；對應 DEFAULT_PREFS.antiIdleTime。
@@ -583,6 +594,8 @@ App.prototype._setupWebsocketConn = function(url) {
 App.prototype._attachConn = function(conn) {
   var self = this;
   this.conn = conn;
+  // 錄製中（含背景錄製）重連：送出改掛到新的連線物件上。
+  if (this.debugRecorder) this.debugRecorder.attachConn(conn);
   // 線路編碼：連線前讀一次（server 只在登入時決定編碼，中途改 pref 要重連才生效）。
   // UTF-8 時回應 logind 的 CPR 編碼偵測，server 才會切過去；Big5 維持不回應。
   conn.setWireCharset(readValuesWithDefault().connectionEncoding);
@@ -1406,6 +1419,31 @@ App.prototype.setDebugMode = function(enabled) {
   this.debugMode = on;
   this.view.debugRecordButton = on;
   this.view.redraw(true);
+};
+
+// 背景錄製開關（pref bgDebugRecord）。關掉＝丟掉緩衝；手動錄製中不受影響
+//（手動停止時看 this.bgDebugRecord 決定要不要補開背景錄製）。
+App.prototype.setBackgroundRecording = function(enabled) {
+  const on = !!enabled;
+  if (this.bgDebugRecord === on) return;
+  this.bgDebugRecord = on;
+  if (on) startBackgroundRecording(this);
+  else stopBackgroundRecording(this);
+  this.view.debugSaveButton = on;
+  this.view.redraw(true);
+};
+
+// 「存下最近 3 分鐘」（「⋯」裡的鈕、指令面板）。回傳是否真的下載了。
+App.prototype.saveBackgroundRecording = function() {
+  const downloaded = saveBackgroundRecording(this);
+  if (downloaded) this._notifyDebugRecordDownloaded();
+  this.setInputAreaFocus();
+  return downloaded;
+};
+
+// 指令面板列不列「存下最近 3 分鐘」：背景錄製開著、而且不是手動錄製中。
+App.prototype.canSaveBackgroundRecording = function() {
+  return this.bgDebugRecord && !isDebugRecording(this);
 };
 
 // 錄製鈕的點擊：開始／停止（停止＝下載錄製檔）。回傳切換後是否在錄。
@@ -2384,6 +2422,9 @@ App.prototype.onPrefChange = function(name, value) {
     // 推文篩選：關掉時正在生效的篩選一起取消（推文全部回來）。
     case 'enableCommentFilter':
       if (!value && this.view.clearCommentFilter) this.view.clearCommentFilter();
+      break;
+    case 'bgDebugRecord':
+      this.setBackgroundRecording(value);
       break;
     case 'showWhatsNew':
       if (!value && this.whatsNew) this.whatsNew.dismiss();

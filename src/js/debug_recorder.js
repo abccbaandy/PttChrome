@@ -2,7 +2,15 @@
 // —— 與 tests/e2e/tools/record-cassette.spec.js 同手法，零侵入，stop 時還原。
 // 錄下雙向 bytes ＋ 每事件輕量狀態快照 ＋ 關鍵路徑 log（app.debugRecorder?.log(tag, info)）。
 // 序列化 / redact / cassette 導出在 debug_recorder_logic.js（純邏輯，unit 測）。
-import { serializeRecording } from './debug_recorder_logic';
+import {
+  serializeRecording,
+  ringTrim,
+  ringEventCost,
+  RING_KEYFRAME_MS,
+  RING_MAX_BYTES,
+  RING_TRIM_EVERY_MS,
+} from './debug_recorder_logic';
+import { AnsiParser } from './ansi_parser';
 import { setDiagSink } from './diag';
 import { OWNER_BOARD_LIST } from './list_render_owner';
 import { filterSummary } from './list_row_filter';
@@ -141,25 +149,132 @@ export function listViewSample(app, v) {
   }
 }
 
+// 當下整個畫面 → 一段餵給 AnsiParser 就能重建同一畫面的位元組（背景錄製的關鍵幀，
+// 見 debug_recorder_logic.js#RING_KEYFRAME_MS）。格子編碼原樣照抄（與 recv 同一種
+// 形式，UTF-8 線路的 Unicode 格由 serializeRecording 的 latin1Cells 處理），顏色走
+// TermBuf 自己的 ansiCmp（複製 ANSI 色碼同一套）。每列用 CUP 定位、不靠自動換行；
+// 最後還原捲動範圍、游標與目前的 SGR 屬性（server 下一包可能直接寫字、沿用屬性）。
+export function screenKeyframe(buf) {
+  let out = '\x1b[m\x1b[r\x1b[H\x1b[2J';
+  for (let r = 0; r < buf.rows; ++r) {
+    const line = buf.lines[r];
+    let s = '\x1b[' + (r + 1) + ';1H';
+    let prev = null;
+    for (let c = 0; c < buf.cols; ++c) {
+      const ch = line[c];
+      s += buf.ansiCmp(prev || ch, ch, !prev) + ch.ch;
+      prev = ch;
+    }
+    out += s + '\x1b[m';
+  }
+  if (buf.scrollStart !== 0 || buf.scrollEnd !== buf.rows - 1)
+    out += '\x1b[' + (buf.scrollStart + 1) + ';' + (buf.scrollEnd + 1) + 'r';
+  out += '\x1b[' + (buf.cur_y + 1) + ';' + (buf.cur_x + 1) + 'H';
+  if (buf.attr) out += buf.ansiCmp(buf.attr, buf.attr, true);
+  return out;
+}
+
 const LIST_VIEW_SEL = '.listBodyView';
 const TOUCH_TYPES = ['touchstart', 'touchend', 'touchcancel'];
 
+// opts.windowMs：背景錄製（只留最後 windowMs，見 debug_recorder_logic.js 的
+// RING_* 常數）。背景模式另外省掉會強制 reflow 的游標幾何取樣（term_view 經
+// wantsGeometry 問），按手動錄製時由 promote() 轉成完整錄製、保留已錄的部分。
 export class DebugRecorder {
-  constructor(app) {
+  constructor(app, opts) {
     this.app = app;
     this.events = [];
     this.isRecording = false;
+    this.windowMs = (opts && opts.windowMs) || 0;
     this._t0 = 0;
     this._origOnData = null;
     this._origSendRaw = null;
+    this._patchedConn = null;
     this._scroller = null;
     this._onWheel = null;
     this._onScroll = null;
+    this._bytes = 0;
+    this._lastTrimT = 0;
+    this._lastKeyT = -Infinity;
+  }
+
+  get background() {
+    return this.windowMs > 0;
+  }
+
+  // 會強制 reflow 的取樣（cursor.geom）只在手動錄製時做。
+  get wantsGeometry() {
+    return this.isRecording && !this.background;
+  }
+
+  _now() {
+    return Math.round(performance.now() - this._t0);
   }
 
   _push(ev) {
-    ev.t = Math.round(performance.now() - this._t0);
+    ev.t = this._now();
     this.events.push(ev);
+    if (!this.windowMs) return;
+    this._bytes += ringEventCost(ev);
+    // 超過記憶體保險絲也一樣節流：只能裁到關鍵幀上，沒有可裁的關鍵幀時每筆都重掃
+    // 整個緩衝就是 O(n²)（實測一筆 0.1ms）。多留一秒的量無妨。
+    if (ev.t - this._lastTrimT >= RING_TRIM_EVERY_MS) this._trim(ev.t);
+  }
+
+  _trim(now) {
+    this._lastTrimT = now;
+    const r = ringTrim(this.events, now - this.windowMs, RING_MAX_BYTES);
+    this.events = r.events;
+    this._bytes = r.bytes;
+  }
+
+  // 每 RING_KEYFRAME_MS 最多一張，而且只在「字與字之間」才拍：parser 卡在半條跳脫
+  // 序列、或 server 一幀還沒畫完（DEC 2026 同步輸出）時，畫面不是一個完整的狀態。
+  // 掛在 recv 上（不用計時器）：閒置時零喚醒。
+  _maybeKeyframe() {
+    if (!this.windowMs) return;
+    if (this._now() - this._lastKeyT < RING_KEYFRAME_MS) return;
+    const app = this.app;
+    const buf = app.buf;
+    if (!buf || !buf.lines || buf.inSyncUpdate) return;
+    if (app.parser && app.parser.state !== AnsiParser.STATE_TEXT) return;
+    let data;
+    try {
+      data = screenKeyframe(buf);
+    } catch (e) {
+      return;
+    }
+    this._push({ dir: 'recv', key: true, data, state: snapshotState(app) });
+    this._lastKeyT = this.events[this.events.length - 1].t;
+  }
+
+  // 背景 → 手動：不再裁切、開始做幾何取樣；已錄的最後幾分鐘留著當作前情提要（檔頭仍是關鍵幀）。
+  promote() {
+    this.windowMs = 0;
+    this.log('record.promote');
+  }
+
+  // 連線物件每次（重）連都是新的（App._attachConn）：送出要跟著換掛，否則重連後
+  // 的按鍵全部漏錄。
+  attachConn(conn) {
+    if (!this.isRecording) return;
+    this._unpatchConn();
+    if (!conn) return;
+    const app = this.app;
+    const rec = this;
+    const orig = conn._sendRaw;
+    this._patchedConn = conn;
+    this._origSendRaw = orig;
+    conn._sendRaw = function (data) {
+      if (data) rec._push({ dir: 'send', data, state: snapshotState(app) });
+      return orig.call(conn, data);
+    };
+  }
+
+  _unpatchConn() {
+    if (this._origSendRaw && this._patchedConn) this._patchedConn._sendRaw = this._origSendRaw;
+    this._origSendRaw = null;
+    this._patchedConn = null;
   }
 
   start() {
@@ -172,19 +287,12 @@ export class DebugRecorder {
     // 保存原函式本體（非 bind 副本）→ stop 還原後 identity 不變。
     this._origOnData = app.onData;
     app.onData = function (data) {
+      rec._maybeKeyframe();
       rec._push({ dir: 'recv', data, state: snapshotState(app) });
       return rec._origOnData.call(app, data);
     };
 
-    if (app.conn) {
-      const conn = app.conn;
-      this._patchedConn = conn;
-      this._origSendRaw = conn._sendRaw;
-      conn._sendRaw = function (data) {
-        if (data) rec._push({ dir: 'send', data, state: snapshotState(app) });
-        return rec._origSendRaw.call(conn, data);
-      };
-    }
+    this.attachConn(app.conn);
 
     // 渲染鏈的診斷 log（圖片尺寸模式、佔位盒掛載／卸載／高度）走 module 級出口，
     // 見 diag.js。
@@ -205,6 +313,8 @@ export class DebugRecorder {
     // 黑名單設定（作者／標題關鍵字）：「這篇為什麼沒出現／為什麼出現了」只看 bytes 判斷不了。
     // 之後改設定時 App.applyPref 會再記一筆（同 tag）。
     this.log('list.filter', filterSummary(view));
+    // 背景錄製的第一張關鍵幀：窗口一開始就有完整畫面。
+    this._maybeKeyframe();
   }
 
   // 好讀長頁的捲動軌跡：使用者的滾輪輸入（main.wheel）對照實際捲動位置
@@ -293,8 +403,9 @@ export class DebugRecorder {
     this._push({ dir: 'log', tag, info });
   }
 
-  // 停止並還原 patch；回傳序列化 JSON 字串（已 redact）。
-  stop({ prefs } = {}) {
+  // 停止並還原 patch；回傳序列化 JSON 字串（已 redact）。discard ＝不要檔（背景錄製
+  // 被關掉時），省掉整卷序列化。
+  stop({ prefs, discard } = {}) {
     if (!this.isRecording) return null;
     this.log('record.stop');
     this.isRecording = false;
@@ -302,20 +413,40 @@ export class DebugRecorder {
     this._unwatchScroller();
     this._unwatchList();
     if (this._origOnData) this.app.onData = this._origOnData;
-    if (this._origSendRaw && this._patchedConn) this._patchedConn._sendRaw = this._origSendRaw;
+    this._unpatchConn();
     this._origOnData = null;
-    this._origSendRaw = null;
+    if (discard) {
+      this.events = [];
+      return null;
+    }
+    return this._serialize(this.events, prefs, {});
+  }
 
+  // 背景錄製的「存下這一刻」：不停止，照樣繼續錄（同一段時間可以存很多次）。
+  // 時間軸從檔頭（第一張關鍵幀或搬過來的現況 log）起算 0。
+  snapshot({ prefs } = {}) {
+    if (!this.isRecording) return null;
+    this.log('record.save');
+    if (this.windowMs) this._trim(this._now());
+    const t0 = this.events.length ? this.events[0].t : 0;
+    const events = this.events.map((ev) => Object.assign({}, ev, { t: ev.t - t0 }));
+    return this._serialize(events, prefs, this.windowMs ? { background: true, windowMs: this.windowMs } : {});
+  }
+
+  _serialize(events, prefs, extraMeta) {
     const app = this.app;
     return serializeRecording({
-      events: this.events,
+      events,
       cols: (app.buf && app.buf.cols) || 80,
       rows: (app.buf && app.buf.rows) || 24,
-      meta: {
-        url: app.connectedUrl && app.connectedUrl.url,
-        build: process.env.GIT_COMMIT,
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
-      },
+      meta: Object.assign(
+        {
+          url: app.connectedUrl && app.connectedUrl.url,
+          build: process.env.GIT_COMMIT,
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+        },
+        extraMeta
+      ),
       redact: {
         ids: prefs && prefs.autoLoginUser ? [prefs.autoLoginUser] : [],
         // The 2FA secret is a long-lived credential — leaking it in a recording

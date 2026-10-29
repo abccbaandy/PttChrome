@@ -40,6 +40,7 @@ import {
   createLightsOnButton,
   createJumpNewCommentsButton,
   createDebugRecordButton,
+  createDebugSaveButton,
   createFloatingTools,
 } from "./merge_buttons";
 import { createSignatureTask } from "./signature_task";
@@ -282,6 +283,7 @@ export class ScreenController {
     this._aiButton = null;
     this._lightsButton = null;
     this._debugRecordButton = null;
+    this._debugSaveButton = null;
     this._debugRecording = false;
     this._floatTools = null; // 收那些工具的「⋯」（merge_buttons.js#createFloatingTools）
     this._hoverHost = null;
@@ -1765,6 +1767,26 @@ export class ScreenController {
       }
       this._debugRecordButton.update(this._debugRecording);
       tools.push(this._debugRecordButton.el);
+    }
+    // 背景錄製的「存下最近 3 分鐘」（js/debug_record_control.js）。手動錄製中不出現：
+    // 那時錄製器在錄完整的一卷，停止鈕就會下載。
+    const showDebugSave = !!(
+      enhance &&
+      enhance.debugSaveButton &&
+      typeof enhance.onDebugSave === "function" &&
+      !(
+        typeof enhance.isDebugRecording === "function" &&
+        enhance.isDebugRecording()
+      )
+    );
+    if (showDebugSave) {
+      if (!this._debugSaveButton) {
+        this._debugSaveButton = createDebugSaveButton(() => {
+          const enh = this.props && this.props.enhance;
+          if (enh && enh.onDebugSave) enh.onDebugSave();
+        });
+      }
+      tools.push(this._debugSaveButton.el);
     }
 
     const wanted = [];

@@ -18,6 +18,7 @@
 //
 // 限制：錄製是**中途開始**的，第一個 recv 之前的畫面不在檔案裡 ⇒ 開頭幾幀可能
 // 只有局部更新，要等 server 送整頁重繪（\x1b[2J 或 \f 回應）之後才完整。
+// 背景錄製（「存下最近 3 分鐘」）的檔例外：第一筆 recv 是合成的整頁畫面（key: true）。
 // 畫面列文字走 buf.getRowText（Big5 → Unicode，與 app 讀畫面同一條路）。
 import fs from 'node:fs';
 import path from 'node:path';
