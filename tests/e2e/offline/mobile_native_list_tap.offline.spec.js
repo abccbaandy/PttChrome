@@ -13,9 +13,14 @@ const nav = loadCassette('cchat-list-nav');
 
 async function engageNative(page) {
   await bootOffline(page, ptt);
+  // 重放前就關掉列表好讀：先重放再關的話，列表好讀可能已經 engage，關掉時替游標同步送
+  // 「351359⏎^L」，重放不回這兩步 ⇒ 底列被跳號 prompt 清掉、pageState 掉回 0，tap 不開文
+  // （看機器快慢決定 engage 了沒，CI 忙時約三成）。
+  await ptt.applyPrefs(page, { enableEasyReadingList: false, useMouseBrowsing: true, mouseLeftClick: true });
   await replayListCassette(page, nav);
   await page.waitForFunction(() => window.__app.buf.pageState === 2);
-  await ptt.applyPrefs(page, { enableEasyReadingList: false, useMouseBrowsing: true, mouseLeftClick: true });
+  // 本幀沒有機器送出：這兩條只量使用者那一下 tap。
+  expect(await page.evaluate(() => window.__replay.sent)).toEqual([]);
   await expect
     .poll(() => page.evaluate(() => window.__app.buf.listRenderMode === 'native' && !window.__app.view.listCards))
     .toBe(true);
