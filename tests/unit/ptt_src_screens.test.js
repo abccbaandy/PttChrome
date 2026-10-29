@@ -1333,10 +1333,53 @@ describe("upstream pttbbs 產的文章 prompt 開著時，AID 跳文不出發", 
     buf.startedEasyReading = true;
     const hints = [];
     const begin = vi.fn();
-    const self = { active: false, _termBuf: buf, _hint: (m) => hints.push(m), _begin: begin };
-    AidNavigation.prototype.start.call(self, "1AAAAAAA", "Test");
+    const self = Object.assign(Object.create(AidNavigation.prototype), {
+      active: false,
+      _termBuf: buf,
+      _hint: (m) => hints.push(m),
+      _begin: begin,
+    });
+    self.start("1AAAAAAA", "Test");
     expect(begin).not.toHaveBeenCalled();
     expect(hints).toEqual([PROMPT_PENDING_HINT]);
+  });
+
+  // 其他從 UI 出發的 AID 序列：F9／「← 返回」（back）、雙欄閱讀左欄（startNum）、讀完接著讀
+  // 搜尋結果（startSubNum）、agent 的開板／置底文（startBoard／startPinned）。
+  const ENTRIES = [
+    ["back", (nav) => nav.back()],
+    ["startNum", (nav) => nav.startNum("Test", 3, null, () => true)],
+    ["startSubNum", (nav) => nav.startSubNum("Test", 3, () => true)],
+    ["startBoard", (nav) => nav.startBoard("Test", {})],
+    ["startPinned", (nav) => nav.startPinned("Test", 0)],
+  ];
+  const navOn = (buf) => {
+    const hints = [];
+    const begin = vi.fn();
+    const nav = Object.assign(Object.create(AidNavigation.prototype), {
+      active: false,
+      _termBuf: buf,
+      _hint: (m) => hints.push(m),
+      _begin: begin,
+      _pagerContext: () => "reading",
+      _history: { beginBack: () => ({ label: "#1AAAAAAA", board: "Test", aid: "1AAAAAAA", kind: "aid" }) },
+    });
+    return { nav, hints, begin };
+  };
+
+  test.each(ENTRIES)("%s：文章畫面（對照組）照常出發", (name, go) => {
+    const { nav, begin } = navOn(screenAt(articlePromptsFx, "article").buf);
+    go(nav);
+    expect(begin).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(ENTRIES)("%s：prompt 開著 ⇒ 不出發、提示先完成輸入", (name, go) => {
+    for (const [fx, frame] of PROMPTS) {
+      const { nav, hints, begin } = navOn(screenAt(fx, frame).buf);
+      go(nav);
+      expect(begin, frame).not.toHaveBeenCalled();
+      expect(hints, frame).toEqual([PROMPT_PENDING_HINT]);
+    }
   });
 
   test("外部連結：prompt 開著先收著，文章畫面（對照組）才出發", () => {
