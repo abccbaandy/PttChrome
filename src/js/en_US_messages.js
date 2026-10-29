@@ -768,6 +768,9 @@ export const en_US = {
   "lightsOn_switchFailed": {
     "message": "Lights on failed: could not open PTT's color display mode screen. Please try again."
   },
+  "lightsOn_promptPending": {
+    "message": "Finish or cancel the current input (push, go to line, search) first, then toggle the lights."
+  },
   "debugRecord_start": {
     "message": "Record"
   },
