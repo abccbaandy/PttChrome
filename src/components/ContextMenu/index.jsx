@@ -423,7 +423,8 @@ export const ContextMenu = ({ pttchrome }) => {
   const settingsOpen = state.showsSettings;
   useEffect(() => {
     const view = pttchrome.view;
-    if (!view || typeof view.setHintDialogCover !== "function") return undefined;
+    if (!view || typeof view.setHintDialogCover !== "function")
+      return undefined;
     view.setHintDialogCover(settingsOpen);
     return () => view.setHintDialogCover(false);
   }, [pttchrome, settingsOpen]);
