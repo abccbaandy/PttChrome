@@ -403,13 +403,18 @@ export function TermView() {
   // onDebugRecord 由 App 在啟動時指派一次（引用穩定）。
   this.debugRecordButton = false;
   this.onDebugRecord = null;
-  // 錄製中與否交給 render 端**現問**（不是每幀的布林快照）：screen.js 有不換 props 的
-  // 重畫（游標底色慢路徑），快照會在那裡把錄製中蓋回去。引用穩定。
+  // 「存下最近 3 分鐘」鈕（背景錄製開著時出現）：App.setBackgroundRecording 設定；
+  // onDebugSave 由 App 在啟動時指派一次。
+  this.debugSaveButton = false;
+  this.onDebugSave = null;
+  // 手動錄製中與否交給 render 端**現問**（不是每幀的布林快照）：screen.js 有不換 props
+  // 的重畫（游標底色慢路徑），快照會在那裡把錄製中蓋回去。引用穩定。背景錄製不算。
   this.isDebugRecording = () =>
     !!(
       this.bbscore &&
       this.bbscore.debugRecorder &&
-      this.bbscore.debugRecorder.isRecording
+      this.bbscore.debugRecorder.isRecording &&
+      !this.bbscore.debugRecorder.background
     );
   // Same-author comment highlighting: tint comments written by the 原PO.
   // _articleAuthor is parsed from the article header (first page only) and kept
@@ -1397,6 +1402,8 @@ TermView.prototype = {
           debugRecordButton: this.debugRecordButton,
           isDebugRecording: this.isDebugRecording,
           onDebugRecord: this.onDebugRecord,
+          debugSaveButton: this.debugSaveButton,
+          onDebugSave: this.onDebugSave,
           highlightAuthor: this.highlightAuthorComments,
           articleAuthor: this._articleAuthor,
           selfId: this.highlightSelfComments ? this._selfId : null,
@@ -2691,11 +2698,11 @@ TermView.prototype = {
     return el ? { offsetTop: el.offsetTop, offsetLeft: el.offsetLeft, el: el } : null;
   },
 
-  // debug 錄製器的幾何取樣。**只在真的在錄、而且游標真的移動了**才做——
-  // cursorGeomSample 會 getBoundingClientRect ⇒ 強制 reflow。
+  // debug 錄製器的幾何取樣。**只在手動錄製、而且游標真的移動了**才做——
+  // cursorGeomSample 會 getBoundingClientRect ⇒ 強制 reflow；背景錄製常駐，不付這個。
   _sampleCursorGeom: function() {
     var rec = this.bbscore && this.bbscore.debugRecorder;
-    if (!rec || !rec.isRecording) return;
+    if (!rec || !rec.wantsGeometry) return;
     var key = this.bbsCursor.style.left + ',' + this.bbsCursor.style.top;
     if (key === this._lastGeomKey) return;
     this._lastGeomKey = key;

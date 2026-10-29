@@ -622,6 +622,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_debugMode",
       tooltipKey: "options_debugMode_desc",
     },
+    {
+      key: "bgDebugRecord",
+      titleKey: "options_bgDebugRecord",
+      tooltipKey: "options_bgDebugRecord_desc",
+    },
   ]),
   ...inSection("about", "about_new_title", null, []),
 ];

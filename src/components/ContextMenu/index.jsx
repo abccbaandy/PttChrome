@@ -1073,6 +1073,7 @@ export const ContextMenu = ({ pttchrome }) => {
           !!pttchrome.deepLinkController && pttchrome.buf?.pageState === 3,
         back: !!pttchrome.aidNavigation?.canGoBack?.(),
         safeMode: !!prefs.nativeSafeMode,
+        saveDebugRecord: !!pttchrome.canSaveBackgroundRecording?.(),
         quickBoards: prefs.paletteQuickBoards
           ? pttchrome.homeDashboard?.quickBoards?.() || null
           : null,
@@ -1236,6 +1237,9 @@ export const ContextMenu = ({ pttchrome }) => {
                 : "palette_safeModeOffDone",
             ),
           );
+          return;
+        case "saveDebugRecord":
+          pttchrome.saveBackgroundRecording?.();
           return;
         default:
           return;

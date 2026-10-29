@@ -2649,6 +2649,14 @@ export const PrefModal = ({
                   mb="xs"
                   {...anchor("ui:debugMode")}
                 />
+                <PrefCheckbox
+                  name="bgDebugRecord"
+                  checked={values.bgDebugRecord}
+                  onChange={onCheckboxChange}
+                  description={i18n("options_bgDebugRecord_desc")}
+                >
+                  {i18n("options_bgDebugRecord")}
+                </PrefCheckbox>
               </PrefAnchor>
               <PrefAnchor anchorKey="section:about_new_title">
                 <Title order={5}>{i18n("about_new_title")}</Title>

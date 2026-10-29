@@ -69,6 +69,7 @@ export const PALETTE_ACTIONS = [
   { id: "settings", titleKey: "palette_settings", when: null, keywords: ["設定", "偏好", "settings", "preferences", "options"] },
   { id: "safeModeOn", titleKey: "palette_safeModeOn", when: "safeModeOff", keywords: ["安全模式", "全部用原生", "原生", "safe mode", "native"] },
   { id: "safeModeOff", titleKey: "palette_safeModeOff", when: "safeModeOn", keywords: ["安全模式", "關閉安全模式", "safe mode", "native"] },
+  { id: "saveDebugRecord", titleKey: "palette_saveDebugRecord", when: "saveDebugRecord", keywords: ["存下最近 3 分鐘", "錄製", "錄製檔", "除錯", "回報", "bug", "debug", "record", "save recording"] },
 ];
 
 const norm = (s) => String(s || "").trim().toLowerCase();
@@ -147,6 +148,8 @@ export function buildPaletteItems(query, ctx) {
     back: !!c.back,
     safeModeOn: !!c.safeMode,
     safeModeOff: !c.safeMode,
+    // 背景錄製開著、不是手動錄製中（App.canSaveBackgroundRecording）。
+    saveDebugRecord: !!c.saveDebugRecord,
   };
   const title = typeof c.title === "function" ? c.title : () => "";
   const strong = [];

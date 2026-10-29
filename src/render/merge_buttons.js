@@ -287,7 +287,16 @@ export function createJumpNewCommentsButton(onClick) {
   return { el: button };
 }
 
-// Debug 錄製鈕（面板裡排最後，debug 模式開著時任何畫面都出現）。開始／停止與下載
+// 「存下最近 3 分鐘」鈕（背景錄製開著時出現，排在錄製鈕之後）。只有一個狀態：
+// 按一下就下載，錄製器照樣繼續錄。
+export function createDebugSaveButton(onClick) {
+  const button = floatingButton("debugSaveBtn", onClick);
+  restyle(button, "#495057", "2px solid #ced4da");
+  button.textContent = "⤓ " + i18n("debugRecord_save");
+  return { el: button };
+}
+
+// Debug 錄製鈕（面板裡排在後段，debug 模式開著時任何畫面都出現）。開始／停止與下載
 // 由 App 負責（js/debug_record_control.js），這裡只畫狀態。
 export function createDebugRecordButton(onToggle) {
   const button = floatingButton("debugRecordBtn", onToggle);

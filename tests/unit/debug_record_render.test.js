@@ -131,3 +131,33 @@ test("與文章工具並存：同一顆「⋯」、錄製鈕排最後", () => {
   expect(ids).toEqual(["lightsOnBtn", "debugRecordBtn"]);
   expect(s.container.querySelectorAll("#floatTools").length).toBe(1);
 });
+
+// 背景錄製的「存下最近 3 分鐘」鈕（js/debug_record_control.js#saveBackgroundRecording）。
+const save = (s) => s.container.querySelector("#debugSaveBtn");
+
+test("背景錄製開著 ⇒ 「⋯」裡有「存下最近 3 分鐘」，點下去呼叫 onDebugSave（任何畫面）", () => {
+  const onDebugSave = vi.fn();
+  const s = render(MENU_LINES, { pageState: 2, debugSaveButton: true, onDebugSave });
+  expect(tools(s).querySelector(".floatTools__panel #debugSaveBtn")).toBe(save(s));
+  expect(save(s).textContent).toBe("⤓ " + i18n("debugRecord_save"));
+  save(s).click();
+  expect(onDebugSave).toHaveBeenCalledTimes(1);
+});
+
+test("背景錄製關 ⇒ 沒有存檔鈕；手動錄製中 ⇒ 存檔鈕收起（停止鈕就會下載）", () => {
+  const onDebugSave = vi.fn();
+  expect(save(render(MENU_LINES, { debugSaveButton: false, onDebugSave }))).toBe(null);
+  let recording = false;
+  const s = render(MENU_LINES, {
+    debugRecordButton: true,
+    debugSaveButton: true,
+    onDebugSave,
+    isDebugRecording: () => recording,
+    onDebugRecord: () => (recording = !recording),
+  });
+  const panel = tools(s).querySelector(".floatTools__panel");
+  expect(Array.from(panel.children).map((b) => b.id)).toEqual(["debugRecordBtn", "debugSaveBtn"]);
+  rec(s).click();
+  s.controller.setCursorHighlight({ row: 1, cls: "b2", col: 8 });
+  expect(save(s)).toBe(null);
+});

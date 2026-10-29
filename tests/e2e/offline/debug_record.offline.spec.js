@@ -4,6 +4,8 @@
 //      可解析、events 含 recv/send、cassette 為既有 schema（on/recv base64）
 //   3) 錄製中關掉 Switch ⇒ 自動停止並下載、「⋯」消失
 //   4) 重新整理 → Switch 回到關閉、按鈕消失（不記憶 / 不落地）
+//   5) 背景自動錄製（pref，會記住）：「⋯」裡的「存下最近 3 分鐘」下載的檔從整頁畫面
+//      （關鍵幀）開始、含存檔前的收發；存完照樣繼續錄；重新整理後仍開著
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { hoverFloatTools } = require('../helpers/real_input');
@@ -35,6 +37,12 @@ async function openAboutTab(page) {
     .getByText(await label(page, 'options_about'), { exact: true })
     .click();
   await expect(page.locator('#pref-debug-mode')).toBeAttached();
+}
+
+async function readDownload(download) {
+  const chunks = [];
+  for await (const c of await download.createReadStream()) chunks.push(c);
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
 async function boot(page) {
@@ -174,5 +182,63 @@ test.describe('Debug 錄製模式（offline）', () => {
     expect(scrolls.length).toBeGreaterThan(0);
     // wheel 那筆的 top 不能拿來比：passive listener 跑的時候合成器可能已經捲完了。
     expect(scrolls[scrolls.length - 1].info.top).toBeGreaterThan(topBefore);
+  });
+
+  test('背景自動錄製：事後按「存下最近 3 分鐘」⇒ 下載剛剛的經過，錄製不中斷、重整後仍開著', async ({ page }) => {
+    await boot(page);
+    await expect(page.locator('#debugSaveBtn')).toHaveCount(0);
+
+    await openAboutTab(page);
+    await page.locator('#pref-check-bgDebugRecord').check();
+    await page.locator('.PrefModal [aria-label="Close"]').click();
+    await expect(page.locator('.PrefModal')).toBeHidden();
+    expect(await page.evaluate(() => !!window.__app.debugRecorder?.background)).toBe(true);
+
+    // bug「已經發生」：錄製開著時的收發，事後才去按存檔
+    await feedRaw(page, '\x1b[2J\x1b[H\x1b[1;33mBEFORE THE BUG\x1b[m');
+    await page.evaluate(() => window.__app.conn.send('\x1b[6~'));
+    await feedRaw(page, '\x1b[3;1Hsecond packet');
+    await waitScreenSettled(page);
+
+    const save = page.locator('#floatTools .floatTools__panel #debugSaveBtn');
+    await hoverFloatTools(page);
+    await expect(save).toContainText(await label(page, 'debugRecord_save'));
+    const [download] = await Promise.all([page.waitForEvent('download'), save.click()]);
+    expect(download.suggestedFilename()).toMatch(/^ptt-debug-.*\.json$/);
+    const json = await readDownload(download);
+    expect(json.meta).toMatchObject({ mode: 'debug', background: true });
+    const recvs = json.events.filter((e) => e.dir === 'recv');
+    // 第一筆 recv 是開錄時拍的整頁畫面（合成），之後才是 server 送的
+    expect(recvs[0].key).toBe(true);
+    const recvAll = recvs.map((e) => Buffer.from(e.data, 'base64').toString('latin1')).join('');
+    expect(recvAll).toContain('BEFORE THE BUG');
+    expect(recvAll).toContain('second packet');
+    expect(json.events.some((e) => e.dir === 'send')).toBe(true);
+    expect(json.events.some((e) => e.tag === 'record.save')).toBe(true);
+    await expect(page.getByText(await label(page, 'debugRecord_downloaded_warning'))).toBeVisible();
+
+    // 存完照樣錄：再存一次也拿得到存檔之後的收發
+    await feedRaw(page, '\x1b[5;1Hafter the first save');
+    await hoverFloatTools(page);
+    const [again] = await Promise.all([page.waitForEvent('download'), save.click()]);
+    const json2 = await readDownload(again);
+    const recvAll2 = json2.events
+      .filter((e) => e.dir === 'recv')
+      .map((e) => Buffer.from(e.data, 'base64').toString('latin1'))
+      .join('');
+    expect(recvAll2).toContain('after the first save');
+
+    // 指令面板也找得到（F4 → 打「錄製」）
+    await page.keyboard.press('F4');
+    const paletteItem = page.getByText(await label(page, 'palette_saveDebugRecord'), { exact: true });
+    await page.keyboard.type('錄製');
+    await expect(paletteItem).toBeVisible();
+    const [fromPalette] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Enter')]);
+    expect(fromPalette.suggestedFilename()).toMatch(/^ptt-debug-.*\.json$/);
+
+    // pref 會記住：重新整理後背景錄製仍開著
+    await page.reload();
+    await waitConnected(page);
+    expect(await page.evaluate(() => !!window.__app.debugRecorder?.background)).toBe(true);
   });
 });

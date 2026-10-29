@@ -205,6 +205,28 @@ live 核心只驗幾個畫面；這個工具把整卷 live 錄製檔**每一幀*
 - 守護測試：`tests/unit/redact.test.js`、`tests/unit/debug_recorder_logic.test.js`、
   `tests/unit/debug_recorder.test.js`、`tests/e2e/offline/debug_record.offline.spec.js`。
 
+### 背景自動錄製（最近 3 分鐘）
+難重現的 bug 等發現時才按錄製已經來不及。pref `bgDebugRecord`（設定 → 關於，會記住、預設關）
+讓同一個 `DebugRecorder` 以環形緩衝模式常駐，只留最後 `RING_WINDOW_MS`；「⋯」裡的
+「存下最近 3 分鐘」或指令面板「錄製」＝ `snapshot()` 下載，錄製器照樣繼續錄。
+- **檔頭一定是完整畫面**：每 `RING_KEYFRAME_MS`（20s）在 recv 前把當下畫面寫成一筆合成 recv
+  （`key: true`，`debug_recorder.js#screenKeyframe`：逐列 CUP＋`ansiCmp` 色碼，最後還原捲動範圍、
+  游標、目前 SGR）。裁切只裁到關鍵幀上 ⇒ `debug:screens`／`json.cassette` 從第一筆就解得出整頁，
+  窗口實際 3:00～3:20。parser 卡在半條序列、或 DEC 2026 一幀沒畫完時不拍（等下一包）。
+- **只在變了才記的現況 log**（`RING_STICKY_TAGS`：`record.start`／`article.context`／`appBar`／
+  `list.filter`）被裁掉時，最後一筆搬到新檔頭。新增這類 log 要補進清單。
+- **任何時刻只有一個錄製器**（兩個都 monkey-patch `onData`，停止順序錯就還原錯）：
+  背景錄製中按錄製鈕 ＝ `promote()` 成完整錄製（前面三分鐘一起帶進檔）；手動停止後若 pref 仍開，
+  補開新的背景錄製器。`isDebugRecording` 只代表手動錄製（錄製鈕紅色）。
+- 重連換了 conn 物件：`App._attachConn` 呼叫 `recorder.attachConn`，送出改錄新連線（手動錄製同受益）。
+- **成本**（真 Chromium 量測，`cchat-many-images` 卷）：每筆收發多 ~1.3µs（state 快照＋push），
+  `onData` 整體量不出差異；關鍵幀 ~0.08ms、20 秒最多一張；裁切每秒最多一次；**沒有計時器**，
+  閒置時零喚醒、不耗電。背景模式不做會強制 reflow 的 `cursor.geom` 取樣（`wantsGeometry`）。
+  記憶體：一般瀏覽三分鐘約數百 KB，保險絲 `RING_MAX_BYTES` 8MB（超過就提早裁到下一張關鍵幀）。
+  存檔那一下才序列化（重度三分鐘約 3000 筆、~50ms）。
+- 守護：`tests/unit/debug_recorder_ring.test.js`（裁切規則、關鍵幀 round-trip、錄十分鐘後存檔解回
+  當下畫面）、`tests/unit/debug_record_control.test.js`（單一錄製器的轉換）、上面那支 offline spec。
+
 ## 素材選用（逐卷測試的前提，選錯＝測試恆綠）
 逐卷 spec 會把 `cassettes/` 裡每一卷都跑一遍，但**不是每卷都能重現每個 bug**：
 

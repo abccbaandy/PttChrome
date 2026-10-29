@@ -722,6 +722,12 @@
   "options_debugMode_desc": {
     "message": "開啟後右下角的「⋯」浮動工具裡會出現錄製按鈕（任何畫面都有），可錄下連線收發資料與程式狀態供回報 bug 使用。此設定不會被儲存，重新整理後自動關閉。"
   },
+  "options_bgDebugRecord": {
+    "message": "背景自動錄製最近 3 分鐘"
+  },
+  "options_bgDebugRecord_desc": {
+    "message": "在背景持續錄下最近 3 分鐘的連線資料（只存在記憶體，不會上傳）。遇到難重現的 bug 時，按「⋯」裡的「存下最近 3 分鐘」或在指令面板輸入「錄製」，就能把剛剛發生的經過存成錄製檔。"
+  },
   "mergeImageCaption_on": {
     "message": "圖文並排（上圖下文）"
   },
@@ -772,6 +778,9 @@
   },
   "debugRecord_stop": {
     "message": "停止錄製"
+  },
+  "debugRecord_save": {
+    "message": "存下最近 3 分鐘"
   },
   "debugRecord_downloaded_warning": {
     "message": "已下載錄製檔。內容含你鍵入的所有按鍵（手動輸入的密碼無法自動遮蔽），分享前請自行檢查敏感資訊。"
@@ -1293,6 +1302,9 @@
   },
   "palette_safeModeOff": {
     "message": "關閉安全模式"
+  },
+  "palette_saveDebugRecord": {
+    "message": "存下最近 3 分鐘的錄製檔"
   },
   "palette_setting": {
     "message": "設定：{title}"

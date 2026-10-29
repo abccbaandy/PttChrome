@@ -62,3 +62,54 @@ test('toggleDebugRecording：開始回 true、焦點還給終端機', () => {
   app.debugRecorder.stop();
   app.debugRecorder = null;
 });
+
+// 背景錄製（pref bgDebugRecord → App.setBackgroundRecording）。
+test('背景錄製開／關 ⇒ 錄製器開在環形緩衝模式／丟棄，view 存檔鈕旗標跟著變並重畫', () => {
+  const app = makeApp();
+  app.bgDebugRecord = false;
+  app.conn = null;
+  app.setBackgroundRecording(true);
+  expect(app.debugRecorder.background).toBe(true);
+  expect(app.debugRecorder.isRecording).toBe(true);
+  expect(app.view.debugSaveButton).toBe(true);
+  expect(app.canSaveBackgroundRecording()).toBe(true);
+  expect(app.view.redraw).toHaveBeenCalledTimes(1);
+  app.setBackgroundRecording(true);
+  expect(app.view.redraw).toHaveBeenCalledTimes(1);
+  const recorder = app.debugRecorder;
+  app.setBackgroundRecording(false);
+  expect(recorder.isRecording).toBe(false);
+  expect(app.debugRecorder).toBe(null);
+  expect(app.view.debugSaveButton).toBe(false);
+  expect(app.canSaveBackgroundRecording()).toBe(false);
+});
+
+test('背景錄製中按錄製鈕 ⇒ 轉成手動錄製（同一個錄製器），面板不再列存檔', () => {
+  const app = makeApp();
+  app.bgDebugRecord = false;
+  app.conn = null;
+  app.setBackgroundRecording(true);
+  const recorder = app.debugRecorder;
+  expect(app.toggleDebugRecording()).toBe(true);
+  expect(app.debugRecorder).toBe(recorder);
+  expect(recorder.background).toBe(false);
+  expect(app.canSaveBackgroundRecording()).toBe(false);
+  recorder.stop({ discard: true });
+  app.debugRecorder = null;
+});
+
+test('重連（_attachConn）⇒ 錄製器改掛新連線', () => {
+  const app = makeApp();
+  const attachConn = vi.fn();
+  app.debugRecorder = { attachConn };
+  app.buf = { cols: 80, rows: 24 };
+  app.parser = {};
+  app.onConnect = vi.fn();
+  app.onClose = vi.fn();
+  const conn = {
+    setWireCharset: vi.fn(),
+    addEventListener: vi.fn(),
+  };
+  app._attachConn(conn);
+  expect(attachConn).toHaveBeenCalledWith(conn);
+});

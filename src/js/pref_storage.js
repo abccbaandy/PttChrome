@@ -130,6 +130,9 @@ export const DEFAULT_PREFS = {
   commandPaletteKey: "F4",
   // 指令面板空白時列出最近去過的看板與我的最愛、打板名開頭時排最前（command_palette.quickBoardItems）。
   paletteQuickBoards: true,
+  // 背景自動錄製最近 3 分鐘（js/debug_record_control.js）：環形緩衝只在記憶體，存檔要
+  // 使用者自己按。預設關：錄的是全部連線位元組（含鍵入），由需要回報 bug 的人自己開。
+  bgDebugRecord: false,
   // 重新整理（docs/screen-refresh.md）：F5／⌘R 在看板列表、文章列表、文章裡改成
   // 重整 PTT 畫面（其他畫面照舊交給瀏覽器）。瀏覽器網址列旁的重新整理按鈕頁面攔不到。
   refreshKeyIntercept: true,

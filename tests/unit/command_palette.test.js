@@ -72,6 +72,13 @@ describe("buildPaletteItems", () => {
     expect(got).not.toContain("action:safeModeOn");
   });
 
+  test("背景錄製開著（ctx.saveDebugRecord）才列「存下最近 3 分鐘」，打「錄製」找得到", () => {
+    expect(ids(buildPaletteItems("", {}))).not.toContain("action:saveDebugRecord");
+    expect(ids(buildPaletteItems("", { saveDebugRecord: true }))).toContain("action:saveDebugRecord");
+    expect(ids(buildPaletteItems("錄製", { saveDebugRecord: true }))[0]).toBe("action:saveDebugRecord");
+    expect(ids(buildPaletteItems("record", { saveDebugRecord: true }))[0]).toBe("action:saveDebugRecord");
+  });
+
   test("文章網址 ⇒ 第一項是開文，不列搜尋／設定", () => {
     const items = buildPaletteItems(`https://www.ptt.cc/bbs/Gossiping/${FN}.html`, LIST);
     expect(items[0]).toMatchObject({ kind: "article", target: { board: "Gossiping", aid: AID } });
