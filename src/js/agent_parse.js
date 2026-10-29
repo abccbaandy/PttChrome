@@ -100,12 +100,13 @@ const MODERN_TAIL_RE = /(?:\s(\d{1,3}(?:\.\d{1,3}){3}))?\s+(\d{2}\/\d{2}\/\d{4} 
 export function parseModernCommentLine(text) {
   const h = parseModernCommentHeader(text);
   if (!h) return null;
-  const m = text.match(/^\[\d+\] (\S+)/);
+  // 刪除的推文：單列，內容就是「留言已刪除」／「留言不顯示 (原因)」，沒有時間。
+  if (h.deleted) return { type: 'modern', seq: h.seq, user: h.user, content: h.deleted, ip: null, time: null, deleted: true };
   const t = text.match(MODERN_TAIL_RE);
   return {
     type: 'modern',
     seq: h.seq,
-    user: m[1],
+    user: h.user,
     content: '',
     ip: t && t[1] ? t[1] : null,
     time: t ? t[2] : null,
@@ -145,7 +146,9 @@ export function parseArticleLines(lines) {
   for (; i < lines.length; i++) {
     const text = lines[i];
     if (modern && text.charAt(0) === MODERN_COMMENT_BODY_MARK) {
-      const part = text.slice(1).trimEnd();
+      // 內容列的縮排：舊版 pmore 是「│」，現行 comments.c 的 body_indent 是「│ 」（檔案的 2 格
+      // 空白換掉之後才是原文）⇒ 只吃掉緊接的一格空白，原文自己的縮排留著。
+      const part = text.slice(1).replace(/^ /, '').trimEnd();
       modern.content = modern.content ? modern.content + '\n' + part : part;
       continue;
     }

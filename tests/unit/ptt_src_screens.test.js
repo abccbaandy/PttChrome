@@ -28,7 +28,12 @@ import {
   parseListArticleNum,
   parseListAuthor,
   subjectOfListText,
+  annotateComment,
+  FloorCounter,
+  ModernCommentThread,
 } from "../../src/js/comment_parse";
+import { parseArticleLines } from "../../src/js/agent_parse";
+import modernCommentsFx from "./fixtures/ptt_src_screens/modern_comments.json";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
 import articleListTallFx from "./fixtures/ptt_src_screens/article_list_tall.json";
@@ -1161,4 +1166,63 @@ describe("upstream pttbbs 產的離站流程（xyz.c#Goodbye）", () => {
     expect(isAnyKeyPause(screen.lastRowText)).toBe(true);
     expect(isGoodbyeConfirm(rowTexts)).toBe(false);
   });
+});
+
+describe("upstream pttbbs 產的新格式推文（post.svc 檔尾＋pmore 三種留言色彩主題）", () => {
+  // seed.tsv 的 Comment 板：作者 nina；[1] alice（帶 IP）、[2] bob（兩列內容）、[3] nina（原PO）、
+  // [4] carol 本人刪、[5] dave 別人刪、[6] erin。
+  const annotate = (rowTexts, blacklist) => {
+    const ctx = {
+      blacklist: new Set(blacklist),
+      showFloorNumbers: true,
+      floorCounter: new FloorCounter(),
+      highlightAuthor: true,
+      articleAuthor: "nina",
+      modernThread: new ModernCommentThread(),
+    };
+    return rowTexts.map((t) => annotateComment(t, ctx));
+  };
+  const rowOf = (rowTexts, re) => rowTexts.findIndex((t) => re.test(t));
+
+  for (const theme of ["classic", "simple", "bordered"]) {
+    describe(theme, () => {
+      const { buf, rowTexts } = screenAt(modernCommentsFx, theme);
+
+      test("六則的標頭列都認得（含刪除的兩種），樓號照 server 給的", () => {
+        const a = annotate(rowTexts, []);
+        const heads = a.filter((x) => x && x.modern && x.userid);
+        expect(heads.map((x) => x.userid)).toEqual(["alice", "bob", "nina", "carol", "dave", "erin"]);
+        expect(heads.every((x) => x.floor === undefined)).toBe(true);
+      });
+
+      test("黑名單連內容列一起藏；刪除的推文那一列也藏", () => {
+        const a = annotate(rowTexts, ["bob", "carol"]);
+        const bob = rowOf(rowTexts, /\[2\] bob /);
+        expect([a[bob], a[bob + 1], a[bob + 2]].map((x) => x && x.hidden)).toEqual([true, true, true]);
+        expect(a[bob + 3]).toMatchObject({ userid: "nina", hidden: false });
+        expect(a[rowOf(rowTexts, /\[4\] carol /)]).toMatchObject({ hidden: true });
+        expect(a[rowOf(rowTexts, /\[5\] dave /)]).toMatchObject({ hidden: false });
+      });
+
+      test("原PO 高亮的 id 欄落在畫面上 id 的那幾格（典雅邊框的「╭ 」「├ 」佔 3 格）", () => {
+        const a = annotate(rowTexts, []);
+        const row = rowOf(rowTexts, /\[3\] nina /);
+        const { authorIdStart, authorIdEnd } = a[row];
+        expect(buf.getRowText(row, authorIdStart, authorIdEnd)).toBe("nina");
+      });
+
+      test("agent 全文解析：六則、內容接上、刪除的帶原因", () => {
+        const { comments } = parseArticleLines(rowTexts.slice(0, -1));
+        expect(comments.map((c) => [c.seq, c.user, c.content])).toEqual([
+          [1, "alice", "第一則推文"],
+          [2, "bob", "第二則推文第一行\n第二行回 >>1"],
+          [3, "nina", "原PO回覆"],
+          [4, "carol", "留言已刪除"],
+          [5, "dave", "留言不顯示 (廣告)"],
+          [6, "erin", "最後一則"],
+        ]);
+        expect(comments[0]).toMatchObject({ ip: "1.2.3.4", time: "10/28/2026 12:00" });
+      });
+    });
+  }
 });

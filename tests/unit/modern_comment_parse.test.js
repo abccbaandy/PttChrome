@@ -29,12 +29,41 @@ const LEGACY = '推 olduser: 舊格式推文                                    
 
 describe('parseModernCommentHeader', () => {
   test('標頭列：樓號、id（小寫）、id 起始欄', () => {
-    expect(parseModernCommentHeader(H1)).toEqual({ seq: 1, userid: 'someuser', idCol: 4 });
+    expect(parseModernCommentHeader(H1)).toEqual({ seq: 1, userid: 'someuser', user: 'someuser', idCol: 4 });
     expect(parseModernCommentHeader(header(123, 'Abc12', '10/16/2026 13:45'))).toEqual({
       seq: 123,
       userid: 'abc12',
+      user: 'Abc12',
       idCol: 6,
     });
+  });
+
+  // 典雅邊框主題（comments.c#comment_themes）：標頭前多「╭ 」（第一則）／「├ 」（其他），
+  // id 與 creation 之間用 ─ 填。upstream 原始碼產的實畫面另由 ptt_src_screens.test.js 守。
+  test('典雅邊框：「╭ 」「├ 」前綴、─ 填充也認，id 欄往右 3 格', () => {
+    expect(parseModernCommentHeader('╭ [1] alice ──────── 1.2.3.4 10/28/2026 12:00')).toEqual({
+      seq: 1,
+      userid: 'alice',
+      user: 'alice',
+      idCol: 7,
+    });
+    expect(parseModernCommentHeader('├ [12] Bob ──────────── 10/28/2026 12:01')).toMatchObject({ seq: 12, userid: 'bob', idCol: 8 });
+    expect(parseModernCommentHeader('╰ [1] alice ──── 10/28/2026 12:00')).toBeNull();
+  });
+
+  // 刪除的推文（engine.go#RenderFullPostText）：單列、沒有 creation。
+  test('刪除的推文：「留言已刪除」「留言不顯示 (原因)」兩種都認，帶 deleted', () => {
+    expect(parseModernCommentHeader('[4] carol 留言已刪除')).toEqual({
+      seq: 4,
+      userid: 'carol',
+      user: 'carol',
+      idCol: 4,
+      deleted: '留言已刪除',
+    });
+    expect(parseModernCommentHeader('├ [5] dave 留言不顯示 (廣告)')).toMatchObject({ userid: 'dave', deleted: '留言不顯示 (廣告)' });
+    // 內文裡長得像但不是整列的
+    expect(parseModernCommentHeader('[4] carol 留言已刪除了')).toBeNull();
+    expect(parseModernCommentHeader('[4] carol 說他的留言已刪除')).toBeNull();
   });
 
   test('帶 IP 的 creation 也認', () => {
