@@ -16,8 +16,21 @@ export function isErrorHint(level) {
 }
 
 // 這則提示要不要顯示。showStatusHints 只有明確 false 才關（未設定＝預設開）。
-export function shouldShowHint(level, showStatusHints) {
-  return isErrorHint(level) || showStatusHints !== false;
+// underDialog：設定頁這類蓋滿畫面的對話框開著（term_view.setHintDialogCover）⇒ 使用者正在
+// 看對話框，背景的一般提示壓在上面只是擋字，先不顯示；錯誤照常（使用者必須知道）。
+export function shouldShowHint(level, showStatusHints, underDialog) {
+  if (isErrorHint(level)) return true;
+  return showStatusHints !== false && !underDialog;
+}
+
+// 底部浮動提示的 CSS bottom 值。平常讓開終端機的底部 inset（手機的底部工具列＋safe-area
+// ＋軟鍵盤，App._onVisualViewport 寫 --term-bottom-inset），工具列的 z-index 比提示高，
+// 不讓開就整個被蓋住。對話框蓋滿畫面時工具列被藏在它後面，再讓位就是停在畫面中間
+// 壓住對話框的字 ⇒ 貼到畫面最底（只讓 safe-area）。
+export function hintBottomCss(px, underDialog) {
+  return underDialog
+    ? 'calc(var(--safe-bottom, 0px) + 16px)'
+    : 'calc(var(--term-bottom-inset, 0px) + ' + px + 'px)';
 }
 
 // 底色／字色。錯誤用明顯的紅底白字；一般維持原本的深灰底。

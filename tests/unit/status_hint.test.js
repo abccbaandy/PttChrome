@@ -4,9 +4,12 @@
 // 行為合約：
 //   - 一般提示（讀取中、已切至原生、推文已送出…）在 showStatusHints=false 時不出現；
 //   - 錯誤提示（逾時切原生、操作失敗）永遠出現，且顏色跟一般提示不同（紅底）；
-//   - 逾時／偏離被迫切原生的出口一律以錯誤級送出。
+//   - 逾時／偏離被迫切原生的出口一律以錯誤級送出；
+//   - 設定頁蓋滿畫面時（setHintDialogCover）一般提示不出現、錯誤提示貼到畫面最底，
+//     不停在替底部工具列讓位的高度壓住設定說明（e2e：mobile_settings_hint.offline.spec.js）。
 import {
   HINT_ERROR,
+  hintBottomCss,
   hintColors,
   shouldShowHint,
 } from "../../src/js/status_hint";
@@ -37,6 +40,15 @@ describe("shouldShowHint", () => {
     expect(shouldShowHint(undefined, true)).toBe(true);
     expect(shouldShowHint(undefined, false)).toBe(false);
     expect(shouldShowHint(undefined, undefined)).toBe(true);
+  });
+  test("對話框蓋著：一般級不顯示、錯誤級照常", () => {
+    expect(shouldShowHint(undefined, true, true)).toBe(false);
+    expect(shouldShowHint(HINT_ERROR, true, true)).toBe(true);
+    expect(shouldShowHint(HINT_ERROR, false, true)).toBe(true);
+  });
+  test("離底距離：平常讓開工具列，對話框蓋著時只讓 safe-area", () => {
+    expect(hintBottomCss(48, false)).toBe("calc(var(--term-bottom-inset, 0px) + 48px)");
+    expect(hintBottomCss(48, true)).toBe("calc(var(--safe-bottom, 0px) + 16px)");
   });
   test("預設開啟", () => {
     expect(DEFAULT_PREFS.showStatusHints).toBe(true);
@@ -93,6 +105,60 @@ describe("TermView.flashListHint", () => {
     const el = document.querySelector(".ListHint");
     expect(el.dataset.level).toBe("info");
     expect(getComputedStyle(el).backgroundColor).toBe("rgba(20, 20, 20, 0.88)");
+  });
+});
+
+describe("TermView.setHintDialogCover（設定頁蓋滿畫面）", () => {
+  const cover = TermView.prototype.setHintDialogCover;
+  function coverView() {
+    const v = fakeView(true);
+    v.hideListHint = TermView.prototype.hideListHint;
+    v.setListLoading = setLoading;
+    return v;
+  }
+
+  test("蓋上：顯示中的一般提示收掉，之後的一般提示不出現", () => {
+    const v = coverView();
+    flash.call(v, "已切至原生操作", 20000);
+    const el = document.querySelector(".ListHint");
+    cover.call(v, true);
+    expect(el.style.opacity).toBe("0");
+    flash.call(v, "推文已送出", 20000);
+    expect(el.style.opacity).toBe("0");
+    clearTimeout(v._listHintTimer);
+  });
+
+  test("蓋著時錯誤提示照常、貼底；拿掉後回到讓位的位置", () => {
+    const v = coverView();
+    cover.call(v, true);
+    flash.call(v, "AID 跳文失敗：逾時", 20000, HINT_ERROR);
+    const el = document.querySelector(".ListHint");
+    expect(el.style.opacity).toBe("1");
+    expect(el.style.bottom).toBe(hintBottomCss(48, true));
+    cover.call(v, false);
+    expect(el.style.opacity).toBe("1");
+    expect(el.style.bottom).toBe(hintBottomCss(48, false));
+    flash.call(v, "已切至原生操作", 20000);
+    expect(el.style.opacity).toBe("1");
+    clearTimeout(v._listHintTimer);
+  });
+
+  test("蓋上錯誤提示不收；讀取中蓋著先藏、拿掉後照呼叫端要的復原", () => {
+    const v = coverView();
+    flash.call(v, "失敗", 20000, HINT_ERROR);
+    setLoading.call(v, true);
+    const loading = document.querySelector(".ListLoadingHint");
+    cover.call(v, true);
+    expect(document.querySelector(".ListHint").style.opacity).toBe("1");
+    expect(loading.style.display).toBe("none");
+    cover.call(v, false);
+    expect(loading.style.display).toBe("block");
+    // 蓋著期間呼叫端已經關掉讀取中 ⇒ 拿掉後不會跑出來
+    cover.call(v, true);
+    setLoading.call(v, false);
+    cover.call(v, false);
+    expect(loading.style.display).toBe("none");
+    clearTimeout(v._listHintTimer);
   });
 });
 

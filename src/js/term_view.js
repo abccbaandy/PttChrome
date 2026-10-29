@@ -26,7 +26,7 @@ import { readSelectionText, renderChunksAround, rowsFromScrollTop } from '../ren
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
-import { hintColors, shouldShowHint } from './status_hint';
+import { hintBottomCss, hintColors, shouldShowHint } from './status_hint';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { tryOpenSearchModal } from './article_search';
 import { isRefreshKeyEvent } from './screen_refresh';
@@ -204,7 +204,7 @@ function blankListCursorMark(row) {
 // App._onVisualViewport 寫 --term-bottom-inset）。工具列的 z-index 比提示高，不讓開就整個
 // 被蓋住；軟鍵盤只縮 visual viewport，position:fixed 的輸入框會落在鍵盤後面。
 function aboveBottomInset(px) {
-  return 'bottom:calc(var(--term-bottom-inset, 0px) + ' + px + 'px);';
+  return 'bottom:' + hintBottomCss(px, false) + ';';
 }
 
 export function TermView() {
@@ -2408,7 +2408,7 @@ TermView.prototype = {
   // `level` optional: HINT_ERROR（status_hint.js）＝失敗／被迫切原生，紅底且不受
   // showStatusHints 控制；省略＝一般提示，關掉 showStatusHints 就不顯示。
   flashListHint: function(msg, ms, level) {
-    if (!shouldShowHint(level, this.showStatusHints)) return;
+    if (!shouldShowHint(level, this.showStatusHints, this._hintDialogCover)) return;
     var el = this._listHintEl;
     if (!el) {
       el = document.createElement('div');
@@ -2425,6 +2425,7 @@ TermView.prototype = {
     }
     // 同一個元素輪流顯示兩級提示 ⇒ 每次都重設顏色與 data-level（測試抓手）。
     var colors = hintColors(level);
+    el.style.bottom = hintBottomCss(48, this._hintDialogCover);
     el.style.background = colors.background;
     el.style.color = colors.color;
     el.dataset.level = level || 'info';
@@ -2449,8 +2450,10 @@ TermView.prototype = {
   // filling past a window edge (list_session._setLoading). Small fixed pill in
   // the bottom-right corner — the frozen 24-row screen itself stays untouched.
   setListLoading: function(on) {
+    // 記下呼叫端要的狀態：設定頁蓋著時先藏，關掉時 setHintDialogCover 照它復原。
+    this._listLoadingWanted = !!on;
     // 「讀取中…」屬一般提示：關掉 showStatusHints 就不出現（關閉仍要照常隱藏）。
-    if (on && !shouldShowHint(null, this.showStatusHints)) on = false;
+    if (on && !shouldShowHint(null, this.showStatusHints, this._hintDialogCover)) on = false;
     var el = this._listLoadingEl;
     if (on && !el) {
       el = document.createElement('div');
@@ -2464,6 +2467,21 @@ TermView.prototype = {
       this._listLoadingEl = el;
     }
     if (el) el.style.display = on ? 'block' : 'none';
+  },
+
+  // 設定頁這類蓋滿畫面的對話框開關（ContextMenu 依 showsSettings 推導呼叫）。只動提示的
+  // 顯示與位置，不送鍵：蓋著時一般提示（含讀取中）先不顯示、已在顯示的收掉；錯誤提示
+  // 照常但貼到畫面最底（見 status_hint.hintBottomCss）。關掉時錯誤提示回到讓位的位置。
+  setHintDialogCover: function(on) {
+    on = !!on;
+    if (on === !!this._hintDialogCover) return;
+    this._hintDialogCover = on;
+    var el = this._listHintEl;
+    if (el) {
+      el.style.bottom = hintBottomCss(48, on);
+      if (on && el.dataset.level !== 'error') this.hideListHint();
+    }
+    if (this._listLoadingEl) this.setListLoading(!!this._listLoadingWanted);
   },
 
   // 手機列表卡片「開啟中」（P45，docs/mobile.md）：ListSession 開文交易開始時 on、

@@ -146,6 +146,11 @@
 設定搜尋與指令面板跳轉直接進分類。每次打開都從清單開始。桌機維持左欄分頁。
 守護 `pref_modal_narrow.test.jsx`（真版面，CSS 以 `?raw` 注入）、offline-mobile `mobile_float_tools.offline.spec.js`（真 tap＋真 popstate）。
 
+**設定頁開著時的狀態提示**：設定頁蓋住底部工具列，提示再替工具列讓位就是停在畫面中間壓字。ContextMenu 依 `showsSettings`
+呼叫 `term_view.setHintDialogCover`：一般提示（含讀取中）先不顯示、已在顯示的收掉；錯誤提示照常但貼到畫面最底
+（`status_hint.hintBottomCss`，只讓 safe-area）；關掉設定頁後回到工具列上方。只動顯示、不送鍵。
+守護 `status_hint.test.js`、offline-mobile `mobile_settings_hint.offline.spec.js`。
+
 ## 測試
 
 - unit：`mobile_layout.test.js`、`float_tools.test.js`、`pref_modal_narrow.test.jsx`、`mobile_toolbar.test.jsx`、`mobile_toolbar.test.js`、`mobile_ctrl.test.js`、`logout_session.test.js`、`comment_card.test.js`、`app_mobile_layout.test.js`、`mobile_surface.test.js`、
