@@ -1161,6 +1161,25 @@ span {
   background: rgba(255, 255, 255, 0.5);
 }
 
+/* 文章導覽軸顯示中（js/article_nav.js 在 .main 掛 .articleNavOn）：導覽軸就是這一頁的捲軸，
+   原生的那條只做**隱形**、寬度照留 —— 拿掉（scrollbar-width: none）內容會寬 10px，放大態
+   圖片（width:100%）跟著變高、手機換行版面的折行點也變，導覽軸一出現一消失畫面就位移。
+   捲動本身照舊是瀏覽器原生的（滾輪、觸控、鍵盤）。
+   Firefox 不吃 ::-webkit-scrollbar ⇒ 用 scrollbar-color；**不可以對 Chromium 也套**：設了
+   標準屬性，Chromium 就整組忽略 ::-webkit-scrollbar，捲軸寬變回系統預設（不是 10px）。
+   守護 tests/e2e/offline/article_nav_scrollbar.offline.spec.js。 */
+.main.articleNavOn::-webkit-scrollbar-track,
+.main.articleNavOn::-webkit-scrollbar-track:hover,
+.main.articleNavOn::-webkit-scrollbar-thumb,
+.main.articleNavOn::-webkit-scrollbar-thumb:hover {
+  background: transparent;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .main.articleNavOn {
+    scrollbar-color: transparent transparent;
+  }
+}
+
 /* 推文樓層徽章（Enhanced Add-on）：小字上標，插在 推/噓/→ 標記與作者 id 之間的空格
    （col 2，見 Row/LinkSegmentBuilder）。
    排版契約：盒寬 0 + position:relative 位移 → 對等寬格線的淨推進量為 0（不可破壞）。

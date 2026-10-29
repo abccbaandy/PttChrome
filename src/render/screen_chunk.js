@@ -106,6 +106,15 @@ export function renderChunksAround(el) {
     if (isScreenChunk(around[i])) around[i].classList.add(CHUNK_NEAR_CLASS);
 }
 
+// 塊現在照常渲染（預載邊界內／被選取展開）⇒ 塊內元素的 offsetTop 是真位置。其餘是
+// 閉塊：讀塊內元素的版面會逼瀏覽器當場把整塊排版（分塊省下的成本又付回去），只量塊本身。
+export function isChunkRendered(chunk) {
+  return (
+    chunk.classList.contains(CHUNK_NEAR_CLASS) ||
+    chunk.classList.contains(CHUNK_OPEN_CLASS)
+  );
+}
+
 // 存活中的 ChunkLayer（實務上只有一個）。readSelectionText 要在讀之前同步展開。
 const liveLayers = new Set();
 

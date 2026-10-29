@@ -436,6 +436,14 @@ export class ScreenController {
     this._pendingShift.clear();
   }
 
+  // 上一幀第 row 列的頂層節點（null＝這一列不佔版面：dropHidden 移除／已併進合併塊）。
+  // O(1)，不掃 DOM：文章導覽軸每次捲動都要量幾百個標記的位置（js/article_nav.js）。
+  // `lines` 不是上一幀畫的那一份 ⇒ undefined（列號對不上，呼叫端別量）。
+  rowNode(row, lines) {
+    if (!this._prevFrame || this._prevFrame.lines !== lines) return undefined;
+    return this._nodes[row] || null;
+  }
+
   // 游標底色的套用點。term_view.applyCursorHighlight 是唯一呼叫者。
   //
   // 快路徑：整列底色（col 0，絕大多數情形）只是把 class 從舊列搬到新列，**不重畫**

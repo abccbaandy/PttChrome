@@ -9,22 +9,32 @@
 //   2. 出現條件同推文列（pageState 3＋好讀開著＋不在 functionMode＋累積頁非空）：原生 pmore、
 //      列表、選單一律不出現。
 //   3. 只疊在終端機最右一欄上（像捲軸），不推動、不縮小終端機（docs/terminal-size.md LOCKED）。
+//   4. **它就是這一頁的捲軸**：顯示中 `.main` 掛 ARTICLE_NAV_ON_CLASS，原生捲軸隱形（寬度
+//      照留，main.css），右緣不會有兩條。標記與滑塊用同一把尺（像素位置 / scrollHeight）。
 import { analyzeArticle } from './article_tools';
 import { getImageProxyConfig } from './image_proxy';
 import { readEffectivePrefs } from './pref_storage';
 import { COMMENT_BAR_HEIGHT } from './comment_bar';
+import { offsetTopWithin } from './scroll_anchor';
+import { isScreenChunk, isChunkRendered } from '../render/screen_chunk';
 
 export const ARTICLE_NAV_ID = 'articleNav';
+// 顯示中掛在 `.main` 上：原生捲軸隱形（main.css）。
+export const ARTICLE_NAV_ON_CLASS = 'articleNavOn';
 // 軸的寬度（可點範圍，CSS px）。看得到的只有中間一條細線。
 export const ARTICLE_NAV_WIDTH = 14;
 // 一種標記最多畫幾個（幾千則推文的文章：再多也只是糊成一條）。
 const MARK_LIMIT = 300;
+// 標記那一列沒有自己的節點（黑名單整列移除、併進合併塊、手機收起來的列）時，前後找幾列。
+const LOOKAROUND = 24;
 
 export function isArticleNavTarget(el) {
   return !!(el && typeof el.closest === 'function' && el.closest('#' + ARTICLE_NAV_ID));
 }
 
-// 累積頁的分析結果 → 軸上的標記（純函式）。f ＝在累積頁裡的位置（0～1，列號 / 總列數）。
+// 累積頁的分析結果 → 軸上的標記（純函式）。f ＝在累積頁裡的位置（0～1）：這裡先給列號 /
+// 總列數，畫出來之後 ArticleNav._measure 換成像素位置（行內圖片讓列高極不均，列號比例跟
+// 滑塊對不上）。
 //   comments：第一則推文（只有一個；點它＝跳到推文）
 //   new：第一則新推文（new_comments.rowFor）
 //   mention：提到我的推文；image：圖片
@@ -51,6 +61,47 @@ export function articleNavGeometry({ mainRect, footerTop, commentBarShown }) {
   const height = Math.round(bottom - top);
   if (height < 80) return null;
   return { left: Math.round(mainRect.right - ARTICLE_NAV_WIDTH), top: Math.round(top), height };
+}
+
+// 頂層列節點在 scroller 內容裡的頂端（px，offsetTop 系，不含 transform，同滑塊的 scrollTop）。
+// 閉塊（長頁分塊，render/screen_chunk.js）裡的節點不量 —— 會逼瀏覽器當場排版整塊 —— 以塊的
+// 位置＋節點在塊裡的序位比例估；塊照常渲染之後（捲近／點「推」跳過去），下一次量測就是真位置。
+// 沒有版面（display:none）回 null。
+export function nodeTopWithin(node, scroller) {
+  const chunk = node.parentNode;
+  if (isScreenChunk(chunk) && !isChunkRendered(chunk)) {
+    const kids = chunk.children;
+    const i = Math.max(0, Array.prototype.indexOf.call(kids, node));
+    return offsetTopWithin(chunk, scroller) + (chunk.offsetHeight * i) / Math.max(1, kids.length);
+  }
+  if (node.offsetParent === null) return null;
+  return offsetTopWithin(node, scroller);
+}
+
+// 累積頁第 row 列的頂端（px）。那一列沒有自己的節點時：前面最近的是合併塊（div，不是單列
+// span）⇒ 它在塊裡，取塊頂；否則（黑名單整列移除）取後面最近一列（同 _scrollToPageRow）。
+// 量不到（上一幀畫的不是這份 lines）回 null。
+export function rowTopWithin(screen, lines, row, scroller) {
+  const node = screen.rowNode(row, lines);
+  if (node === undefined) return null;
+  if (node) {
+    const top = nodeTopWithin(node, scroller);
+    if (top != null) return top;
+  }
+  for (let r = row - 1; !node && r >= Math.max(0, row - LOOKAROUND); --r) {
+    const prev = screen.rowNode(r, lines);
+    if (!prev) continue;
+    if (prev.getAttribute('type') !== 'bbsrow') return nodeTopWithin(prev, scroller);
+    break;
+  }
+  const end = Math.min(lines.length, row + LOOKAROUND);
+  for (let r = row + 1; r < end; ++r) {
+    const next = screen.rowNode(r, lines);
+    if (!next) continue;
+    const top = nodeTopWithin(next, scroller);
+    if (top != null) return top;
+  }
+  return null;
 }
 
 const EMPTY = { commentRow: null, marks: [] };
@@ -89,6 +140,10 @@ ArticleNav.prototype = {
   _set: function(patch) {
     const next = Object.assign({}, this._state, patch);
     if (Object.keys(patch).every((k) => next[k] === this._state[k])) return;
+    if (next.visible !== this._state.visible) {
+      const disp = (this._core.view || {}).mainDisplay;
+      if (disp && disp.classList) disp.classList.toggle(ARTICLE_NAV_ON_CLASS, next.visible);
+    }
     this._state = next;
     this._listeners.forEach(function(fn) {
       fn(next);
@@ -114,6 +169,7 @@ ArticleNav.prototype = {
     if (inst !== this._inst || head !== this._head || acc.length < this._lines.length) {
       this._lines = [];
       this._head = head;
+      this._measured = null;
     }
     this._inst = inst;
     if (acc.length === this._lines.length) return false;
@@ -159,9 +215,64 @@ ArticleNav.prototype = {
       this._selfId = selfId;
       this._newRow = newRow;
       const m = this._lines.length ? navMarks(analyzeArticle(this._lines, getImageProxyConfig(), selfId), this._lines.length, newRow) : EMPTY;
-      Object.assign(patch, { total: this._lines.length, commentRow: m.commentRow, marks: m.marks });
+      // 同一篇裡還在的標記沿用上次量到的像素位置（不然每補一頁都先跳回列號比例、下一幀才回來）。
+      const measured = (this._state.visible && this._measured) || new Map();
+      const marks = m.marks.map((x) => (measured.has(x.kind + ':' + x.row) ? Object.assign({}, x, { f: measured.get(x.kind + ':' + x.row) }) : x));
+      Object.assign(patch, { total: this._lines.length, commentRow: m.commentRow, marks: marks });
     }
     this._set(patch);
+    this._watch();
+    this._scheduleMeasure();
+  },
+
+  // 標記位置會跟著版面變（圖片載入、閉塊照常渲染後換成實測高度、放大縮小），而那些都不經
+  // settle ⇒ 捲動與內容尺寸變化時重量（rAF 合併）。控制器跟 app 同壽，不必拆。
+  _watch: function() {
+    const view = this._core.view || {};
+    const disp = view.mainDisplay;
+    if (this._watching || !disp || typeof disp.addEventListener !== 'function') return;
+    this._watching = true;
+    const self = this;
+    const kick = function() {
+      if (self._state.visible) self._scheduleMeasure();
+    };
+    disp.addEventListener('scroll', kick, { passive: true });
+    if (view.mainContainer && typeof ResizeObserver === 'function') new ResizeObserver(kick).observe(view.mainContainer);
+  },
+
+  _scheduleMeasure: function() {
+    if (this._measureRaf || typeof requestAnimationFrame !== 'function') return;
+    const self = this;
+    this._measureRaf = requestAnimationFrame(function() {
+      self._measureRaf = 0;
+      self._measure();
+    });
+  },
+
+  // 標記換成像素尺：該列在 .main 內容裡的頂端 / scrollHeight —— 與滑塊（scrollTop /
+  // scrollHeight）同一把尺。列號 / 總列數在有行內圖片的文章差一大截（圖片那一列幾百 px）。
+  // 量不到（還沒畫、假 view）就留著 navMarks 的列號比例。
+  _measure: function() {
+    const s = this._state;
+    const view = this._core.view;
+    const disp = view && view.mainDisplay;
+    const screen = view && view.componentScreen;
+    if (!s.visible || !s.marks.length || !disp || !screen || typeof screen.rowNode !== 'function') return;
+    const h = disp.scrollHeight;
+    if (!h) return;
+    const lines = this._core.buf.pageLines || [];
+    let changed = false;
+    const marks = s.marks.map(function(m) {
+      const top = rowTopWithin(screen, lines, m.row, disp);
+      if (top == null) return m;
+      const f = Math.min(1, Math.max(0, top / h));
+      if (Math.abs(f - m.f) < 1e-4) return m;
+      changed = true;
+      return Object.assign({}, m, { f: f });
+    });
+    if (!changed) return;
+    this._measured = new Map(marks.map((x) => [x.kind + ':' + x.row, x.f]));
+    this._set({ marks: marks });
   },
 
   // 跳到累積頁的第 row 列（好讀的視口，不送鍵）。
