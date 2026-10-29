@@ -15,7 +15,7 @@
 import { isHiddenListText, listFilterOf } from './list_row_filter';
 import { charCells } from './string_util';
 import { refreshTargetOf } from './screen_refresh';
-import { submitSerializedSteps, beginInFlight, endInFlight } from './article_search';
+import { submitSerializedSteps, submitBlockedHint, beginInFlight, endInFlight } from './article_search';
 import { endLanded, numJumpLanded } from './aid_navigation';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
@@ -234,7 +234,7 @@ UnreadJump.prototype = {
         resumeOnLanding: true
       })
     )
-      this._hint('指令處理中，請稍候再試');
+      this._hint(submitBlockedHint(core, '指令處理中，請稍候再試'));
     return true;
   }
 };

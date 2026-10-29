@@ -15,7 +15,7 @@
 // 回好讀——已讀標記全變，累積 buffer 本來就過時），原生時走 CommandQueue。
 
 import { refreshTargetOf } from './screen_refresh';
-import { submitSerializedSteps } from './article_search';
+import { submitSerializedSteps, submitBlockedHint } from './article_search';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
@@ -102,7 +102,7 @@ MarkAllRead.prototype = {
         resumeOnLanding: true
       })
     ) {
-      this._hint('指令處理中，請稍候再試');
+      this._hint(submitBlockedHint(core, '指令處理中，請稍候再試'));
       return false;
     }
     return true;

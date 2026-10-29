@@ -91,7 +91,15 @@ import {
 import { CommandQueue } from "../../src/js/command_queue";
 import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
 import { pushGateFacts, shouldInterceptPushKey } from "../../src/js/long_push_gate";
-import { isSearchPromptFrame, searchGateFacts } from "../../src/js/article_search";
+import {
+  isSearchPromptFrame,
+  searchGateFacts,
+  submitSearch,
+  submitSerializedSteps,
+  submitBlockedHint,
+  PROMPT_PENDING_HINT,
+} from "../../src/js/article_search";
+import { BoardTabs } from "../../src/js/board_tabs";
 import { toolbarContextFromFacts } from "../../src/js/mobile_toolbar";
 import {
   refreshTargetFromFacts,
@@ -1253,4 +1261,56 @@ describe("upstream pttbbs 產的新格式推文（post.svc 檔尾＋pmore 三種
       });
     });
   }
+});
+
+// 浮在畫面上的送鍵入口（看板分頁、首頁看板卡片、搜尋送出、F5 重整、找未讀、全部已讀）在使用者
+// 自己按出 prompt 之後還按得到。多步序列的第一個鍵（s、/、a、Z、End…）會被打進輸入欄
+// （「搜尋標題:」「跳至第幾項」）或被型別選單／一鍵 prompt 當成答案 ⇒ 共用漏斗
+// submitSerializedSteps／submitSearch 用本幀事實（buf.isPromptPending）擋下，一個 byte 都不送。
+describe("upstream pttbbs 產的 prompt 開著時，替使用者送的多步序列不出發", () => {
+  function coreAt(fx, name) {
+    const { buf } = screenAt(fx, name);
+    const sent = [];
+    const queue = new CommandQueue({
+      send: (d) => sent.push(d),
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+    });
+    return { core: { buf, commandQueue: queue, activeListSession: () => null }, sent };
+  }
+  const PROMPT_FRAMES = [
+    [searchPromptsFx, "title"],
+    [searchPromptsFx, "author"],
+    [searchPromptsFx, "push"],
+    [pushFx, "push-1"],
+  ];
+
+  test("列表上沒有 prompt：照常出發（對照組）", () => {
+    const { core, sent } = coreAt(searchPromptsFx, "list");
+    expect(submitBlockedHint(core)).not.toBe(PROMPT_PENDING_HINT);
+    expect(submitSearch(core, "board", "Movie")).toBe(true);
+    expect(sent).toEqual(["s\f"]);
+  });
+
+  test.each(PROMPT_FRAMES.map(([fx, name]) => [name, fx]))("%s：搜尋／換板／多步序列都不送", (name, fx) => {
+    const { core, sent } = coreAt(fx, name);
+    expect(core.buf.isPromptPending()).toBe(true);
+    expect(submitSearch(core, "board", "Movie")).toBe(false);
+    expect(submitSearch(core, "title", "測試")).toBe(false);
+    expect(submitSerializedSteps(core, [{ keys: "\x1b[4~", kind: "unread-jump" }], {})).toBe(false);
+    expect(sent).toEqual([]);
+    expect(core.searchInFlight).toBeFalsy();
+    expect(submitBlockedHint(core)).toBe(PROMPT_PENDING_HINT);
+  });
+
+  test("看板分頁：「搜尋標題」prompt 開著時點分頁 ⇒ 不送 s、提示先完成輸入", () => {
+    const { core, sent } = coreAt(searchPromptsFx, "title");
+    const hints = [];
+    core.view = { flashListHint: (msg) => hints.push(msg) };
+    const tabs = new BoardTabs(core, { storage: null });
+    tabs._state = { ...tabs._state, visible: true, current: "Test", tabs: ["Test", "Movie"] };
+    expect(tabs.open("Movie")).toBe(false);
+    expect(sent).toEqual([]);
+    expect(hints).toEqual([PROMPT_PENDING_HINT]);
+  });
 });

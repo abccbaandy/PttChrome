@@ -30,6 +30,7 @@ import { footerCaption, EDITOR_CAPTION } from './screen_captions';
 import {
   isSearchPromptFrame,
   searchGateFacts,
+  submitBlockedHint,
   submitSerializedSteps
 } from './article_search';
 import { landedOnBoard, SLOW_STEP_BUDGET } from './aid_navigation';
@@ -336,7 +337,7 @@ ScreenRefresh.prototype = {
       })
     )
       return true;
-    this._hint('指令處理中，請稍候再重新整理');
+    this._hint(submitBlockedHint(core, '指令處理中，請稍候再重新整理'));
     return false;
   }
 };
