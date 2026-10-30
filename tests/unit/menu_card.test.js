@@ -152,6 +152,13 @@ test("menuCardParts：不是選單項回 null", () => {
   expect(menuCardParts(LINES[22])).toEqual({ key: "G", desc: "oodbye         離開，再見…" });
 });
 
+test("動態看板區（row 1～11）以 (X) 開頭的行不變成按鈕（menu.c#adbanner）", () => {
+  const banner = line("   (A) 動態看板活動：留言抽獎");
+  expect(buildMenuCard({ chars: banner, row: 3 })).toBe(null);
+  expect(buildMenuCard({ chars: banner, row: 11 })).toBe(null);
+  expect(buildMenuCard({ chars: banner, row: 14 })).not.toBe(null);
+});
+
 test("CSS 高度／字級與常數一致", () => {
   const card = mainCss.match(/span\.menuCard \{([^}]*)\}/)[1];
   expect(card).toContain(`height: ${MENU_CARD_PX}px;`);

@@ -41,6 +41,28 @@ test("空列、非字串、行中出現的 (X) 都不是選單項", () => {
   expect(parseMenuItemRow("   1   + (A) 標題")).toBe(null);
 });
 
+// menu.c#adbanner：動態看板／點歌寫在 row 1～FILMROW(11)（move(1,0) 起 out_lines 11 列），
+// 選單項從 menu_row(12) 以下才開始（menu.c#decide_menu_row）。別人寫的動態看板某一行剛好
+// 以「(A)」開頭時，只看列文字形狀會被當成選單項 ⇒ 可點、上底色、手機變大按鈕，點下去送
+// ↑↓＋Enter 落到別的項目（選單上下會繞）。帶列號時 row 1～11 一律不是選單項。
+describe("動態看板區（row 1～11）不是選單項", () => {
+  const BANNER_LINE = "   (A) 動態看板活動：留言抽獎";
+
+  test("同一段文字在動態看板區不算、在選單區算", () => {
+    for (let r = 1; r <= 11; ++r) expect(parseMenuItemRow(BANNER_LINE, r)).toBe(null);
+    expect(parseMenuItemRow(BANNER_LINE, 12)).toEqual({ key: "A" });
+    expect(parseMenuItemRow(BANNER_LINE, 14)).toEqual({ key: "A" });
+  });
+
+  test("錄製畫面的動態看板換成 (X) 開頭的行，選單項列不變", () => {
+    const rows = MAIN_MENU_ROWS.slice();
+    rows[3] = BANNER_LINE;
+    rows[11] = "  (1) 點歌給你";
+    const items = rows.map((t, i) => (parseMenuItemRow(t, i) ? i : -1)).filter((i) => i >= 0);
+    expect(items).toEqual(MAIN_MENU_ITEM_ROWS);
+  });
+});
+
 describe("isMenuScreen", () => {
   test("主選單：標題就夠", () => {
     expect(isMenuScreen(1, MAIN_MENU_ROWS[0], "")).toBe(true);

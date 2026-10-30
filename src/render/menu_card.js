@@ -25,9 +25,10 @@ export const MENU_CARD_PX = 44;
 
 // 選單項 → { key, desc }；不是選單項回 null。desc ＝ `(X)` 之後的整段（保留中間的
 // 對齊空白，按鈕用 white-space: pre，各項 (X) 起點一致 ⇒ 中文名稱仍對齊）。
-export function menuCardParts(chars) {
+// row（列號）有給時，動態看板區的列一律不是（見 menu_items.MENU_BANNER_LAST_ROW）。
+export function menuCardParts(chars, row) {
   const text = rowToText(chars).replace(/\s+$/, "");
-  const item = parseMenuItemRow(text);
+  const item = parseMenuItemRow(text, row);
   if (!item) return null;
   const open = text.indexOf("(" + item.key + ")");
   return { key: item.key, desc: text.slice(open + 3) };
@@ -39,7 +40,7 @@ export function isBlankRow(chars) {
 }
 
 export function buildMenuCard({ chars, row, highlightClass }) {
-  const parts = menuCardParts(chars);
+  const parts = menuCardParts(chars, row);
   if (!parts) return null;
   return {
     node: el(
