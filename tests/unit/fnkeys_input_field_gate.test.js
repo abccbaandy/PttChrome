@@ -41,6 +41,12 @@ describe("輸入欄開著時不得產生功能鍵按鈕", () => {
     expect(block).toContain("isCursorOnInputField()");
   });
 
+  test("選單的 row 1（動態看板）不掃：functionKeyRows 帶 buf.isMenuScreen()", () => {
+    // 行為端：tests/e2e/offline/menu_banner_fnkeys.offline.spec.js。
+    const block = after("let fnRows = null;", 400);
+    expect(block).toMatch(/functionKeyRows\([^;]*isMenuScreen\(\)/);
+  });
+
   test("_mirrorStatusRowToFooter 的 gate 也含 isCursorOnInputField", () => {
     // #easyReadingLastRow 是**唯一不經 computeAnnotations** 的渲染路徑，
     // 它自己呼叫 parseFunctionKeys ⇒ gate 必須各自寫一次。
