@@ -1363,9 +1363,12 @@ TermView.prototype = {
       this.buf.useMouseBrowsing &&
       !this.buf.isCursorOnInputField()
     ) {
+      // 選單的 row 1 是動態看板不是提示列（見 functionKeyRows）。override 把看板列表 pin 成 1
+      // 時 buf.pageState 仍是 2 ⇒ isMenuScreen 不成立，照舊掃 row 1。
       fnRows = functionKeyRows(
         ov.pageState != null ? ov.pageState : this.buf.pageState,
-        lines.length
+        lines.length,
+        this.buf.isMenuScreen()
       );
     }
     this.componentScreen = renderScreen(

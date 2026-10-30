@@ -376,6 +376,16 @@ describe("functionKeyRows", () => {
     expect(functionKeyRows(4, 24)).toEqual([1, 23]);
   });
 
+  // menu.c#adbanner：選單（主功能表與子選單）的 row 1～11 是動態看板／點歌（out_lines
+  // SHM->notes[i]），內容是別人寫的 ANSI 圖，不是提示列。裡面的 `(G)`、`[P]` 不可以變成
+  // 按鈕：點下去會在選單上送那個鍵（休閒聊天區的 P＝切換呼叫器，主功能表的 G＝離站）。
+  test("選單畫面（menuScreen）：row 1 是動態看板，只掃最後一列", () => {
+    expect(functionKeyRows(1, 24, true)).toEqual([23]);
+    expect(functionKeyRows(1, 24, false)).toEqual([1, 23]);
+    // menuScreen 只對 pageState 1 有意義（buf.isMenuScreen 也只在 1 成立）。
+    expect(functionKeyRows(2, 24, true)).toEqual([1, 23]);
+  });
+
   test("READING：只有最後一列", () => {
     expect(functionKeyRows(3, 24)).toEqual([23]);
   });

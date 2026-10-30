@@ -278,12 +278,18 @@ export function parseFunctionKeys(chars) {
 // **由 term_view 算好交給 computeAnnotations**，不在標註層自行推導：好讀累積長頁的
 // lines 是 buf.pageLines（數千列），`lines.length - 1` 是**內文最後一行**而不是狀態
 // 列，推導必錯。回 null ＝這個畫面沒有功能鍵列。
-export function functionKeyRows(pageState, rows) {
+//
+// menuScreen（buf.isMenuScreen()）：pageState 1 底下的選單（menu.c#domenu，主功能表與
+// 子選單）。它的 row 1 不是提示列，是 menu.c#adbanner 的動態看板／點歌
+// （move(1, 0) 起 out_lines(SHM->notes[i], 11)），別人寫的 ANSI 圖 ⇒ 只掃最後一列。
+// 掃了的話圖裡的 `(G)`、`[P]` 會變成按鈕，點下去在選單上送那個鍵。
+export function functionKeyRows(pageState, rows, menuScreen) {
   if (!rows || rows < 2) return null;
   switch (pageState) {
-    // 1 MENU（主功能表／看板列表）、2 LIST（文章列表）、4 LIST 變體：
+    // 1 MENU（看板列表／信件列表／精華區；選單見上）、2 LIST（文章列表）、4 LIST 變體：
     // 提示列在 row 1（bbs.c:663 / board.c:1330），vs_footer 在最後一列。
     case 1:
+      return menuScreen ? [rows - 1] : [1, rows - 1];
     case 2:
     case 4:
       return [1, rows - 1];
