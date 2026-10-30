@@ -15,6 +15,8 @@ import { footerCaption, MAIL_LIST_CAPTIONS } from './screen_captions';
 export const MAIL_HEADER_RE = /編號\s+日\s*期\s+作\s*者\s+信\s*件\s*標\s*題/;
 // 欄位標題列最多出現在第幾列（標題列、按鍵說明列之後；舊版少一列也吃）。
 const HEADER_MAX_ROW = 3;
+// 指紋要看的上方列數（term_buf 只解這幾列＋底列）。
+export const MAIL_HEADER_SCAN_ROWS = HEADER_MAX_ROW + 1;
 
 const MAIL_ROW_RE = /^([>●])?\s*(\d+)\s(?:([+MmRrD])\s)?\s*(\d{1,2}\/\d{2})\s+(\S+)\s+(\S.*?)\s*$/;
 const UNREAD_MARKS = '+MR';

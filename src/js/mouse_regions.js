@@ -272,6 +272,8 @@ function listEdgeRegion(row, col, rows, cols, bodyTop, bodyBottom) {
 //   menuScreen     這一幀是不是選單（主功能表或子選單，menu_items.isMenuScreen）。只有 pageState 1 看。
 //   menuItemRow    選單的這一列是不是選單項（menu_items.parseMenuItemRow）。
 //                  menuScreen 時不是選單項的列（ANSI 圖區）一律 NONE。
+//   mailHeaderRow  信件列表（pageState 1，term_buf.mailListHeaderRow）的欄位標題列；不是
+//                  信件列表＝-1／不傳。只有它下面、狀態列上面的非空列（lineEmpty）是信件。
 //   inputPrompt    PTT 開著 vgetstring 輸入框（buf.isCursorOnInputField()）
 //   dismiss        這一幀有沒有滑鼠關得掉的框（screen_dismiss.resolveDismiss 的
 //                  結果，null ＝沒有）。**優先於 inputPrompt**，見下方。
@@ -398,6 +400,10 @@ export function resolveMouseRegion(input) {
       // ⇒ 什麼都不是（不上底色、點了不送 ↑↓＋Enter、也沒有退出帶）。選單項由列文字
       // 形狀判（menu_items.parseMenuItemRow，呼叫端算好傳進來），依據見該檔檔頭。
       if (o.menuScreen && !o.menuItemRow) return NONE;
+      // 信件列表（mail.c 走 read.c 的 i_read，版面同文章列表）：說明列、欄位標題列、
+      // 最後一封下面的空列都不是信件。read.c#read_move_cursor 把 ↓ 夾在最後一封、
+      // 第一封再 ↑ 繞到最後一封 ⇒ 點那些列會變成「打開最後一封信」（還標成已讀）。
+      if (o.mailHeaderRow >= 0 && (row <= o.mailHeaderRow || o.lineEmpty)) return NONE;
       // 同 case 2/4：左 7 欄恆為退出，不看點擊範圍設定。
       if (col >= 0 && col < EXIT_COL_END) {
         return {

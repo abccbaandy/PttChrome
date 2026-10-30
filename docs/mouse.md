@@ -79,6 +79,7 @@ PTT server 時整張表都不作數，一律回 `NONE`。一條早退同時關�
 | 4（LIST 變體） | `1 < row < rows-2`，其餘同上兩列 | 同上 | 同上 | 同上 |
 | 1（MENU／看板列表） | `0 < row < rows-1` 且 `col < 7` | `exit` | `back`（PNG） | 不上色 |
 | 1 | `0 < row < rows-1` | `col >= S` → `enter(row)`，否則 `none` | 可點區 `pointer` | `[S, 行尾)` |
+| 1（信件列表） | 欄位標題列以上、或該列是空的 | `none`（read.c 的 ↓ 夾在最後一封、第一封 ↑ 繞到最後一封 ⇒ 點了會打開最後一封） | `auto` | 不上色 |
 | 3（READING） | 指標在推文列且 `col ∈ pusherRange` | `none`（點擊由推文高亮分支接手） | `pointer` | 不上色 |
 | 3（READING） | `col < 7` | `exitArticle` | `back`（PNG） | 不上色 |
 | 3 | 其餘 | `none` | `auto` | 不上色 |

@@ -293,6 +293,19 @@ export const SCENES = [
     steps: [{ name: 'menu' }, { keys: '\x1am', name: 'mail' }],
   },
   {
+    // 信件列表 ⏎ 讀信（mail.c#mail_read → more()）：跟看板文章同一個 pmore 狀態列 ⇒ pageState 3、
+    // 好讀接手；← 離開回信件列表（P31 信箱卡片的延伸：讀信接不接得上好讀）。
+    file: 'mail_read',
+    entry: 'menu',
+    rows: 24,
+    steps: [
+      { name: 'menu' },
+      { keys: '\x1am', name: 'mail' },
+      { keys: '\r', name: 'read' },
+      { keys: '\x1b[D', name: 'back' },
+    ],
+  },
+  {
     // 編輯器（edit.c）：在自己的文章上按 E ⇒ vedit，底列「 編輯文章 」caption＋右側狀態框
     // （插入／取代、旗標、行:欄）。term_buf.setPageState 靠它認 pageState 6。
     // ^X ⇒ edit.c#write_file 的「檔案處理」：getdata(2, 0, "確定要儲存檔案嗎？ ")，空答案＝[S] 存檔
