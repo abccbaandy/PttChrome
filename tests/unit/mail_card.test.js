@@ -58,17 +58,17 @@ describe("parseMailRow／isMailListRows", () => {
     ]);
   });
 
-  test("不看 pageState：setPageState 對信件列表沒有分支（值沿用上一畫面），單獨畫出來也認得出", () => {
+  test("單獨畫出來（沒有經過主功能表那一幀）也認得出，setPageState 一樣定成 1", () => {
     const buf = new TermBuf(mailListFx.cols, mailListFx.rows);
     buf.setView({ update() {}, updateCursorPos() {}, refreshCursorVisibility() {}, applyCursorHighlight() {}, blinkOn: false });
     buf.useMouseBrowsing = false;
     const parser = new AnsiParser(buf);
     for (const f of mailListFx.frames) parser.feed(f.bytes);
-    buf.notify(); // 只 notify 一次：沒有經過主功能表那一幀 ⇒ pageState 不是 1
+    buf.notify(); // 只 notify 一次：沒有經過主功能表那一幀，pageState 不是沿用來的
     clearTimeout(buf.timerUpdate);
     if (buf._settleTimer) clearTimeout(buf._settleTimer);
-    expect(buf.pageState).not.toBe(1);
     expect(buf.isMailListScreen()).toBe(true);
+    expect(buf.pageState).toBe(1);
   });
 
   test("各種狀態與欄寬：已讀、標記、已回、轉寄、個位數月份、舊版欄寬、● 游標", () => {

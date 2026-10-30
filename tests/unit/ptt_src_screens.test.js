@@ -65,6 +65,8 @@ import articlePrefFx from "./fixtures/ptt_src_screens/article_pref.json";
 import boardCompleteFx from "./fixtures/ptt_src_screens/board_complete.json";
 import editorFx from "./fixtures/ptt_src_screens/editor.json";
 import mailListFx from "./fixtures/ptt_src_screens/mail_list.json";
+import mailReadFx from "./fixtures/ptt_src_screens/mail_read.json";
+import { parseMailRow } from "../../src/js/mail_list";
 import { footerCaption, isArticleListFooter, MAIL_LIST_CAPTIONS } from "../../src/js/screen_captions";
 import { decideInsertMode } from "../../src/js/image_upload";
 import {
@@ -456,6 +458,42 @@ describe("upstream pttbbs 產的信件列表（主功能表 Ctrl+Z m）", () => 
   test("首頁儀表板的「新信」落地判準：已離開主功能表", () => {
     expect(isHomeScreen(screenAt(mailListFx, "menu").facts)).toBe(true);
     expect(isHomeScreen(facts)).toBe(false);
+  });
+});
+
+describe("upstream pttbbs 產的讀信（信件列表 ⏎ → mail.c#mail_read 的 more() → ← 回列表）", () => {
+  const at = (name) => {
+    const s = screenAt(mailReadFx, name, { perFrame: true });
+    s.buf.useMouseBrowsing = true;
+    return s;
+  };
+
+  test("讀信是同一個 pmore 狀態列 ⇒ pageState 3（好讀接手）", () => {
+    const { buf, rowTexts, facts } = at("read");
+    expect(parseStatusRow(rowTexts[facts.rows - 1])).not.toBeNull();
+    expect(buf.pageState).toBe(3);
+  });
+
+  // setPageState 以前認不出信件列表（欄位標題列右端「(大小:N篇)」另一個底色），pageState 沿用
+  // 上一幀 ⇒ 從主功能表進來是 1、讀完回來黏在 3：點信件沒反應、游標列沒底色、App Bar 是信的標題。
+  test("讀完 ← 回信件列表：pageState 跟從主功能表進來一樣是 1，不黏在文章的 3", () => {
+    expect(at("mail").buf.pageState).toBe(1);
+    const { buf } = at("back");
+    expect(buf.isMailListScreen()).toBe(true);
+    expect(buf.pageState).toBe(1);
+  });
+
+  // read.c#read_move_cursor：↓ 夾在最後一封、第一封再 ↑ 繞到最後一封 ⇒ 點說明列／欄位標題列／
+  // 下面的空列以前會送「移游標＋⏎」，打開最後一封信。
+  test("滑鼠：只有信件列點得下去（兩種進來的路都一樣）", () => {
+    for (const name of ["mail", "back"]) {
+      const { buf, rowTexts } = at(name);
+      const items = rowTexts.map((t, y) => (parseMailRow(t) ? y : -1)).filter((y) => y >= 0);
+      expect(items, name).toEqual([3, 4, 5]);
+      for (const y of items) expect(buf._resolveMouseRegionAt(40, y), `${name} row ${y}`).toMatchObject({ action: "enter", row: y });
+      for (const y of [1, 2, 6, 12, buf.rows - 2])
+        expect(buf._resolveMouseRegionAt(40, y).action, `${name} row ${y}`).toBe("none");
+    }
   });
 });
 

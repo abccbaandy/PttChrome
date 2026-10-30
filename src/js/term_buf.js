@@ -22,7 +22,7 @@ import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
 import { classifyPushScreen } from './push_screen';
 import { parseMenuItemRow, isMenuScreen } from './menu_items';
-import { isMailListFooter, isMailListRows } from './mail_list';
+import { isMailListFooter, isMailListRows, mailHeaderRow, MAIL_HEADER_SCAN_ROWS } from './mail_list';
 import { footerCaption, isEditorFooter } from './screen_captions';
 import {
   ARCHIVE_LIST,
@@ -1491,6 +1491,16 @@ TermBuf.prototype = {
       this.pageState = 3; // READING
       return;
     }
+    // 信件列表（mail.c 走 read.c 的 i_read）：底下的單色判準認不出它（欄位標題列右端的
+    // 「(大小:N篇)」另一個底色），以前 pageState 沿用上一個畫面 ⇒ 從主功能表進來是 1、
+    // 讀完一封信 ← 回來卻黏在 3（文章）：點信件沒反應、游標列沒底色、手機 App Bar 還是
+    // 那封信的標題。一律定成 1，與從主功能表進來時相同（滑鼠只認信件列，見
+    // mouse_regions 的 mailHeaderRow）。認不出 ⇒ 照舊走下面。
+    if (this.isMailListScreen()) {
+      this.pageState = 1; // MENU（信件列表）
+      this.pagerFromEssence = false;
+      return;
+    }
 
     var firstRowText = this.getRowText(0, 0, cols);
 
@@ -1664,14 +1674,23 @@ TermBuf.prototype = {
     );
   },
 
-  // 信件列表（mbbsd/mail.c，判定見 mail_list.js）。**不看 pageState**：setPageState 對信件
-  // 列表沒有分支（標題不在 MENU_TITLES、底列不是狀態列、欄位標題列不是單色），pageState
-  // 沿用上一個畫面的值（從主功能表進來＝1、讀完信回來可能是別的）⇒ 只靠畫面指紋。
+  // 信件列表（mbbsd/mail.c，判定見 mail_list.js）。**只靠畫面指紋，不看 pageState**；
+  // setPageState 反過來用它把信件列表定成 1（見那裡）。
   isMailListScreen: function() {
-    if (!isMailListFooter(this.getRowText(this.rows - 1, 0, this.cols))) return false;
+    return this.mailListHeaderRow() >= 0;
+  },
+
+  // 信件列表的欄位標題列（mail_list.mailHeaderRow）；不是信件列表回 -1。底列 caption 是
+  // 便宜的第一關，過了才解前幾列（指紋只看底列與 MAIL_HEADER_SCAN_ROWS 列以內；滑鼠每動
+  // 一下都會問，中間的列不解）。
+  mailListHeaderRow: function() {
+    var last = this.getRowText(this.rows - 1, 0, this.cols);
+    if (!isMailListFooter(last)) return -1;
     var texts = [];
-    for (var y = 0; y < this.rows; ++y) texts.push(this.getRowText(y, 0, this.cols));
-    return isMailListRows(texts);
+    for (var y = 0; y < this.rows - 1; ++y)
+      texts.push(y < MAIL_HEADER_SCAN_ROWS ? this.getRowText(y, 0, this.cols) : '');
+    texts.push(last);
+    return isMailListRows(texts) ? mailHeaderRow(texts) : -1;
   },
 
   // 滑鼠移到 (tcol, trow)：算出這一格的語意、更新游標底色列、換滑鼠指標、開關
@@ -1713,8 +1732,9 @@ TermBuf.prototype = {
     // trow 來自 App.clientToPos，它**不 clamp**（指標移到終端機上／下方時會超出
     // 0..rows-1），而 refreshMouseAction 每幀都會走到這裡 ⇒ 先擋掉越界，否則
     // isLineEmpty 會 deref undefined 把整條 notify 炸斷。
+    var mailHeader = this.mailListHeaderRow();
     var lineEmpty =
-      (this.pageState === 2 || this.pageState === 4) &&
+      (this.pageState === 2 || this.pageState === 4 || mailHeader >= 0) &&
       trow >= 0 && trow < this.rows ?
         this.isLineEmpty(trow) : false;
     // 選單的 ANSI 圖區不可點（見 mouse_regions case 1），同樣只有 pageState 1 才掃。
@@ -1738,6 +1758,7 @@ TermBuf.prototype = {
       boardList: this.isBoardListScreen(),
       menuScreen: menuScreen,
       menuItemRow: menuItemRow,
+      mailHeaderRow: mailHeader,
       // 點擊範圍（可點區＝底色區的起始欄）跟著總開關走，見 resolveMouseGates。
       clickRange: !!this.useMouseBrowsing,
       listClickStart: this.view && this.view.mouseListClickStart,

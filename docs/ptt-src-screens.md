@@ -43,7 +43,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 `B` 開看板（之後的 A／G／N 屬於它）、`A` 一篇文章（flags `m` 標記、`b` 置底、`g` 收入文摘＝照 `bbs.c#good_post` 複製成 G 檔並 append 到 `fn_mandex`）、`E <owner> <title>` 看板精華區
 一個檔案項目（`man/boards/<c>/<板>`；檔案 mtime 釘在 `FIXED_NOW`，列表的日期欄讀它）、`G <count> <owner> <title>`
 批次產生、`N` 一列進板畫面、`F` 加進我的最愛、`W <userid> <text>` 一顆水球（只有 `wmsg` 入口會送進
-`currutmp`，其他場景的畫面不受影響）、`L <owner> <date> <title>` tester 信箱裡的一封信（只有列表）、`T <text>` 接在上一個 A 的文章檔尾的一列（原樣，含行首空白；
+`currutmp`，其他場景的畫面不受影響）、`L <owner> <date> <title>` tester 信箱裡的一封信（列表＋內文 body，站內信檔頭沒有看板欄）、`T <text>` 接在上一個 A 的文章檔尾的一列（原樣，含行首空白；
 發信站「※ 」列與 post.svc 新格式推文用）。
 格式細節在 `driver.c` 檔頭。
 
@@ -82,7 +82,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `search_prompts` | `read:Test`／24 | `/` ⏎ `a` ⏎ `Z` ⏎ `s` | `isSearchPromptFrame`：title／author／push／board 各自只認自己那一種（空白 ⏎ 取消回列表） |
 | `search_refine` | `read:Test`／24 | `/` `Re⏎` `/` | 搜尋結果裡再搜「增加條件 標題:」認成 title；結果列表本身不是 prompt，是子列表（`isSubListTitle`／`isSubListFooter`／`listModeOf` select） |
 | `menu_search` | `menu`／24 | `s` | 主功能表的 s ⇒ 選看板 prompt（board） |
-| `mail_list` | `menu`／24 | `^Z m` | 信件列表：caption「信件列表」⇒ 列表好讀／看板列表不接管；首頁儀表板「新信」的落地（離開主功能表）。表頭右側綠色「(大小:N篇)」讓 row 2 不是單色 ⇒ `pageState` 不是 2（新舊版都一樣，未改） |
+| `mail_list` | `menu`／24 | `^Z m` | 信件列表：caption「信件列表」⇒ 列表好讀／看板列表不接管；首頁儀表板「新信」的落地（離開主功能表）。表頭右側綠色「(大小:N篇)」讓 row 2 不是單色 ⇒ 單色判準認不出；`setPageState` 另以 `isMailListScreen` 定成 1 |
+| `mail_read` | `menu`／24 | `^Z m`、`⏎`、`←` | 讀信是同一個 pmore 狀態列（pageState 3）；← 回信件列表 pageState 回到 1（以前黏在 3）；滑鼠只認信件列（欄位標題列、空列點了會打開最後一封） |
 | `editor` | `read:Mine`／24 | `E` | 編輯器底列「編輯文章」＋狀態框 ⇒ `pageState` 6；`image_upload.decideInsertMode`：編輯器／推文內容列送字，型別選單／確定／列表／文章走剪貼簿 |
 | `board_complete` | `menu`／24 | `s` `M` 空白 `x` `o` 空白 | 選看板自動完成：`parseBoardPromptFrame` 讀輸入欄／候選（依板名排序）、被拒的字輸入欄不變（`boardQueryResult` rejected）、中間幀的舊清單、唯一補完 `resolvedBoardName` |
 | `digest_aid` | `read:Gossip`／24 | `1⏎` `#5giJk-0-⏎` `#1giJk-0-⏎` | 完整列表上 # 文摘的 G AID：新版 `read_cmd_aid` 丟掉 `select_by_aid` 設的 default_ch=Tab ⇒ 不切文摘、游標不動、沒有錯誤，`aidSearchLanded` 照樣過；換成原文的 M（`aid_codec.toPostAid`）才落在原文 |

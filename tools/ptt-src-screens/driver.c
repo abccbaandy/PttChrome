@@ -20,7 +20,7 @@
 //   T <text>                                              接在上一個 A 的文章檔尾的一列（原樣）
 //   E <owner> <title>                                     看板精華區的一個檔案項目
 //   F <brdname>                                           加進我的最愛
-//   L <owner> <date> <title>                              tester 信箱裡的一封信（只有列表）
+//   L <owner> <date> <title>                              tester 信箱裡的一封信（內文 body；T 列接在它的檔尾）
 //   W <userid> <text>                                     一顆水球（依序收，只有 wmsg 入口用）
 #include "bbs.h"
 #include <poll.h>
@@ -327,7 +327,7 @@ static void seed(const char *path)
             STRLCPY(fav_names[fav_count], f[1]);
             fav_count++;
         } else if (f[0][0] == 'L' && n >= 4) {
-            // 一封信（tester 的信箱 .DIR，只要列表畫得出來，不寫信件內容）。
+            // 一封信（tester 的信箱 .DIR＋信件內容，mail.c#mail_read 用 more() 開）。
             fileheader_t fh;
             memset(&fh, 0, sizeof(fh));
             snprintf(fh.filename, sizeof(fh.filename), "M.%d.A.%03X", 1790000000 + serial, serial);
@@ -335,6 +335,17 @@ static void seed(const char *path)
             STRLCPY(fh.owner, f[1]);
             STRLCPY(fh.date, f[2]);
             STRLCPY(fh.title, f[3]);
+            char mpath[PATHLEN];
+            sethomefile(mpath, "tester", fh.filename);
+            FILE *mf = fopen(mpath, "w");
+            if (!mf) die("mail file");
+            // 站內信的檔頭（edit.c#write_header 的寄信分支：作者／標題／時間，沒有看板欄）。
+            fprintf(mf, STR_AUTHOR1 " %s (%s)\n", fh.owner, fh.owner);
+            fprintf(mf, "\xbc\xd0\xc3" "D: %s\n", fh.title);
+            fprintf(mf, "\xae\xc9\xb6\xa1: Sun Sep 27 12:00:00 2026\n");
+            fprintf(mf, "\nbody\n");
+            fclose(mf);
+            STRLCPY(last_article, mpath);
             sethomedir(dir, "tester");
             if (append_record(dir, &fh, sizeof(fh)) < 0) die("append_record mail");
         } else if (f[0][0] == 'W' && n >= 3) {

@@ -375,12 +375,12 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   在 `buf.isMailListScreen()` 時也回 `'menu'`，`enhance.menuCards` 傳 `'mail'`（主功能表／子選單是 `true`，
   進 `annotationsKey`）。
 - 判定 `js/mail_list.js`（依 `mbbsd/mail.c#maildoent`／`mail_coldefs`，檔頭）：底列 caption ∈
-  `MAIL_LIST_CAPTIONS`（便宜的第一關）＋第 0～3 列有「編號 日期 作者 信件標題」欄位標題列。**不看 pageState**：
-  `setPageState` 對信件列表沒有分支，pageState 沿用上一個畫面的值（主功能表進來＝1、單獨重放＝0）。
+  `MAIL_LIST_CAPTIONS`（便宜的第一關）＋第 0～3 列有「編號 日期 作者 信件標題」欄位標題列。**不看 pageState**；
+  反過來 `setPageState` 用它把信件列表定成 1（以前沿用上一個畫面：讀完一封信回來黏在 3）。
   信件列不靠欄寬，認「編號 狀態? 日期 作者 ◇／R:／轉 標題」的順序；認不出的列照舊格線，整個畫面認不出照舊格線。
 - 渲染：信件列 → 兩行卡片（標題；寄件人・日期；未讀＝`+`／`M`／`R` 粗體＋圓點，高 `MAIL_CARD_PX`=60）；
   欄位標題列、第 0 列、末列收起；按鍵說明列（第 1 列，功能鍵可點）照舊縮小格線。
-- 第一版只做卡片＋點開；不做累積捲動與背景預讀（信箱不接列表好讀），讀信接不接好讀照舊。
+- 第一版只做卡片＋點開；不做累積捲動與背景預讀（信箱不接列表好讀）。讀信是同一個 pmore 狀態列，好讀照常接手（upstream 產的 `mail_read` 場景驗過）。
 - 守護：unit `mail_card`（upstream 產的畫面＋各種狀態＋DOM）、`parse_failure_degrade`（突變）；offline e2e
   `mobile_mail_cards`（卡片高、真 tap 送「↑↑＋⏎」、認不出 ⇒ 格線）。
 
