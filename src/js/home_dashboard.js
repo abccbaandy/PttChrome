@@ -70,7 +70,7 @@ export function isHomeScreen(facts) {
   const rowTexts = facts.rowTexts || [];
   if (!rowHasTitle(rowTexts[0] || '', MAIN_MENU)) return false;
   for (let r = 1; r < rowTexts.length - 1; ++r) {
-    const item = parseMenuItemRow(rowTexts[r]);
+    const item = parseMenuItemRow(rowTexts[r], r);
     if (item && item.key === 'F') return true;
   }
   return false;

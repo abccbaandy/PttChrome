@@ -1740,7 +1740,7 @@ TermBuf.prototype = {
     // 選單的 ANSI 圖區不可點（見 mouse_regions case 1），同樣只有 pageState 1 才掃。
     var menuScreen = this.isMenuScreen();
     var menuItemRow = menuScreen && trow >= 0 && trow < this.rows ?
-      !!parseMenuItemRow(this.getRowText(trow, 0, this.cols)) : false;
+      !!parseMenuItemRow(this.getRowText(trow, 0, this.cols), trow) : false;
 
     return resolveMouseRegion({
       pageState: this.pageState,

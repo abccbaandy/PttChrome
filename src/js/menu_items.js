@@ -35,9 +35,17 @@ import { parseListRow } from './string_util';
 const MENU_ITEM_RE = /^ *(?:>|●)? *\(([0-9A-Za-z])\)/;
 const BOARD_LIST_TITLES = [BOARD_LIST, CLASS_LIST];
 
-// 這一列是不是選單項。回 `{ key }`（快捷鍵字元）或 null。
-export function parseMenuItemRow(text) {
+// 動態看板／點歌的最後一列：menu.c#adbanner 從 move(1, 0) 起 out_lines(…, 11)
+// （FILMROW 11），選單項從 menu_row 12 以下才開始（menu.c#decide_menu_row，與終端機
+// 高度無關）。動態看板是別人寫的 ANSI 圖，某一行剛好以「(A)」開頭時只看文字形狀會被當成
+// 選單項（可點、上底色、手機變大按鈕，點下去送 ↑↓＋Enter 落到別的項目）。
+export const MENU_BANNER_LAST_ROW = 11;
+
+// 這一列是不是選單項。回 `{ key }`（快捷鍵字元）或 null。row（列號）有給時，動態看板區
+// （row 1～MENU_BANNER_LAST_ROW）一律不是；row 0 是標題列，同樣不是。
+export function parseMenuItemRow(text, row) {
   if (typeof text !== 'string') return null;
+  if (typeof row === 'number' && row <= MENU_BANNER_LAST_ROW) return null;
   var m = MENU_ITEM_RE.exec(text);
   return m ? { key: m[1] } : null;
 }
