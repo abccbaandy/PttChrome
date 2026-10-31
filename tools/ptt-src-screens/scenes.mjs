@@ -408,6 +408,14 @@ export const SCENES = [
     ],
   },
   {
+    // 文章裡的 v（upstream 3c7d9af 實況模式）：driver 沒有 IPC service ⇒ live_toggle 失敗，
+    // 狀態列 part2 換成 override_msg「[系統連線服務異常]」；仍是文章頁。
+    file: 'article_live',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [{ name: 'list' }, { keys: '1\r' }, { keys: '\r', name: 'article' }, { keys: 'v', name: 'live-failed' }],
+  },
+  {
     // 文章裡按 y（bbs.c#do_reply）：「回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消」之類的 getdata。
     file: 'reply_prompt',
     entry: 'read:Test',

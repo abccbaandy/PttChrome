@@ -327,6 +327,39 @@ describe("parseStatusRow（pmore footer, pmore.c#mf_display_footer）", () => {
     expect(r.rowIndexStart).toBeNull();
   });
 
+  // 實況模式（upstream 3c7d9af：文章裡按 v，pmore_live_active）：part1 的「瀏覽」換成「實況」，
+  // 其餘格式不變（mf_display_footer 的 mode_str）。認不出 ⇒ pageState 掉出 3、好讀累積頁被清空。
+  test("實況模式：「實況 第 x/y 頁」仍是文章列", () => {
+    const row =
+      "  實況 第 3/3 頁 (100%)  目前顯示: 第 45~66 行  " +
+      "(y)回應(X)推文(←)離開(h)說明";
+    expect(parseStatusRow(row)).toEqual({
+      pageIndex: 3,
+      pageTotal: 3,
+      pagePercent: 100,
+      rowIndexStart: 45,
+      rowIndexEnd: 66
+    });
+  });
+
+  test("實況模式 ＋ oldstatusbar：「實況 P.%d」", () => {
+    expect(parseStatusRow("  實況 P.2(100%)    (h)求助 ")).toMatchObject({
+      pageIndex: 2,
+      pagePercent: 100,
+      rowsUnknown: true
+    });
+  });
+
+  // 按 v 但 IPC service 連不上（cb->live_toggle 失敗）：override_msg＝" [系統連線服務異常] "。
+  test("override_msg：實況切換失敗「[系統連線服務異常]」→ 仍是文章頁，行號未知", () => {
+    const row = "  瀏覽 第 1/1 頁 (100%)  [系統連線服務異常] (y)回應(X)推文(←)離開(h)說明";
+    expect(parseStatusRow(row)).toMatchObject({
+      pageIndex: 1,
+      pageTotal: 1,
+      rowsUnknown: true
+    });
+  });
+
   // bpref.oldstatusbar：pmore 設定切到舊式狀態列，只印 "  瀏覽 P.%d(%d%%)  " 就 return。
   test("oldstatusbar：舊式狀態列 → 仍是文章頁，行號未知", () => {
     const row = "  瀏覽 P.3( 45%)    (h)求助  →↓[PgUp][PgDn][Home][End]游標移動  ←[q]結束   ";

@@ -6,7 +6,7 @@
 // 這裡的每一個位元組都是 upstream 程式碼吐的。
 //
 // fixture 由 tools/ptt-src-screens/generate.sh 重產（場景表 scenes.mjs、種子 seed.tsv）。
-// 平常跑 repo 裡那份（產自 pttbbs e56edc3）；nightly（.github/workflows/ptt-src-screens.yml）
+// 平常跑 repo 裡那份（產自 pttbbs 3c7d9af）；nightly（.github/workflows/ptt-src-screens.yml）
 // 換成 upstream HEAD 產的。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
@@ -38,6 +38,7 @@ import { loadBig5Tables } from "./helpers/load_big5_tables";
 import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
 import articleListTallFx from "./fixtures/ptt_src_screens/article_list_tall.json";
 import articleFx from "./fixtures/ptt_src_screens/article.json";
+import articleLiveFx from "./fixtures/ptt_src_screens/article_live.json";
 import helpMenuFx from "./fixtures/ptt_src_screens/help_menu.json";
 import boardNoteFx from "./fixtures/ptt_src_screens/board_note.json";
 import boardListFx from "./fixtures/ptt_src_screens/board_list.json";
@@ -263,6 +264,20 @@ describe("upstream pttbbs 產的文章畫面（pmore）", () => {
   });
 });
 
+// upstream 3c7d9af 實況模式：文章裡按 v。driver 沒有 IPC service ⇒ live_toggle 失敗，狀態列 part2
+// 換成 override_msg「[系統連線服務異常]」。這一幀認不出 ⇒ pageState 掉出 3、好讀累積頁被清空。
+// （切換成功時 part1 的「瀏覽」變「實況」，driver 產不出來，由 string_util.test.js 守。）
+describe("upstream pttbbs 產的文章實況切換（v，連不上 IPC service）", () => {
+  test("「[系統連線服務異常]」的狀態列仍是文章頁", () => {
+    const { buf, rowTexts, facts } = screenAt(articleLiveFx, "live-failed");
+    const last = rowTexts[facts.rows - 1];
+    expect(last).toContain("[系統連線服務異常]");
+    expect(parseStatusRow(last)).toMatchObject({ pageIndex: 1, rowsUnknown: true });
+    expect(classifyListScreen(facts).kind).toBe("article");
+    expect(buf.pageState).toBe(3);
+  });
+});
+
 describe("upstream pttbbs 產的 pmore prompt（pmore.c#pmore_do_goto、pmore_search_keyword）", () => {
   const at = (name) => {
     const { buf, rowTexts, facts } = screenAt(articlePromptsFx, name);
@@ -391,10 +406,14 @@ describe("upstream pttbbs 產的說明選單（文章裡的 h）", () => {
     expect(items.find((it) => it.label === "推文").keys).toContain("X");
   });
 
-  test("空白翻到第 2、3 頁（最後一頁只有一項）", () => {
+  // 最後一頁不滿：項目數隨 upstream 加指令變（3c7d9af 加了 v「切換實況」⇒ 1 項變 2 項），
+  // 只鎖「不滿一頁也解析得出來」。
+  test("空白翻到第 2、3 頁（最後一頁不滿一頁）", () => {
     expect(parseHelpMenuScreen(at("help-2").rowTexts)).toMatchObject({ page: 2, totalPages: 3 });
-    expect(parseHelpMenuScreen(at("help-3").rowTexts)).toMatchObject({ page: 3, totalPages: 3 });
-    expect(parseHelpMenuScreen(at("help-3").rowTexts).items).toHaveLength(1);
+    const last = parseHelpMenuScreen(at("help-3").rowTexts);
+    expect(last).toMatchObject({ page: 3, totalPages: 3 });
+    expect(last.items.length).toBeGreaterThanOrEqual(1);
+    expect(last.items.length).toBeLessThan(at("help-3").rowTexts.length - 3);
   });
 
   test("說明選單不是文章：沒有 pmore 狀態列、不判成 article；q 回到文章", () => {

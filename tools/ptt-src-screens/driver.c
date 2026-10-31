@@ -398,6 +398,14 @@ int main(int argc, char *argv[])
 
     // init_io 沒叫的話 pfterm 的輸出緩衝不存在，什麼都不會寫出來。
     init_io();
+#if HAS_IPC_FD
+    // upstream acee9aa 起等鍵也等 IPC service 的 fd；沒連上時改成每 2～3 秒醒來重連（有逾時的等待），
+    // WAIT_MARK 永遠不出現。掛一個永遠不會可讀的 pipe 當 IPC fd ⇒ 回到無限期等待（select(NULL)／poll(INFTIM)）。
+    // generate.sh 看 header 有沒有 vkey_attach_ipc 決定 HAS_IPC_FD。
+    int ipc_pipe[2];
+    if (pipe(ipc_pipe)) die("ipc pipe");
+    vkey_attach_ipc(ipc_pipe[0]);
+#endif
     term_init();
     term_set_size(80, rows);
     initscr();

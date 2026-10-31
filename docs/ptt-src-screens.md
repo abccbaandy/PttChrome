@@ -22,7 +22,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 ```
 
 - 不架站、不登入、不需要 logind／Go 服務。`generate.sh` exit 2＝build／driver／場景問題（不是解析器壞）。
-- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs e56edc3）；nightly 換成 upstream HEAD 產的。
+- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs 3c7d9af）；nightly 換成 upstream HEAD 產的。
 - **輸出可重現**：driver 定義自己的 `time()`（執行檔的符號蓋過 libc），時間釘在 `FIXED_NOW`；同一份
   upstream 跑兩次 fixture 逐位元組相同。所以 fixture 有 diff＝upstream 改了畫面。
 
@@ -93,6 +93,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
+| `article_live` | `read:Test`／24 | `1⏎` `⏎` `v` | 實況模式（3c7d9af）的 v：driver 沒有 IPC service ⇒ 切換失敗，狀態列 part2 換成「[系統連線服務異常]」，`parseStatusRow` 照樣認得、pageState 3（切換成功時的「實況 第 x/y 頁」由 `string_util.test.js` 守） |
 | `reply_prompt` | `read:Test`／24 | `1⏎` `⏎` `y` | 文章裡 y 的「回應至 (F)看板 (M)作者信箱…」畫在倒數第二列：狀態列照樣認得（pageState 3）、游標在輸入欄、不攔 X、上傳網址走剪貼簿、編輯器輸入框不出現 |
 | `post_flow` | `read:Test`／24 | `^P` | 發文的種類 prompt：不是 clean-list、不是編輯器（pageState 不是 6）、上傳網址走剪貼簿 |
 | `class_list` | `menu`／24 | `⏎` `⏎` | 分類根（row 0【分類看板】）不是可接管的看板列表；進群組後認成 `class` 變體、可接管、列解析得出板名 |
@@ -130,6 +131,10 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
 - driver.c 碰到的 upstream struct 欄位被改名時，新舊都要編得過：`generate.sh` 看 header 決定、用 `-D` 傳給
   driver。例：b500faf 把 `fileheader_t` 的 `char pad`＋`char recommend` 併成 `int16_t rating`（畫面不變）⇒
   `FH_RATING`＝`rating`／`recommend`（守護 `ptt_src_screens_capture.test.js`）。
+- upstream acee9aa 起等鍵（`igetch.c#dogetch` 的 select、`nios.c#vkey_poll` 的 poll）也等 IPC service 的 fd；
+  **沒連上時改成有逾時的等待**（每 2～3 秒醒來 `ipc_check_reconnect`），`WAIT_MARK` 永遠不出現 ⇒ 每個場景第 0 步
+  逾時。driver 在 `init_io()` 後把一個永遠不可讀的 pipe 掛成 IPC fd（`vkey_attach_ipc`）⇒ 回到無限期等待。
+  舊 upstream 沒有這個函式：`generate.sh` 看 `proto.h` 決定 `-DHAS_IPC_FD`。
 - driver.c 本身是 UTF-8：要寫 Big5 字串用跳脫序列，且拆開寫（`"\xc3" "D"`，否則 `\xc3D` 被吃成一個跳脫）。
 
 upstream 再弄壞 build（新的必要 conf、新的需要排除的物件）時 generate 會紅（exit 2）：修法補進
