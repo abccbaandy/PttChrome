@@ -110,7 +110,10 @@ test('列表右鍵「稍後再讀」⇒ 只送 Q 與空白、收進那一篇、�
   // 單獨的 \f 是指令佇列逾時的探針（command_queue._timedOut）：PTT 的 system_key_hook 吞掉 ^L 只重畫，
   // 不會關掉資訊框（aid_navigation 的 KEY_DISMISS 註解）⇒ 機器忙、畫面晚於 soft 逾時才定下來時會多一個，
   // 不是送鍵。斷言的是「真的按下去的鍵」只有 Q 與空白。
-  expect(sent.filter((d) => d !== '\f').map((d) => d.replace(/\f$/, ''))).toEqual(['Q', ' ']);
+  // 關框之後的送出屬於列表好讀落地後自己的背景補頁（例：重建後往上補到第 1 篇的 `1⏎`），不是這個交易的；
+  // 只看到關框那個空白為止。
+  const keys = sent.filter((d) => d !== '\f').map((d) => d.replace(/\f$/, ''));
+  expect(keys.slice(0, keys.indexOf(' ') + 1)).toEqual(['Q', ' ']);
   expect(sent[0]).toBe('Q');
   expect(modes).not.toContain('native');
   // 落地後選取仍在原本那一篇。
