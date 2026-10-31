@@ -6,7 +6,7 @@
 // 這裡的每一個位元組都是 upstream 程式碼吐的。
 //
 // fixture 由 tools/ptt-src-screens/generate.sh 重產（場景表 scenes.mjs、種子 seed.tsv）。
-// 平常跑 repo 裡那份（產自 pttbbs 3c7d9af）；nightly（.github/workflows/ptt-src-screens.yml）
+// 平常跑 repo 裡那份（產自 pttbbs fbe8e67）；nightly（.github/workflows/ptt-src-screens.yml）
 // 換成 upstream HEAD 產的。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
@@ -38,7 +38,10 @@ import { loadBig5Tables } from "./helpers/load_big5_tables";
 import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
 import articleListTallFx from "./fixtures/ptt_src_screens/article_list_tall.json";
 import articleFx from "./fixtures/ptt_src_screens/article.json";
-import articleLiveFx from "./fixtures/ptt_src_screens/article_live.json";
+// 實況模式的舊版畫面（3c7d9af：pmore 裡的實況，狀態列「實況 第 x/y 頁」）。upstream c6d35a8 改寫成
+// more.c 自己的實況迴圈（新狀態列、離開回列表），真 PTT 跑私有 commit、新舊並存 ⇒ 舊版留著守。
+import articleLiveFx from "./fixtures/ptt_src_screens_legacy/article_live_3c7d9af.json";
+import articleLiveNewFx from "./fixtures/ptt_src_screens/article_live.json";
 import helpMenuFx from "./fixtures/ptt_src_screens/help_menu.json";
 import boardNoteFx from "./fixtures/ptt_src_screens/board_note.json";
 import boardListFx from "./fixtures/ptt_src_screens/board_list.json";
@@ -60,8 +63,10 @@ import { pushMaxBytes } from "../../src/js/long_push";
 import { navKeyBlockReason } from "../../src/js/nav_key_gate";
 import { App } from "../../src/js/pttchrome";
 import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
-import liveShortFx from "./fixtures/ptt_src_screens/live_short.json";
-import liveLongFx from "./fixtures/ptt_src_screens/live_long.json";
+import liveShortFx from "./fixtures/ptt_src_screens_legacy/live_short_3c7d9af.json";
+import liveLongFx from "./fixtures/ptt_src_screens_legacy/live_long_3c7d9af.json";
+import liveShortNewFx from "./fixtures/ptt_src_screens/live_short.json";
+import liveLongNewFx from "./fixtures/ptt_src_screens/live_long.json";
 import { isShortPageGrowth } from "../../src/js/comment_parse";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
@@ -275,7 +280,7 @@ describe("upstream pttbbs 產的文章畫面（pmore）", () => {
 // upstream 3c7d9af 實況模式：文章裡按 v。driver 沒有 IPC service ⇒ live_toggle 失敗，狀態列 part2
 // 換成 override_msg「[系統連線服務異常]」。這一幀認不出 ⇒ pageState 掉出 3、好讀累積頁被清空。
 // （切換成功時 part1 的「瀏覽」變「實況」，driver 產不出來，由 string_util.test.js 守。）
-describe("upstream pttbbs 產的文章實況切換（v，連不上 IPC service）", () => {
+describe("upstream pttbbs 產的文章實況切換（v，連不上 IPC service，3c7d9af 舊版）", () => {
   test("「[系統連線服務異常]」的狀態列仍是文章頁", () => {
     const { buf, rowTexts, facts } = screenAt(articleLiveFx, "live-failed");
     const last = rowTexts[facts.rows - 1];
@@ -286,7 +291,42 @@ describe("upstream pttbbs 產的文章實況切換（v，連不上 IPC service�
   });
 });
 
-describe("upstream pttbbs 產的實況模式（v 切換成功＋別人推文送到，3c7d9af）", () => {
+// upstream c6d35a8／844e8d0：實況搬到 more.c#live_run。狀態列換成自己的 vs_footer
+// 「 實況中 mm:ss [+N]  (X)留言(B)鈴聲… (任意鍵)離開 …」，不是 pmore 狀態列 ⇒ 好讀認不出、照原生鏡像
+// （認不出 ⇒ 原生）。這段期間任何不是 X／B／T／M／S 的鍵都會離開實況並回到文章列表（live_run 回
+// FULLUPDATE、read_post 返回），所以絕不可以替使用者送鍵。
+describe("upstream pttbbs 產的實況模式（more.c 改寫版，fbe8e67）", () => {
+  const at = (fx, name) => screenAt(fx, name, { perFrame: true });
+
+  test("實況狀態列不是 pmore 狀態列；推文與「實 況 開 始」寫在畫面上", () => {
+    for (const fx of [liveShortNewFx, liveLongNewFx]) {
+      const on = at(fx, "live-on");
+      const last = on.rowTexts[on.facts.rows - 1];
+      expect(last).toMatch(/^ 實況中 \d\d:\d\d \[\+0\]/);
+      expect(last).toContain("(X)留言");
+      expect(parseStatusRow(last)).toBeNull();
+      expect(on.rowTexts.some((t) => t.includes("實 況 開 始"))).toBe(true);
+      const two = at(fx, "live-2");
+      expect(two.rowTexts[two.facts.rows - 1]).toContain("[+2]");
+      expect(two.rowTexts.filter((t) => t.includes("live comment")).length).toBe(2);
+    }
+  });
+
+  test("按 v（任意鍵）離開實況 ⇒ 回到文章列表", () => {
+    const off = at(liveShortNewFx, "live-off");
+    expect(classifyListScreen(off.facts).kind).toBe("clean-list");
+    expect(off.buf.pageState).toBe(2);
+  });
+
+  test("實況服務連不上 ⇒ vmsg 等按鍵（不是狀態列 override）", () => {
+    const { rowTexts, facts } = at(articleLiveNewFx, "live-failed");
+    const last = rowTexts[facts.rows - 1];
+    expect(last).toContain("實況服務暫時無法使用");
+    expect(parseStatusRow(last)).toBeNull();
+  });
+});
+
+describe("upstream pttbbs 產的實況模式（v 切換成功＋別人推文送到，3c7d9af 舊版）", () => {
   const status = (fx, name) => {
     const { buf, rowTexts, facts } = screenAt(fx, name);
     return { buf, rowTexts, facts, st: parseStatusRow(rowTexts[facts.rows - 1]) };

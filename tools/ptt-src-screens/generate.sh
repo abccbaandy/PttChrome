@@ -45,8 +45,13 @@ if grep -Eq '^[[:space:]]*user_t[[:space:]]+moderators\[' ../include/pttstruct.h
 # 等鍵也等 IPC service fd：upstream acee9aa 起沒連上時改成有逾時的等待（見 driver.c 的 HAS_IPC_FD）。
 if grep -q 'vkey_attach_ipc' ../include/proto.h; then HAS_IPC_FD=1; else HAS_IPC_FD=0; fi
 # 實況模式（upstream 3c7d9af）：有 pmore_feed_comment 才接 fd 3 的實況推文、--wrap 訂閱（見 driver.c 的 HAS_LIVE）。
-if grep -q 'pmore_feed_comment' ../include/proto.h; then HAS_LIVE=1; LIVE_WRAP=,--wrap=ipc_is_connected,--wrap=ipc_sub,--wrap=ipc_unsub,--wrap=ipc_read_packet; else HAS_LIVE=0; LIVE_WRAP=; fi
-clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -DHAS_LIVE="$HAS_LIVE" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
+# upstream c6d35a8 把實況搬進 more.c（pmore_feed_comment 拿掉）⇒ 改認 more.c 的 live_run，舊的照認。
+if grep -q 'pmore_feed_comment' ../include/proto.h || grep -q '^live_run(' more.c; then HAS_LIVE=1; LIVE_WRAP=,--wrap=ipc_is_connected,--wrap=ipc_sub,--wrap=ipc_unsub,--wrap=ipc_read_packet; else HAS_LIVE=0; LIVE_WRAP=; fi
+# upstream f5bb8f5 起每次等鍵前 vkey_sync_ipc 都從 libcmbbs 的 ipc_get_fd 重抓 IPC fd（蓋掉 vkey_attach_ipc 掛的），
+# IPC handler 也從 wmsg_ipc_handler 改名 mbbsd_ipc_handler ⇒ --wrap=ipc_get_fd 交回 driver 掛的 fd（見 driver.c）。
+if grep -q 'vkey_sync_ipc' ../include/proto.h; then HAS_IPC_SYNC=1; LIVE_WRAP=$LIVE_WRAP,--wrap=ipc_get_fd; else HAS_IPC_SYNC=0; fi
+if grep -q 'mbbsd_ipc_handler' ../include/proto.h; then IPC_HANDLER=mbbsd_ipc_handler; else IPC_HANDLER=wmsg_ipc_handler; fi
+clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -DHAS_LIVE="$HAS_LIVE" -DHAS_IPC_SYNC="$HAS_IPC_SYNC" -DIPC_HANDLER="$IPC_HANDLER" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
 # --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）；
 # passwd_query 一律「查不到」（板主 id 從 SHM->userid 來，見 driver.c#set_moderators）。
 # shellcheck disable=SC2086
