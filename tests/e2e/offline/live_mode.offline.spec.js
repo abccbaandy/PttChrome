@@ -8,14 +8,17 @@
 // 守的是 term_view.accumulatePageLines：單頁短文在原地長高（狀態列 1~E 的 E 加 1、lineno 不動）
 // 以前被當成「往後接」，累積頁是第一幀整個畫面（含空白填充列）、行號只到 E ⇒ 每則推文都把
 // 整個畫面再接一次，推文埋在一堆空白列後面看不到。長文（畫面已滿、上捲一列）照一般往後接。
+// 以上是 3c7d9af 的舊版實況（pmore 裡的實況，fixture 在 ptt_src_screens_legacy/）；真 PTT 跑私有 commit，
+// 新舊並存。upstream c6d35a8 起實況是 more.c 自己的迴圈（狀態列「實況中 mm:ss [+N]」）：好讀認不出 ⇒
+// 原生鏡像照實畫出推文；任何鍵都會離開實況回列表 ⇒ 守「一個鍵都不替使用者送」。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootScenario, waitFed, waitScreenSettled, feedRaw } = require('../helpers/replay');
 
 const b64 = (s) => Buffer.from(s, 'latin1').toString('base64');
 
-function setup(file) {
-  const fx = require(`../../unit/fixtures/ptt_src_screens/${file}.json`);
+function setup(file, dir = 'ptt_src_screens_legacy') {
+  const fx = require(`../../unit/fixtures/${dir}/${file}.json`);
   const frame = (name) => fx.frames.find((f) => f.name === name).bytes;
   const pre = fx.frames
     .slice(0, fx.frames.findIndex((f) => f.name === 'article'))
@@ -70,7 +73,7 @@ async function pushComment(page, bytes, text) {
 }
 
 test('單頁短文：實況推文接在原地，不重複整個畫面', async ({ page }) => {
-  const { frame, cassette } = setup('live_short');
+  const { frame, cassette } = setup('live_short_3c7d9af');
   await openLive(page, cassette);
   const before = (await pageTexts(page)).length;
 
@@ -90,7 +93,7 @@ test('單頁短文：實況推文接在原地，不重複整個畫面', async ({
 });
 
 test('長文：實況推文照一般往後接，每則一列', async ({ page }) => {
-  const { frame, cassette } = setup('live_long');
+  const { frame, cassette } = setup('live_long_3c7d9af');
   await openLive(page, cassette);
   const before = await pageTexts(page);
 
@@ -105,3 +108,42 @@ test('長文：實況推文照一般往後接，每則一列', async ({ page }) 
   expect(count(dom, '長文第 40 行')).toBe(1);
   expect(dom.slice(-3)[0]).toContain('長文第 40 行');
 });
+
+for (const [file, offName, offKey, offBytes] of [
+  ['live_short', 'live-off', 'v', 'v'],
+  ['live_long', 'live-off-up', 'ArrowUp', '\x1b[A'],
+]) {
+  test(`新版實況（more.c，${file}）：好讀認不出就照原生鏡像，推文看得到，一個鍵都不替使用者送；按鍵離開回列表`, async ({ page }) => {
+    const { frame, cassette } = setup(file, 'ptt_src_screens');
+    cassette.steps.push({ on: 'raw', send: b64(offBytes), recv: b64(frame(offName)) });
+    await bootScenario(page, ptt, cassette, { prefs: { enableEasyReading: true } });
+    await ptt.sendKey(page, 'Enter');
+    await waitFed(page, 2);
+    await waitScreenSettled(page, { 23: '瀏覽' });
+    await page.keyboard.press('v');
+    await waitFed(page, 3);
+    await waitScreenSettled(page, { 23: '實況中' });
+    // 進實況前好讀可能已經替長文送過翻頁（累積頁，正常）；進實況之後就一個都不准多。
+    const atLive = await page.evaluate(() => window.__replay.sent.slice());
+    expect(atLive[atLive.length - 1]).toBe('v');
+    for (const [name, text] of [
+      ['live-1', 'first live comment'],
+      ['live-2', 'second live comment'],
+    ]) {
+      await feedRaw(page, frame(name));
+      await waitScreenSettled(page, { 23: '實況中' });
+      await expect.poll(async () => count(await domTexts(page), text)).toBe(1);
+    }
+    const dom = await domTexts(page);
+    expect(count(dom, '實 況 開 始')).toBe(1);
+    expect(count(dom, '實況中')).toBe(1);
+    // 任何鍵都會離開實況回列表 ⇒ 推文送到、好讀看到新畫面，都不可以替使用者送任何東西。
+    expect(await page.evaluate(() => window.__replay.sent.slice())).toEqual(atLive);
+
+    await page.keyboard.press(offKey);
+    await waitFed(page, 4);
+    await waitScreenSettled(page, { 2: '編號' });
+    await expect.poll(() => page.evaluate(() => window.__app.buf.pageState)).toBe(2);
+    expect(await page.evaluate(() => window.__replay.sent.slice())).toEqual([...atLive, offBytes]);
+  });
+}
