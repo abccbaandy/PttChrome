@@ -42,7 +42,9 @@ RATING_RE='^[[:space:]]*int16_t[[:space:]]+rating;'
 if grep -Eq "$RATING_RE" ../include/pttstruct.h; then FH_RATING=rating; else FH_RATING=recommend; fi
 # boardheader_t 的板主：upstream 653523c 把 char BM[] 換成 user_t moderators[]（見 driver.c#set_moderators）。
 if grep -Eq '^[[:space:]]*user_t[[:space:]]+moderators\[' ../include/pttstruct.h; then BH_MODERATORS=1; else BH_MODERATORS=0; fi
-clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
+# 等鍵也等 IPC service fd：upstream acee9aa 起沒連上時改成有逾時的等待（見 driver.c 的 HAS_IPC_FD）。
+if grep -q 'vkey_attach_ipc' ../include/proto.h; then HAS_IPC_FD=1; else HAS_IPC_FD=0; fi
+clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
 # --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）；
 # passwd_query 一律「查不到」（板主 id 從 SHM->userid 來，見 driver.c#set_moderators）。
 # shellcheck disable=SC2086

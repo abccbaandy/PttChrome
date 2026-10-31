@@ -261,8 +261,11 @@ export const COMMENT_TIME_RE = /\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/;
 // 要求 part3 的代價不是少一個欄位，而是**整列失配** → term_buf.setPageState 判不出
 // pageState 3 → term_view.redraw 落到 native 分支 → hideEasyReadingOverlays() 清空
 // buf.pageLines（好讀累積頁整個消失）。part1+part2 本身已是唯一的畫面指紋，足夠。
+//
+// part1 的「瀏覽」在實況模式（upstream 3c7d9af，文章裡按 v ⇒ pmore_live_active）印成「實況」
+// （mf_display_footer 的 mode_str；oldstatusbar 那句也是）。三條 regex 都兩個都吃。
 const STATUS_ROW_RE =
-  /  瀏覽 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  (?:目前顯示: 第|顯示範圍: \d+~\d+ 欄位,) 0*(\d+)~0*(\d+) 行/;
+  /  (?:瀏覽|實況) 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  (?:目前顯示: 第|顯示範圍: \d+~\d+ 欄位,) 0*(\d+)~0*(\d+) 行/;
 
 // 同一列的兩種**沒有行號**的變體——一樣是文章 pager，只是 part2 拿不到：
 //
@@ -270,14 +273,15 @@ const STATUS_ROW_RE =
 //                 文章裡有 `ESC *s` 這類會依讀者展開的碼（mf_display_handle_esc_star →
 //                 PMORE_MSG_WARN_FAKEUSERINFO）或移位碼（PMORE_MSG_WARN_MOVECMD）時，
 //                 **每次**畫到那一頁都會印——不是罕見畫面，「\x1b*s 你好」就會觸發。
+//                 實況切換失敗（cb->live_toggle 連不上 IPC service）也走這裡：" [系統連線服務異常] "。
 //   oldstatusbar  使用者在 pmore 設定裡切到舊式狀態列：只印 "  瀏覽 P.%d(%d%%)  " 就 return。
 //
 // 認不出來的代價跟 part3 那段一樣：整列失配 → pageState 掉出 3 → 好讀累積頁被清空。
 // 回傳的 rowIndexStart/End 是 null、rowsUnknown 為 true；呼叫端要畫面簽章時一律走
 // statusSignature，不可自己拼 `S~E`（兩個 null 會讓每一頁簽章都相同 ⇒ 翻頁交易卡死）。
 const STATUS_ROW_OVERRIDE_RE =
-  /  瀏覽 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  ▲此頁內容(?:含移位碼|會依閱讀者不同)/;
-const STATUS_ROW_OLD_RE = /^  瀏覽 P\.(\d+)\( *(\d+)%\)  /;
+  /  (?:瀏覽|實況) 第 (\d+)(?:\/(\d+))? 頁 *\( *(\d+)%\)  (?:▲此頁內容(?:含移位碼|會依閱讀者不同)|\[系統連線服務異常\])/;
+const STATUS_ROW_OLD_RE = /^  (?:瀏覽|實況) P\.(\d+)\( *(\d+)%\)  /;
 
 // 同一列 part3（HELP）反推 pmore 當下的 `currstat` ——「這個畫面按 s / # 有沒有用」。
 // mbbsd/more.c:102-112：pager 的 `s`(RET_SELECTBRD) 與 `#`(RET_SELECTAID) 都寫死
