@@ -714,6 +714,36 @@ describe("Enter 進看板", () => {
     expect(enqueued[1].keys).toBe("\r");
   });
 
+  // 背景抓頁的跳號（`N⏎`）在線上時，真游標正往 N 走，`_serverNum` 要等它 onDone 才更新
+  // ⇒ 拿舊值判斷「選取＝真游標」就不跳號直接送 ⏎，進到抓頁落點那一板（同 list_session#_serverCursorAt）。
+  test("REGRESSION：背景抓頁在線上時 _serverNum 是舊值 ⇒ Enter 先跳號同步", () => {
+    const { s, queue, enqueued } = ready();
+    s._serverNum = 7;
+    s._selectedNum = 7;
+    queue.idle = false;
+    queue.inFlightKind = BRD_CMD_PREFIX + "fetch-down";
+    s.onKeyDown(keyEvent("Enter"));
+    expect(enqueued[0].keys).toBe("7\r");
+    expect(enqueued[0].kind).toBe(BRD_CMD_PREFIX + "open-sync-jump");
+  });
+
+  test("REGRESSION：End 落地後 _serverNum 跟著落點（之後選回原列按 Enter 要先同步）", () => {
+    const { s, queue, enqueued } = ready();
+    s._serverNum = 7;
+    s._selectedNum = 7;
+    s.onKeyDown(keyEvent("End"));
+    const end = enqueued.find((c) => c.kind === BRD_CMD_PREFIX + "jump-end");
+    expect(end.expect(null, { brd: { parked: true, cursorNum: 60 } })).toBe(true);
+    end.onDone();
+    expect(s._serverNum).toBe(60);
+    queue.idle = true;
+    queue.inFlightKind = null;
+    s._selectedNum = 7;
+    enqueued.length = 0;
+    s.onKeyDown(keyEvent("Enter"));
+    expect(enqueued[0].keys).toBe("7\r");
+  });
+
   test("REGRESSION：同步腿只認同一份清單 —— 換了清單同編號是別的看板，不得接著送 Enter", () => {
     const { s, termBuf, enqueued } = ready();
     s._serverNum = 1;

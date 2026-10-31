@@ -925,7 +925,7 @@ BoardListSession.prototype = {
       self._enqueuePassthroughStep(steps, 0);
       if (hint && self._view.flashListHint) self._view.flashListHint(hint, 4000);
     };
-    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+    if (this._selectedNum != null && !this._serverCursorAt(this._selectedNum)) {
       this._freezeForTransaction();
       this._enqueueCursorSyncJump('native-sync-jump', finish, finish);
       return;
@@ -956,7 +956,7 @@ BoardListSession.prototype = {
       if (self.state === 'functionMode' && self._renderMode === 'frozen')
         self._degradeToNative('游標同步逾時，已切至原生模式');
     };
-    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+    if (this._selectedNum != null && !this._serverCursorAt(this._selectedNum)) {
       this._enqueueCursorSyncJump('native-sync-jump', send, abort);
       return;
     }
@@ -1041,7 +1041,7 @@ BoardListSession.prototype = {
     const send = function() {
       self._enqueueInplaceKey(bytes, opts && opts.onDone);
     };
-    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+    if (this._selectedNum != null && !this._serverCursorAt(this._selectedNum)) {
       this._enqueueCursorSyncJump('inplace-sync-jump', send, function() {
         self._degradeToNative('操作逾時，已切至原生模式');
       });
@@ -1514,7 +1514,7 @@ BoardListSession.prototype = {
         enteringBoard: true
       });
     };
-    if (num === this._serverNum) send();
+    if (this._serverCursorAt(num)) send();
     else this._enqueueCursorSyncJump('open-sync-jump', send, function() {
       self._degradeToNative('進入看板逾時，已切至原生模式');
     });
@@ -1534,7 +1534,7 @@ BoardListSession.prototype = {
     const send = function() {
       self._enqueueLandingKey(LEFT_ARROW, 'leave', '回上層逾時，已切至原生模式');
     };
-    if (this._selectedNum == null || this._selectedNum === this._serverNum) send();
+    if (this._selectedNum == null || this._serverCursorAt(this._selectedNum)) send();
     else
       this._enqueueCursorSyncJump('leave-sync-jump', send, function() {
         self._degradeToNative('回上層逾時，已切至原生模式');
@@ -1893,6 +1893,14 @@ BoardListSession.prototype = {
     this._maybeDemand(op === 'up' || op === 'pgup' || op === 'home' ? -1 : 1);
   },
 
+  // 「server 真游標現在就在 num」。`_serverNum` 只在各筆跳號的 onDone 才更新 ⇒ 本 session
+  // 的命令（背景抓頁 `N⏎`、Home／End、同步腿）還在線上時真游標正往別處走、值是舊的，
+  // 一律當不同步（多一趟同步跳號，不會把鍵送到別列）。同 list_session#_serverCursorAt。
+  _serverCursorAt: function(num) {
+    if (num == null || num !== this._serverNum) return false;
+    return (this._queue.inFlightKind || '').indexOf(BRD_CMD_PREFIX) !== 0;
+  },
+
   // 前景導覽鍵的共用前置：把背景抓頁讓開。還沒送出的直接丟（落點馬上不算數），
   // 在飛的那筆縮成一個 round-trip —— 不能 flush 它，還在線上的回應會變成無主
   // settle 去滿足下一筆的 expect（同 list_session 的不變量 7）。
@@ -1915,6 +1923,7 @@ BoardListSession.prototype = {
     this._queue.flushPendingKind(BRD_CMD_PREFIX + 'fetch');
     this._expediteBackground();
     this._setLoading(true); // 吞鍵不得無聲
+    let landed = null;
     this._queue.enqueue({
       keys: '\x1b[4~',
       kind: BRD_CMD_PREFIX + 'jump-end',
@@ -1926,7 +1935,9 @@ BoardListSession.prototype = {
         self._prunePivotOverride = null;
       },
       expect: function(snap, facts) {
-        return !!(facts.brd && facts.brd.parked && facts.brd.cursorNum != null);
+        if (!(facts.brd && facts.brd.parked && facts.brd.cursorNum != null)) return false;
+        landed = facts.brd.cursorNum;
+        return true;
       },
       fullRepaint: true,
       timeoutMs: CMD_PROBE_AFTER_MS,
@@ -1935,6 +1946,7 @@ BoardListSession.prototype = {
       onDone: function() {
         self._prunePivotOverride = undefined;
         self._setLoading(false); // 這筆交易自己點亮的膠囊，自己負責關掉
+        self._serverNum = landed;
         self._edgeDown = true;
         const len = self._sequenceLength();
         if (!len) return;
@@ -1950,6 +1962,7 @@ BoardListSession.prototype = {
       onFail: function() {
         self._prunePivotOverride = undefined;
         self._setLoading(false);
+        self._serverNum = null; // 鍵送出去了、落點不明 ⇒ 下一筆一律先同步
       }
     });
   },
@@ -1993,6 +2006,7 @@ BoardListSession.prototype = {
       onFail: function() {
         self._prunePivotOverride = undefined;
         self._setLoading(false);
+        self._serverNum = null; // 鍵送出去了、落點不明 ⇒ 下一筆一律先同步
       }
     });
   },
