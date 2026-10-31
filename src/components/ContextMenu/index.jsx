@@ -209,6 +209,7 @@ const menuHandlerByEventKey = {
   clearCommentFilter: (pttchrome) => pttchrome.view.clearCommentFilter(),
   // 稍後再讀（P34）：收進／移出清單（recent_articles.js），一個 byte 都不送。
   readLater: (pttchrome, { readLaterTarget: t }) => {
+    if (t && t.listNum != null) return readLaterFromList(pttchrome, t);
     if (t && pttchrome.recentArticles?.toggleLater(t) === true)
       pttchrome.view?.flashListHint?.(i18n("recent_added"), 2000);
   },
@@ -222,16 +223,46 @@ const menuHandlerByEventKey = {
   uploadHistory: (pttchrome) => pttchrome.imageUpload.openPanel(),
 };
 
-// 稍後再讀（P34）的選單目標：游標下的文章連結優先，否則「本篇」（findLocalPostAid）。
-// saved＝已經在稍後再讀裡（選單改給「從稍後再讀移除」）。關掉／不是文章 ⇒ null。
+// 列表的「稍後再讀」（P53）：列沒有 AID ⇒ 列表好讀替使用者在那一列按 Q 問、空白關框
+// （list_session.readLaterAt）；問到才收。只收不移（開選單時不知道是哪一篇）。
+export function readLaterFromList(pttchrome, t) {
+  const view = pttchrome.view;
+  const hint = (msg, ms, level) => view?.flashListHint?.(msg, ms, level);
+  const ls = pttchrome.listSession;
+  const taken =
+    !!ls &&
+    ls.readLaterAt(t.listNum, (info) => {
+      const r =
+        info && info.board
+          ? pttchrome.recentArticles?.addLater({
+              board: info.board,
+              aid: info.aid,
+              title: t.title || "",
+            })
+          : null;
+      if (r === "added") hint(i18n("recent_added"), 2000);
+      else if (r === "exists") hint(i18n("recent_already_later"), 2000);
+      else hint(i18n("recent_list_no_aid"), 3000, HINT_ERROR);
+    });
+  if (!taken) hint(i18n("recent_list_busy"), 3000, HINT_ERROR);
+  return taken;
+}
+
+// 稍後再讀（P34）的選單目標：游標下的文章連結優先，否則「本篇」（findLocalPostAid），
+// 再來是列表好讀裡右鍵／長按的那一列（listRow：{ num, title }，P53；saved 一律 false，
+// AID 要按 Q 才知道）。saved＝已經在稍後再讀裡（選單改給「從稍後再讀移除」）。
+// 關掉／不是文章 ⇒ null。
 export function readLaterTargetOf(
   pttchrome,
   prefs,
   contextArticle,
   currentArticle,
+  listRow,
 ) {
   const ra = pttchrome.recentArticles;
   if (!prefs.enableRecentArticles || !ra) return null;
+  if (!contextArticle && !currentArticle && listRow && listRow.num != null)
+    return { listNum: listRow.num, title: listRow.title || "", saved: false };
   const a = contextArticle
     ? { board: contextArticle.board, aid: contextArticle.aid, title: "" }
     : currentArticle
@@ -683,6 +714,18 @@ export const ContextMenu = ({ pttchrome }) => {
           pttchrome.listSession &&
           pttchrome.listSession.markReadTargetAtRow(pos.row)) ||
         null;
+      // 列表的「稍後再讀」（P53）：同一組列條件，另外要自動回好讀開著（listSession 判）。
+      const readLaterRowNum =
+        normalEnabled && pttchrome.listSession?.readLaterTargetAtRow
+          ? pttchrome.listSession.readLaterTargetAtRow(pos.row)
+          : null;
+      const readLaterListRow = readLaterRowNum
+        ? {
+            num: readLaterRowNum.num,
+            title:
+              (rowElement && rowElement.getAttribute("data-list-title")) || "",
+          }
+        : null;
 
       update({
         open: true,
@@ -715,6 +758,7 @@ export const ContextMenu = ({ pttchrome }) => {
           prefs,
           contextArticle,
           currentArticle,
+          readLaterListRow,
         ),
         markReadTarget,
         boardMarkReadTarget:

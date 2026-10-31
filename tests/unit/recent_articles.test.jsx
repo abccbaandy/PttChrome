@@ -32,7 +32,7 @@ import {
 } from "../../src/js/recent_articles";
 import { buildPaletteItems } from "../../src/js/command_palette";
 import { buildContextMenuEntries } from "../../src/components/ContextMenu/context_menu_entries";
-import { readLaterTargetOf } from "../../src/components/ContextMenu";
+import { readLaterTargetOf, readLaterFromList } from "../../src/components/ContextMenu";
 import { HomeDashboard } from "../../src/components/HomeDashboard";
 import { setupI18n, i18n } from "../../src/js/i18n";
 
@@ -400,6 +400,51 @@ describe("右鍵選單", () => {
     });
     expect(readLaterTargetOf(pttchrome([]), on, null, null)).toBeNull();
     expect(readLaterTargetOf(pttchrome([]), { enableRecentArticles: false }, null, A1)).toBeNull();
+  });
+
+  test("列表的列（P53）：沒有文章連結／本篇時才用；saved 一律 false；關掉 ⇒ null", () => {
+    const row = { num: 105, title: "[問題] 標題" };
+    expect(readLaterTargetOf(pttchrome([]), on, null, null, row)).toEqual({
+      listNum: 105,
+      title: "[問題] 標題",
+      saved: false,
+    });
+    expect(readLaterTargetOf(pttchrome([]), on, null, A1, row)).toMatchObject({ aid: A1.aid });
+    expect(readLaterTargetOf(pttchrome([]), { enableRecentArticles: false }, null, null, row)).toBeNull();
+  });
+
+  test("列表的列：問到 AID 才收、只收不移；問不到或接不了 ⇒ 錯誤提示", () => {
+    const st = memStorage();
+    const ra = new RecentArticles(fakeCore(), st);
+    const hints = [];
+    let answer;
+    const core = {
+      recentArticles: ra,
+      view: { flashListHint: (m) => hints.push(m) },
+      listSession: {
+        readLaterAt: (num, cb) => {
+          answer = cb;
+          return num === 105;
+        },
+      },
+    };
+    const t = { listNum: 105, title: "列表標題", saved: false };
+    expect(readLaterFromList(core, t)).toBe(true);
+    answer({ aid: A1.aid, board: A1.board });
+    expect(ra.state.later[0]).toMatchObject({ board: A1.board, aid: A1.aid, title: "列表標題" });
+    expect(hints.pop()).toBe(i18n("recent_added"));
+    // 已經在 ⇒ 不移出（開選單時不知道是哪一篇，不能當切換）
+    readLaterFromList(core, t);
+    answer({ aid: A1.aid, board: A1.board });
+    expect(ra.state.later.length).toBe(1);
+    expect(hints.pop()).toBe(i18n("recent_already_later"));
+    readLaterFromList(core, t);
+    answer(null);
+    expect(hints.pop()).toBe(i18n("recent_list_no_aid"));
+    answer({ aid: A2.aid, board: null });
+    expect(ra.state.later.length).toBe(1);
+    expect(readLaterFromList(core, { ...t, listNum: 1 })).toBe(false);
+    expect(hints.pop()).toBe(i18n("recent_list_busy"));
   });
 
   test("沒收 ⇒「稍後再讀」；已收 ⇒「從稍後再讀移除」", () => {

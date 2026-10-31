@@ -8,6 +8,7 @@ pref `enableRecentArticles`，預設開。
 
 - **最近讀過**：讀過的文章自動記下（最多 `RECENT_ARTICLES_LIMIT`＝30 篇，新的在前）。
 - **稍後再讀**：文章裡右鍵／長按 →「稍後再讀」（游標下是別篇的文章連結時，收的是那一篇）；已經收了就改給「從稍後再讀移除」。最多 `READ_LATER_LIMIT`＝50 篇。
+- **文章列表上的稍後再讀**（P53）：列表好讀裡右鍵／長按一列 →「稍後再讀」。見下面「列表的稍後再讀」。
 - 首頁儀表板多兩區「稍後再讀」「最近讀過」（各列 `HOME_ARTICLE_LIMIT`＝8 篇，稍後再讀每列有 ✕）；指令面板（F4）空白時列 5 篇（稍後再讀在前），打字比對標題或板名。點了就開回那篇。
 
 ## 規則
@@ -20,6 +21,21 @@ pref `enableRecentArticles`，預設開。
 - 從連結收的稍後再讀沒有標題（畫面上只有 AID），先顯示 `#AID`，讀到那篇時補上。
 - 只是清單與入口：記的時候不送鍵、開回去是使用者按的 ⇒ 不在安全模式名單內。
 
+## 列表的稍後再讀（`list_session.readLaterAt`）
+
+列表的列沒有 AID（AID 來自檔名，列表不顯示）⇒ **這是唯一會送鍵的入口**：替使用者在那一列按 `Q`
+（bbs.c#view_postinfo 資訊框）讀 AID，再送空白關框。依 upstream：框是 pressanykey、之後 `return FULLUPDATE`，
+**在列表裡只是重畫列表、游標不動**（文章裡按 Q 才會離開文章，那是 `deep_link_controller` 的「複製本篇連結」）。
+
+- 出現條件：`enableRecentArticles` 開、列表好讀接手（active＋buffer）、那一列有編號（置底文、header、空白列不給）、
+  `enableListNativeAutoResume` 開（關掉時那條路游標同步失敗會照送，Q 落在別列就收錯篇）。原生列表沒有這一項。
+- 凍結交易（跟「前已讀後未讀」同一條 `_beginLandingTransaction`）：必要時先跳號同步真游標 → `Q`（**不尾附 \f**，
+  會被 pressanykey 當成關框）→ 認出資訊框（`aid_navigation.postInfoAnswer`）才送空白 → 關框落地＝乾淨的列表就回好讀。
+  框沒出現 ⇒ 逾時切原生、**不送空白**（列表上的空白是翻頁）。框裡沒有 AID ⇒ 照樣關框、提示沒收。
+- 只收不移（開選單時還不知道是哪一篇）：已經在清單裡 ⇒ 提示「已經在稍後再讀裡」。標題取列表那一列（`data-list-title`）。
+- 閱讀紀錄 `read-later-list`：一律回原處。
+- 會送鍵 ⇒ 安全模式下列表好讀本身不接手，這一項自然不出現。
+
 ## 接著上次讀到的地方
 
 pref `resumeRecentArticles`（設定 → 一般，在「最近讀過／稍後再讀」下面），預設開；只捲視口 ⇒ 不在安全模式名單內。
@@ -31,10 +47,10 @@ pref `resumeRecentArticles`（設定 → 一般，在「最近讀過／稍後再
 
 ## 還沒做
 
-- 列表上的「稍後再讀」：文章列表的列沒有 AID（要按 `Q` 才問得到，會離開列表），這版只在文章裡收。
+- 原生列表（列表好讀關掉）與置底文上的「稍後再讀」。
 - 「之後新推文 +N」：要重開那篇才數得到，儀表板不顯示；開回去時由 `new_comments` 標出新推文。
 - 被刪的文章：AID 跳文會提示找不到，清單不會自動移除（稍後再讀可以按 ✕）。
 
 ## 測試
 
-unit：`recent_articles.test.jsx`（清單規則、只在讀得到網址列時記、同一篇只記一次、pref 關、稍後再讀切換與補標題、開回去走 deep link、指令面板排序與比對、右鍵目標與選單項目、儀表板兩區、接著上次讀到的地方的記與不記／落地決策／回到開頭）。offline e2e：`recent_articles.offline.spec.js`（stock-huang 讀完記下、真右鍵稍後再讀零送鍵、列表 F4 點文章走 AID 跳文、scn-deep-link 真往返開回讀到一半的那篇並捲到上次那一列、真滾輪記回位置）。
+unit：`recent_articles.test.jsx`（清單規則、只在讀得到網址列時記、同一篇只記一次、pref 關、稍後再讀切換與補標題、開回去走 deep link、指令面板排序與比對、右鍵目標與選單項目、列表的列問到 AID 才收／只收不移、儀表板兩區、接著上次讀到的地方的記與不記／落地決策／回到開頭）。offline e2e：`recent_articles.offline.spec.js`（stock-huang 讀完記下、真右鍵稍後再讀零送鍵、列表 F4 點文章走 AID 跳文、scn-deep-link 真往返開回讀到一半的那篇並捲到上次那一列、真滾輪記回位置）；`list_read_later.offline.spec.js`（upstream 產的 post_info 畫面，真右鍵：只送 Q 與空白、收進那一篇、全程不切原生）。unit `list_read_later.test.js`（序列、框沒出現不送空白、背景補頁在線上一律先同步）。

@@ -83,7 +83,12 @@ import {
   parseBoardPromptFrame,
   resolvedBoardName,
 } from "../../src/js/board_search_bridge";
-import { aidSearchLanded, isSubListTitle, landedOnBoardList } from "../../src/js/aid_navigation";
+import {
+  aidSearchLanded,
+  isSubListTitle,
+  landedOnBoardList,
+  postInfoAnswer,
+} from "../../src/js/aid_navigation";
 import digestFx from "./fixtures/ptt_src_screens/digest.json";
 import digestAidFx from "./fixtures/ptt_src_screens/digest_aid.json";
 import essenceFx from "./fixtures/ptt_src_screens/essence.json";
@@ -1002,6 +1007,21 @@ describe("upstream pttbbs 產的文章資訊框（文章列表的 Q）", () => {
     const list = screenAt(postInfoFx, "list").rowTexts;
     expect(list.map(parsePostInfoAid).filter(Boolean)).toEqual([]);
     expect(list.map(parsePostInfoUrl).filter(Boolean)).toEqual([]);
+  });
+
+  // 列表的稍後再讀（list_session.readLaterAt）的兩步判準：Q 那一步只在框出現時算數，
+  // 關框那一步要回到乾淨的列表、框不在了。
+  test("postInfoAnswer：列表幀＝還沒出現；框＝AID；空白關框＝乾淨的列表、游標沒動", () => {
+    const list = screenAt(postInfoFx, "list");
+    expect(postInfoAnswer(list.facts.rowTexts, list.facts.rows)).toBe(false);
+    expect(postInfoAnswer(rowTexts, facts.rows)).toEqual({
+      info: { aid: expect.stringMatching(/^[0-9A-Za-z_-]{8}$/), board: "Test" },
+    });
+    expect(classifyListScreen(facts).kind).not.toBe("clean-list");
+    const back = screenAt(postInfoFx, "dismissed");
+    expect(postInfoAnswer(back.facts.rowTexts, back.facts.rows)).toBe(false);
+    expect(classifyListScreen(back.facts).kind).toBe("clean-list");
+    expect(back.facts.curY).toBe(list.facts.curY);
   });
 });
 

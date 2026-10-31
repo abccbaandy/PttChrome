@@ -57,6 +57,8 @@ describe("決策表", () => {
     ["board-list-refresh", "done", "none", "none", "origin"],
     ["mark-read-before", "done", "none", "origin", "none"],
     ["mark-read-before", "fail", "none", "origin", "none"],
+    ["read-later-list", "done", "none", "origin", "none"],
+    ["read-later-list", "fail", "none", "origin", "none"],
     ["mark-all-read", "done", "none", "origin", "none"],
     ["mark-all-read", "fail", "none", "origin", "none"],
     ["board-search", "done", "none", "none", "none"],
