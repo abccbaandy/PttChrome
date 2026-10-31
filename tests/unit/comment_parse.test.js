@@ -45,6 +45,7 @@ import {
   resolvePageOverlap,
   decideAccumulateBranch,
   classifyPageTransition,
+  isShortPageGrowth,
   locateScreenInPage,
   COMMENT_USERID_COL
 } from "../../src/js/comment_parse";
@@ -1267,6 +1268,15 @@ describe("commentTailCols（推文內容結尾／日期結尾欄）", () => {
 // sticky pendingReset 只在「確認文章第一頁」時消費，另有身分自癒。
 describe("decideAccumulateBranch", () => {
   const d = decideAccumulateBranch;
+  test("單頁短文原地長高（實況推文）→ regrow；換文章的 rebuild 仍優先", () => {
+    expect(
+      d({ prevPageState: 3, statusStart: 1, kContent: 0, transition: "restart", shortPageGrowth: true })
+    ).toBe("regrow");
+    expect(
+      d({ prevPageState: 3, pendingReset: true, statusStart: 1, kContent: 0, headerChanged: true, shortPageGrowth: true })
+    ).toBe("rebuild");
+    expect(d({ complete: false, prevPageState: 3, statusStart: 1, shortPageGrowth: true })).toBe("skip");
+  });
   test("race 自癒：旗標已被舊幀吃掉，新文章第一頁（statusStart=1、零重疊、header 變了）→ rebuild", () => {
     expect(
       d({ prevPageState: 3, pendingReset: false, statusStart: 1, kContent: 0, hasAcc: true, headerChanged: true })
@@ -1496,5 +1506,34 @@ describe("locateScreenInPage", () => {
   });
   test("落地畫面比長頁剩餘列還長（貼近文末）⇒ 只比得到的前綴", () => {
     expect(locateScreenInPage({ pageTexts: page, screenTexts: page.slice(195, 200).concat(["", ""]), hintIndex: 195 })).toBe(195);
+  });
+});
+
+// 實況模式（upstream 3c7d9af）讓單頁短文在原地長高；畫面事實見 ptt_src_screens.test.js 的 live_short。
+describe("isShortPageGrowth", () => {
+  const H = ["作者 a", "標題 t", "時間 x", "────", ""];
+  const pad = (rows) => rows.concat(Array(23 - rows.length).fill(""));
+  const g = (o) =>
+    isShortPageGrowth(Object.assign({ accEndRow: 5, statusStart: 1, statusEnd: 6 }, o));
+  test("空白列長出推文 → true", () => {
+    expect(g({ accTexts: pad([...H, "body"]), newTexts: pad([...H, "body", "推 b:x"]) })).toBe(true);
+  });
+  test("第一則蓋掉內文最後一列 → true", () => {
+    expect(g({ accTexts: pad([...H, "body"]), newTexts: pad([...H, "推 b:x"]) })).toBe(true);
+  });
+  test("最後一列以外有字的列變了 → false（不是同一篇長高）", () => {
+    expect(g({ accTexts: pad([...H, "body"]), newTexts: pad(["作者 z", ...H.slice(1), "body", "推 b:x"]) })).toBe(false);
+  });
+  test("沒長（E 沒變大）、不從第 1 行、行號未知、累積頁不只一個畫面 → false", () => {
+    const acc = pad([...H, "body"]);
+    const neu = pad([...H, "body", "推 b:x"]);
+    expect(g({ statusEnd: 5, accTexts: acc, newTexts: neu })).toBe(false);
+    expect(g({ statusStart: 2, accTexts: acc, newTexts: neu })).toBe(false);
+    expect(g({ accEndRow: null, accTexts: acc, newTexts: neu })).toBe(false);
+    expect(g({ accTexts: acc.concat(["x"]), newTexts: neu })).toBe(false);
+  });
+  test("畫面一模一樣（強制重繪）→ false", () => {
+    const acc = pad([...H, "body"]);
+    expect(g({ accTexts: acc, newTexts: acc.slice() })).toBe(false);
   });
 });

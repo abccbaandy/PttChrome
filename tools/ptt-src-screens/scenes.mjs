@@ -416,6 +416,38 @@ export const SCENES = [
     steps: [{ name: 'list' }, { keys: '1\r' }, { keys: '\r', name: 'article' }, { keys: 'v', name: 'live-failed' }],
   },
   {
+    // 實況模式切換成功（driver 只讓 Live 看板訂閱得到）＋別人推文送到（driver.c 的 HAS_LIVE）。
+    // 短文：畫面還沒滿 ⇒ pmore_print_live_line 寫在內文下一列、狀態列「目前顯示」的 E 加 1。
+    file: 'live_short',
+    entry: 'read:Live',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '1\r' },
+      { keys: '\r', name: 'article' },
+      { keys: 'v', name: 'live-on' },
+      { live: 'first live comment', name: 'live-1' },
+      { live: 'second live comment', name: 'live-2' },
+      { keys: 'v', name: 'live-off' },
+    ],
+  },
+  {
+    // 長文：v 先 mf_goBottom（還沒看完）；推文到了畫面已滿 ⇒ 終端機上捲一列、寫在倒數第二列、
+    // lineno＋1（狀態列 S～E 一起加 1）。之後按 ↑ 移動了 lineno ⇒ upstream 自己關掉實況。
+    file: 'live_long',
+    entry: 'read:Live',
+    rows: 24,
+    steps: [
+      // 游標本來就停在最後一篇（2）。
+      { name: 'list' },
+      { keys: '\r', name: 'article' },
+      { keys: 'v', name: 'live-on' },
+      { live: 'first live comment', name: 'live-1' },
+      { live: 'second live comment', name: 'live-2' },
+      { keys: '\x1b[A', name: 'live-off-up' },
+    ],
+  },
+  {
     // 文章裡按 y（bbs.c#do_reply）：「回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消」之類的 getdata。
     file: 'reply_prompt',
     entry: 'read:Test',

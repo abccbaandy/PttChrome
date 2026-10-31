@@ -93,6 +93,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
+| `live_short`／`live_long` | `read:Live`／24 | `⏎` `v` 推文×2 再關掉 | 實況切換成功＋別人推文送到：短文原地長高（E＋1、第一則**蓋掉內文最後一列**：檔頭分隔線多佔一列、dispedlines 沒算），長文上捲一列（S、E 都＋1）。好讀接法見 `comment_parse.isShortPageGrowth`、offline e2e `live_mode` |
 | `article_live` | `read:Test`／24 | `1⏎` `⏎` `v` | 實況模式（3c7d9af）的 v：driver 沒有 IPC service ⇒ 切換失敗，狀態列 part2 換成「[系統連線服務異常]」，`parseStatusRow` 照樣認得、pageState 3（切換成功時的「實況 第 x/y 頁」由 `string_util.test.js` 守） |
 | `reply_prompt` | `read:Test`／24 | `1⏎` `⏎` `y` | 文章裡 y 的「回應至 (F)看板 (M)作者信箱…」畫在倒數第二列：狀態列照樣認得（pageState 3）、游標在輸入欄、不攔 X、上傳網址走剪貼簿、編輯器輸入框不出現 |
 | `post_flow` | `read:Test`／24 | `^P` | 發文的種類 prompt：不是 clean-list、不是編輯器（pageState 不是 6）、上傳網址走剪貼簿 |
@@ -135,6 +136,11 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   **沒連上時改成有逾時的等待**（每 2～3 秒醒來 `ipc_check_reconnect`），`WAIT_MARK` 永遠不出現 ⇒ 每個場景第 0 步
   逾時。driver 在 `init_io()` 後把一個永遠不可讀的 pipe 掛成 IPC fd（`vkey_attach_ipc`）⇒ 回到無限期等待。
   舊 upstream 沒有這個函式：`generate.sh` 看 `proto.h` 決定 `-DHAS_IPC_FD`。
+- **實況推文**（3c7d9af，`-DHAS_LIVE`：`proto.h` 有 `pmore_feed_comment`）：IPC fd 改用 capture.mjs 開著的 fd 3
+  （平常不寫＝永遠不可讀）。場景步驟寫 `{ live: '<ASCII 內容>' }` ⇒ capture 往 fd 3 寫一列，driver 以 --wrap 接住
+  `ipc_read_packet`，用 upstream 的 `FormatCommentString`（bbs.c#recommend 的參數，推／bob）排成推文列、包成
+  `IPC_TYPE_LIVE_COMMENT` 交回 `wmsg_ipc_handler`，之後是 upstream 自己的 pmore 實況路徑。`ipc_sub` 只在
+  **Live 看板**成功（其他看板照舊「連不上」，`article_live` 守 override_msg）。
 - driver.c 本身是 UTF-8：要寫 Big5 字串用跳脫序列，且拆開寫（`"\xc3" "D"`，否則 `\xc3D` 被吃成一個跳脫）。
 
 upstream 再弄壞 build（新的必要 conf、新的需要排除的物件）時 generate 會紅（exit 2）：修法補進

@@ -126,6 +126,79 @@ time_t time(time_t *t)
     return FIXED_NOW;
 }
 
+// 實況模式（upstream 3c7d9af，文章裡按 v）：pmore 的 live_toggle ⇒ more.c#common_pager_live_toggle
+// ⇒ ipc_sub(bid, aid) 向 IPC service 訂閱這篇；別人推文時 post.c 把**寫進文章檔的那一列**
+// （comments.c#FormatCommentString）ipc_pub 出去，service 轉成 IPC_TYPE_LIVE_COMMENT 送到訂閱者的
+// IPC fd ⇒ io.c#vkey_process_ipc 讀封包 ⇒ wmsg.c#wmsg_ipc_handler ⇒ pmore_feed_comment ⇒ 等鍵回
+// I_OTHERDATA ⇒ pmore_print_live_comment 把那一列畫上畫面。
+// driver 沒有 service：--wrap 讓訂閱一律成功並記下 bid／aid；IPC fd 用 capture.mjs 給的 fd 3，
+// 場景的 live 步驟往 fd 3 寫一列推文內容（msg），__wrap_ipc_read_packet 照 bbs.c#recommend 的參數
+// 用 upstream 自己的 FormatCommentString 排成推文列，包成 LIVE_COMMENT 封包交回去。
+// generate.sh 看 proto.h 有沒有 pmore_feed_comment 決定 HAS_LIVE（舊 upstream 沒有這些符號）。
+#if HAS_LIVE
+#define LIVE_FD 3
+static uint32_t live_bid;
+static aidu_t live_aid;
+
+int __wrap_ipc_is_connected(void) { return 1; }
+// 只有 Live 看板訂閱得到：其他看板照舊走「service 連不上」（article_live 場景守 override_msg 那條）。
+int __wrap_ipc_sub(uint32_t bid, aidu_t aid)
+{
+    if (strcmp(currboard, "Live") != 0)
+        return -1;
+    live_bid = bid;
+    live_aid = aid;
+    return 0;
+}
+int __wrap_ipc_unsub(uint32_t bid, aidu_t aid)
+{
+    (void)bid;
+    (void)aid;
+    return 0;
+}
+
+int __real_ipc_read_packet(int fd, ipc_hdr_t *hdr, void *payload_buf, size_t bufsz);
+int __wrap_ipc_read_packet(int fd, ipc_hdr_t *hdr, void *payload_buf, size_t bufsz)
+{
+    if (fd != LIVE_FD)
+        return __real_ipc_read_packet(fd, hdr, payload_buf, bufsz);
+    char msg[STRLEN] = "";
+    size_t n = 0;
+    char c;
+    while (__real_read(LIVE_FD, &c, 1) == 1 && c != '\n')
+        if (n + 1 < sizeof(msg)) msg[n++] = c;
+    msg[n] = '\0';
+    if (!n) die("live: empty comment");
+
+    // bbs.c#recommend：推（type 0）、看板沒開 IP 記錄 ⇒ tail 是「 月/日 時:分」。
+    const char *myid = "bob";
+    int maxlength = 78 - 3 - 6 - 1 - 6 - (int)strlen(myid);
+    char tail[STRLEN];
+    SNPRINTF(tail, " %s", Cdate_mdHM(&now));
+    char formatted[STRLEN * 2];
+    FormatCommentString(formatted, sizeof(formatted), 0, myid, maxlength, msg, tail);
+    // post.c 送出前去掉行尾換行（ipc_pub 那段）。
+    size_t len = strlen(formatted);
+    while (len > 0 && (formatted[len - 1] == '\n' || formatted[len - 1] == '\r'))
+        formatted[--len] = '\0';
+
+    ipc_pubsub_t ps;
+    if (bufsz < sizeof(ps)) die("live: payload buffer");
+    memset(&ps, 0, sizeof(ps));
+    ps.bid = live_bid;
+    ps.timestamp = (uint32_t)now;
+    ps.aid = live_aid;
+    STRLCPY(ps.text, formatted);
+    memcpy(payload_buf, &ps, sizeof(ps));
+    memset(hdr, 0, sizeof(*hdr));
+    hdr->magic = IPC_MAGIC;
+    hdr->version = IPC_VERSION;
+    hdr->type = IPC_TYPE_LIVE_COMMENT;
+    hdr->len = sizeof(ps);
+    return 1;
+}
+#endif
+
 #define MAX_FAV 16
 static char fav_names[MAX_FAV][IDLEN + 1];
 static int fav_count = 0;
@@ -402,9 +475,16 @@ int main(int argc, char *argv[])
     // upstream acee9aa 起等鍵也等 IPC service 的 fd；沒連上時改成每 2～3 秒醒來重連（有逾時的等待），
     // WAIT_MARK 永遠不出現。掛一個永遠不會可讀的 pipe 當 IPC fd ⇒ 回到無限期等待（select(NULL)／poll(INFTIM)）。
     // generate.sh 看 header 有沒有 vkey_attach_ipc 決定 HAS_IPC_FD。
+#if HAS_LIVE
+    // 實況推文從 fd 3 進來（見 __wrap_ipc_read_packet）；capture.mjs 一直開著它，沒寫就永遠不可讀。
+    if (fcntl(LIVE_FD, F_GETFD) < 0) die("live fd 3");
+    vkey_attach_ipc(LIVE_FD);
+    vkey_set_ipc_handler(wmsg_ipc_handler);
+#else
     int ipc_pipe[2];
     if (pipe(ipc_pipe)) die("ipc pipe");
     vkey_attach_ipc(ipc_pipe[0]);
+#endif
 #endif
     term_init();
     term_set_size(80, rows);

@@ -29,7 +29,8 @@ export function runScene(cmd, seed, scene, timing = {}) {
   const mark = Buffer.from(WAIT_MARK, 'latin1');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ptt-src-screens-'));
   const child = spawn(cmd[0], [...cmd.slice(1), home, seed, scene.entry, String(scene.rows)], {
-    stdio: ['pipe', 'pipe', 'pipe'],
+    // fd 3：實況推文（driver.c 的 HAS_LIVE）。一直開著、只有 live 步驟才寫 ⇒ 平常永遠不可讀。
+    stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
   });
   let pending = Buffer.alloc(0);
   // 'close' 在 stdout／stderr 都讀完之後才觸發（'exit' 可能比最後一批位元組早到）。
@@ -66,8 +67,10 @@ export function runScene(cmd, seed, scene, timing = {}) {
     settle();
   });
   child.stdin.on('error', () => {});
+  child.stdio[3].on('error', () => {});
 
-  const frame = (step, keys) =>
+  // live：一則別人剛推的推文內容（ASCII），driver 排成推文列、當成 IPC 送來的實況推文。
+  const frame = (step, keys, live) =>
     new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => waiter.done(new CaptureError(`${scene.file}: 第 ${step} 步 ${frameMaxMs}ms 沒等到 driver 回到等鍵`)),
@@ -83,6 +86,7 @@ export function runScene(cmd, seed, scene, timing = {}) {
         },
       };
       if (keys) child.stdin.write(Buffer.from(keys, 'latin1'));
+      if (live) child.stdio[3].write(Buffer.from(live + '\n', 'latin1'));
       settle();
     });
 
@@ -91,10 +95,12 @@ export function runScene(cmd, seed, scene, timing = {}) {
     try {
       for (let i = 0; i < scene.steps.length; ++i) {
         const step = scene.steps[i];
-        const bytes = await frame(i, step.keys || '');
+        const bytes = await frame(i, step.keys || '', step.live || '');
         if (!bytes.length)
           throw new CaptureError(`${scene.file}: 第 ${i} 步（keys=${JSON.stringify(step.keys || '')}）沒有任何輸出\n${stderr}`);
-        frames.push({ name: step.name || null, keys: step.keys || '', bytes: bytes.toString('latin1') });
+        const f = { name: step.name || null, keys: step.keys || '' };
+        if (step.live) f.live = step.live;
+        frames.push({ ...f, bytes: bytes.toString('latin1') });
       }
     } finally {
       if (!closed) child.kill('SIGKILL');

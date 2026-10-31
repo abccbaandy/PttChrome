@@ -11,7 +11,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText, parseStatusUserid } from './string_util';
-import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, COMMENT_TYPE_FILTER_PREFIX, FilterChipCounter } from './comment_parse';
+import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, isShortPageGrowth, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, COMMENT_TYPE_FILTER_PREFIX, FilterChipCounter } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, listNumRange, isHiddenListRow, pinnedRowKey, MAX_LIST_ROWS, MAX_LIST_TOTAL_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
@@ -3109,6 +3109,7 @@ TermView.prototype = {
     // Only the last `newRows.length` accumulated rows can overlap, so map just
     // the tail to text (keeps it O(screen), not O(article)).
     var accTail = null, newTexts = null, maxK = 0, kContent = 0, headerChanged = false;
+    var shortPageGrowth = false;
     // A gap seek (':N\r') is in flight — see EasyReading._healAtLine. prevPageState may
     // have been poisoned by the goto prompt's frame, so it must not gate the overlap
     // precompute either: without accTail/kContent, resolvePageOverlap loses its content
@@ -3126,6 +3127,15 @@ TermView.prototype = {
       var accHead = rowToText(this.buf.pageLines[0]).replace(/\s+$/, '');
       var newHead = (newTexts[0] || '').replace(/\s+$/, '');
       headerChanged = accHead !== '' && newHead !== '' && accHead !== newHead;
+      // 單頁短文在原地長高（實況推文，見 comment_parse.isShortPageGrowth）。accTail 只取了
+      // 末尾 newRows.length 列 ⇒ 累積頁正好一個畫面時它就是整個累積頁。
+      shortPageGrowth = this.buf.pageLines.length === newRows.length && isShortPageGrowth({
+        accEndRow: this._accEndRow,
+        statusStart: result.rowIndexStart,
+        statusEnd: result.rowIndexEnd,
+        accTexts: accTail,
+        newTexts: newTexts
+      });
     }
     // rebuild vs append vs skip lives in a pure function (unit-guarded): the sticky
     // buf.easyReadingPendingReset ([ ]/leaveCurrentPost) is only consumed on a
@@ -3152,7 +3162,8 @@ TermView.prototype = {
       headerChanged: headerChanged,
       transition: transition,
       healInFlight: healing,
-      rowsUnknown: !!(result && result.rowsUnknown)
+      rowsUnknown: !!(result && result.rowsUnknown),
+      shortPageGrowth: shortPageGrowth
     });
     // 反向讀取（End）期間，forward 的 gap／seekBack／append 判定都不適用（往上讀的
     // 每一頁在 forward 眼裡都是 'backward'）。只有 rebuild（換文章）與 P6 的 skip
@@ -3231,6 +3242,12 @@ TermView.prototype = {
       // The gap seek landed and its rows are spliced in — drop the gate.
       if (healing) this.buf.easyReadingHealInFlight = false;
       // PTT's pointer is back on the accumulated tail: any seekBack is settled.
+      this.buf.easyReadingSeekBack = null;
+    } else if (branch === 'regrow') {
+      // 單頁短文長高（實況推文）：新畫面就是整篇，直接換掉；同一篇，每篇狀態都不清。
+      this.buf.pageLines = newRows.map(internRow);
+      this._accEndRow = result.rowIndexEnd;
+      this._lastAccumulatedSig = statusSignature(result);
       this.buf.easyReadingSeekBack = null;
     } else if (branch === 'appendByContent') {
       // 狀態列沒有行號（pmore override_msg／oldstatusbar，見 parseStatusRow）：只能靠

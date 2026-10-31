@@ -67,6 +67,8 @@
 - **settle 不在「已寫入、未 flush」時觸發**（CONFIRMED unit `settle_gating.test.js`＋offline 高負載重現）：計時器只在 notify 時 re-arm，但 server 回應是 `onData` 先寫進 TermBuf、30ms 後才 notify（BSU 期間更久）。計時器到期時 `timerUpdate || inSyncUpdate` ⇒ 不發 settle、重新 arm。否則 listener 讀到沒跑 `updateCharAttr` 的畫面 ⇒ 狀態列 Big5 未解 ⇒ `_onScreenSettled` 判成 pageState 5、`startedEasyReading=false` ⇒ 該窗口內按的 End／PgDn 原生送出（反向讀取沒啟動、改走缺頁自癒）。CPU 忙時才放大成偶發。**新增讀畫面的 settle listener 可依賴「settle 時 buffer 已 flush」**。
 - 退化情形（guess）：連線在**畫面中途**停 >`SETTLE_MS`（網路卡）才可能 premature settle；最壞首篇自動 enable 漏一次（捲動/重進即恢復），非 crash。`SETTLE_MS` 為可調常數，slow link premature-settle 就調高。
 
+- **實況模式（upstream 3c7d9af，文章裡 v）**（CONFIRMED upstream 產畫面＋offline e2e `live_mode`）：別人推文時 PTT 主動把那一列送上畫面。畫面已滿 ⇒ 上捲一列、狀態列 S／E 都＋1，照一般往後接。**單頁短文**畫面沒滿 ⇒ 推文寫在原地、只有 E＋1；累積頁是第一幀整個畫面（含空白填充列）、行號只到 E，照往後接會把整個畫面再接一次 ⇒ `isShortPageGrowth` 認出「原地長高」走 `'regrow'`：直接換成新畫面（同一篇，不清每篇狀態）。第一則會蓋掉內文最後一列（upstream 的行為），好讀照鏡像。
+
 ## 反向讀取（讀取中按 End，CONFIRMED unit＋offline e2e）
 
 行為：讀取中（`pagePercent<100` ∧ `!reachedPageEnd`）按 End／`$`／`G`（後兩者只在切原生 pref 沒攔走時）⇒ 保留已讀的 head，跳文末建立 tail，逐頁往上插在兩者之間，碰到 head 接合；已讀完 ⇒ 只 `_scrollBottom`。協定依據 `docs/pttbbs-screen-protocol.md` §13 P10／P11。
