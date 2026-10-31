@@ -1403,6 +1403,15 @@ export const en_US = {
   "recent_added": {
     "message": "Saved to read later (find it on the home dashboard or with F4)"
   },
+  "recent_already_later": {
+    "message": "This post is already in Read later"
+  },
+  "recent_list_no_aid": {
+    "message": "Could not read this post's AID; not saved to Read later"
+  },
+  "recent_list_busy": {
+    "message": "Cannot save to Read later right now, please try again"
+  },
   "options_showWhatsNew": {
     "message": "Show new features after an update"
   },

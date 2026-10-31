@@ -75,6 +75,8 @@ import {
 import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { recordFor, listRecordMatches } from './reading_record';
 import { markReadPromptShown } from './mark_read_prompt';
+import { postInfoAnswer } from './aid_navigation';
+import { KEY_DISMISS } from './screen_dismiss';
 import {
   windowVisibleSequence,
   LIST_HEADER_ROWS,
@@ -1110,6 +1112,15 @@ ListSession.prototype = {
     return !!readEffectivePrefs().enableListNativeAutoResume;
   },
 
+  // 真游標「現在」是不是在 num 那篇（可以省掉跳號同步腿）。背景補頁還在線上時一律不是：
+  // 它的跳號（`<base>⏎`）與配對的翻頁都會移動真游標，_serverNum 要等它 onDone 才更新
+  // ⇒ 交易若在這時拿舊值判「不用同步」，後面的 v／Q／t 就落在補頁的落點那一列。
+  // 交易自己的 _forceRedraw 就可能觸發補頁（_maybeFill），所以這不是罕見的時序。
+  _serverCursorAt: function(num) {
+    if (num == null || num !== this._serverNum) return false;
+    return (this._queue.inFlightKind || '').indexOf('prefetch') !== 0;
+  },
+
   // pref on ∧ 終端機列數合法 ∧ the article easy reading is not mid-post
   // (startedEasyReading tracks an actually-open post; view.useEasyReadingMode
   // stays latched true between posts, so it is NOT the right guard here).
@@ -1659,7 +1670,7 @@ ListSession.prototype = {
       self._enqueuePassthroughStep(steps, 0);
       if (hint && self._view.flashListHint) self._view.flashListHint(hint, 4000);
     };
-    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+    if (this._selectedNum != null && !this._serverCursorAt(this._selectedNum)) {
       this._freezeForTransaction();
       // onFail too: still hand over to native + send (visible degrade — the
       // native mirror shows whatever the server did; never a silent dead key).
@@ -1714,7 +1725,7 @@ ListSession.prototype = {
       if (self.state === 'functionMode' && self._renderMode === 'frozen')
         self._degradeToNative('游標同步逾時，已切至原生模式');
     };
-    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+    if (this._selectedNum != null && !this._serverCursorAt(this._selectedNum)) {
       this._enqueueCursorSyncJump('native-sync-jump', send, abort);
       return;
     }
@@ -2063,7 +2074,7 @@ ListSession.prototype = {
       });
       return;
     }
-    if (num == null || num === this._serverNum) {
+    if (num == null || this._serverCursorAt(num)) {
       // No selection (nothing to jump to) or the real cursor is already on
       // the selection — skip the sync leg (one round-trip).
       this._enqueueLeaveKey();
@@ -2098,7 +2109,7 @@ ListSession.prototype = {
     };
     // A 類鍵幾乎都是**對真游標所在那一列**動作的（thread 家族從游標找關聯文、
     // t 標記游標那一列），本地導覽零網路 ⇒ 真游標落後時必須先跳號同步。
-    if (this._selectedNum != null && this._selectedNum !== this._serverNum) {
+    if (this._selectedNum != null && !this._serverCursorAt(this._selectedNum)) {
       this._enqueueCursorSyncJump('inplace-sync-jump', send, function() {
         self._degradeToNative('操作逾時，已切至原生模式');
       });
@@ -2837,6 +2848,76 @@ ListSession.prototype = {
       ],
       // 不閃「切原生」提示：結論由上面那句在落地後補（兩句連著閃會互相蓋掉）。
       { kind: 'mark-read', hint: null, resumeOnLanding: true }
+    );
+    return true;
+  },
+
+  // ---- 右鍵選單「稍後再讀」（P53，列表的列沒有 AID ⇒ 按 Q 問）----------------
+
+  // 純查詢：跟「前已讀後未讀」同一組條件（active＋buffer、不是 header／空白列／置底文）。
+  // 自動回好讀（enableListNativeAutoResume）關掉時不給：那條路的游標同步失敗仍會照送
+  // （_beginPassthroughBytes），Q 落在別列就收錯篇。
+  readLaterTargetAtRow: function(renderRow) {
+    if (!this._autoResumeEnabled()) return null;
+    return this.markReadTargetAtRow(renderRow);
+  },
+
+  // 兩步：真游標移到那一列 → `Q`（bbs.c#view_postinfo 資訊框）→ 空白關框。回 true ＝接手。
+  // 在列表裡 Q 的 FULLUPDATE 只是重畫列表、游標不動（read.c 的 i_read_key），所以關框
+  // 落地那一幀就是原本的列表，凍結交易直接 rebuild 回好讀。
+  // 第二步只在第一步認出資訊框（postInfoAnswer）之後才送：框沒出現（畫面偏移、PTT 沒反應）
+  // ⇒ 逾時切原生，不送空白（列表上的空白是翻頁）。onAnswer({ aid, board } | null) 只在
+  // 框關掉、回到列表之後才叫。
+  readLaterAt: function(num, onAnswer) {
+    if (this._renderMode === 'native') return false;
+    if (this.state === 'opening' || (this.state === 'functionMode' && this._renderMode === 'frozen')) {
+      if (this._view.flashListHint) this._view.flashListHint('好讀列表：指令處理中，請稍候…');
+      return true;
+    }
+    if (this.state !== 'active' || num == null || !this._autoResumeEnabled()) return false;
+
+    this._selectedNum = num;
+    this._selectedPinnedKey = null;
+    this._forceRedraw();
+    const rr = recordFor(this._core);
+    const bm = rr.begin('read-later-list', { list: this.readingPosition(), listOwner: this });
+
+    const self = this;
+    let answer = null;
+    const fail = function() {
+      rr.end(bm, 'fail');
+      self._degradeToNative('讀不到文章代碼，已切至原生模式');
+    };
+    this._beginPassthroughBytes(
+      [
+        {
+          keys: 'Q',
+          kind: 'read-later-info',
+          // 不可以尾附 \f：會被資訊框的 pressanykey 吃掉當成關框（同 aid_navigation.queryPostAid）。
+          fullRepaint: false,
+          expect: function(snap, facts) {
+            const a = postInfoAnswer(facts.rowTexts, facts.rows);
+            if (!a) return false;
+            answer = a.info;
+            return true;
+          },
+          onFail: fail
+        },
+        {
+          keys: KEY_DISMISS,
+          kind: 'read-later-dismiss',
+          // 框收掉、回到列表（游標在編號列行首）才算落地；框還在 ⇒ 繼續等。
+          expect: function(snap, facts) {
+            return facts.kind === 'clean-list' && postInfoAnswer(facts.rowTexts, facts.rows) === false;
+          },
+          onFail: fail,
+          onDone: function() {
+            rr.end(bm, 'done');
+            if (onAnswer) onAnswer(answer);
+          }
+        }
+      ],
+      { kind: 'read-later', hint: null, resumeOnLanding: true }
     );
     return true;
   },

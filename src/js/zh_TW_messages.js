@@ -1402,6 +1402,15 @@
   "recent_added": {
     "message": "已加入稍後再讀（首頁、F4 指令面板找得到）"
   },
+  "recent_already_later": {
+    "message": "這篇已經在稍後再讀裡"
+  },
+  "recent_list_no_aid": {
+    "message": "讀不到這篇的文章代碼，沒有加入稍後再讀"
+  },
+  "recent_list_busy": {
+    "message": "現在無法加入稍後再讀，請稍後再試"
+  },
   "options_showWhatsNew": {
     "message": "更新後顯示新功能"
   },

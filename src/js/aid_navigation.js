@@ -97,6 +97,27 @@ const KEY_LEFT = '\x1b[D';
 // 仍是「【主功能表】」），所以 rowHasTitle 兩種形狀都吃 —— 理由與邊界見
 // screen_titles.js 的檔頭。**不要**在這裡另外宣告一份 `'【主功能表】'` 字面值，
 // 那正是這次要收掉的東西。
+// Q 文章資訊框（bbs.c#view_postinfo）的答案：{ info: { aid, board } } ／ { info: null }
+// （框開著但這篇沒有 AID：只畫一條框線、底列是 pressanykey）／ false（框還沒出現）。
+// aid_navigation.queryPostAid 與列表的「稍後再讀」（list_session.readLaterAt）共用。
+export function postInfoAnswer(rowTexts, rows) {
+  let info = null;
+  let fromUrl = null;
+  for (let r = 0; r < rowTexts.length; ++r) {
+    if (!info) info = parsePostInfoAid(rowTexts[r]);
+    if (!fromUrl) fromUrl = parsePostInfoUrl(rowTexts[r]);
+  }
+  // 同一個框的第二列（bbs.c:3713）帶著完整網址。currboard 為空時第一列的
+  // 板名會印「不明」（bbs.c:3701），網址裡的看板卻一直是對的 ⇒ 補得回來。
+  if (info && !info.board && fromUrl) info = { aid: info.aid, board: fromUrl.board };
+  if (info) return { info: info };
+  if (fromUrl) return { info: fromUrl };
+  // Box is up but this post has no AID (bbs.c:3707 prints a bare frame
+  // line). A real answer — stop waiting and move on without an upgrade.
+  const lastRow = rowTexts[(rows || rowTexts.length) - 1] || '';
+  return PRESS_ANY_KEY_RE.test(lastRow) ? { info: null } : false;
+}
+
 export function isMainMenuRow(rowText) {
   return rowHasTitle(rowText, MAIN_MENU);
 }
@@ -1292,22 +1313,7 @@ AidNavigation.prototype = {
       probeTimeoutMs: STEP_PROBE_WINDOW_MS,
       hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
-        let info = null;
-        let fromUrl = null;
-        for (let r = 0; r < facts.rowTexts.length; ++r) {
-          if (!info) info = parsePostInfoAid(facts.rowTexts[r]);
-          if (!fromUrl) fromUrl = parsePostInfoUrl(facts.rowTexts[r]);
-        }
-        // 同一個框的第二列（bbs.c:3713）帶著完整網址。currboard 為空時第一列的
-        // 板名會印「不明」（bbs.c:3701），網址裡的看板卻一直是對的 ⇒ 補得回來。
-        if (info && !info.board && fromUrl)
-          info = { aid: info.aid, board: fromUrl.board };
-        if (info) return { info: info };
-        if (fromUrl) return { info: fromUrl };
-        // Box is up but this post has no AID (bbs.c:3707 prints a bare frame
-        // line). A real answer — stop waiting and move on without an upgrade.
-        const lastRow = facts.rowTexts[facts.rows - 1] || '';
-        return PRESS_ANY_KEY_RE.test(lastRow) ? { info: null } : false;
+        return postInfoAnswer(facts.rowTexts, facts.rows);
       },
       onDone: function(result) {
         handlers.onDone(result.info);

@@ -92,7 +92,8 @@ export const SCENES = [
     file: 'post_info',
     entry: 'read:Test',
     rows: 24,
-    steps: [{ name: 'list' }, { keys: 'Q', name: 'info' }],
+    // 關框：pressanykey 吃掉空白後 FULLUPDATE 重畫列表、游標不動（列表的稍後再讀落地靠它）。
+    steps: [{ name: 'list' }, { keys: 'Q', name: 'info' }, { keys: ' ', name: 'dismissed' }],
   },
   {
     // 文章列表的 h：新版說明選單（psb.c#cmd_show_help_layers_inner）。

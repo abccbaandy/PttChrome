@@ -101,6 +101,12 @@ export const RESTORE_TABLE = {
     cancel: cell(null, 'origin'),
     fail: cell(null, 'origin')
   },
+  // 列表的稍後再讀（Q 問 AID 再關框）：列表沒變，一律回原處。
+  'read-later-list': {
+    done: cell(null, 'origin'),
+    cancel: cell(null, 'origin'),
+    fail: cell(null, 'origin')
+  },
   'mark-all-read': {
     done: cell(null, 'origin'),
     cancel: cell(null, 'origin'),

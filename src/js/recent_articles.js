@@ -461,6 +461,17 @@ RecentArticles.prototype = {
     return true;
   },
 
+  // 列表的「稍後再讀」（P53）：開選單時還不知道是哪一篇（AID 要按 Q 才問得到）⇒ 只收不移。
+  // 'added' ／ 'exists'（本來就在，不動）／ null（不合法）。
+  addLater: function(entry, now) {
+    const e = cleanEntry(Object.assign({}, entry, { at: now || Date.now() }));
+    if (!e) return null;
+    if (this.isLater(recentKey(e.board, e.aid))) return 'exists';
+    const data = this.state;
+    this._write({ recent: data.recent, later: pushEntry(data.later, e, READ_LATER_LIMIT) });
+    return 'added';
+  },
+
   removeLater: function(key) {
     const data = this.state;
     if (!this.isLater(key)) return false;
