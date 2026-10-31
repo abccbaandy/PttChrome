@@ -43,10 +43,15 @@ int __real_poll(struct pollfd *fds, nfds_t n, int timeout);
 ssize_t __real_read(int fd, void *buf, size_t n);
 int __real_select(int n, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv);
 
-static void mark_wait(void)
+// driver 掛給 upstream 的 IPC fd（實況＝capture.mjs 的 fd 3，否則永遠不可讀的 pipe；見 main）。
+static int driver_ipc_fd = -1;
+
+// also_fd：這次等待也在等的另一個 fd（driver 的 IPC fd；-1＝沒有）。它已經可讀（實況推文剛寫進來）
+// ⇒ 等待會立刻醒來處理它，不是幀尾（不然 capture 會在推文畫出來之前就切幀）。
+static void mark_wait(int also_fd)
 {
-    struct pollfd p = { .fd = 0, .events = POLLIN };
-    if (__real_poll(&p, 1, 0) > 0)
+    struct pollfd p[2] = { { .fd = 0, .events = POLLIN }, { .fd = also_fd, .events = POLLIN } };
+    if (__real_poll(p, also_fd >= 0 ? 2 : 1, 0) > 0)
         return;
     if (write(1, WAIT_MARK, sizeof(WAIT_MARK) - 1) < 0)
         die("write wait mark");
@@ -55,14 +60,22 @@ static void mark_wait(void)
 ssize_t __wrap_read(int fd, void *buf, size_t n)
 {
     if (fd == 0)
-        mark_wait();
+        mark_wait(-1);
     return __real_read(fd, buf, n);
 }
 
 int __wrap_select(int n, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
 {
+#if HAS_LIVE
+    // 實況迴圈（upstream c6d35a8 起在 more.c#live_run）每秒醒來重畫狀態列的經過時間（有逾時的等待
+    // ⇒ WAIT_MARK 永遠不出現）。driver 的時間是釘死的（見 time()），每秒重畫畫的是同一幀 ⇒ 同時在等
+    // stdin 與 driver 的 IPC fd 的有逾時等待，一律當成無限期等待：等到按鍵或推文才醒。
+    if (tv && (tv->tv_sec || tv->tv_usec) && r && driver_ipc_fd > 0 && driver_ipc_fd < n &&
+        FD_ISSET(0, r) && FD_ISSET(driver_ipc_fd, r))
+        tv = NULL;
+#endif
     if (!tv && r && n > 0 && FD_ISSET(0, r))
-        mark_wait();
+        mark_wait(driver_ipc_fd > 0 && driver_ipc_fd < n && FD_ISSET(driver_ipc_fd, r) ? driver_ipc_fd : -1);
     return __real_select(n, r, w, e, tv);
 }
 
@@ -71,7 +84,10 @@ int __wrap_poll(struct pollfd *fds, nfds_t n, int timeout)
     if (timeout < 0)
         for (nfds_t i = 0; i < n; i++)
             if (fds[i].fd == 0 && (fds[i].events & POLLIN)) {
-                mark_wait();
+                int also = -1;
+                for (nfds_t j = 0; j < n; j++)
+                    if (driver_ipc_fd > 0 && fds[j].fd == driver_ipc_fd) also = driver_ipc_fd;
+                mark_wait(also);
                 break;
             }
     return __real_poll(fds, n, timeout);
@@ -141,6 +157,15 @@ static uint32_t live_bid;
 static aidu_t live_aid;
 
 int __wrap_ipc_is_connected(void) { return 1; }
+#endif
+
+#if HAS_IPC_SYNC
+// upstream f5bb8f5：等鍵前 vkey_sync_ipc 以 ipc_get_fd() 重抓 IPC fd，蓋掉 vkey_attach_ipc 掛的那個
+// （沒連上 ⇒ 0 ⇒ 實況推文進不來、實況迴圈只剩有逾時的等待，WAIT_MARK 不出現）。交回 driver 掛的 fd。
+int __wrap_ipc_get_fd(void) { return driver_ipc_fd; }
+#endif
+
+#if HAS_LIVE
 // 只有 Live 看板訂閱得到：其他看板照舊走「service 連不上」（article_live 場景守 override_msg 那條）。
 int __wrap_ipc_sub(uint32_t bid, aidu_t aid)
 {
@@ -162,6 +187,11 @@ int __wrap_ipc_read_packet(int fd, ipc_hdr_t *hdr, void *payload_buf, size_t buf
 {
     if (fd != LIVE_FD)
         return __real_ipc_read_packet(fd, hdr, payload_buf, bufsz);
+    // upstream f5bb8f5 起 vkey_process_ipc 一次醒來連讀到 32 包、讀不到才停 ⇒ 沒有下一列就回「沒有封包」，
+    // 不可以阻塞在 fd 3 上（那會卡死在實況推文之後）。
+    struct pollfd lp = { .fd = LIVE_FD, .events = POLLIN };
+    if (__real_poll(&lp, 1, 0) <= 0)
+        return 0;
     char msg[STRLEN] = "";
     size_t n = 0;
     char c;
@@ -472,19 +502,22 @@ int main(int argc, char *argv[])
     // init_io 沒叫的話 pfterm 的輸出緩衝不存在，什麼都不會寫出來。
     init_io();
 #if HAS_IPC_FD
+    int ipc_attach_fd;
     // upstream acee9aa 起等鍵也等 IPC service 的 fd；沒連上時改成每 2～3 秒醒來重連（有逾時的等待），
     // WAIT_MARK 永遠不出現。掛一個永遠不會可讀的 pipe 當 IPC fd ⇒ 回到無限期等待（select(NULL)／poll(INFTIM)）。
     // generate.sh 看 header 有沒有 vkey_attach_ipc 決定 HAS_IPC_FD。
 #if HAS_LIVE
     // 實況推文從 fd 3 進來（見 __wrap_ipc_read_packet）；capture.mjs 一直開著它，沒寫就永遠不可讀。
     if (fcntl(LIVE_FD, F_GETFD) < 0) die("live fd 3");
-    vkey_attach_ipc(LIVE_FD);
-    vkey_set_ipc_handler(wmsg_ipc_handler);
+    ipc_attach_fd = LIVE_FD;
+    vkey_set_ipc_handler(IPC_HANDLER);
 #else
     int ipc_pipe[2];
     if (pipe(ipc_pipe)) die("ipc pipe");
-    vkey_attach_ipc(ipc_pipe[0]);
+    ipc_attach_fd = ipc_pipe[0];
 #endif
+    vkey_attach_ipc(ipc_attach_fd);
+    driver_ipc_fd = ipc_attach_fd;
 #endif
     term_init();
     term_set_size(80, rows);

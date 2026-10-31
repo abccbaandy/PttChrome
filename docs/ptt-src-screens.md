@@ -22,7 +22,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 ```
 
 - 不架站、不登入、不需要 logind／Go 服務。`generate.sh` exit 2＝build／driver／場景問題（不是解析器壞）。
-- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs 3c7d9af）；nightly 換成 upstream HEAD 產的。
+- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs fbe8e67）；nightly 換成 upstream HEAD 產的。
 - **輸出可重現**：driver 定義自己的 `time()`（執行檔的符號蓋過 libc），時間釘在 `FIXED_NOW`；同一份
   upstream 跑兩次 fixture 逐位元組相同。所以 fixture 有 diff＝upstream 改了畫面。
 
@@ -93,8 +93,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
-| `live_short`／`live_long` | `read:Live`／24 | `⏎` `v` 推文×2 再關掉 | 實況切換成功＋別人推文送到：短文原地長高（E＋1、第一則**蓋掉內文最後一列**：檔頭分隔線多佔一列、dispedlines 沒算），長文上捲一列（S、E 都＋1）。好讀接法見 `comment_parse.isShortPageGrowth`、offline e2e `live_mode` |
-| `article_live` | `read:Test`／24 | `1⏎` `⏎` `v` | 實況模式（3c7d9af）的 v：driver 沒有 IPC service ⇒ 切換失敗，狀態列 part2 換成「[系統連線服務異常]」，`parseStatusRow` 照樣認得、pageState 3（切換成功時的「實況 第 x/y 頁」由 `string_util.test.js` 守） |
+| `live_short`／`live_long` | `read:Live`／24 | `⏎` `v` 推文×2 再按鍵 | 實況切換成功＋別人推文送到。c6d35a8 起是 more.c#live_run 自己的迴圈：狀態列「 實況中 mm:ss [+N]  (X)留言(B)鈴聲… (任意鍵)離開」（不是 pmore 狀態列 ⇒ 好讀照原生鏡像）、「實 況 開 始」橫幅、推文逐列往下寫；X／B／T／M／S 以外的鍵都離開實況並**回到文章列表**。offline e2e `live_mode` 守「進實況後一個鍵都不替使用者送」。3c7d9af 的舊版（pmore 裡的實況，短文原地長高、`isShortPageGrowth`）fixture 留在 `tests/unit/fixtures/ptt_src_screens_legacy/` |
+| `article_live` | `read:Test`／24 | `1⏎` `⏎` `v` | 非 Live 看板的 v：訂閱失敗。c6d35a8 起是 vmsg「實況服務暫時無法使用，請稍後再試。」等按鍵；3c7d9af 舊版是狀態列 part2 換成「[系統連線服務異常]」（`parseStatusRow` 照樣認得、pageState 3，legacy fixture 守） |
 | `reply_prompt` | `read:Test`／24 | `1⏎` `⏎` `y` | 文章裡 y 的「回應至 (F)看板 (M)作者信箱…」畫在倒數第二列：狀態列照樣認得（pageState 3）、游標在輸入欄、不攔 X、上傳網址走剪貼簿、編輯器輸入框不出現 |
 | `post_flow` | `read:Test`／24 | `^P` | 發文的種類 prompt：不是 clean-list、不是編輯器（pageState 不是 6）、上傳網址走剪貼簿 |
 | `class_list` | `menu`／24 | `⏎` `⏎` | 分類根（row 0【分類看板】）不是可接管的看板列表；進群組後認成 `class` 變體、可接管、列解析得出板名 |
@@ -136,11 +136,17 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   **沒連上時改成有逾時的等待**（每 2～3 秒醒來 `ipc_check_reconnect`），`WAIT_MARK` 永遠不出現 ⇒ 每個場景第 0 步
   逾時。driver 在 `init_io()` 後把一個永遠不可讀的 pipe 掛成 IPC fd（`vkey_attach_ipc`）⇒ 回到無限期等待。
   舊 upstream 沒有這個函式：`generate.sh` 看 `proto.h` 決定 `-DHAS_IPC_FD`。
-- **實況推文**（3c7d9af，`-DHAS_LIVE`：`proto.h` 有 `pmore_feed_comment`）：IPC fd 改用 capture.mjs 開著的 fd 3
+- **實況推文**（3c7d9af，`-DHAS_LIVE`：`proto.h` 有 `pmore_feed_comment`，c6d35a8 起改認 `more.c` 有 `live_run`）：IPC fd 改用 capture.mjs 開著的 fd 3
   （平常不寫＝永遠不可讀）。場景步驟寫 `{ live: '<ASCII 內容>' }` ⇒ capture 往 fd 3 寫一列，driver 以 --wrap 接住
   `ipc_read_packet`，用 upstream 的 `FormatCommentString`（bbs.c#recommend 的參數，推／bob）排成推文列、包成
   `IPC_TYPE_LIVE_COMMENT` 交回 `wmsg_ipc_handler`，之後是 upstream 自己的 pmore 實況路徑。`ipc_sub` 只在
-  **Live 看板**成功（其他看板照舊「連不上」，`article_live` 守 override_msg）。
+  **Live 看板**成功（其他看板照舊「連不上」，`article_live` 守失敗路徑）。
+  f5bb8f5 起三件事要跟著改：①每次等鍵前 `vkey_sync_ipc` 用 libcmbbs 的 `ipc_get_fd()` 重抓 IPC fd、蓋掉
+  `vkey_attach_ipc` 掛的（`-DHAS_IPC_SYNC`：`proto.h` 有 `vkey_sync_ipc` ⇒ `--wrap=ipc_get_fd` 交回 driver 的 fd）；
+  ②`vkey_process_ipc` 一次醒來連讀到 32 包、讀不到才停 ⇒ `__wrap_ipc_read_packet` 沒有下一列要回 0，不可阻塞；
+  ③ handler 改名 `mbbsd_ipc_handler`（`-DIPC_HANDLER`）。c6d35a8 的實況迴圈每秒醒來重畫經過時間（有逾時的等待）：
+  driver 時間釘死、每秒畫同一幀 ⇒ 同時等 stdin 與 driver IPC fd 的有逾時 select 當無限期等待；IPC fd 已可讀時
+  不寫 WAIT_MARK（不然推文還沒畫就切幀）。
 - driver.c 本身是 UTF-8：要寫 Big5 字串用跳脫序列，且拆開寫（`"\xc3" "D"`，否則 `\xc3D` 被吃成一個跳脫）。
 
 upstream 再弄壞 build（新的必要 conf、新的需要排除的物件）時 generate 會紅（exit 2）：修法補進
