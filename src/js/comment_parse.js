@@ -1087,6 +1087,35 @@ export function classifyPageTransition({ accEndRow, statusStart, statusEnd }) {
   return 'continuation';
 }
 
+// 短文（一個畫面就裝得下）在原地長高：pmore 的實況模式（upstream 3c7d9af，文章裡按 v）收到別人的
+// 推文時，畫面還沒滿就把推文寫在內文下一列（pmore.c#pmore_print_live_line 的
+// `mf.dispedlines < b_lines` 分支）、狀態列「第 1~E 行」的 E 加 1，lineno 不動。
+// 一般翻頁做不出這種幀：多頁的文章 PgDn 會被 mf.maxdisps 夾成整頁，只有單頁短文會留空白填充列。
+// 照「往後接」處理時，累積頁是第一幀的整個畫面（含空白填充列）、狀態列行號卻只到 E ⇒ 重疊量對不上，
+// 整個畫面被再接一次（每則推文都把作者列以下重複一份，新推文埋在空白列後面）。
+// 另外，有檔頭的文章第一則實況推文會**蓋掉**內文最後一列：檔頭下的分隔線多佔一列畫面，
+// dispedlines 卻沒算它，`move(mf.dispedlines, 0)` 落在最後一列內文上（upstream 3c7d9af 的行為，
+// 本機 ptt-src-screens 的 live_short 場景產得出來）。好讀照 PTT 畫面鏡像，那一列跟著被蓋。
+// 判準：累積頁正好是一個畫面、兩幀都從第 1 行開始、E 變大，而且舊畫面每一列不是空白、就是跟新畫面
+// 同一列一樣（只長不改）；唯一的例外是舊畫面最後一列有字的那一列被換掉（上面那種蓋掉）。
+// 成立 ⇒ 呼叫端直接換成新畫面（'regrow'），不是換文章，不清任何每篇狀態。
+export function isShortPageGrowth({ accEndRow, statusStart, statusEnd, accTexts, newTexts }) {
+  if (accEndRow == null || statusStart !== 1 || statusEnd == null || statusEnd <= accEndRow) return false;
+  if (!accTexts || !newTexts || accTexts.length !== newTexts.length) return false;
+  const trim = (t) => (t || '').replace(/\s+$/, '');
+  let lastFilled = -1;
+  for (let i = 0; i < accTexts.length; ++i) if (trim(accTexts[i]) !== '') lastFilled = i;
+  let changed = false;
+  for (let i = 0; i < accTexts.length; ++i) {
+    const a = trim(accTexts[i]);
+    const b = trim(newTexts[i]);
+    if (a === b) continue;
+    if (a !== '' && i !== lastFilled) return false;
+    changed = true;
+  }
+  return changed;
+}
+
 // Branch decision for term_view.accumulatePageLines — 'rebuild' (restart pageLines
 // as this screen) | 'append' (continuation de-dup) | 'skip' (transient/incomplete
 // frame) | 'gap' (P1 violated: a page was lost, caller must self-heal).
@@ -1142,7 +1171,8 @@ export function decideAccumulateBranch({
   headerChanged,
   transition,
   healInFlight,
-  rowsUnknown
+  rowsUnknown,
+  shortPageGrowth
 }) {
   if (complete === false) return 'skip';
   if (!healInFlight && prevPageState !== 3) return 'rebuild';
@@ -1163,6 +1193,7 @@ export function decideAccumulateBranch({
   if (statusStart == null) return 'skip';
   if (!healInFlight && statusStart === 1 && (pendingReset || (kContent === 0 && headerChanged)))
     return 'rebuild';
+  if (shortPageGrowth) return 'regrow';
   if (transition === 'gap') return 'gap';
   // Seek back into the accumulated range (see classifyPageTransition 'backward'). It
   // used to fall through to 'append': resolvePageOverlap clamps k to maxK so no row is

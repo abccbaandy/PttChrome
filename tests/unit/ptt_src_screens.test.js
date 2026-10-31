@@ -60,6 +60,9 @@ import { pushMaxBytes } from "../../src/js/long_push";
 import { navKeyBlockReason } from "../../src/js/nav_key_gate";
 import { App } from "../../src/js/pttchrome";
 import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
+import liveShortFx from "./fixtures/ptt_src_screens/live_short.json";
+import liveLongFx from "./fixtures/ptt_src_screens/live_long.json";
+import { isShortPageGrowth } from "../../src/js/comment_parse";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
 import articlePrefFx from "./fixtures/ptt_src_screens/article_pref.json";
@@ -275,6 +278,64 @@ describe("upstream pttbbs 產的文章實況切換（v，連不上 IPC service�
     expect(parseStatusRow(last)).toMatchObject({ pageIndex: 1, rowsUnknown: true });
     expect(classifyListScreen(facts).kind).toBe("article");
     expect(buf.pageState).toBe(3);
+  });
+});
+
+describe("upstream pttbbs 產的實況模式（v 切換成功＋別人推文送到，3c7d9af）", () => {
+  const status = (fx, name) => {
+    const { buf, rowTexts, facts } = screenAt(fx, name);
+    return { buf, rowTexts, facts, st: parseStatusRow(rowTexts[facts.rows - 1]) };
+  };
+
+  test("「實況」狀態列仍是文章頁，推文寫上畫面、E 跟著加", () => {
+    const on = status(liveLongFx, "live-on");
+    expect(on.rowTexts[on.facts.rows - 1]).toContain("實況");
+    expect(on.buf.pageState).toBe(3);
+    const one = status(liveLongFx, "live-1");
+    expect(one.buf.pageState).toBe(3);
+    expect(one.rowTexts[one.facts.rows - 2]).toContain("first live comment");
+    expect(one.st.rowIndexStart).toBe(on.st.rowIndexStart + 1);
+    expect(one.st.rowIndexEnd).toBe(on.st.rowIndexEnd + 1);
+  });
+
+  test("長文（畫面已滿）：上捲一列，照一般往後接就接得上（不是原地長高）", () => {
+    const on = status(liveLongFx, "live-on");
+    const one = status(liveLongFx, "live-1");
+    expect(
+      isShortPageGrowth({
+        accEndRow: on.st.rowIndexEnd,
+        statusStart: one.st.rowIndexStart,
+        statusEnd: one.st.rowIndexEnd,
+        accTexts: on.rowTexts.slice(0, -1),
+        newTexts: one.rowTexts.slice(0, -1),
+      }),
+    ).toBe(false);
+    expect(one.rowTexts.slice(0, -2)).toEqual(on.rowTexts.slice(1, -1));
+  });
+
+  test("短文（畫面沒滿）：原地長高，第一則蓋掉內文最後一列", () => {
+    const art = status(liveShortFx, "article");
+    const one = status(liveShortFx, "live-1");
+    const two = status(liveShortFx, "live-2");
+    expect([art.st.rowIndexStart, art.st.rowIndexEnd]).toEqual([1, 5]);
+    expect([one.st.rowIndexStart, one.st.rowIndexEnd]).toEqual([1, 6]);
+    expect([two.st.rowIndexStart, two.st.rowIndexEnd]).toEqual([1, 7]);
+    // pmore_print_live_line 寫在 move(dispedlines, 0)：檔頭分隔線多佔一列 ⇒ 落在 body 那列上。
+    const bodyRow = art.rowTexts.findIndex((t) => t.trim() === "body");
+    expect(one.rowTexts[bodyRow]).toContain("first live comment");
+    expect(two.rowTexts[bodyRow + 1]).toContain("second live comment");
+    const grow = (a, b) =>
+      isShortPageGrowth({
+        accEndRow: a.st.rowIndexEnd,
+        statusStart: b.st.rowIndexStart,
+        statusEnd: b.st.rowIndexEnd,
+        accTexts: a.rowTexts.slice(0, -1),
+        newTexts: b.rowTexts.slice(0, -1),
+      });
+    expect(grow(art, one)).toBe(true);
+    expect(grow(one, two)).toBe(true);
+    // 關掉實況：mmap 的舊檔重畫回來，E 變回 5 ⇒ 不是長高。
+    expect(grow(two, status(liveShortFx, "live-off"))).toBe(false);
   });
 });
 
