@@ -137,15 +137,39 @@ export function checkCursorAnchor(facts, anchor) {
 // 編號會被跳過 —— 那正是我們要的：`<編號>⏎` 只吃列表上印出來的編號，置底列沒有
 // 一個可以指定。置底文要定位只能靠 #AID（那條路是通的，見
 // aid_navigation#aidSearchLanded）。
+//
+// **這一頁有兩列以上對得上 ⇒ null**（不挑第一個）：身分只有「作者＋主題」，而主題是
+// subject_ex 之後的（Re:/R: 剝掉）⇒ 同一人在同一串的原文與回文、或連發兩篇 Re:，
+// 在列表上是同一個身分。挑錯一列就是推到別篇，收不回來。
 export function findAnchorRowNum(facts, anchor) {
-  if (!anchor || !anchor.author || !anchor.subject) return null;
-  if (!facts || !facts.rowTexts) return null;
+  const hits = anchorRowNums(facts, anchor);
+  return hits.length === 1 ? hits[0] : null;
+}
+
+// 這一頁 entry 區裡對得上錨點身分的列，回它們的編號（置底列沒有編號，不算）。
+// 給 long_push_session._gate 判「游標那列對得上，但它不是唯一的」。
+export function anchorRowNums(facts, anchor) {
+  const hits = [];
+  if (!anchor || !anchor.author || !anchor.subject) return hits;
+  if (!facts || !facts.rowTexts) return hits;
   const rows = facts.rows || facts.rowTexts.length;
   const nums = facts.nums || pageArticleNums(facts.rowTexts, facts.curY);
   for (let i = 3; i <= rows - 2; ++i) {
     if (nums[i] == null) continue;
     if (identityMatches(listRowIdentity(facts.rowTexts[i] || ''), anchor))
-      return nums[i];
+      hits.push(nums[i]);
   }
-  return null;
+  return hits;
+}
+
+// 這一頁上對得上錨點身分的列（含置底 ★ 列）有幾列。≥2 ⇒ 光靠身分分不出是哪一篇。
+export function anchorMatchCount(facts, anchor) {
+  if (!anchor || !anchor.author || !anchor.subject) return 0;
+  if (!facts || !facts.rowTexts) return 0;
+  const rows = facts.rows || facts.rowTexts.length;
+  let n = 0;
+  for (let i = 3; i <= rows - 2; ++i) {
+    if (identityMatches(listRowIdentity(facts.rowTexts[i] || ''), anchor)) ++n;
+  }
+  return n;
 }

@@ -12,6 +12,7 @@ import {
   subjectMatches,
   checkCursorAnchor,
   findAnchorRowNum,
+  anchorMatchCount,
 } from "../../src/js/long_push_anchor";
 
 // 依 bbs.c#readdoent 的 printf 序列排版（欄位表見 comment_parse.js）：
@@ -217,6 +218,33 @@ describe("findAnchorRowNum", () => {
   test("沒有錨點時不亂指", () => {
     const f = facts([listRow(1233, "abcUser", "[閒聊] 原本那篇")], 3);
     expect(findAnchorRowNum(f, null)).toBe(null);
+  });
+
+  // 同一人在同一串的原文與回文：主題剝掉 Re:/R: 之後相同 ⇒ 列表上同身分。
+  // 舊版回第一個（1233，原文），使用者推的若是回文 1235，第 2 則起就推到原文上。
+  test("REGRESSION 同一頁有兩列同身分 ⇒ null（分不出是哪一篇，不挑第一個）", () => {
+    const f = facts(
+      [
+        listRow(1233, "abcUser", "[閒聊] 原本那篇"),
+        listRow(1234, "otherGuy", "[公告] 新文", { cursor: true }),
+        listRow(1235, "abcUser", "[閒聊] 原本那篇", { type: "R", mark: "R:" }),
+      ],
+      4,
+    );
+    expect(findAnchorRowNum(f, ANCHOR)).toBe(null);
+    expect(anchorMatchCount(f, ANCHOR)).toBe(2);
+  });
+});
+
+describe("anchorMatchCount", () => {
+  test("只有一列對得上 ⇒ 1；置底列也算（讀得出身分）", () => {
+    const f = facts([listRow(1233, "abcUser", "[閒聊] 原本那篇", { cursor: true }), listRow(1234, "x", "y")], 3);
+    expect(anchorMatchCount(f, ANCHOR)).toBe(1);
+    const p = facts([PINNED_ROW, listRow(1233, "sysop", "公告")], 4);
+    expect(anchorMatchCount(p, { author: "sysop", subject: "公告" })).toBe(2);
+  });
+  test("沒有錨點 ⇒ 0", () => {
+    expect(anchorMatchCount(facts([], 3), null)).toBe(0);
   });
 });
 

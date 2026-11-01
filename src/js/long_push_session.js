@@ -49,7 +49,8 @@ import {
   articleAnchor,
   captureCursorAnchor,
   checkCursorAnchor,
-  findAnchorRowNum
+  findAnchorRowNum,
+  anchorMatchCount
 } from './long_push_anchor';
 import { aidSearchLanded } from './aid_navigation';
 import { toPostAid } from './aid_codec';
@@ -907,7 +908,11 @@ LongPushSession.prototype = {
     if (!facts || facts.kind !== 'clean-list') return proceed();
 
     const state = checkCursorAnchor(facts, this._anchor);
-    if (state === 'ok') return proceed();
+    // 對得上、而且這一頁只有它對得上 ⇒ 就是原篇。同一人在同一串的原文／回文（主題剝掉
+    // Re: 之後相同）會有兩列以上同身分：游標可能正好飄到另一篇上，身分照樣 'ok'。
+    // 那種頁面只信 #AID（權威）；沒有 AID ⇒ findAnchorRowNum 也分不出來 ⇒ 停手。
+    if (state === 'ok' && anchorMatchCount(facts, this._anchor) < 2) return proceed();
+    if (state === 'ok' && !this._anchor.aid) return this._fail(MSG.articleMoved);
 
     // 連基準都沒有（文章標頭讀不到、也沒問到 AID）：退而求其次用**第一次**落地
     // 那一幀採一個。比文章標頭弱（可能已經飄過一次），但總比完全不比對好。
