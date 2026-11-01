@@ -76,7 +76,12 @@ export function classifyReport(report) {
   report.suites.forEach(walk);
   const errors = report.errors || [];
   if (!failed.length && !errors.length) return report.stats && report.stats.expected > 0 ? "pass" : "env";
-  const isEnv = (e) => String((e && e.message) || "").includes(env.ENV_ERROR_TAG);
+  // 模擬器程序中途整台消失：Playwright 的 androidDevice.* 拋 `Device is closed`（不帶標記，
+  // 之後每條才是 fixture 的「找不到唯一的模擬器」），一樣是環境。
+  const isEnv = (e) => {
+    const msg = String((e && e.message) || "");
+    return msg.includes(env.ENV_ERROR_TAG) || /androidDevice\.\w+: Device is closed/.test(msg);
+  };
   const allEnv =
     failed.every((r) => (r.errors || [r.error]).some(isEnv)) && errors.every(isEnv);
   return allEnv ? "env" : "fail";

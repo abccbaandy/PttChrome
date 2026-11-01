@@ -5,6 +5,8 @@ const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayListCassette } = require('../helpers/replay');
 
 const nav = loadCassette('cchat-list-nav');
+const { waitDialogSettled } = require('../helpers/layout');
+
 const ITEM = '[data-panel="more"] [data-key="__followOnly"]';
 
 const probeKinds = (page) =>
@@ -50,6 +52,7 @@ test.describe('只看關注（手機，離線重放）', () => {
 
     await page.locator('[data-key="__more"]').tap();
     await expect(page.locator(ITEM)).toHaveAttribute('aria-pressed', 'false');
+    await waitDialogSettled(page, ITEM);
     await page.locator(ITEM).tap();
     await expect.poll(async () => [...new Set(await listAuthors(page))]).toEqual([target]);
     // 有卡片 ⇒ 不浮出鈕（不蓋卡片）

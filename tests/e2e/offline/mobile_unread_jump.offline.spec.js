@@ -4,6 +4,8 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline, waitScreenSettled } = require('../helpers/replay');
 
+const { waitDialogSettled } = require('../helpers/layout');
+
 const byKey = (page, k) => page.locator(`[data-key="${k}"]`);
 
 async function collectSent(page) {
@@ -51,6 +53,7 @@ test.describe('手機：跳到第一篇未讀', () => {
     await drawArticleList(page);
     await collectSent(page);
     await byKey(page, '__more').tap();
+    await waitDialogSettled(page, '[data-key="__unreadJump"]');
     await byKey(page, '__unreadJump').tap();
     await expect.poll(() => sentText(page)).toContain('\x1b[4~');
     // sheet 收起

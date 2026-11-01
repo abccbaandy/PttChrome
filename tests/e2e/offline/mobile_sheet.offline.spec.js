@@ -8,7 +8,7 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
 const { drawMainMenu } = require('../helpers/main_menu');
-const { waitRectStable } = require('../helpers/layout');
+const { waitRectStable, waitDialogSettled, installPaintedFrameProbe } = require('../helpers/layout');
 
 const byKey = (page, k) => page.locator(`[data-key="${k}"]`);
 const sheet = (page, k) => page.locator(`[data-sheet="${k}"]`);
@@ -30,6 +30,42 @@ async function bootMenu(page) {
 }
 
 test.describe('手機 bottom sheet', () => {
+  // 點 sheet 裡的項目之前一律先 waitDialogSettled（守護 e2e_layout_settle「打開「更多」之後…」）：
+  // 開場 slide-up 途中 tap，pointerdown 落在項目上、Chrome 產生 click 前重新 hit-test 時項目已經
+  // 滑走 ⇒ click 只到共同祖先，onClick 沒跑（mobile_toolbar「同主題下篇送 ]」偶發零送鍵）。
+  // 鎖兩件事：①前提還在（sheet 開場真的會滑，否則這條該重寫）；②waitDialogSettled 放行那一刻，
+  // 項目已經在最終位置（之後不再動）。
+  test('「更多」開場會滑動；waitDialogSettled 放行時項目已在最終位置', async ({ page }) => {
+    await bootMenu(page);
+    const sel = '[data-sheet="more"] [data-key="__settings"]';
+    // 逐幀在 paint 前取樣（helpers/layout.js#installPaintedFrameProbe），1.5 秒。
+    await installPaintedFrameProbe(page);
+    await page.evaluate((s) => {
+      const tops = [];
+      const rec = { tops, done: false };
+      window.__sheetTops = rec;
+      const t0 = performance.now();
+      const sample = () => {
+        const b = document.querySelector(s);
+        if (b) tops.push(b.getBoundingClientRect().top);
+        if (performance.now() - t0 >= 1500) {
+          window.__paintedFrame.remove(sample);
+          rec.done = true;
+        }
+      };
+      window.__paintedFrame.add(sample);
+    }, sel);
+    await byKey(page, '__more').tap();
+    await waitDialogSettled(page, sel);
+    const atSettle = await page.evaluate((s) => document.querySelector(s).getBoundingClientRect().top, sel);
+    // 取樣本身就是時間軸（逐幀 1.5 秒），等它跑完，不另外睡。
+    await page.waitForFunction(() => window.__sheetTops.done);
+    const tops = await page.evaluate(() => window.__sheetTops.tops);
+    const final = tops[tops.length - 1];
+    expect(Math.max(...tops) - Math.min(...tops), '前提：開場時項目會滑動').toBeGreaterThan(5);
+    expect(Math.abs(atSettle - final)).toBeLessThan(0.5);
+  });
+
   test('更多：開著＝modal；點遮罩（壓在選單按鈕上）只收 sheet，不送任何鍵', async ({ page }) => {
     await bootMenu(page);
     await byKey(page, '__more').tap();

@@ -67,6 +67,34 @@ describe("summarize／formatSample", () => {
   });
 });
 
+// flaky-hunt 的 android-repeat 是 test.yml test-e2e-android 的重複版（job 註解：步驟要跟著它改）。
+// 模擬器中途整台消失（adb 看不到、emu kill 連不上）時，沒有資源取樣就判斷不了是不是 runner
+// 記憶體／CPU 被吃光；系統映像沒走 cache 則多一個「下載到壞 zip」的紅。
+describe("flaky-hunt.yml android-repeat：跟 test.yml 的 Android job 同一套診斷步驟", () => {
+  const yaml = fs.readFileSync(path.join(ROOT, ".github/workflows/flaky-hunt.yml"), "utf8");
+  const start = yaml.indexOf("\n  android-repeat:");
+  const next = yaml.slice(start + 1).search(/\n {2}[a-z0-9-]+:\n/);
+  const body = yaml.slice(start, next < 0 ? undefined : start + 1 + next);
+  test("資源取樣：開模擬器前 start、always 印 report、失敗帶走 ci-diagnostics", () => {
+    expect(start).toBeGreaterThan(-1);
+    const mon = body.indexOf("node scripts/ci-resource-monitor.mjs start");
+    expect(mon).toBeGreaterThan(-1);
+    expect(body.indexOf("android-emulator-runner@")).toBeGreaterThan(mon);
+    expect(body).toMatch(/if: always\(\)\s*\n\s*run: node scripts\/ci-resource-monitor\.mjs report/);
+    expect(body).toMatch(/path: \|\s*\n\s*test-results\/\s*\n\s*ci-diagnostics\//);
+  });
+  test("系統映像從 cache 還原，路徑／key 與 emulator-runner 裝的映像一致", () => {
+    const cache = body.indexOf("actions/cache@");
+    expect(cache).toBeGreaterThan(-1);
+    expect(body.indexOf("android-emulator-runner@")).toBeGreaterThan(cache);
+    const api = /api-level: (\d+)/.exec(body)[1];
+    const target = /target: (\S+)/.exec(body)[1];
+    const arch = /arch: (\S+)/.exec(body)[1];
+    expect(body).toContain(`system-images/android-${api}/${target}/${arch}`);
+    expect(body).toMatch(new RegExp(`key: android-sysimg-${api}-${target}-${arch}-`));
+  });
+});
+
 describe("test.yml：e2e job 都有資源取樣，且綠的 run 也印報告", () => {
   const yaml = fs.readFileSync(path.join(ROOT, ".github/workflows/test.yml"), "utf8");
   const job = (name) => {

@@ -5,7 +5,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassettes, bootOffline, replayCassette, waitScreenSettled } = require('../helpers/replay');
-const { waitRectStable } = require('../helpers/layout');
+const { waitRectStable, waitDialogSettled } = require('../helpers/layout');
 
 const articles = findCassettes('article');
 
@@ -147,10 +147,12 @@ test.describe('手機底部工具列（離線重放）', () => {
   test('更多：選取模式、設定、登出確認（全螢幕，點空白取消）', async ({ page }) => {
     await bootOffline(page, ptt);
     await byKey(page, '__more').tap();
+    await waitDialogSettled(page, '[data-key="__select"]');
     await byKey(page, '__select').tap();
     expect(await page.evaluate(() => window.__app.mobileSelectMode)).toBe(true);
     await byKey(page, '__more').tap();
     await collectSent(page);
+    await waitDialogSettled(page, '[data-key="__logout"]');
     await byKey(page, '__logout').tap();
     const confirm = byKey(page, '__logoutConfirm');
     await expect(confirm).toBeVisible();
@@ -164,6 +166,7 @@ test.describe('手機底部工具列（離線重放）', () => {
     expect(await page.evaluate(() => window.__app.logout.active)).toBe(false);
     expect(await sentText(page)).toBe('');
     await byKey(page, '__more').tap();
+    await waitDialogSettled(page, '[data-key="__settings"]');
     await byKey(page, '__settings').tap();
     await expect(page.locator('.mantine-Modal-content').first()).toBeVisible();
   });
@@ -176,6 +179,7 @@ test.describe('手機底部工具列（離線重放）', () => {
       window.PttAndroid = { postMessage() {}, addEventListener() {} };
     });
     await byKey(page, '__more').tap();
+    await waitDialogSettled(page, '[data-key="__logout"]');
     await byKey(page, '__logout').tap();
     await expect(byKey(page, '__logoutQuit')).toBeVisible();
     await byKey(page, '__logoutQuit').tap();
@@ -232,6 +236,7 @@ test.describe('手機底部工具列（離線重放）', () => {
       await collectSent(page);
       await byKey(page, '__more').tap();
       await expect(byKey(page, '__share')).toBeVisible();
+      await waitDialogSettled(page, '[data-key="]"]');
       await byKey(page, ']').tap();
       await expect.poll(() => sentText(page)).toContain(']');
       // 點了導覽項面板自動收起
