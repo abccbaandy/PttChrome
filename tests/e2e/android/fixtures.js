@@ -21,6 +21,7 @@ const {
   cpuIdlePercent,
   parseHomePackage,
   anrExcerpt,
+  vanishedDeviceError,
 } = require('./android_env');
 
 const PORT = 8080;
@@ -166,7 +167,14 @@ const test = base.extend({
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(envError(`Chrome ${LAUNCH_TIMEOUT_MS / 1000}s 內沒起來（看 device-screen／logcat-crash）`)), LAUNCH_TIMEOUT_MS);
       }),
-    ]).finally(() => clearTimeout(timer));
+    ])
+      .catch((e) => {
+        // 模擬器在開 Chrome 途中整台消失：Playwright 只說 launchBrowser: FAIL，看起來像真失敗。
+        const r = spawnSync(sdkTool('adb'), ['devices'], { encoding: 'utf8' });
+        const gone = vanishedDeviceError(e, r.status === 0 ? r.stdout : null, android.serial);
+        throw gone ? new Error(gone) : e;
+      })
+      .finally(() => clearTimeout(timer));
     await use(context);
     await context.close();
   },

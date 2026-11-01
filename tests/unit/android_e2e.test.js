@@ -68,6 +68,18 @@ describe("classifyReport：0／1／2 的依據", () => {
   // 模擬器程序中途整台消失：當下那條拿到 Playwright 的 `androidDevice.*: Device is closed`
   // （不帶標記），之後每條都是 fixture 的「找不到唯一的模擬器」。那不是斷言紅，原本卻被判成
   // 「有真失敗」（exit 1），叫人往被測 code 查。
+  // 模擬器在 launchBrowser 途中消失時，Playwright 拋的是 `androidDevice.launchBrowser: FAIL`
+  // （不是 Device is closed）⇒ 原本被判「有真失敗」。fixture 失敗當下問一次 adb：裝置不在了
+  // 就改拋環境錯誤；裝置還在（Chrome 自己起不來）照原樣算真失敗。
+  test("launchBrowser 失敗時裝置已不在 adb ⇒ 環境錯誤訊息；還在 ⇒ null", () => {
+    const err = new Error("androidDevice.launchBrowser: FAIL");
+    const gone = androidEnv.vanishedDeviceError(err, "List of devices attached\n\n", "emulator-5554");
+    expect(gone).toContain(androidEnv.ENV_ERROR_TAG);
+    expect(gone).toContain("launchBrowser: FAIL");
+    expect(androidEnv.vanishedDeviceError(err, "List of devices attached\nemulator-5554\tdevice\n", "emulator-5554")).toBeNull();
+    // adb 本身跑不起來（null）＝不知道 ⇒ 不改判。
+    expect(androidEnv.vanishedDeviceError(err, null, "emulator-5554")).toBeNull();
+  });
   test("模擬器中途消失（Device is closed＋之後找不到模擬器）⇒ env", () => {
     const closed = { message: "Error: androidDevice.launchBrowser: Device is closed" };
     expect(
