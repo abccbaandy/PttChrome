@@ -47,7 +47,7 @@ import {
 import { decideUserBytes, PASS, SWALLOW } from './list_user_bytes';
 // 列表游標的**身分**錨定（作者＋主題）。檔名帶 long_push 是因為長推文先需要它，
 // 內容是通用的純邏輯：「crs_ln 是純行號、同編號 ≠ 同一篇」對每一條跳號腿都成立。
-import { listRowIdentity, checkCursorAnchor } from './long_push_anchor';
+import { listRowIdentity, checkCursorAnchor, anchorMatchCount, neighborsAgree } from './long_push_anchor';
 import {
   topPosFromScrollTop,
   anchorScrollTop,
@@ -2027,7 +2027,16 @@ ListSession.prototype = {
         //（置底列、已刪除列、facts 沒帶 rowTexts 的呼叫端），把它們一起擋掉會製造
         // 一批新的「按了就切原生」假陽性。這道守門是純粹加法的安全網——只有在
         // 「讀得出來、而且確定是別篇」時才拒絕。
-        if (anchor && checkCursorAnchor(landed, anchor) === 'moved') {
+        // 'ok' 也不一定是同一篇：同一人同一串的原文／回文在列表上同身分（主題剝掉 Re:），
+        // 一格位移就落到另一篇上。這一頁有兩列以上同身分時改看編號 ±1 的鄰居有沒有跟著移。
+        const anchorState = anchor ? checkCursorAnchor(landed, anchor) : null;
+        const ambiguousShift =
+          anchorState === 'ok' &&
+          anchorMatchCount(landed, anchor) >= 2 &&
+          !neighborsAgree(landed, num, function(n) {
+            return self._localIdentityAt(n);
+          });
+        if (anchorState === 'moved' || ambiguousShift) {
           self._serverNum = null;
           self._degradeToNative('列表已變動，游標對不上選取的文章，已切至原生模式');
           return;
@@ -2043,6 +2052,14 @@ ListSession.prototype = {
 
   // 目前選取那一列的身分（作者＋主題），取自**本地緩衝**＝使用者眼睛看到的那一列。
   // null ＝讀不出來（沒有選取／空列／已刪除列）⇒ 呼叫端不做身分驗證。
+  // 本地緩衝裡編號 num 那一列的身分（使用者眼睛看到的）；沒有那一列／讀不出 ⇒ null。
+  _localIdentityAt: function(num) {
+    const idx = (this._termBuf.listLineNums || []).indexOf(num);
+    if (idx < 0) return null;
+    const line = (this._termBuf.listLines || [])[idx];
+    return line ? listRowIdentity(rowToText(line)) : null;
+  },
+
   _selectedRowIdentity: function() {
     const idx = this._resolveSelectedIndex();
     if (idx < 0) return null;

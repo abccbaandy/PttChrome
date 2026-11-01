@@ -13,6 +13,7 @@ import {
   checkCursorAnchor,
   findAnchorRowNum,
   anchorMatchCount,
+  neighborsAgree,
 } from "../../src/js/long_push_anchor";
 
 // 依 bbs.c#readdoent 的 printf 序列排版（欄位表見 comment_parse.js）：
@@ -233,6 +234,25 @@ describe("findAnchorRowNum", () => {
     );
     expect(findAnchorRowNum(f, ANCHOR)).toBe(null);
     expect(anchorMatchCount(f, ANCHOR)).toBe(2);
+  });
+});
+
+describe("neighborsAgree", () => {
+  const local = {
+    1232: { author: "x", subject: "前一篇" },
+    1234: { author: "y", subject: "後一篇" },
+  };
+  const at = (n) => local[n] || null;
+  test("鄰居都沒動 ⇒ true；有一個換人 ⇒ false", () => {
+    const same = facts([listRow(1232, "x", "前一篇"), listRow(1233, "abcUser", "[閒聊] 原本那篇", { cursor: true }), listRow(1234, "y", "後一篇")], 4);
+    expect(neighborsAgree(same, 1233, at)).toBe(true);
+    const shifted = facts([listRow(1232, "abcUser", "[閒聊] 原本那篇"), listRow(1233, "abcUser", "[閒聊] 原本那篇", { cursor: true }), listRow(1234, "y", "後一篇")], 4);
+    expect(neighborsAgree(shifted, 1233, at)).toBe(false);
+  });
+  test("兩個鄰居都比不了 ⇒ false（保守）", () => {
+    const f = facts([listRow(1233, "abcUser", "[閒聊] 原本那篇", { cursor: true })], 3);
+    expect(neighborsAgree(f, 1233, at)).toBe(false);
+    expect(neighborsAgree(f, 1233, null)).toBe(false);
   });
 });
 

@@ -139,3 +139,52 @@ describe("cursor-sync 腿的落地身分驗證", () => {
     expect(enqueued[1].keys).toBe("\x18");
   });
 });
+
+// 同一人同一串的原文＋回文：主題剝掉 Re: 之後相同 ⇒ 列表上同身分。使用者選的是 21342
+// （alice 的回文），上一列 21341 是 alice 的原文；期間刪了一篇 ⇒ 21342 現在是緊接著
+// 的那篇（alice 的第二篇回文），身分照樣 'ok'。舊碼放行 ⇒ ^X 對別篇開轉錄。
+describe("cursor-sync 腿：同頁兩列以上同身分時看鄰居有沒有跟著移", () => {
+  const ALICE = (num) => listRow(num, "alice", "Re: [閒聊] 我選的這篇");
+  const setup = () => {
+    const ctx = makeSession();
+    ctx.s._termBuf.listLines = [
+      rowOf(listRow(21341, "alice", "[閒聊] 我選的這篇")),
+      rowOf(ALICE(21342)),
+      rowOf(listRow(21343, "carol", "[問卦] 下一篇")),
+    ];
+    ctx.s._termBuf.listLineNums = [21341, 21342, 21343];
+    return ctx;
+  };
+  const landedPage = (rows, curY) => {
+    const f = parkFacts(21342, curY, "");
+    rows.forEach((t, i) => (f.rowTexts[4 + i] = t));
+    return f;
+  };
+
+  test("REGRESSION 整串往前搬一格、落到同身分的另一篇 → 不送那顆鍵，切原生", () => {
+    const { s, enqueued, hints } = setup();
+    s.adoptUserBytes("\x18");
+    const leg = enqueued[0];
+    // 落地頁：21341 變成原本的 21342（alice 的回文）、21342 是 alice 的另一篇回文。
+    const f = landedPage([ALICE(21341), ALICE(21342), listRow(21343, "dave", "[新聞] 另一篇")], 5);
+    expect(leg.expect(null, f)).toBe(true);
+    hints.length = 0;
+    leg.onDone();
+    expect(enqueued).toHaveLength(1);
+    expect(s._renderMode).toBe("native");
+    expect(hints.some((m) => m.includes("列表已變動"))).toBe(true);
+  });
+
+  test("反向守護：同頁兩列同身分但鄰居都沒動 → 照常送", () => {
+    const { s, enqueued } = setup();
+    s.adoptUserBytes("\x18");
+    const leg = enqueued[0];
+    const f = landedPage(
+      [listRow(21341, "alice", "[閒聊] 我選的這篇"), ALICE(21342), listRow(21343, "carol", "[問卦] 下一篇")],
+      5,
+    );
+    expect(leg.expect(null, f)).toBe(true);
+    leg.onDone();
+    expect(enqueued[1].keys).toBe("\x18");
+  });
+});
