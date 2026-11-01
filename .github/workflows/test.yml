@@ -346,6 +346,13 @@ jobs:
         if: always()
         run: node scripts/ci-resource-monitor.mjs report
 
+      # 模擬器整台消失（issue #287：Device is closed、emu kill 連不上、emulator log 沒有退出訊息）時，
+      # job log 分不出是 kernel 砍的還是模擬器自己崩：dmesg 尾段（OOM／segfault 直接印在 log）＋
+      # emulator-runner 的 emu-crash-* 一起放進 ci-diagnostics/ 上傳。
+      - name: Emulator post-mortem
+        if: failure()
+        run: node scripts/ci-emulator-postmortem.mjs
+
       # 失敗現場：device-screen.png＝整個螢幕（系統／Chrome 對話框在網頁外面）、logcat-crash 附件。
       - name: Upload failure artifacts
         if: failure()
