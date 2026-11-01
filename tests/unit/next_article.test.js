@@ -451,6 +451,25 @@ describe("NextArticle：點卡片換文", () => {
     expect(verify(DELETED_ROW(102))).toBe(false);
   });
 
+  // 同一人同一串連續幾篇身分一樣：前面刪掉一篇、編號移一格，下一篇的編號落到同身分的再下一篇，
+  // 光看游標那一列認不出 ⇒ 舊碼開錯篇。同頁兩列以上同身分時要看 ±1 的鄰居。
+  test("同頁兩列以上同身分 ⇒ 鄰居跟快照對不上就不開", () => {
+    const { next, show, read, starts } = makeCore();
+    const R = (num, o = {}) => listRow(num, "alice", "Re: [閒聊] 串", Object.assign({ mark: "R:" }, o));
+    show(listScreen([listRow(100, "carol", "[問題] 前一篇", { cursor: true }), R(101), R(102), listRow(103, "bob", "[閒聊] 後一篇")]));
+    read("C_Chat", "carol", "[問題] 前一篇");
+    next.open();
+    expect(starts[0].num).toBe(101);
+    const { verify } = starts[0];
+    // 前面刪掉一篇：新的 100 是 alice 第一篇、101 是 alice 第二篇。
+    const shifted = listScreen([R(100), R(101, { cursor: true }), listRow(102, "bob", "[閒聊] 後一篇")]);
+    shifted.curY = 4;
+    expect(verify(shifted.rowTexts[4], shifted)).toBe(false);
+    const same = listScreen([listRow(100, "carol", "[問題] 前一篇"), R(101, { cursor: true }), R(102), listRow(103, "bob", "[閒聊] 後一篇")]);
+    same.curY = 4;
+    expect(verify(same.rowTexts[4], same)).toBe(true);
+  });
+
   test("走 startNum(板, 下一篇的編號)；落地是那一篇 ⇒ 沒有提示", () => {
     const { next, show, read, starts, hints } = makeCore();
     show(PAGE());

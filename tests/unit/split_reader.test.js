@@ -32,7 +32,7 @@ const ROWS = 24;
 function listRow(num, author, title, o = {}) {
   const seq = o.cursor ? ">" + String(num).padStart(6) : String(num).padStart(7);
   return (
-    seq + " " + (o.type || " ") + (o.push || "  ") + " 9/01 " + author.padEnd(13).slice(0, 13) + (o.mark || "□") + " " + title
+    seq + " " + (o.type || " ") + (o.push || "  ") + (o.date || "9/01").padStart(5) + " " + author.padEnd(13).slice(0, 13) + (o.mark || "□") + " " + title
   );
 }
 const PINNED_ROW = "    ★ " + " " + " " + "  " + " 9/01 " + "sysop".padEnd(13) + "□ 公告";
@@ -409,6 +409,39 @@ describe("SplitReader：點一篇換過去", () => {
     expect(verify(listRow(102, "bob", "[閒聊] 別篇", { cursor: true }))).toBe(false);
     expect(verify(listRow(101, "bob", "[問題] 第二篇", { cursor: true }))).toBe(false);
     expect(verify(DELETED_ROW(102))).toBe(false);
+  });
+  // 同一人同一串連續幾篇（作者＋主題剝掉 Re: 一樣）：前面刪掉一篇，編號整段往前移一格，
+  // 要開的編號落到同身分的下一篇，光看游標那一列認不出 ⇒ 舊碼開錯篇（還記成讀過）。
+  test("同頁兩列以上同身分 ⇒ 還要看編號 ±1 的鄰居有沒有跟著移", () => {
+    const { split, show, read, starts } = makeCore();
+    const R = (num, o = {}) => listRow(num, "alice", "Re: [閒聊] 串", Object.assign({ mark: "R:" }, o));
+    show(
+      listScreen([
+        listRow(100, "carol", "[問題] 前一篇"),
+        R(101),
+        R(102),
+        listRow(103, "bob", "[閒聊] 後一篇", { cursor: true }),
+      ])
+    );
+    read("C_Chat", "bob", "[閒聊] 後一篇");
+    split.openNum(101);
+    const { verify } = starts[0];
+    // 100 被刪：新的 100 是原本的 101、新的 101 是原本的 102。
+    const shifted = listScreen([R(100), R(101, { cursor: true }), listRow(102, "bob", "[閒聊] 後一篇")]);
+    shifted.curY = 4;
+    expect(verify(shifted.rowTexts[4], shifted)).toBe(false);
+    // 沒移動：鄰居 100（carol）、102（alice）都對得上 ⇒ 開。
+    const same = listScreen([listRow(100, "carol", "[問題] 前一篇"), R(101, { cursor: true }), R(102), listRow(103, "bob", "[閒聊] 後一篇")]);
+    same.curY = 4;
+    expect(verify(same.rowTexts[4], same)).toBe(true);
+  });
+  test("發文日期（列表日期欄）不同 ⇒ 不是左欄那篇", () => {
+    const { split, show, read, starts } = makeCore();
+    show(PAGE());
+    read("C_Chat", "carol", "[閒聊] 第三篇");
+    split.openNum(102);
+    const { verify } = starts[0];
+    expect(verify(listRow(102, "bob", "[問題] 第二篇", { cursor: true, date: "9/02" }))).toBe(false);
   });
   test("失敗 ⇒ 清掉開啟中，留在 PTT 給的畫面", () => {
     const { split, show, read, starts } = makeCore();

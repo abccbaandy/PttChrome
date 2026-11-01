@@ -18,7 +18,7 @@ import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { parseListEntry } from './agent_parse';
 import { parseListArticleNumLoose, isPinnedListRow } from './comment_parse';
 import { blacklistHit, listFilterOf } from './list_row_filter';
-import { listRowIdentity, subjectKey, subjectMatches } from './long_push_anchor';
+import { listRowIdentity, subjectKey, subjectMatches, anchorMatchCount, neighborsAgree } from './long_push_anchor';
 import { charCells } from './string_util';
 import { serializedOpHint } from './serialized_op_gate';
 import { readEffectivePrefs } from './pref_storage';
@@ -108,11 +108,34 @@ export function sameListEntry(a, b) {
 }
 
 // 換文時 `<編號>⏎` 之後游標那一列（aid_navigation 的 verify）是不是快照上那篇：同編號、
-// 沒被刪、作者＋主題對得上。是 ⇒ 回那一列的解析結果（呼叫端拿來當落地比對），否則 null。
+// 沒被刪、作者＋主題對得上、發文日期（列表日期欄，.DIR 的 date）一樣。是 ⇒ 回那一列的解析
+// 結果（呼叫端拿來當落地比對），否則 null。
 export function cursorRowIs(entry, rowText) {
   const row = listEntryOf(rowText);
   if (!entry || !row || row.num !== entry.num || row.deleted || !sameListEntry(row, entry)) return null;
+  if (row.date && entry.date && row.date !== entry.date) return null;
   return row;
+}
+
+// startNum／startSubNum 的 verify(cursorRowText, facts)：游標那列要是快照上那篇（cursorRowIs）。
+// 同一人同一串的原文／回文身分一樣（主題剝掉 Re:）：前面刪掉一篇、編號整段移一格時，要開的
+// 編號會落到同身分的另一篇。落地那頁有兩列以上同身分 ⇒ 再看編號 ±1 的鄰居跟快照對不對得上
+// （long_push_anchor.neighborsAgree，list_session 送 ^X 前的同一套），對不上或讀不出 ⇒ 不開。
+export function snapshotCursorVerify(entry, entries) {
+  return function(rowText, facts) {
+    const row = cursorRowIs(entry, rowText);
+    if (!row) return null;
+    if (!facts || !facts.rowTexts) return row;
+    const anchor = { author: String(entry.author).toLowerCase(), subject: entry.subject };
+    if (anchorMatchCount(facts, anchor) < 2) return row;
+    const byNum = new Map();
+    for (const e of entries || []) byNum.set(e.num, e);
+    const ok = neighborsAgree(facts, entry.num, function(n) {
+      const e = byNum.get(n);
+      return e && !e.deleted && e.subject ? { author: String(e.author).toLowerCase(), subject: e.subject } : null;
+    });
+    return ok ? row : null;
+  };
 }
 
 export function listEntryOf(text) {
@@ -443,8 +466,9 @@ SplitReader.prototype = {
     };
     this._set({ pendingNum: num });
     // 左欄是快照：之後有人刪文／搬文，同一個編號就是別篇 ⇒ 游標那列認得出才開。
-    const verify = function(rowText) {
-      return !!cursorRowIs(entry, rowText);
+    const check = snapshotCursorVerify(entry, (this._snapshot && this._snapshot.entries) || st.entries);
+    const verify = function(rowText, facts) {
+      return !!check(rowText, facts);
     };
     if (!nav.startNum(board, num, done, verify)) {
       clearTimeout(this._nav.timer);
