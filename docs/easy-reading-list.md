@@ -522,7 +522,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 列表在凍結交易中（到底／End、跳號、補頁接合、原地重整，以及 passthrough cursor-sync 那一小段 state≠active ∧ render＝buffer）時點文章，原本吞掉只閃「處理中」。現在記住**最後點的那一篇**，交易一結束還對得上就替使用者開（`js/list_pending_click.js`，pref `queueListClickWhenBusy` 預設開、在安全模式名單內）。
 
 - **記什麼**：`ListSession._queuePendingClick` 從**畫面上那一列**（`term_view._listWindowLines[renderRow]`，凍結時就是使用者看到的快照）取編號＋作者＋主題＋看板。**不可以**用 `getListView` 算索引：凍結期間緩衝可能已被補頁／重建改掉，索引會指到別篇。置底文（沒編號）、讀不出身分、開文中（opening）、讀文章中（suspended）、原生鏡像不記。
-- **何時判**（`pendingClickDecision`）：screenSettled 跑完 `_onScreenSettled` 之後、以及 `_setLoading(false)` 之後的 microtask（出口那一串同步呼叫跑完才定：resume-buffer 之後還有 rebuild）。state active＋render buffer ⇒ 同一板、同編號那一列在畫得出來的序列裡、作者＋主題對得上（`subjectMatches`，截斷的 … 也認）才開；交易還沒結束 ⇒ 等；其他（收成原生、離開列表、換板、8 秒 `PENDING_CLICK_MS`）⇒ 作廢。
+- **何時判**（`pendingClickDecision`）：screenSettled 跑完 `_onScreenSettled` 之後、以及 `_setLoading(false)` 之後的 microtask（出口那一串同步呼叫跑完才定：resume-buffer 之後還有 rebuild）。state active＋render buffer ⇒ 同一板、同編號那一列在畫得出來的序列裡、作者＋主題對得上（`subjectMatches`，截斷的 … 也認）才開；同一人同一串的原文／回文身分一樣，緩衝裡同身分兩列以上時，點下去當時畫面上編號 ±1 的鄰居還要跟現在緩衝裡的一樣（前面刪掉一篇、整段移一格就落到同身分的另一篇），都讀不出也作廢；交易還沒結束 ⇒ 等；其他（收成原生、離開列表、換板、8 秒 `PENDING_CLICK_MS`）⇒ 作廢。
 - **開文**：`_openAbs`，跟滑鼠單擊同一條（移選取 → `_forceRedraw` → reducer 的 open／`_beginOpen`），閱讀紀錄照開文的規則。
 - **回饋**：手機卡片模式下排隊中的那張就標 P45 的「開啟中」（`_setOpening(true, renderRow)` → `term_view.setListOpening(on, row)` → `cursor_highlight.withListOpening` 的 `openingRow`）。凍結時游標常不在被點的那張上，所以標的是**被點的列**，不是游標列；補開時 `_beginOpen` 改標游標那張（選取已移過去），作廢就收。交易出口 `_setLoading(false)` 時還在排隊就不收，交給補開判定。走游標底色的快路徑，不重建卡片。
 - **作廢**：使用者在這期間按了任何非修飾鍵（`term_view.onKeyDown` → `cancelPendingClick`）、之後又點了一下（覆蓋或清掉）。對不上（moved）閃「剛剛點的文章已不在原處，沒有開啟」。

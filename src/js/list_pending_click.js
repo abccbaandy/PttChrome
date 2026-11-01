@@ -23,7 +23,9 @@ export function canQueueListClick(state, renderMode) {
 //   'wait'  交易還沒結束
 //   'open'  替使用者開（rowIdentity 是同一個編號那一列**現在**的身分）
 //   'drop'  作廢（reason：expired／left＝收成原生或離開列表／board／moved＝那篇不在原處）
-export function pendingClickDecision({ pending, state, renderMode, now, board, rowIdentity }) {
+// sameIdentityCount：現在緩衝裡跟這篇同身分的列數；neighborsNow：同一個編號 ±1 現在的身分
+// （{ prev, next }，讀不出是 null）。pending.neighbors 是點下去當時的。
+export function pendingClickDecision({ pending, state, renderMode, now, board, rowIdentity, sameIdentityCount, neighborsNow }) {
   if (!pending) return { action: 'none' };
   if (now - pending.at > PENDING_CLICK_MS) return { action: 'drop', reason: 'expired' };
   if (state === 'active' && renderMode === 'buffer') {
@@ -31,8 +33,27 @@ export function pendingClickDecision({ pending, state, renderMode, now, board, r
     const id = pending.identity;
     if (!rowIdentity || !id || rowIdentity.author !== id.author || !subjectMatches(rowIdentity.subject, id.subject))
       return { action: 'drop', reason: 'moved' };
+    // 同一人同一串的原文／回文身分一樣：交易換掉緩衝時前面刪掉一篇，同一個編號就落到同身分的
+    // 另一篇。同身分兩列以上 ⇒ ±1 的鄰居也要跟點下去時一樣（list_session 送 ^X 前同一套）。
+    if (sameIdentityCount >= 2 && !neighborsSame(pending.neighbors, neighborsNow)) return { action: 'drop', reason: 'moved' };
     return { action: 'open' };
   }
   if (canQueueListClick(state, renderMode)) return { action: 'wait' };
   return { action: 'drop', reason: 'left' };
+}
+
+function sameId(a, b) {
+  return a.author === b.author && subjectMatches(a.subject, b.subject);
+}
+
+// 兩邊都讀得出的那一側要一樣，而且至少一側讀得出；都讀不出 ⇒ 分不出，當成不一樣。
+function neighborsSame(before, now) {
+  if (!before || !now) return false;
+  let agreed = 0;
+  for (const k of ['prev', 'next']) {
+    if (!before[k] || !now[k]) continue;
+    if (!sameId(before[k], now[k])) return false;
+    ++agreed;
+  }
+  return agreed > 0;
 }

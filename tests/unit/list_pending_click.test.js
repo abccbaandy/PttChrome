@@ -40,6 +40,23 @@ describe("pendingClickDecision", () => {
     });
     expect(pendingClickDecision({ ...done, rowIdentity: { author: "alice", subject: "[問卦] 別的" } }).reason).toBe("moved");
   });
+  // 同一人同一串連續幾篇身分一樣（主題剝掉 Re:）：交易（原地重整、補頁接合）換掉緩衝時前面
+  // 刪掉一篇，同一個編號落到同身分的另一篇，光看那一列認不出 ⇒ 舊碼替使用者開錯篇。
+  // 緩衝裡同身分兩列以上時，點下去當時 ±1 的鄰居要跟現在一樣。
+  test("同身分兩列以上 ⇒ 鄰居跟點下去時不一樣就作廢", () => {
+    const carol = { author: "carol", subject: "[問題] 前一篇" };
+    const bob = { author: "bob", subject: "[閒聊] 後一篇" };
+    const p = { ...pending, neighbors: { prev: carol, next: identity } };
+    const base = { ...done, pending: p, sameIdentityCount: 2 };
+    // 前面刪掉一篇：前一號變成同身分的那一篇、後一號是 bob。
+    expect(pendingClickDecision({ ...base, neighborsNow: { prev: identity, next: bob } })).toEqual({ action: "drop", reason: "moved" });
+    // 沒移動 ⇒ 開。
+    expect(pendingClickDecision({ ...base, neighborsNow: { prev: carol, next: identity } }).action).toBe("open");
+    // 鄰居都讀不出來（被刪、不在緩衝）⇒ 分不出，作廢。
+    expect(pendingClickDecision({ ...base, neighborsNow: { prev: null, next: null } }).reason).toBe("moved");
+    // 只有一列同身分 ⇒ 身分就夠，不看鄰居。
+    expect(pendingClickDecision({ ...base, sameIdentityCount: 1, neighborsNow: { prev: identity, next: bob } }).action).toBe("open");
+  });
   test("那個編號已經不在畫得出來的列表上 ⇒ 作廢", () => {
     expect(pendingClickDecision({ ...done, rowIdentity: null }).reason).toBe("moved");
   });

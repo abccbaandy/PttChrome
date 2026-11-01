@@ -47,7 +47,7 @@ import {
 import { decideUserBytes, PASS, SWALLOW } from './list_user_bytes';
 // 列表游標的**身分**錨定（作者＋主題）。檔名帶 long_push 是因為長推文先需要它，
 // 內容是通用的純邏輯：「crs_ln 是純行號、同編號 ≠ 同一篇」對每一條跳號腿都成立。
-import { listRowIdentity, checkCursorAnchor, anchorMatchCount, neighborsAgree } from './long_push_anchor';
+import { listRowIdentity, checkCursorAnchor, anchorMatchCount, neighborsAgree, subjectMatches } from './long_push_anchor';
 import {
   topPosFromScrollTop,
   anchorScrollTop,
@@ -844,6 +844,15 @@ const INPLACE_KEYS = '=\\]+[-<,.>{}t';
 // 切原生時提示語的尾巴。自動回復開著＝「做完就回來」；關掉＝維持舊措辭（那時
 // 行為也真的是舊的）。**留著舊措辭比沒提示更糟**，所以每一處切原生的 hint 都走
 // 這一支，不要再各自寫死字串。
+// 畫面上的列表快照（term_view._listWindowLines）裡編號 num 那一列的身分；沒有／讀不出 ⇒ null。
+function shownIdentityOf(shown, num) {
+  for (let i = 0; i < shown.length; ++i) {
+    const text = shown[i] ? rowToText(shown[i]) : '';
+    if (parseListArticleNum(text) === num) return listRowIdentity(text);
+  }
+  return null;
+}
+
 function nativeResumeHint() {
   return readEffectivePrefs().enableListNativeAutoResume
     ? '（操作完成後自動恢復好讀）'
@@ -2709,8 +2718,27 @@ ListSession.prototype = {
     const num = parseListArticleNum(text);
     const identity = listRowIdentity(text);
     if (num == null || !identity || this._boardName == null) return false;
-    this._pendingClick = { num: num, identity: identity, board: this._boardName, at: Date.now() };
+    this._pendingClick = {
+      num: num,
+      identity: identity,
+      board: this._boardName,
+      at: Date.now(),
+      // 同身分好幾列時要比鄰居（list_pending_click.pendingClickDecision）。跟身分一樣取自畫面上
+      // 的快照，不讀緩衝（凍結期間緩衝可能已被補頁／重建改掉）。
+      neighbors: { prev: shownIdentityOf(shown, num - 1), next: shownIdentityOf(shown, num + 1) }
+    };
     return true;
+  },
+
+  // 本地緩衝裡跟 id 同身分（作者＋主題）的列數。
+  _countLocalIdentity: function(id) {
+    const lines = this._termBuf.listLines || [];
+    let n = 0;
+    for (let i = 0; i < lines.length; ++i) {
+      const x = lines[i] ? listRowIdentity(rowToText(lines[i])) : null;
+      if (x && x.author === id.author && subjectMatches(x.subject, id.subject)) ++n;
+    }
+    return n;
   },
 
   _identityAtAbs: function(abs) {
@@ -2741,7 +2769,9 @@ ListSession.prototype = {
       renderMode: this._renderMode,
       now: Date.now(),
       board: this._boardName,
-      rowIdentity: abs >= 0 ? this._identityAtAbs(abs) : null
+      rowIdentity: abs >= 0 ? this._identityAtAbs(abs) : null,
+      sameIdentityCount: abs >= 0 ? this._countLocalIdentity(p.identity) : 0,
+      neighborsNow: { prev: this._localIdentityAt(p.num - 1), next: this._localIdentityAt(p.num + 1) }
     });
     if (d.action === 'wait' || d.action === 'none') return;
     this._pendingClick = null;
