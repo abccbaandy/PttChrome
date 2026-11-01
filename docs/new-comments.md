@@ -22,6 +22,7 @@
 
 - **列表的推文數不是推文則數**：pttbbs `post.c` 改 `.DIR` 的 recommend 是推 +1、噓 -1、→ 不變（上下限 ±100）；`bbs.c#readdoent` 只在 1～99 畫數字，100 以上「爆」，0 與 -1～-10 畫空白，更低是「X…」。所以讀完時另外記下這篇的**推噓分**（`CommentScanner.score`，跟樓層同一個數法，只算 meta 列之後的），N＝列表的數字 − 讀完時的分數，> 0 才顯示。列表上是爆／空白／X／鎖文 ⇒ 不顯示（不精確）。
 - **列表沒有 AID**：紀錄多存作者（檔頭，小寫）＋主題（`long_push_anchor.subjectKey`，去掉 Re:／Fw:），列表那一列用 `listRowIdentity` 比（標題被截成 … 也認），同一板裡對到**剛好一筆**才算；同作者同主題讀過好幾篇、轉錄文（檔頭是原作者）、改過標題的文章都對不上 ⇒ 不顯示。舊格式紀錄（只有推文數）不參與。
+- **發文日期當第二要素**：作者＋主題（剝掉 Re:）在同一人同一串的原文／回文之間一樣，只讀過其中一篇時，另一篇會被當成讀過那篇、冒出假的 +N。紀錄另存發文日期（`postDateOfAid`：AID 的時間戳＝`.DIR` date 欄的來源，`fhdr_stamp.c` 取檔名與 `fhdr_set_date` 用同一個 dtime；格式 `cmbbs.h#fhdr_set_date_tm` 的 `%2d/%02d`、台灣時間），列表日期欄不同 ⇒ 不是同一篇。同一天同一串的兩篇仍分不出（逐列獨立，看不到同頁別列）。沒有日期的舊紀錄照舊只比身分，重讀一次就補上。
 - **紀錄共用**：`markNewComments` 或 `listNewPushCount` 任一個開著就在讀完時記。
 - **已知誤差**：板主刪推文、作者編輯掉推文時，文章裡數到的分數比 `.DIR` 少，那篇會一直多出幾分。只會多標、不會送鍵。
 - **標註層**：term_view 在文章列表（pageState 2）問 `newComments.listBadge(看板)`，得到 `{ key, fn }`：`listNewPushKey` 進 `annotationsKey`（紀錄原文或看板一變就換，列表好讀走 `rowIdentityStable`，不進 key 的話讀完回列表節點會被原封沿用），`listNewPushFor` 逐列查表放進 `listNewPush`（只看該列自己的文字 ⇒ 逐列獨立）。

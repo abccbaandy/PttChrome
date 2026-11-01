@@ -16,6 +16,7 @@ import {
   boardRecords,
   listNewPush,
   listRecommendValue,
+  postDateOfAid,
 } from "../../src/js/new_comments";
 import { annotationsKey } from "../../src/js/screen_annotate_cache";
 
@@ -30,7 +31,7 @@ function memStorage() {
 // pttbbs bbs.c#readdoent 的欄位：%7d 序號、空白、type、推文數 2 格、日期 %-6.5s、作者 %-13.12s、標題。
 function listRow(num, push, author, title, o = {}) {
   return (
-    String(num).padStart(7) + " " + (o.type || " ") + push.padStart(2) + "10/22 " + author.padEnd(13) + (o.mark || "□") + " " + title
+    String(num).padStart(7) + " " + (o.type || " ") + push.padStart(2) + (o.date || "10/22").padStart(5) + " " + author.padEnd(13) + (o.mark || "□") + " " + title
   );
 }
 
@@ -97,6 +98,18 @@ describe("listNewPush：對列表的一列", () => {
     const two = records.concat([{ author: "alice", subject: "[閒聊] 測試", score: 1 }]);
     expect(listNewPush(two, listRow(100, "8", "alice", "[閒聊] 測試"))).toBeNull();
   });
+  // 只讀過其中一篇時，同一人同一串的另一篇（原文／另一篇回文）身分一模一樣：舊碼把讀過那篇的
+  // 分數套到沒讀過的那篇，冒出一個假的 +N。紀錄多存發文日期（AID 的時間戳＝.DIR 的 date 欄），
+  // 日期不同就不是同一篇。
+  test("同作者同主題、但發文日期不同的另一篇（沒讀過）⇒ 不顯示", () => {
+    const dated = [{ author: "alice", subject: "[閒聊] 測試", score: 3, date: "10/20" }];
+    expect(listNewPush(dated, listRow(101, "8", "alice", "[閒聊] 測試", { mark: "R:", date: "10/22" }))).toBeNull();
+    expect(listNewPush(dated, listRow(100, "8", "alice", "[閒聊] 測試", { date: "10/20" }))).toBe(5);
+  });
+  test("月份一位數：列表印成 %2d/%02d（' 1/05'）也對得上", () => {
+    const dated = [{ author: "alice", subject: "[閒聊] 測試", score: 3, date: "1/05" }];
+    expect(listNewPush(dated, listRow(100, "8", "alice", "[閒聊] 測試", { date: "1/05" }))).toBe(5);
+  });
   test("刪除文、表頭這類不是文章列 ⇒ 不顯示", () => {
     expect(listNewPush(records, listRow(100, "8", "-", "(本文已被刪除) [alice]"))).toBeNull();
     expect(listNewPush(records, "   編號    日 期 作  者       文  章  標  題")).toBeNull();
@@ -134,6 +147,31 @@ describe("紀錄：讀完時多存推噓分＋作者＋主題", () => {
     new NewComments(core, st);
     listeners.screenSettled();
     expect(JSON.parse(st.getItem(NEW_COMMENTS_KEY))["test/#1ABC"].slice(2)).toEqual([1, "alice", "[閒聊] 測試"]);
+  });
+
+  test("AID 讀得出時間戳 ⇒ 多記發文日期（台灣時間，與列表日期欄同格式）", () => {
+    const st = memStorage();
+    const lines = META.concat([push("aax", "1")]);
+    const listeners = {};
+    const core = {
+      buf: { pageState: 3, pageLines: lines, cols: 80, getRowText: (r, a, b, src) => (src || lines)[r], addEventListener: (n, fn) => (listeners[n] = fn) },
+      easyReading: { _enabled: true, easyReadingReachedPageEnd: true },
+      view: { _articleBoard: "Test", _articleAuthor: "alice", _articleTitle: "[閒聊] 測試" },
+      // M.1700000000.A.ABC：2023-11-14 22:13:20 UTC ＝ 台灣 11/15 06:13
+      aidNavigation: { findLocalPostAid: () => ({ aid: "1bK_40gy" }) },
+    };
+    new NewComments(core, st);
+    listeners.screenSettled();
+    const all = JSON.parse(st.getItem(NEW_COMMENTS_KEY));
+    expect(all["test/1bK_40gy"][5]).toBe("11/15");
+    expect(boardRecords(all, "Test")).toEqual([{ author: "alice", subject: "[閒聊] 測試", score: 1, date: "11/15" }]);
+  });
+
+  test("postDateOfAid：列表日期欄的格式（月不補零、日補零），認不出 ⇒ null", () => {
+    expect(postDateOfAid("1bK_40gy")).toBe("11/15");
+    expect(postDateOfAid("1bbqQ001")).toBe("1/05"); // M.1704412800：2024-01-05 08:00 台灣
+    expect(postDateOfAid("#1ABC")).toBeNull();
+    expect(postDateOfAid(null)).toBeNull();
   });
 
   test("只開列表 +N、新推文標記關著也照記", () => {

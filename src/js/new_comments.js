@@ -23,6 +23,7 @@ import { parseComment, FloorCounter } from './comment_parse';
 import { readEffectivePrefs } from './pref_storage';
 import { parseListEntry } from './agent_parse';
 import { listRowIdentity, subjectKey, subjectMatches } from './long_push_anchor';
+import { aidToFn } from './aid_codec';
 
 export const NEW_COMMENTS_KEY = 'pttchrome.newComments.v1';
 // 最多記幾篇（超過丟最久沒讀的）。一篇一筆 [推文數, 時間]，一千篇約 40KB。
@@ -94,13 +95,26 @@ export function loadSeen(storage, key) {
   return Array.isArray(e) && typeof e[0] === 'number' ? e[0] : null;
 }
 
+// AID → 這篇在列表日期欄印的字（去掉前導空白）。.DIR 的 date 是發文那一刻
+// （fhdr_stamp.c 用同一個 dtime 取檔名、fhdr_set_date），檔名的時間戳就在 AID 裡；
+// 格式 include/cmbbs.h#fhdr_set_date_tm 的 "%2d/%02d"，時區是站上的 localtime（台灣，UTC+8）。
+// 不是一般文章（G 文摘）或認不出 ⇒ null。
+const TW_OFFSET_SEC = 8 * 3600;
+export function postDateOfAid(aid) {
+  const fn = aidToFn(aid);
+  const m = fn && /^M\.(\d+)\./.exec(fn);
+  if (!m) return null;
+  const d = new Date((parseInt(m[1], 10) + TW_OFFSET_SEC) * 1000);
+  return d.getUTCMonth() + 1 + '/' + String(d.getUTCDate()).padStart(2, '0');
+}
+
 // 記下這篇讀完時的推文數；超過上限丟最久的。
-// info（可省）＝{ score, author, subject }：列表的「+N」用（listNewPush）。
+// info（可省）＝{ score, author, subject, date? }：列表的「+N」用（listNewPush）。
 export function saveSeen(storage, key, count, now, limit, info) {
   if (!storage || !key) return;
   const all = readAll(storage);
   all[key] = info && info.author && info.subject
-    ? [count, now, info.score | 0, String(info.author).toLowerCase(), info.subject]
+    ? [count, now, info.score | 0, String(info.author).toLowerCase(), info.subject].concat(info.date ? [info.date] : [])
     : [count, now];
   const keys = Object.keys(all);
   const cap = limit || NEW_COMMENTS_LIMIT;
@@ -129,7 +143,7 @@ export function listRecommendValue(recommend) {
   return v >= 1 && v <= 99 ? v : null;
 }
 
-// 某一板的紀錄 → [{ author, subject, score }]（只收帶身分的新格式紀錄）。
+// 某一板的紀錄 → [{ author, subject, score, date? }]（只收帶身分的新格式紀錄）。
 export function boardRecords(all, board) {
   const out = [];
   if (!all || !board) return out;
@@ -138,7 +152,9 @@ export function boardRecords(all, board) {
     if (k.indexOf(prefix) !== 0) continue;
     const e = all[k];
     if (!Array.isArray(e) || e.length < 5 || typeof e[2] !== 'number' || !e[3] || !e[4]) continue;
-    out.push({ author: e[3], subject: e[4], score: e[2] });
+    const r = { author: e[3], subject: e[4], score: e[2] };
+    if (typeof e[5] === 'string' && e[5]) r.date = e[5];
+    out.push(r);
   }
   return out;
 }
@@ -155,6 +171,9 @@ export function listNewPush(records, text) {
   let hit = null;
   for (const r of records) {
     if (r.author !== id.author || !subjectMatches(id.subject, r.subject)) continue;
+    // 同一人同一串的原文／回文身分一樣：只讀過其中一篇時，另一篇會被當成讀過那篇。發文日期
+    // 不同就不是同一篇（沒有日期的舊紀錄照舊只比身分）。
+    if (r.date && e.date !== r.date) continue;
     if (hit) return null; // 同作者同主題好幾篇讀過：分不出是哪一篇，不標
     hit = r;
   }
@@ -276,6 +295,7 @@ NewComments.prototype = {
     this._head = head;
     this._scanner = new CommentScanner();
     this._key = null;
+    this._date = null;
     // 這篇開文時讀到的「上次看到幾則」：整段閱讀期間不變（讀完會寫新的進 storage，但
     // 這一次的標線照舊標在原處）。undefined ＝還不知道是哪一篇。
     this._seen = undefined;
@@ -300,6 +320,7 @@ NewComments.prototype = {
     const key = articleKey(view._articleBoard, local && local.aid);
     if (!key) return;
     this._key = key;
+    this._date = postDateOfAid(local.aid);
     this._seen = loadSeen(this._storage, key);
   },
 
@@ -365,7 +386,8 @@ NewComments.prototype = {
     saveSeen(this._storage, this._key, count, Date.now(), null, {
       score: this._scanner.score,
       author: view._articleAuthor,
-      subject: subjectKey(view._articleTitle)
+      subject: subjectKey(view._articleTitle),
+      date: this._date
     });
     this._saved = count;
   }
