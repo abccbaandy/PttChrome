@@ -421,6 +421,29 @@ describe("游標錨定", () => {
     expect(h.session.active).toBe(true);
   });
 
+  // 同一人在同一串連發（原文＋自己的回文，或兩篇 Re:）：主題剝掉 Re: 之後相同 ⇒ 列表上
+  // 同身分。游標飄到另一篇同身分的列上，舊版身分比對 'ok' 就直接送 X ⇒ 推到別篇。
+  test("REGRESSION 游標落在同身分的另一篇（同頁兩列同身分）+ 有 AID → 先 #<aid>，才送 X", () => {
+    const h = harness();
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    pushOneThenList(h, [ANCHOR_ROW(1233), ANCHOR_ROW(1234, true)], 1);
+    expect(h.sent[h.sent.length - 1]).toBe("#" + AID + "\r\f");
+    h.settleList([ANCHOR_ROW(1233, true), ANCHOR_ROW(1234)], 0);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+  });
+
+  test("REGRESSION 同頁兩列同身分 + 沒有 AID → 停手，不送 X", () => {
+    const h = harness({ localAid: null, qAid: null });
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    h.settle("文章代碼(AID): 按任意鍵繼續");
+    h.settle(ARTICLE_FOOTER);
+    const beforeList = h.sent.length;
+    pushOneThenList(h, [ANCHOR_ROW(1233), ANCHOR_ROW(1234, true)], 1);
+    expect(h.sent.slice(beforeList + 3)).not.toContain("X");
+    expect(h.session.active).toBe(false);
+    expect(h.results[0]).toMatchObject({ source: "client", rest: "第二段" });
+  });
+
   test("沒有 AID 但原篇還在同一頁 → 用編號跳回去，才送 X", () => {
     const h = harness({ localAid: null, qAid: null });
     h.session.start({ text: "第一段\n第二段", type: "push" });
