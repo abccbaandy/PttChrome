@@ -28,7 +28,7 @@ import {
   findCurrentNum,
   cursorHintFresh,
   sameListEntry,
-  cursorRowIs
+  snapshotCursorVerify
 } from './split_reader';
 import { subjectKey, subjectMatches } from './long_push_anchor';
 import { hiddenReason, listFilterOf } from './list_row_filter';
@@ -419,8 +419,9 @@ NextArticle.prototype = {
     this._showVeil(entry);
     // <編號>⏎ 後游標那一列要是卡片上那篇才開：搜尋結果的快照可能是上一次搜尋的；完整
     // 列表的編號是位置，快照之後有人刪文就換成別篇。認得出就順便當落地比對的 seen。
-    const verify = function(rowText) {
-      const row = cursorRowIs(entry, rowText);
+    const check = snapshotCursorVerify(entry, snap.entries);
+    const verify = function(rowText, facts) {
+      const row = check(rowText, facts);
       if (!row) return false;
       if (self._nav && self._nav.entry === entry) self._nav.seen = row;
       return true;

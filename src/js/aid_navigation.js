@@ -1590,12 +1590,12 @@ AidNavigation.prototype = {
       hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
         if (!numJumpLanded(facts, num)) return false;
-        return { cursorRowText: (facts.rowTexts || [])[facts.curY] || '' };
+        return { cursorRowText: (facts.rowTexts || [])[facts.curY] || '', facts: facts };
       },
       onDone: function(result) {
         // 子列表（startSubNum）：游標那一列要是呼叫端要的那篇才開（搜尋結果可能已經不是
-        // 快照裡那一份）。認不出 ⇒ 停在列表。
-        if (run.target.verify && !run.target.verify(result.cursorRowText)) {
+        // 快照裡那一份）。認不出 ⇒ 停在列表。facts 給呼叫端看同頁的鄰居（同身分好幾列時）。
+        if (run.target.verify && !run.target.verify(result.cursorRowText, result.facts)) {
           self._fail('第 ' + num + ' 篇已不是原本那篇');
           return;
         }

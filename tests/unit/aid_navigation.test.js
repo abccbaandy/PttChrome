@@ -2084,8 +2084,10 @@ describe("agent 工具的跳法（startBoard／startNum）", () => {
       atMainMenu(h);
       const ends = [];
       const seen = [];
-      const verify = (text) => {
+      const verify = (text, f) => {
         seen.push(text);
+        // 落地那一幀的 facts 一起給（同頁同身分好幾列時，呼叫端要看鄰居）。
+        expect(f && f.rowTexts && f.rowTexts[f.curY]).toBe(text);
         return text.includes("[問卦] 要的那篇");
       };
       expect(h.nav.startNum("Gossiping", 780297, (r) => ends.push(r), verify)).toBe(true);
