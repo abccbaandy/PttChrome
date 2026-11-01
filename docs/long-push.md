@@ -499,7 +499,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | 回覆這則（pref `commentReplyMenu`） | 長按／右鍵推文列（`data-pusher`，整列都算；小天使匿名不給）且推文列可用（`state.available`，收合中也算） ⇒ 選單「回覆 'id'」。按下 `commentBar.prefill({type:'arrow', text:'id '})`：列切成 →、填字、下一幀聚焦且游標在最後（選單關掉會把焦點還給 `#t`，要排在它後面） | 只預填、不送鍵 ⇒ 不在安全模式名單（安全模式下推文列不出現，這項跟著不出現）。請求帶遞增序號：同一個請求重畫不會把使用者改過的字蓋回去 |
 | 手機收合（pref `mobileCommentBarFold`，預設開） | 手機（`core.mobile`）上 state 分 `available`（出現條件成立）與 `visible`（真的畫）。收合時平常不畫，底部導覽的「推」呼叫 `commentBar.expand()`（不送 X）：列滑出、下一幀聚焦叫出鍵盤，並以 `App.registerSheetDismiss` 登記成 sheet。收回：送出（輸入框 blur）、離開輸入框（blur／Esc）、收鍵盤（看過 `--vv-kb-inset`>0 後歸零；Android 返回鍵先收鍵盤，不會 blur）、系統返回（`dismissTopSheet`，不送 ←）、離開文章。回覆這則的 `prefill` 會先展開。關掉＝手機也常駐、導覽的「推」照舊送 X | 手機畫面小，常駐列吃掉一列內容；像 App 的留言列，要推才出來。只決定列怎麼出現、不送鍵 ⇒ 不在安全模式名單 |
 | 打字計數（pref `commentBarCounter`，預設開） | 輸入框與送出鈕之間顯示「剩 N 字」（全形字，半形算半個）或「會分成 N 則」（`commentBarCounter`，分段與送出同一支 `splitPushSegments`）。上限 `commentBar.maxBytes()`＝帳號（`view._selfId`，退回 `autoLoginUser`）＋累積頁最後 200 列已完成推文認出的 IP 欄／對齊推文（`commentBarMaxBytes`），依累積頁長度快取 | 只算字、不送鍵 ⇒ 不在安全模式名單。不認 IP 欄的話非 IP 板少算 15 byte，一則會顯示成兩則；真正送出時仍由畫面欄寬校正，所以文案只是預估 |
-| 直接送 vs 退回輸入框 | `quickPushPlan`：PTT 會改成 →（`degraded`）、禁噓板選噓、有 Big5 收不下的字、超過 20 則 ⇒ 退回長推文輸入框（內容就是草稿）；其餘直接 `session.start` | 這幾種都是「使用者該先看一眼」；直接送時探路遮罩直接接到送出進度，`modalOpen` 不閃 false |
+| 直接送 vs 退回輸入框 | `quickPushPlan`：禁噓板選噓、有 Big5 收不下的字、超過 20 則 ⇒ 退回長推文輸入框（內容就是草稿）；其餘直接 `session.start`，**PTT 會改成 →（`degraded`：作者本人／90 秒內連推）也直接送** | 退回的幾種都是「使用者該先看一眼」；改成 → 是 PTT 原生行為（原生按 X 也不多問），連推是推文列最常見的用法，退回等於第二則起都要多按一次送出。直接送時探路遮罩直接接到送出進度，`modalOpen` 不閃 false |
 
 `session.start` 不在 `onPreflight` 裡同步呼叫（`setTimeout(0)`）：那一刻還在 session 的
 `_preflightDone` 裡，同步重入會讓狀態機在收尾一半時被改掉。

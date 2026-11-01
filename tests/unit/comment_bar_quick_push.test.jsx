@@ -114,8 +114,19 @@ describe("pttchrome.openQuickPush（底部推文列送出）", () => {
     expect(calls.every((c) => c[1] === true)).toBe(true);
   });
 
+  // 回歸：90 秒內連推第二則（PTT 回「時間太近, 使用 → 加註方式」）時跳出長推文輸入框。
+  test("PTT 會改成 →（90 秒內連推／作者本人）⇒ 照樣直接 start，不開輸入框", () => {
+    vi.useFakeTimers();
+    const pttchrome = makePttchrome();
+    mount(pttchrome);
+    quick(pttchrome, "推推", "push");
+    answerPreflight(pttchrome, { degraded: true, userId: "testuser" });
+    act(() => vi.runAllTimers());
+    expect(pttchrome.longPush.start).toHaveBeenCalledWith({ text: "推推", type: "push", maxBytes: MAX });
+    expect(screen.queryByText(i18n("longPushModal_title"))).toBeNull();
+  });
+
   test.each([
-    ["PTT 會改成 →", { degraded: true }, "推推", "push"],
     ["禁噓板選了噓", { booAllowed: false }, "不推", "boo"],
   ])("%s ⇒ 不直接送，開長推文輸入框且內容就是剛打的", async (_l, result, text, type) => {
     const pttchrome = makePttchrome();
