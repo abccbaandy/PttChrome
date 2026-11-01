@@ -37,6 +37,16 @@ function parseAdbDevices(text) {
     .map((m) => m[1]);
 }
 
+// launchBrowser 之類失敗的當下，模擬器是不是已經整台不見了（adb devices 輸出裡沒有它）。
+// 是 ⇒ 回帶 ENV_ERROR_TAG 的訊息（呼叫端改拋這個，run-android-e2e 才判成環境）；裝置還在、
+// 或 adb 本身跑不出結果（devicesText 為 null）⇒ null（照原錯誤算）。
+function vanishedDeviceError(err, devicesText, serial) {
+  if (devicesText == null || !serial) return null;
+  if (parseAdbDevices(devicesText).includes(serial)) return null;
+  const msg = String((err && err.message) || err || '').split('\n')[0];
+  return `${ENV_ERROR_TAG} 模擬器 ${serial} 在這一步整台消失（${msg}）；看 Emulator post-mortem 與 docs/android-e2e.md 踩坑表`;
+}
+
 // 裝置資訊 log 用（CI 與本機各裝哪一版，出事時對照 docs/android-e2e.md 的 CONFIRMED 版本）。
 // 系統映像 source.properties 的 Pkg.Revision；沒有 ⇒ null。
 function parseImageRevision(text) {
@@ -144,6 +154,7 @@ module.exports = {
   pickEmulatorSerial,
   toDevicePoint,
   parseAdbDevices,
+  vanishedDeviceError,
   parseImageRevision,
   parseVersionName,
   parseResumedPackage,
