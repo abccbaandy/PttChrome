@@ -35,9 +35,13 @@ export function commentBarEnabled(prefs) {
 /**
  * 探路（preflight）成功之後，這一次要直接送，還是退回長推文輸入框。
  *
- * 退回的情況都是「使用者該先看一眼」：PTT 會把這次改成 →（作者本人／90 秒內）、這塊板
- * 禁噓卻選了噓、有字推不出去會被濾掉、或分段太多（輸入框那裡有二次確認）。退回時內容
- * 已經在草稿裡，輸入框一打開就看得到，一個字都不會丟。
+ * 退回的情況都是「使用者該先看一眼」：這塊板禁噓卻選了噓、有字推不出去會被濾掉、或分段
+ * 太多（輸入框那裡有二次確認）。退回時內容已經在草稿裡，輸入框一打開就看得到，一個字都
+ * 不會丟。
+ *
+ * PTT 把這次改成 →（degraded：作者本人／90 秒內連推，bbs.c#comment）**不退回**：原生按 X
+ * 也是 PTT 自己改成 → 直接進內容輸入，不多問一次；連推是推文列最常見的用法，退回等於每
+ * 第二則都要多按一次送出。送出狀態機每一步都讀畫面，沒有型別選單時本來就不送型別鍵。
  *
  * @param {object} result  LongPushSession.onPreflight 的參數（blocked 為 false 的那種）
  * @param {{text: string, type: string}} quick
@@ -50,7 +54,6 @@ export function quickPushPlan(result, quick, maxBytes) {
   const type = (quick && quick.type) || 'push';
   const { text, dropped } = stripNonBig5(raw);
   if (!text.trim()) return { direct: false, reason: 'empty', text };
-  if (r.degraded) return { direct: false, reason: 'degraded', text };
   if (type === 'boo' && r.booAllowed === false) return { direct: false, reason: 'noBoo', text };
   if (dropped && dropped.length) return { direct: false, reason: 'dropped', text };
   if (splitPushSegments(text, r.maxBytes || maxBytes).length > QUICK_PUSH_MAX_SEGMENTS)

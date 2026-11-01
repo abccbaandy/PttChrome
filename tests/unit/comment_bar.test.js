@@ -31,8 +31,17 @@ describe("quickPushPlan：探路回來直接送，或退回輸入框讓使用者
     expect(quickPushPlan(OK, { text: "補充", type: "arrow" }, MAX).direct).toBe(true);
     expect(quickPushPlan(OK, { text: "不推", type: "boo" }, MAX).direct).toBe(true);
   });
-  test("PTT 會把這次改成 →（作者本人／90 秒內）⇒ 退回", () => {
-    expect(quickPushPlan({ ...OK, degraded: true }, { text: "推推", type: "push" }, MAX).reason).toBe("degraded");
+  // PTT 自己就會改成 →（bbs.c：作者本人／90 秒內連推，原生也不多問）⇒ 照送。
+  // 回歸：連推第二則時跳出長推文輸入框，要再按一次送出。
+  test("PTT 會把這次改成 →（作者本人／90 秒內）⇒ 照樣直接送，不退回", () => {
+    for (const type of ["push", "boo", "arrow"])
+      expect(quickPushPlan({ ...OK, degraded: true }, { text: "推推", type }, MAX)).toEqual({
+        direct: true,
+        reason: "ok",
+        text: "推推",
+      });
+    // 小天使匿名板也是型別選單被跳過的那一支（degraded＋angel）。
+    expect(quickPushPlan({ ...OK, degraded: true, angel: true }, { text: "推推", type: "push" }, MAX).direct).toBe(true);
   });
   test("禁噓板選了噓 ⇒ 退回（送 2 會被當成預設的推）；選推照送", () => {
     const noBoo = { ...OK, booAllowed: false };
