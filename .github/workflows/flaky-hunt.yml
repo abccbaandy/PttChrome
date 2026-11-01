@@ -292,6 +292,15 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # 同 test.yml：資源取樣（模擬器中途整台消失時，看 runner 記憶體／CPU 是不是被吃光）、
+      # 系統映像從 cache 還原（守護 tests/unit/ci_resource_monitor.test.js）。
+      - name: Runner resources
+        run: node scripts/ci-resource-monitor.mjs start
+      - name: Cache Android system image
+        uses: actions/cache@v6
+        with:
+          path: /usr/local/lib/android/sdk/system-images/android-34/google_apis/x86_64
+          key: android-sysimg-34-google_apis-x86_64-v1
       # grep 經 env 傳（不內插進 shell）；空 grep 就不帶。
       - name: Android e2e × ${{ env.ANDROID_REPEAT }} (emulator)
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
@@ -305,6 +314,9 @@ jobs:
           avd-name: pttchrome_e2e
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: node scripts/run-android-e2e.mjs --no-boot --repeat-each="$ANDROID_REPEAT" ${GREP:+--grep "$GREP" --pass-with-no-tests}
+      - name: Runner resources report
+        if: always()
+        run: node scripts/ci-resource-monitor.mjs report
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7

@@ -69,6 +69,29 @@ const EXEMPT = {
   "selection.offline.spec.js": "單行 feedLine，無好讀、無行內預覽",
 };
 
+// 打開「更多」sheet（底部導覽的 __more）之後、同一條 test 裡的下一個指標動作，若中間沒有
+// 等 sheet 停好（waitDialogSettled／waitRectStable）就回報該段。下一個動作又是 __more
+// （sheet 已收起、按的是工具列本身）不算。
+const OPENS_MORE_SHEET = /__more['"]\]?['"]?\)\.(?:tap|click)\(\)/g;
+const NEXT_POINTER_ACTION = /\.(?:tap|click)\(|page\.touchscreen\.|page\.mouse\./;
+function tapsBeforeSheetSettled(src) {
+  const out = [];
+  for (const m of src.matchAll(OPENS_MORE_SHEET)) {
+    let rest = src.slice(m.index + m[0].length);
+    const nextTest = rest.search(/\btest\(/);
+    if (nextTest >= 0) rest = rest.slice(0, nextTest);
+    const a = NEXT_POINTER_ACTION.exec(rest);
+    if (!a) continue;
+    const between = rest.slice(0, a.index);
+    const lineStart = between.lastIndexOf("\n") + 1;
+    const actionLine = rest.slice(lineStart, rest.indexOf("\n", a.index) >>> 0).trim();
+    if (/__more/.test(actionLine)) continue;
+    if (/\b(waitDialogSettled|waitRectStable)\(/.test(between)) continue;
+    out.push(actionLine);
+  }
+  return out;
+}
+
 describe("offline e2e 版面穩定契約", () => {
   test("掃描範圍不是空的（檔名規則改了要在這裡發現，不能靜默通過）", () => {
     expect(offlineSpecs.length).toBeGreaterThanOrEqual(25);
@@ -155,6 +178,34 @@ describe("offline e2e 版面穩定契約", () => {
     expect(
       framePreLayoutSampling("const pump = () => { probe.x = 1; requestAnimationFrame(pump); };")
     ).toBe(false);
+  });
+
+  // 手機「更多」sheet（MobileSheet＝Mantine Drawer）開場會 slide-up。Playwright 的 stable 可能在
+  // 動畫真正開始前（或 CI 忙到幾幀沒前進時）放行：pointerdown 落在項目上，Chrome 產生 click
+  // 前重新 hit-test 時 sheet 已經滑走 ⇒ click 只到共同祖先、項目的 onClick 沒跑（CI 錄影：
+  // 項目上有波紋、sheet 一直開著、零送鍵）。同 #232 的 Mantine Modal ⇒ 點 sheet 裡的東西前
+  // 先等它停好（helpers/layout.js#waitDialogSettled；waitRectStable 量的是同一件事，也收）。
+  test("打開「更多」之後，點 sheet 裡的項目前先等 sheet 停好", () => {
+    const offenders = offlineSpecs.flatMap((f) =>
+      tapsBeforeSheetSettled(read(f)).map((s) => `${f}: ${s}`)
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  test("「更多」sheet 的偵測規則認得出 2026-11 那種寫法（不是空轉的 regex）", () => {
+    const flaky = `await byKey(page, '__more').tap();
+      await expect(byKey(page, '__share')).toBeVisible();
+      await byKey(page, ']').tap();`;
+    expect(tapsBeforeSheetSettled(flaky)).toHaveLength(1);
+    const located = `await page.locator('[data-key="__more"]').click();
+      await page.locator('[data-key="__select"]').click();`;
+    expect(tapsBeforeSheetSettled(located)).toHaveLength(1);
+    const settled = `await byKey(page, '__more').tap();
+      await waitDialogSettled(page, '[data-key="]"]');
+      await byKey(page, ']').tap();`;
+    expect(tapsBeforeSheetSettled(settled)).toEqual([]);
+    // 開了沒點裡面（返回鍵收起）、或下一個動作在別條 test 裡：不算。
+    expect(tapsBeforeSheetSettled(`await byKey(page, '__more').tap();\nawait page.goBack();\n});\ntest('x', async () => {\nawait byKey(page, 'a').tap();`)).toEqual([]);
   });
 
   // 豁免名單只准留「結構上免疫」的檔案。哪天它開始進好讀／掛預覽了，這條會紅。

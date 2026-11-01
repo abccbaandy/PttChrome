@@ -65,6 +65,21 @@ describe("classifyReport：0／1／2 的依據", () => {
     ).toBe("fail");
     expect(classifyReport(report([{ status: "timedOut", errors: [realErr] }]))).toBe("fail");
   });
+  // 模擬器程序中途整台消失：當下那條拿到 Playwright 的 `androidDevice.*: Device is closed`
+  // （不帶標記），之後每條都是 fixture 的「找不到唯一的模擬器」。那不是斷言紅，原本卻被判成
+  // 「有真失敗」（exit 1），叫人往被測 code 查。
+  test("模擬器中途消失（Device is closed＋之後找不到模擬器）⇒ env", () => {
+    const closed = { message: "Error: androidDevice.launchBrowser: Device is closed" };
+    expect(
+      classifyReport(report([{ status: "failed", errors: [closed] }, { status: "failed", errors: [envErr] }]))
+    ).toBe("env");
+    const closedMidTest = { message: "Error: androidDevice.shell: Device is closed\n    at fixtures.js:200" };
+    expect(classifyReport(report([{ status: "failed", errors: [closedMidTest] }]))).toBe("env");
+    // 真斷言紅混在裡面照樣是 fail。
+    expect(
+      classifyReport(report([{ status: "failed", errors: [closed] }, { status: "failed", errors: [realErr] }]))
+    ).toBe("fail");
+  });
   test("worker fixture 掛掉（頂層 errors）帶標記 ⇒ env；不帶 ⇒ fail", () => {
     expect(classifyReport(report([], { errors: [envErr] }))).toBe("env");
     expect(classifyReport(report([], { errors: [realErr] }))).toBe("fail");

@@ -95,6 +95,7 @@ API 35 google_apis（Chrome 124，GPU 不當）試過、**棄用**：
 | 「Pixel Launcher isn't responding」蓋住畫面（CI 冷開機） | launcher 在 fixture 設 `hide_error_dialogs` **之前**就 ANR；該設定即時生效（ATMS `SettingObserver`）但只擋之後的對話框，已顯示的不收 | 設定後再 `am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS`（`BaseErrorDialog` 收到即關；shell 有 `BROADCAST_CLOSE_SYSTEM_DIALOGS`）。AOSP android14-release 原始碼 CONFIRMED |
 | 測試卡在 setting up "context" 直到 timeout | Chrome 起不來時 `launchBrowser` 不會自己逾時 ⇒ 被算成真失敗 | 自帶 60s 逾時，丟 `[android-env]` |
 | APK 外部連結後 `am start` 叫不回 App（`delivered to currently running top-most instance`，前景仍是 Chrome） | Chrome 的跳板 `IntentDispatcher` 先疊在 **App 的 task** 裡（前景套件已是 Chrome），~0.2s 後才在自己的 task 開分頁；太早叫回 App 會被蓋掉。pm clear 過的 Chrome 還會再非同步開 `FirstRunActivity` | 等「Chrome 且 task ≠ App 的 task」（`parseResumedActivity`）；apk fixture 寫 `/data/local/tmp/chrome-command-line`（`--disable-fre`，同 launchBrowser）、收尾刪掉。失敗訊息附 task 堆疊與 `wm_*` 事件 |
+| 跑到一半 `androidDevice.launchBrowser: Device is closed`，之後整批「找不到唯一的模擬器（adb 看到：無）」、收尾 `emu kill` 連不上 5554 | 模擬器程序本身整台消失（flaky-hunt ×5 跑到第 17 條；emulator log 一行都沒留），原因 `unknown` | `classifyReport` 把 `Device is closed` 也算環境 ⇒ exit 2，不叫人往被測 code 查；flaky-hunt 的 android job 補上資源取樣，再發生先看 `Runner resources report` 是不是記憶體被吃光 |
 | 實機也在 adb 上 | 開發機常連著無線 adb 的手機 | `pickEmulatorSerial` 只收 `emulator-N`；多台要 `ANDROID_SERIAL` |
 
 - 螢幕用原生 Pixel 6（1080x2400，412 CSS px、DPR 2.625）。spec 用一般終端機畫面（不開好讀），所以

@@ -7,7 +7,7 @@ const ptt = require('../helpers/ptt');
 const { bootOffline } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const { ITEMS, drawHelpPage } = require('../helpers/help_menu');
-const { scrollIntoViewStable, waitRectStable } = require('../helpers/layout');
+const { scrollIntoViewStable, waitRectStable, waitDialogSettled } = require('../helpers/layout');
 
 const HOME = '\x1b[1~';
 const PGDN = '\x1b[6~';
@@ -87,6 +87,7 @@ test.describe('說明選單入口（手機「更多」）', () => {
     await page.locator('[data-key="__more"]').tap();
     const help = page.locator('[data-sheet="more"] [data-key="__help"]');
     await expect(help).toBeVisible();
+    await waitDialogSettled(page, '[data-sheet="more"] [data-key="__help"]');
     await help.tap();
     await expect.poll(() => peekCapture(page)).toBe('h');
     await takeCapture(page);

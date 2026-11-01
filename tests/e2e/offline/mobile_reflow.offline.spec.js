@@ -6,7 +6,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
-const { waitPreviewsSettled, scrollIntoViewStable } = require('../helpers/layout');
+const { waitPreviewsSettled, scrollIntoViewStable, waitDialogSettled } = require('../helpers/layout');
 
 const article = findCassette('article');
 
@@ -14,6 +14,7 @@ const article = findCassette('article');
 // （sheet 的遮罩蓋住工具列，收起用 Esc）。
 async function enableSelectMode(page) {
   await page.locator('[data-key="__more"]').click();
+  await waitDialogSettled(page, '[data-key="__select"]');
   await page.locator('[data-key="__select"]').click();
   await expect(page.locator('[data-sheet="more"]')).toHaveCount(0);
   await page.locator('[data-key="__more"]').click();
