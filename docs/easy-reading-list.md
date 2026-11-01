@@ -437,6 +437,7 @@ states：`idle → active ⇄ functionMode`；`active → opening → suspended 
 12f. **cursor-sync 腿落地要驗身分，不是只驗編號**（2026-09-19，與 12e 同批）：`<編號>\r` 只保證真游標停在那個**編號**。pttbbs 的 `crs_ln` 是 `.DIR` 純行號、**不綁文章身分**，一般刪文（`record.c#delete_record2`）把後面每一筆 index 往前搬 ⇒ 我們幾秒前累積進緩衝的編號可能已指向別篇（完整推導見 `docs/long-push.md:86-130`）。這一腿的下游正是對那一列動作的破壞性指令（`^X` 轉錄、`^E` 管理、`%` 推文），誤動作無法收回。
    `_enqueueCursorSyncJump` 在 `onDone` 比對落地列與本地選取列的作者／主題（重用 `long_push_anchor.listRowIdentity` / `checkCursorAnchor`，零額外 round-trip）：
    - **只在明確 `'moved'` 時擋** → 不送下游那顆鍵，`_degradeToNative('列表已變動，游標對不上選取的文章，已切至原生模式')`。
+   - **`'ok'` 但這一頁有兩列以上同身分**（`anchorMatchCount`；同一人同一串的原文／回文，主題剝掉 Re: 後相同）⇒ 身分證明不了沒位移，改比編號 ±1 的鄰居跟本地緩衝是否同一篇（`neighborsAgree`）；有鄰居不同或兩個都讀不出 ⇒ 同 `'moved'` 處理。
    - **`'unknown'` 照舊放行**（置底列／已刪除列／呼叫端 facts 沒帶 `rowTexts`）——一起擋掉會製造一批「按了就切原生」的假陽性，比原問題更常見。這是**純粹加法**的安全網。
    守護：`list_cursor_identity.test.js`（相符／moved／兩條 unknown 反向／列表截斷的 `…` 前綴比對）。
 

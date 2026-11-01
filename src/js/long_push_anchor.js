@@ -162,6 +162,26 @@ export function anchorRowNums(facts, anchor) {
   return hits;
 }
 
+// 編號跳落地後，游標那列身分 'ok' 但這一頁有兩列以上同身分（anchorMatchCount ≥ 2）時，
+// 身分本身證明不了「還是同一篇」：刪文讓整串往前搬一格，落到同一人同一串的另一篇上照樣 'ok'。
+// 這時改看鄰居：落地幀上編號 num±1 的那兩列，跟跳之前使用者眼睛看到的（localIdentityAt）
+// 是不是同一篇。有一個鄰居讀得到且相同、沒有任何鄰居不同 ⇒ 沒有位移 ⇒ true；
+// 其餘（有鄰居不同，或兩個鄰居都讀不出來）⇒ false（呼叫端當成游標對不上）。
+export function neighborsAgree(facts, num, localIdentityAt) {
+  if (!facts || !facts.rowTexts || num == null || !localIdentityAt) return false;
+  const nums = facts.nums || pageArticleNums(facts.rowTexts, facts.curY);
+  let agreed = 0;
+  for (const n of [num - 1, num + 1]) {
+    const i = nums.indexOf(n);
+    const here = i >= 3 ? listRowIdentity(facts.rowTexts[i] || '') : null;
+    const before = localIdentityAt(n);
+    if (!here || !before) continue;
+    if (here.author !== before.author || !subjectMatches(here.subject, before.subject)) return false;
+    ++agreed;
+  }
+  return agreed > 0;
+}
+
 // 這一頁上對得上錨點身分的列（含置底 ★ 列）有幾列。≥2 ⇒ 光靠身分分不出是哪一篇。
 export function anchorMatchCount(facts, anchor) {
   if (!anchor || !anchor.author || !anchor.subject) return 0;
