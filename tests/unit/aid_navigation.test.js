@@ -2392,6 +2392,37 @@ describe("currentPostAid（斷線前記下本篇）", () => {
     expect(h.nav.currentPostAid()).toBeNull();
   });
 
+  // 原生模式（好讀關著，deep link 在 pmore 裡收到）：文章→文章的鍵（] 同標題下一篇）不經過
+  // easy_reading.leaveCurrentPost ⇒ noteLeftPost 沒被叫。畫面已是 C，landed 還說是 B：
+  // 重連「回到原處」會打開 B、最近讀過把 C 記在 B 名下、下一次跳文把 B 當返回錨。
+  test("REGRESSION 原生模式按 ] 換到同板另一篇 ⇒ landed 不再算本篇，返回堆疊作廢", () => {
+    const h = makeHarness({ pageState: 3, articleBoard: "Android" });
+    h.view._articleAuthor = "alice";
+    h.view._articleTitle = "[問題] 第一篇";
+    h.nav._history.beginJump({ kind: "board", board: "C_Chat", aid: null, label: "C_Chat 看板" }, {
+      board: "Android",
+      aid: "1gIeu-3A"
+    });
+    h.nav._history.commitJump(h.nav._articleContext());
+    expect(h.nav.currentPostAid()).toEqual(expect.objectContaining({ board: "Android", aid: "1gIeu-3A" }));
+    expect(h.nav.canGoBack()).toBe(true);
+    // ] ⇒ 同標題下一篇（Re:），作者也換了；原生模式沒有任何 noteLeftPost。
+    h.view._articleAuthor = "bob";
+    h.view._articleTitle = "Re: [問題] 第一篇";
+    expect(h.nav.currentPostAid()).toBeNull();
+    expect(h.nav.canGoBack()).toBe(false);
+    expect(h.sent).toEqual([]);
+  });
+
+  test("落地時讀不到檔頭（作者／標題 null）⇒ 不下結論，照舊用 landed", () => {
+    const h = makeHarness({ pageState: 3, articleBoard: "Android" });
+    h.nav._history.beginJump(null, { board: "Android", aid: "1gIeu-3A" });
+    h.nav._history.commitJump(h.nav._articleContext());
+    h.view._articleAuthor = "bob";
+    h.view._articleTitle = "別篇";
+    expect(h.nav.currentPostAid()).toEqual(expect.objectContaining({ aid: "1gIeu-3A" }));
+  });
+
   test("不在文章裡 ⇒ null（不按 Q：斷線當下沒有連線可問）", () => {
     const h = makeHarness({ pageState: 2, articleBoard: "Android" });
     expect(h.nav.currentPostAid()).toBeNull();

@@ -4,7 +4,34 @@
 // user to the RIGHT article: a failed run must never push or pop, and anything
 // we did not drive must clear the whole stack rather than leave a stale anchor.
 
-import { NavHistory, chooseAnchor } from "../../src/js/nav_history";
+import { NavHistory, chooseAnchor, landedStillCurrent } from "../../src/js/nav_history";
+
+// landed 的第二要素：落地那一刻的作者＋標題（原生模式下文章→文章不經過 noteLeftPost）。
+describe("landedStillCurrent", () => {
+  const ctx = { author: "alice", title: "[問題] 第一篇" };
+  test("commitJump／commitBack 帶 ctx ⇒ landed 記下作者與標題", () => {
+    const h = new NavHistory();
+    h.beginJump(null, { board: "Android", aid: "1gIeu-3A" });
+    h.commitJump(ctx);
+    expect(h.landed()).toMatchObject({ board: "Android", aid: "1gIeu-3A", author: "alice", title: "[問題] 第一篇" });
+    h.beginJump({ kind: "aid", board: "Android", aid: "1gIeu-3A", label: "#1gIeu-3A" }, { board: "movie", aid: "2AbCdEf0" });
+    h.commitJump({ author: "bob", title: "x" });
+    h.beginBack();
+    h.commitBack(ctx);
+    expect(h.landed()).toMatchObject({ aid: "1gIeu-3A", author: "alice" });
+  });
+  test("作者或標題換了 ⇒ 不是本篇", () => {
+    const landed = { board: "Android", aid: "1gIeu-3A", ...ctx };
+    expect(landedStillCurrent(landed, ctx)).toBe(true);
+    expect(landedStillCurrent(landed, { author: "alice", title: "Re: [問題] 第一篇" })).toBe(false);
+    expect(landedStillCurrent(landed, { author: "bob", title: ctx.title })).toBe(false);
+  });
+  test("任一邊讀不到 ⇒ 不下結論（true）；沒有 landed ⇒ false", () => {
+    expect(landedStillCurrent({ board: "A", aid: "x" }, ctx)).toBe(true);
+    expect(landedStillCurrent({ board: "A", aid: "x", ...ctx }, { author: null, title: null })).toBe(true);
+    expect(landedStillCurrent(null, ctx)).toBe(false);
+  });
+});
 
 describe("chooseAnchor 優先序", () => {
   const list = { board: "C_Chat", num: 353218, subject: "[閒聊] 測試標題" };

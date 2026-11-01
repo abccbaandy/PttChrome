@@ -57,7 +57,7 @@
 // that has a board tries to learn the AID (free URL line, else Q) — see _begin.
 
 import { parseStatusRow, parsePagerFooterContext } from './string_util';
-import { NavHistory, chooseAnchor } from './nav_history';
+import { NavHistory, chooseAnchor, landedStillCurrent } from './nav_history';
 import {
   parsePostInfoAid,
   parseOwnArticleUrlLine,
@@ -572,7 +572,7 @@ AidNavigation.prototype = {
       aid: aid,
       bm: bm,
       lineIndex: bm.article ? bm.article.lineIndex : this._currentLineIndex(),
-      landed: this._history.landed(),
+      landed: this._landedNow(),
       articleBoard: this._view._articleBoard,
       // 文末網址列的免費路徑（零指令）；Q 不能用：人一離開文章就問不到本篇了。
       localAid: this.findLocalPostAid()
@@ -781,9 +781,11 @@ AidNavigation.prototype = {
     const buf = this._termBuf;
     const board = this._view && this._view._articleBoard;
     if (!buf || buf.pageState !== 3 || !board) return null;
-    const landed = this._history.landed();
+    const landed = this._landedNow();
     if (!landed || !landed.aid || !landed.board) return null;
-    return String(landed.board).toLowerCase() === String(board).toLowerCase() ? landed : null;
+    return String(landed.board).toLowerCase() === String(board).toLowerCase()
+      ? { board: landed.board, aid: landed.aid }
+      : null;
   },
 
   // 回到原處的列表收尾（含找不到原文、編號跳不到）：列表視野交給閱讀紀錄（只比板與
@@ -992,6 +994,22 @@ AidNavigation.prototype = {
     rr.releaseExternal();
   },
 
+  // 這次 AID 落地的那篇，且畫面上還是它（nav_history.landedStillCurrent）。原生模式下
+  // 文章→文章的鍵不經過 noteLeftPost：作者／標題已經換了 ⇒ 同使用者自己離開文章，堆疊作廢。
+  _landedNow: function() {
+    const landed = this._history.landed();
+    if (!landed) return null;
+    if (landedStillCurrent(landed, this._articleContext())) return landed;
+    this._history.invalidate();
+    this._updateBackButton();
+    return null;
+  },
+
+  _articleContext: function() {
+    const v = this._view || {};
+    return { author: v._articleAuthor || null, title: v._articleTitle || null };
+  },
+
   // Is a back run available right now (drives the button / the shortcut)?
   canGoBack: function() {
     return !this.active && this._history.canGoBack();
@@ -1001,7 +1019,7 @@ AidNavigation.prototype = {
   // .chooseAnchor). Must run before the mirrors are entered — see start().
   _captureOriginAnchor: function(targetBoard, lineIndex) {
     return chooseAnchor({
-      landed: this._history.landed(),
+      landed: this._landedNow(),
       articleBoard: this._view._articleBoard,
       targetBoard: targetBoard,
       lineIndex: lineIndex
@@ -1946,7 +1964,7 @@ AidNavigation.prototype = {
           self._core.easyReading.ensureEnabledOnArticle(true);
         // Only here — with the article really open — does the stack move.
         if (run.dir === 'back') {
-          const entry = self._history.commitBack();
+          const entry = self._history.commitBack(self._articleContext());
           self._updateBackButton();
           // Reading position: easy reading re-reads the article from the top
           // and grows it page by page, so this is a REQUEST that lands once
@@ -1979,7 +1997,7 @@ AidNavigation.prototype = {
           self._updateBackButton();
           self._hint('已開啟第 ' + run.target.num + ' 篇', 1200);
         } else {
-          self._history.commitJump();
+          self._history.commitJump(self._articleContext());
           self._updateBackButton();
           // Replace the long-lived "跳至…" progress banner (15s) with a short
           // confirmation so it fades right away instead of lingering into the

@@ -84,6 +84,31 @@ export function chooseAnchor(input) {
   return null; // 站內信, or a same-board jump with nothing better — no back.
 }
 
+// landed 記下落地那一刻的作者＋標題，之後拿來對「現在畫面上這篇」。
+//
+// 為什麼要它：landed 只在 noteLeftPost／noteSettle 清，而 noteLeftPost 來自
+// easy_reading.leaveCurrentPost —— 好讀關著（原生 pmore 裡收到 deep link，opts.inPager）
+// 時，文章→文章的鍵（[ ] = + - a b f）根本不經過它。於是原生模式下 B 落地後按 ] 到 C，
+// landed 仍說「本篇是 B」：下一次 AID 跳文把 B 當返回錨、斷線重連的「回到原處」打開 B。
+// 作者與標題 term_view 兩種模式都會從檔頭讀（_setArticleContext），是跟好讀無關的第二要素。
+//
+// 只在兩邊都讀得到時才比：落地時沒讀到（null）或現在不在檔頭可讀的狀態 ⇒ 不下結論（維持舊行為）。
+// 比對失敗的代價只是退回較低的錨（board）或不提供返回，方向安全。
+function withContext(landed, ctx) {
+  if (ctx && ctx.author && ctx.title) {
+    landed.author = ctx.author;
+    landed.title = ctx.title;
+  }
+  return landed;
+}
+
+export function landedStillCurrent(landed, ctx) {
+  if (!landed) return false;
+  if (!landed.author || !landed.title) return true;
+  if (!ctx || !ctx.author || !ctx.title) return true;
+  return ctx.author === landed.author && ctx.title === landed.title;
+}
+
 export function NavHistory(opts) {
   this._max = (opts && opts.max) || 8;
   this._stack = [];
@@ -150,7 +175,8 @@ NavHistory.prototype = {
     if (keepList) p.origin.list = keepList;
   },
 
-  commitJump: function() {
+  // ctx：落地那一刻畫面上這篇的 {author, title}（term_view 的文章脈絡），見 landedStillCurrent。
+  commitJump: function(ctx) {
     const p = this._pending;
     this._pending = null;
     if (!p || p.type !== 'jump') return;
@@ -160,7 +186,7 @@ NavHistory.prototype = {
     }
     this._landed =
       p.target && p.target.board && p.target.aid
-        ? { board: p.target.board, aid: p.target.aid }
+        ? withContext({ board: p.target.board, aid: p.target.aid }, ctx)
         : null;
   },
 
@@ -174,7 +200,7 @@ NavHistory.prototype = {
     return entry;
   },
 
-  commitBack: function() {
+  commitBack: function(ctx) {
     const p = this._pending;
     this._pending = null;
     if (!p || p.type !== 'back') return null;
@@ -183,7 +209,7 @@ NavHistory.prototype = {
     // after a board return the next jump falls back to a lower level.
     this._landed =
       entry && entry.kind === 'aid'
-        ? { board: entry.board, aid: entry.aid }
+        ? withContext({ board: entry.board, aid: entry.aid }, ctx)
         : null;
     return entry;
   },
