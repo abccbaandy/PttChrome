@@ -317,6 +317,10 @@ jobs:
       - name: Runner resources report
         if: always()
         run: node scripts/ci-resource-monitor.mjs report
+      # 同 test.yml：模擬器整台消失時，dmesg（OOM／segfault）＋模擬器自己的 crash 檔（issue #287）。
+      - name: Emulator post-mortem
+        if: failure()
+        run: node scripts/ci-emulator-postmortem.mjs
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
