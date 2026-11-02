@@ -130,7 +130,14 @@ CommandQueue.prototype = {
   //   hardTimeoutMs: absolute cap from send (default 10000), never re-armed,
   //   probeTimeoutMs: how long the probe's full frame gets (default 2000),
   //   onDone(result), onFail(reason, facts) — reason 'miss' carries the
-  //                  probed full frame's facts; 'timeout' = link silent,
+  //                  probed full frame's facts; 'timeout' = link silent;
+  //                  'bail' = the bail predicate below ended it early,
+  //   bail(snapshot, facts): optional. Checked on every settle the expect
+  //                  rejected; truthy ⇒ the screen is conclusively NOT going to
+  //                  become the response (PTT asks the user something instead)
+  //                  ⇒ fail right away with reason 'bail' instead of waiting out
+  //                  the soft/probe/hard budget. The truthy value is onFail's
+  //                  3rd argument,
   //   onSend():      opt-in notification fired IMMEDIATELY BEFORE the keys go out.
   //                  A command that sits in `_pending` behind a background
   //                  prefetch must not decide anything at enqueue time — the
@@ -172,7 +179,18 @@ CommandQueue.prototype = {
       this._maybeSendNext();
       this._maybeIdle();
       return 'done';
-    } else if (cmd._probed && this._concludes(cmd, facts)) {
+    }
+    const bailed = cmd.bail ? cmd.bail(snapshot, facts) : null;
+    if (bailed) {
+      // Same consumption contract as a miss: the frame is accounted for.
+      this._emit('bail', cmd);
+      this._finish();
+      if (cmd.onFail) cmd.onFail('bail', facts, bailed);
+      this._maybeSendNext();
+      this._maybeIdle();
+      return 'miss';
+    }
+    if (cmd._probed && this._concludes(cmd, facts)) {
       // The probe's full frame arrived and expect still says no — that is a
       // definitive MISS, not a maybe: hand the known-complete screen's facts
       // to the caller for reclassification (v5: failures are explicit).

@@ -69,6 +69,7 @@ import { parseListEntry } from './agent_parse';
 import { MAIN_MENU, boardNameFromKey, parseBoardKey, rowHasTitle } from './screen_titles';
 import { isSubListFooter } from './screen_captions';
 import { HINT_ERROR } from './status_hint';
+import { openPromptText, openPromptHint } from './open_prompt';
 import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
 import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
@@ -382,7 +383,9 @@ AidNavigation.prototype = {
     if (this._view.hideListHint) this._view.hideListHint();
   },
 
-  _fail: function(msg) {
+  // hint：給了就整句換成它（一般級、會自己消失），不是錯誤（例：開文換來 PTT 的問題，
+  // open_prompt.js）。收尾照舊：停在原生畫面、身後紀錄與返回堆疊一樣處理。
+  _fail: function(msg, hint) {
     this.active = false;
     this.opHint = null;
     // 停在哪裡都一樣：把列表 session 的外部 hold 交回靜置探針（否則列表好讀會
@@ -393,14 +396,16 @@ AidNavigation.prototype = {
       this._refreshing = false;
       this._history.abort();
       this._updateBackButton();
-      this._hint('重新整理失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
+      if (hint) this._hint(hint, 6000);
+      else this._hint('重新整理失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
       return;
     }
     if (this._resuming) {
       this._resuming = false;
       this._history.abort();
       this._updateBackButton();
-      this._hint('回到斷線前的位置失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
+      if (hint) this._hint(hint, 6000);
+      else this._hint('回到斷線前的位置失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
       this._endRun({ ok: false, error: msg });
       return;
     }
@@ -408,7 +413,8 @@ AidNavigation.prototype = {
     // whole stack rather than offer a back that lands somewhere wrong.
     this._history.abort();
     this._updateBackButton();
-    this._hint('AID 跳文失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
+    if (hint) this._hint(hint, 6000);
+    else this._hint('AID 跳文失敗：' + msg + '（已停在原生畫面）', 0, HINT_ERROR);
     this._endRun({ ok: false, error: msg });
   },
 
@@ -1939,6 +1945,11 @@ AidNavigation.prototype = {
         const lastRow = facts.rowTexts[facts.rows - 1] || '';
         return !!parseStatusRow(lastRow);
       },
+      // PTT 開文前先問使用者（open_prompt.js：同一篇連開多次問要不要直接進實況）⇒
+      // 馬上停手交給使用者答，不等 3 秒逾時、不報成失敗。
+      bail: function() {
+        return openPromptText(self._termBuf);
+      },
       onDone: function() {
         if (run.dir === 'refresh') {
           // 同下面的 ORDER INVARIANT：_finishRefresh 先解鎖 active 再交給好讀。
@@ -2007,7 +2018,11 @@ AidNavigation.prototype = {
         recordFor(self._core).releaseExternal();
         self._endRun({ ok: true });
       },
-      onFail: function(reason) {
+      onFail: function(reason, facts, prompt) {
+        if (reason === 'bail') {
+          self._fail('PTT 在問問題', openPromptHint(prompt));
+          return;
+        }
         self._fail('開啟文章失敗（' + reason + '）');
       }
     });

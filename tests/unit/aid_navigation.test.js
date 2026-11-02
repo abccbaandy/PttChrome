@@ -2798,3 +2798,41 @@ describe("AidNavigation.startSubNum：搜尋結果裡的第 N 篇", () => {
     expect(h.sent).toEqual(["\x1b[D\f"]);
   });
 });
+
+describe("開文的 ⏎ 換來 PTT 的提問（upstream f1a32e2：同一篇連開 10 次問要不要直接進實況）", () => {
+  // 第 11 次開文前，列表殘影底列的 vans [Y/n] 輸入欄（真畫面見 ptt_src_screens.test.js 的 live_repeat_prompt）。
+  const asking = (termBuf) => {
+    termBuf.cur_y = 23;
+    termBuf.isPromptPending = () => true;
+    termBuf.inputPromptText = () => "要直接進入實況模式看新推文嗎？ [Y/n]: ";
+  };
+
+  test("重新整理：馬上停手交給使用者答，不等逾時、不多送任何鍵、不報成失敗", () => {
+    const { nav, queue, sent, hints, termBuf } = makeHarness({ pageState: 3, articleBoard: "C_Chat" });
+    nav.refresh();
+    answerOriginInfo(queue, "1gKF7GO4");
+    settle(queue, facts("clean-list", { boardName: "C_Chat" }));
+    settle(queue, facts("transient", { boardName: "C_Chat", cursorRowNum: 4321, curY: 10 }));
+    expect(sent[3]).toBe("\r\f");
+    asking(termBuf);
+    settle(queue, facts("transient", { boardName: "C_Chat" }));
+    expect(nav.active).toBe(false);
+    expect(hints.at(-1)).toContain("實況模式");
+    expect(hints.at(-1)).not.toContain("失敗");
+    expect(sent.length).toBe(4);
+  });
+
+  test("游標不在底列（開文途中的半幀）⇒ 不算提問，照常等文章", () => {
+    const { nav, queue, termBuf } = makeHarness({ pageState: 3, articleBoard: "C_Chat" });
+    nav.refresh();
+    answerOriginInfo(queue, "1gKF7GO4");
+    settle(queue, facts("clean-list", { boardName: "C_Chat" }));
+    settle(queue, facts("transient", { boardName: "C_Chat", cursorRowNum: 4321, curY: 10 }));
+    asking(termBuf);
+    termBuf.cur_y = 0;
+    settle(queue, facts("transient", { boardName: "C_Chat" }));
+    expect(nav.active).toBe(true);
+    settle(queue, facts("article"));
+    expect(nav.active).toBe(false);
+  });
+});

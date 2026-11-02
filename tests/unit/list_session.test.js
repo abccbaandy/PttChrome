@@ -3181,3 +3181,27 @@ describe("fastScrollInfo／jumpToNumber（快速捲動把手）", () => {
     expect(enqueued.length).toBe(0);
   });
 });
+
+describe("列表好讀開文換來 PTT 的提問（upstream f1a32e2）", () => {
+  test("open-enter 看到底列輸入欄 ⇒ bail，切原生把問題畫出來、提示請使用者回答（不是開啟失敗）", () => {
+    const { s, enqueued, banners, termBuf } = demandSession();
+    s._selectedNum = 115;
+    s._beginOpen();
+    s.state = "opening"; // reducer 的 begin-open 轉移（這裡直接呼叫 _beginOpen）
+    const jump = enqueued.find((c) => c.kind === "open-jump");
+    jump.onDone(true);
+    const enter = enqueued.find((c) => c.kind === "open-enter");
+    expect(typeof enter.bail).toBe("function");
+    expect(enter.bail({}, {})).toBe(null); // 列表畫面：不是提問
+    termBuf.cur_y = 23;
+    termBuf.isPromptPending = () => true;
+    termBuf.inputPromptText = () => "要直接進入實況模式看新推文嗎？ [Y/n]: ";
+    const prompt = enter.bail({}, {});
+    expect(prompt).toContain("實況模式");
+    enter.onFail("bail", {}, prompt);
+    expect(s.state).toBe("functionMode");
+    expect(s._renderMode).toBe("native");
+    expect(banners.at(-1)).toContain("實況模式");
+    expect(banners.at(-1)).not.toContain("失敗");
+  });
+});

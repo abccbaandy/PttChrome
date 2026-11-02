@@ -665,3 +665,35 @@ describe("CommandQueue", () => {
     });
   });
 });
+
+describe("CommandQueue bail（畫面確定不會變成回應 ⇒ 不等逾時）", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  test("expect 不滿足、bail 為真 ⇒ 當場 onFail('bail', facts, bail 的值)，不送探針，下一條照送", () => {
+    const { q, sent } = makeQueue();
+    const fail = vi.fn();
+    let asking = false;
+    q.enqueue(cmd("A", { onFail: fail, bail: () => (asking ? "要直接進入實況模式？" : null) }));
+    q.enqueue(cmd("B"));
+    expect(settleWith(q, false)).toBe(null); // 還不是提問 ⇒ 照常等
+    expect(fail).not.toHaveBeenCalled();
+    asking = true;
+    const f = { __result: false };
+    expect(q.onSettle({}, f)).toBe("miss");
+    expect(fail).toHaveBeenCalledWith("bail", f, "要直接進入實況模式？");
+    expect(sent).toEqual(["A", "B"]); // 沒有 \f 探針
+    vi.advanceTimersByTime(20000);
+    expect(fail).toHaveBeenCalledTimes(1); // A 的計時器已收掉
+  });
+
+  test("expect 滿足時不看 bail", () => {
+    const { q } = makeQueue();
+    const done = vi.fn();
+    const bail = vi.fn(() => "x");
+    q.enqueue(cmd("A", { onDone: done, bail }));
+    settleWith(q, true);
+    expect(done).toHaveBeenCalled();
+    expect(bail).not.toHaveBeenCalled();
+  });
+});
