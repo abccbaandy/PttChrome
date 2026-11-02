@@ -14,6 +14,7 @@ import { needsAidBoardChoice } from './aid_board_choice';
 import { ScreenRefresh, liveHelperUpdateAllowed } from './screen_refresh';
 import { ReadingRecord } from './reading_record';
 import { ReconnectResume, isResumeToastTarget } from './reconnect_resume';
+import { isLoginBlockScreen } from './login_block';
 import { UnreadJump } from './unread_jump';
 import { MarkAllRead } from './mark_all_read';
 import { BoardMarkRead } from './board_mark_read';
@@ -677,6 +678,12 @@ App.prototype.onClose = function() {
   this.debugRecorder?.log('app.onClose');
   // 先問：這次斷線是不是我們自己登出造成的（要在下面 disable 清佇列之前收攤）。
   const { loggedOut, quitApp } = this.logout.onConnectionClosed();
+  // PTT 的登入封鎖畫面（login_block.js）：斷線那一刻畫面上還看得到。重連就是再登入一次 ⇒
+  // 本頁的自動登入停手，斷線提示講清楚規則。要在下面的 reset 之前讀畫面。
+  // 只認登入途中（這條連線還沒到過主功能表）：登入後畫面可能是引用那段字的文章。
+  const loginBlocked =
+    !this.reconnectResume.loggedInThisConnection() && isLoginBlockScreen(this.buf);
+  if (loginBlocked) this.autoLogin.suspend();
   if (this.timerEverySec) {
     this.timerEverySec.cancel();
   }
@@ -749,8 +756,8 @@ App.prototype.onClose = function() {
   // Android APK 的連線永遠是原生本機 proxy：「Origin 沒設好 → 改走 proxy」這條
   // 診斷在那裡不成立，只給單純的重連提示。
   renderInto(container, <MantineRoot><ConnectionAlert
-    onDismiss={onDismiss} diagnose={isAndroidApp() ? undefined : diagnose}
-    onEnableProxy={onEnableProxy} /></MantineRoot>);
+    onDismiss={onDismiss} diagnose={isAndroidApp() || loginBlocked ? undefined : diagnose}
+    onEnableProxy={onEnableProxy} loginBlocked={loginBlocked} /></MantineRoot>);
   this.updateTabIcon('disconnect');
 };
 

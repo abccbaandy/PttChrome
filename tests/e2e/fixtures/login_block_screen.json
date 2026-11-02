@@ -1,0 +1,5 @@
+{
+ "note": "PTT 站方登入封鎖畫面（實錄字樣，帳號以 xxx 代替；docs/pttbbs-screen-protocol.md「PTT 私有的」），Big5 位元組以 latin1 字串存",
+ "bytes": "\u001b[H\u001b[2J[PTT DDoS/BOT °»´ú¨t²Î] °»´ú¨ì³s½u²§±`/¤£·í³sÄòµn¤J¦æ¬°¡I\r\n±b¸¹ xxx ¤w³Q¼È®É¸T¤îµn¤J¡C\r\n",
+ "menu": "\u001b[H\u001b[2J¡i¥D¥\\¯àªí¡j                      §å½ð½ð¹ê·~§{\r\n"
+}

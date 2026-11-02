@@ -236,6 +236,11 @@ ReconnectResume.prototype = {
     this._pending = null;
   },
 
+  // 這條連線到過主功能表了嗎（＝登入完成）。App.onClose 要在 capture() 之前問。
+  loggedInThisConnection: function() {
+    return !!this._loggedIn;
+  },
+
   hasPending: function() {
     return !!(this._pending || this._countdown);
   },

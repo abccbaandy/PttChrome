@@ -2194,6 +2194,9 @@ export const en_US = {
   "alert_connectionOriginHelp": {
     "message": "Setup guide"
   },
+  "alert_connectionLoginBlocked": {
+    "message": "PTT has temporarily blocked logins for this account. Per PTT, it lifts within 12 hours after all login attempts stop; logging in again meanwhile extends the block. Auto login is stopped for this page."
+  },
   "alert_connectionUnreachable": {
     "message": "PTT is unreachable right now (maintenance or network issue); this is not caused by the Origin setup."
   },

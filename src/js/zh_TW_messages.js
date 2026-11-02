@@ -2193,6 +2193,9 @@
   "alert_connectionOriginHelp": {
     "message": "設定教學"
   },
+  "alert_connectionLoginBlocked": {
+    "message": "PTT 暫時禁止這個帳號登入。依 PTT 的說明，停止所有登入嘗試最多 12 小時後會恢復，期間再登入會延長暫停時間。本頁的自動登入已停止。"
+  },
   "alert_connectionUnreachable": {
     "message": "目前連不上 PTT（可能維護中或網路問題），與 Origin 設定無關。"
   },

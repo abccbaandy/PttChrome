@@ -45,6 +45,7 @@ import {
   totpRemainingMs,
   TOTP_PERIOD_SEC
 } from './totp';
+import { isLoginBlockText } from './login_block';
 
 const MAIN_MENU = ['主功能表', '【主功能表】'];
 const POLL_MS = 500;
@@ -198,6 +199,11 @@ AutoLogin.prototype._maybeMigrate = function() {
 AutoLogin.prototype.start = async function() {
   this.stop(); // clear any previous run (reconnect)
   const seq = (this._seq = (this._seq || 0) + 1);
+  // PTT 的登入封鎖（login_block.js）：再登入只會延長封鎖 ⇒ 本頁剩下的時間都不替使用者登入。
+  if (this._suspended) {
+    this._app.debugRecorder?.log('autoLogin.suspended');
+    return;
+  }
 
   const v = readValuesWithDefault();
   if (!v.autoLogin) return;
@@ -228,6 +234,16 @@ AutoLogin.prototype.start = async function() {
   this._lastActionAt = 0;
   this._deadline = Date.now() + MAX_DURATION_MS;
   this._poll();
+};
+
+// 本頁不再自動登入（重新整理網頁才恢復）。看到 PTT 的登入封鎖畫面時呼叫。
+AutoLogin.prototype.suspend = function() {
+  this._suspended = true;
+  this.stop();
+};
+
+AutoLogin.prototype.isSuspended = function() {
+  return !!this._suspended;
 };
 
 AutoLogin.prototype.stop = function() {
@@ -360,6 +376,12 @@ AutoLogin.prototype._tick = function() {
   if (this._app.connectState !== 1) return;
   const screen = this._readScreen();
   if (!screen.trim()) return;
+
+  // PTT 的登入封鎖畫面：一個鍵都不再送（再試會延長封鎖），本頁之後也不再自動登入。
+  if (isLoginBlockText(screen)) {
+    this.suspend();
+    return;
+  }
 
   // Reached the main menu → login finished, detach.
   if (MAIN_MENU.some(m => screen.includes(m))) {

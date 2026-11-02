@@ -21,11 +21,14 @@ const PASSTHROUGH =
 // onEnableProxy：使用者在「改用 Proxy？」選是 ⇒ App 開 useProxy 並重連。
 // loggedOut：使用者自己按了登出（App.logout，server 正常關線）⇒ 不是連線失敗，
 // 換成藍色的「已登出」標題，只留重新連線。
+// loginBlocked：斷線前畫面是 PTT 的登入封鎖（js/login_block.js）⇒ 寫明封鎖規則與「本頁自動登入
+// 已暫停」，不跑診斷（連得上，是 PTT 不讓登入）。
 export const ConnectionAlert = ({
   onDismiss,
   diagnose,
   onEnableProxy,
   loggedOut,
+  loginBlocked,
 }) => {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -123,6 +126,7 @@ export const ConnectionAlert = ({
               </Group>
             </>
           )}
+          {loginBlocked && <p>{i18n("alert_connectionLoginBlocked")}</p>}
           <p>{i18n("alert_connectionText")}</p>
           <Button color={loggedOut ? "blue" : "red"} onClick={onDismiss}>
             {i18n("alert_connectionReconnect")}

@@ -184,3 +184,21 @@ describe("AutoLogin._tick prompt → response", () => {
     expect(al.__sent).toEqual([]);
   });
 });
+
+describe("PTT 的登入封鎖畫面（login_block.js）", () => {
+  const BLOCK = "[PTT DDoS/BOT 偵測系統] 偵測到連線異常/不當連續登入行為！\n帳號 testuser 已被暫時禁止登入。";
+
+  test("看到封鎖畫面 ⇒ 一個鍵都不送、本頁之後不再自動登入", async () => {
+    const al = makeLogin();
+    al.stop = AutoLogin.prototype.stop;
+    al.__screen = BLOCK + "\n請輸入代號，或以 guest 參觀，或以 new 註冊:";
+    al._tick();
+    expect(al.__sent).toEqual([]);
+    expect(al.isSuspended()).toBe(true);
+    al._app.debugRecorder = { log: vi.fn() };
+    await al.start(); // 重新連線
+    expect(al.__sent).toEqual([]);
+    expect(al._timer || null).toBeNull();
+    expect(al._app.debugRecorder.log).toHaveBeenCalledWith("autoLogin.suspended");
+  });
+});
