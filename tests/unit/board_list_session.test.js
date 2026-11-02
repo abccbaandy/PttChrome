@@ -1132,6 +1132,32 @@ describe("右鍵「設為已讀」：markBoardReadTargetAtRow／markBoardRead", 
     expect(done).toHaveBeenCalledTimes(1);
   });
 
+  test("選單開著期間緩衝換掉、同編號變成別的看板 → 不送任何 byte，提示失敗", () => {
+    const h = engaged();
+    h.s._selectedNum = 1;
+    h.s._serverNum = 1;
+    h.enqueued.length = 0;
+    const target = h.s.markBoardReadTargetAtRow(bodyRow(4));
+    expect(target).toEqual({ num: 5, name: "B5" });
+    h.termBuf.brdListLines[4] = rowChars(brdRow(5, "Other"));
+    const done = vi.fn();
+    expect(h.s.markBoardRead(target.num, { name: target.name, onDone: done })).toBe(true);
+    expect(h.enqueued).toEqual([]);
+    expect(h.s._selectedNum).toBe(1);
+    expect(h.s._renderMode).toBe("buffer");
+    expect(h.hints.at(-1)).toContain("B5");
+    expect(done).not.toHaveBeenCalled();
+  });
+
+  test("板名仍一致 → 照常同步再送 v", () => {
+    const h = engaged();
+    h.s._selectedNum = 1;
+    h.s._serverNum = 1;
+    h.enqueued.length = 0;
+    expect(h.s.markBoardRead(5, { name: "B5" })).toBe(true);
+    expect(h.enqueued[0].keys).toBe("5\r");
+  });
+
   test("跳號同步失敗 → 不送 v，降級原生", () => {
     const h = engaged();
     h.s._selectedNum = 1;
