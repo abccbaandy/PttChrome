@@ -1,0 +1,44 @@
+{
+ "cols": 80,
+ "rows": 24,
+ "entry": "read:Live",
+ "frames": [
+  {
+   "name": "list",
+   "keys": "",
+   "bytes": "\u001b[?7l\u001b[?2026h\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[H\u001b[2J\u001b[1;37;46m¡iªO¥D:sysop¡j                     \u001b[33m¹êªp¼Ò¦¡\u001b[0;1;37;46m                        ¬ÝªO¡mLive¡n\r\n\u001b[m[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M\r\n\u001b[30;47m   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \u001b[4;7H\u001b[m1 +\u001b[1;30m  \u001b[m10/30 oscar\u001b[4;31H¡¼ [¶¢²á] ¹êªpµu¤å\r\n>     2 +\u001b[1;32m 2\u001b[m10/30 peggy\u001b[5;31H¡¼ [¶¢²á] ¹êªpªø¤å\r\u001b[24;1H\u001b[34;46m ¤å³¹¦Cªí \u001b[30;47m \u001b[31m(^P)\u001b[30mµoªí \u001b[31m(y)\u001b[30m¦^À³ \u001b[31m(X)\u001b[30m±À¤å \u001b[31m(d)\u001b[30m§R°£ \u001b[31m(¡÷)\u001b[30m¾\\Åª \u001b[31m(b)\u001b[30m¶iªO  \u001b[31m(¡ö)\u001b[30mÂ÷¶} \u001b[31m(h)\u001b[30m»¡©ú \u001b[m\u001b[5;1H\u001b[?2026l"
+  },
+  {
+   "name": null,
+   "keys": "1\r",
+   "bytes": "\u001b[4;1H>\r\n \u001b[4;1H"
+  },
+  {
+   "name": "article",
+   "keys": "\r",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[34;47m §@ªÌ \u001b[0;44m oscar (oscar)                                              \u001b[34;47m ¬ÝªO \u001b[0;44m Live \u001b[m\u001b[K\r\n\u001b[34;47m ¼ÐÃD \u001b[0;44m [¶¢²á] ¹êªpµu¤å                                                        \r\n\u001b[34;47m ®É¶¡ \u001b[0;44m Sun Sep 27 12:00:00 2026                                               \u001b[m\u001b[K\r\n\u001b[36m¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w\r\n\u001b[m\u001b[K\nbody\r\u001b[24;1H\u001b[44m  ÂsÄý ²Ä 1/1 ­¶ (100%) \u001b[1;30;47m ¥Ø«eÅã¥Ü: ²Ä 01~05 ¦æ\u001b[0;30;47m \u001b[31m(y)\u001b[30m¦^À³\u001b[31m(X)\u001b[30m±À¤å  \u001b[31m(¡ö)\u001b[30mÂ÷¶}\u001b[m\u001b[24;80H\u001b[?2026l"
+  },
+  {
+   "name": "live-on",
+   "keys": "v",
+   "bytes": "\u001b[?2026h\u001b[7;1H\u001b[1;33;41m                                  ¹ê ªp ¶} ©l                                  \r\u001b[24;1H\u001b[0;1;37;42m ¹êªp¤¤ 00:00 [+0] \u001b[0;30;47m \u001b[31m(X)\u001b[30m¯d¨¥\u001b[31m(B)\u001b[30m¹aÁn[Ãö³¬] \u001b[31m(¥ô·NÁä)\u001b[30mÂ÷¶} 09/27 09:06  \u001b[31m(T/M/S)\u001b[30m½Õ®É\u001b[m\u001b[24;80H\u001b[?2026l"
+  },
+  {
+   "name": "live-1",
+   "keys": "",
+   "live": "first live comment",
+   "bytes": "\u001b[?2026h\u001b[8;1H\u001b[1;37m±À \u001b[33mbob\u001b[0;33m:first live comment                                          \u001b[m09/27 09:06\u001b[24;17H\u001b[1;37;42m1\u001b[m\u001b[24;80H\u001b[?2026l"
+  },
+  {
+   "name": "live-2",
+   "keys": "",
+   "live": "second live comment",
+   "bytes": "\u001b[?2026h\u001b[9;1H\u001b[1;37m±À \u001b[33mbob\u001b[0;33m:second live comment                                         \u001b[m09/27 09:06\u001b[24;17H\u001b[1;37;42m2\u001b[m\u001b[24;80H\u001b[?2026l"
+  },
+  {
+   "name": "live-off",
+   "keys": "v",
+   "bytes": "\u001b[?2026h\u001b[H\u001b[1;37;46m¡iªO¥D:sysop¡j                     \u001b[33m¹êªp¼Ò¦¡\u001b[0;1;37;46m                        ¬ÝªO¡mLive¡n\r\n\u001b[m[¡÷]¾\\Åª [z]ºëµØ°Ï [Tab]¤åºK [s]¿ï¾Ü¬ÝªO [b]¶iªO [i]¬ÝªO³]©w [^X]Âà¿ý [/]·j´M\u001b[K\r\n\u001b[30;47m   ½s¸¹    ¤é ´Á §@  ªÌ       ¤å  ³¹  ¼Ð  ÃD                            ¤H®ð:42 \r\n\u001b[m>     1  \u001b[1;30m  \u001b[m10/30 oscar        \u001b[1;31m¡¼ [¶¢²á] ¹êªpµu¤å\u001b[m\u001b[K\u001b[5;7H2 +\u001b[1;32m 2\u001b[m10/30 peggy\u001b[5;31H¡¼ [¶¢²á] ¹êªpªø¤å\r\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\u001b[24;1H\u001b[34;46m ¤å³¹¦Cªí \u001b[30;47m \u001b[31m(^P)\u001b[30mµoªí\u001b[24;22H\u001b[31my)\u001b[30m¦^À³ \u001b[31m(X)\u001b[30m±À¤å \u001b[31m(d)\u001b[30m§R°£ \u001b[31m(¡÷)\u001b[30m¾\\Åª \u001b[31m(b)\u001b[30m¶iªO  \u001b[31m(¡ö)\u001b[30mÂ÷¶} \u001b[31m(h)\u001b[30m»¡©ú\u001b[m\u001b[4;1H\u001b[?2026l"
+  }
+ ]
+}

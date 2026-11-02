@@ -429,12 +429,13 @@ export const SCENES = [
       { keys: 'v', name: 'live-on' },
       { live: 'first live comment', name: 'live-1' },
       { live: 'second live comment', name: 'live-2' },
-      { keys: 'v', name: 'live-off' },
+      // 490ceaf 起實況只認 q／Q 離開（其他鍵忽略、沒有任何輸出）；更早是任意鍵離開 ⇒ q 新舊都離開。
+      { keys: 'q', name: 'live-off' },
     ],
   },
   {
     // 長文：v 先 mf_goBottom（還沒看完）；推文到了畫面已滿 ⇒ 終端機上捲一列、寫在倒數第二列、
-    // lineno＋1（狀態列 S～E 一起加 1）。之後按 ↑ 移動了 lineno ⇒ upstream 自己關掉實況。
+    // lineno＋1（狀態列 S～E 一起加 1）。最後按 q 離開實況（490ceaf 起 ↑ 這類鍵在實況裡一律忽略）。
     file: 'live_long',
     entry: 'read:Live',
     rows: 24,
@@ -445,7 +446,7 @@ export const SCENES = [
       { keys: 'v', name: 'live-on' },
       { live: 'first live comment', name: 'live-1' },
       { live: 'second live comment', name: 'live-2' },
-      { keys: '\x1b[A', name: 'live-off-up' },
+      { keys: 'q', name: 'live-off' },
     ],
   },
   {
