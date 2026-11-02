@@ -1192,10 +1192,21 @@ BoardListSession.prototype = {
 
   // 把選取移到那一列，然後走與鍵盤按 `v` **同一條**路（A 類凍結交易；pref 關掉時
   // passthrough）——真游標落後就先跳號同步，`v` 才會作用在那一列。回 true ＝接手了。
+  // opts.name ＝選單開出來那一刻那一列的板名：選單開著期間緩衝被換掉（同編號換成別的看板）
+  // 時，設為已讀收不回來 ⇒ 板名對不上就停手，不送任何 byte。
   markBoardRead: function(num, opts) {
     if (this._renderMode === 'native') return false;
     if (this._busyHint()) return true;
     if (this.state !== 'active' || num == null || this._posOfNum(num) === -1) return false;
+    const expectName = opts && opts.name;
+    if (expectName != null) {
+      const now = boardMarkReadTargetOfText(this._rowTextOf(num));
+      if (!now || now.name !== expectName) {
+        if (this._view.flashListHint)
+          this._view.flashListHint('列表已經更新，沒有把 ' + expectName + ' 設為已讀，請再試一次', 0, HINT_ERROR);
+        return true;
+      }
+    }
     this._selectedNum = num;
     // 先同步重畫再凍住（否則凍的是點擊前的游標位置，同 onMouseClick）。
     this._forceRedraw();

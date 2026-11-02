@@ -83,6 +83,7 @@ BoardMarkRead.prototype = {
     if (owner) {
       if (owner !== core.boardListSession || !owner.markBoardRead) return false;
       return owner.markBoardRead(target.num, {
+        name: target.name,
         onDone: function() {
           self._hint(doneMsg);
         }
