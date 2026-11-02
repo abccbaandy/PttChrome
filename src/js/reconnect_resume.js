@@ -29,6 +29,9 @@
 //     比斷線前的位置新）⇒ 作廢。
 //   - 使用者關掉了（pref reconnectResume，預設開）：斷線時不記，重連途中才關也不出發
 //     ⇒ 停在 PTT 原生的登入落點（主功能表）。
+//   - PTT 因為搜尋太頻繁把人踢掉（斷線那一刻畫面是 read.c#select_by_aid／select_read 的
+//     vmsg「偵測到異常高頻自動搜尋行為…」，之後 abort_bbs）⇒ 作廢：回到原處本身就是一次
+//     #AID 搜尋，重連就再送等於火上加油（upstream b4d9a0e 起由 activity service 判定）。
 
 import { isMainMenuRow } from './aid_navigation';
 import { recordFor } from './reading_record';
@@ -63,6 +66,16 @@ export function planFromSnapshot(snap, now) {
   if (plan.kind !== 'article' && plan.kind !== 'list') return null;
   if (plan.kind === 'article' && !plan.aid) return null;
   return plan;
+}
+
+// 斷線那一刻的畫面是不是 PTT「搜尋太頻繁」的踢人訊息（任何一列有那段字）。
+export function kickedForSearchFlood(buf) {
+  if (!buf || typeof buf.getRowText !== 'function') return false;
+  const rows = buf.rows || 24;
+  for (let y = 0; y < rows; ++y) {
+    if ((buf.getRowText(y, 0, buf.cols || 80) || '').indexOf('異常高頻自動搜尋') >= 0) return true;
+  }
+  return false;
 }
 
 function enabled() {
@@ -171,6 +184,10 @@ ReconnectResume.prototype = {
     if (!wasLoggedIn) return;
     if (!enabled()) {
       this.discard('disabled');
+      return;
+    }
+    if (kickedForSearchFlood(this._termBuf)) {
+      this.discard('search-flood');
       return;
     }
     const core = this._core;
