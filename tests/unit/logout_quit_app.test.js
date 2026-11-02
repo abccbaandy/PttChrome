@@ -35,7 +35,7 @@ function fakeApp(closed) {
     logout: { onConnectionClosed: () => closed },
     conn: {},
     buf: inert(),
-    reconnectResume: { capture: vi.fn() },
+    reconnectResume: { capture: vi.fn(), loggedInThisConnection: () => true },
     listSession: inert(),
     boardListSession: inert(),
     aidNavigation: inert(),

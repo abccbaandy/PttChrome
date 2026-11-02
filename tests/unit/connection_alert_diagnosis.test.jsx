@@ -110,3 +110,16 @@ test("提示關掉後診斷才回來 ⇒ 不噴 React 警告", async () => {
   expect(err).not.toHaveBeenCalled();
   err.mockRestore();
 });
+
+test("loginBlocked ⇒ 寫明 PTT 封鎖規則與「本頁自動登入已停止」，重連鈕仍在", async () => {
+  mount({ loginBlocked: true });
+  expect(await screen.findByText(i18n("alert_connectionLoginBlocked"))).toBeTruthy();
+  expect(i18n("alert_connectionLoginBlocked")).toContain("12 小時");
+  expect(screen.getByRole("button", { name: i18n("alert_connectionReconnect") })).toBeTruthy();
+});
+
+test("沒有 loginBlocked ⇒ 不出現封鎖說明", async () => {
+  mount({});
+  await screen.findByRole("button", { name: i18n("alert_connectionReconnect") });
+  expect(screen.queryByText(i18n("alert_connectionLoginBlocked"))).toBeNull();
+});
