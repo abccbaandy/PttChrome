@@ -22,6 +22,7 @@ const {
   parseHomePackage,
   anrExcerpt,
   vanishedDeviceError,
+  screenSizeRestored,
 } = require('./android_env');
 
 const PORT = 8080;
@@ -60,17 +61,23 @@ const SETTLE_TIMEOUT_MS = 60000;
 const SETTLE_IDLE_PCT = 50;
 const SETTLE_SAMPLE_MS = 2000;
 
-async function waitSystemSettled(device) {
+// opts.home=false：只等 CPU 閒（測試中途用，不把前景換成桌面）。
+async function waitSystemSettled(device, opts = {}) {
   const t0 = Date.now();
   const sh = (cmd) => device.shell(cmd).then(String, () => '');
-  const home = parseHomePackage(
-    await sh('cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME')
-  );
-  await sh('am start -W -a android.intent.action.MAIN -c android.intent.category.HOME');
-  const homeUp = await expect
-    .poll(async () => parseResumedPackage(await sh('dumpsys activity activities')), { timeout: 30000 })
-    .toBe(home)
-    .then(() => true, () => false);
+  const withHome = opts.home !== false;
+  let home = null;
+  let homeUp = false;
+  if (withHome) {
+    home = parseHomePackage(
+      await sh('cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME')
+    );
+    await sh('am start -W -a android.intent.action.MAIN -c android.intent.category.HOME');
+    homeUp = await expect
+      .poll(async () => parseResumedPackage(await sh('dumpsys activity activities')), { timeout: 30000 })
+      .toBe(home)
+      .then(() => true, () => false);
+  }
 
   let idle = null;
   let streak = 0;
@@ -86,10 +93,28 @@ async function waitSystemSettled(device) {
   }
   const waited = Math.round((Date.now() - t0) / 1000);
   console.log(
-    `[android] 開跑前等系統穩定：桌面 ${home || '?'} ${homeUp ? '已在前景' : '沒到前景'}、` +
+    `[android] ${withHome ? '開跑前' : '縮螢幕復原後'}等系統穩定：` +
+      (withHome ? `桌面 ${home || '?'} ${homeUp ? '已在前景' : '沒到前景'}、` : '') +
       `CPU 閒置 ${idle == null ? '?' : idle + '%'}（門檻 ${SETTLE_IDLE_PCT}% 連兩次）、等了 ${waited}s` +
       (streak >= 2 ? '' : '，逾時照跑')
   );
+}
+
+// 縮螢幕的測試（`wm size`）收尾：復原螢幕大小，**等顯示設定真的換完、系統閒下來**才交給下一條。
+// issue #287：模擬器整台消失的現場都在「上一條做過 wm size／wm size reset」之後、下一條 launchBrowser
+// 途中；排除兩條 wm size 測試的 ×5（35 條）全綠。只 reset 不等，下一條馬上開 Chrome 撞上顯示設定還在換。
+async function restoreScreenSize(device) {
+  const sh = (cmd) => device.shell(cmd).then(String, () => '');
+  const t0 = Date.now();
+  await sh('wm size reset');
+  const ok = await expect
+    .poll(async () => screenSizeRestored(await sh('wm size'), await sh('dumpsys window | grep mDisplayFrozen')), {
+      timeout: 15000,
+    })
+    .toBe(true)
+    .then(() => true, () => false);
+  console.log(`[android] wm size reset：${ok ? '顯示設定已換完' : '15s 內沒等到換完'}（${Math.round((Date.now() - t0) / 1000)}s）`);
+  await waitSystemSettled(device, { home: false });
 }
 
 function adb(serial, args) {
@@ -288,4 +313,4 @@ async function webviewOrigin(device) {
   return out;
 }
 
-module.exports = { test, expect, webviewOrigin, envError };
+module.exports = { test, expect, webviewOrigin, envError, restoreScreenSize };

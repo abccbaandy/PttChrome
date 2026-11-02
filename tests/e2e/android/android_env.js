@@ -137,6 +137,14 @@ function sdkRoot(env = process.env, platform = process.platform) {
   return path.join(os.homedir(), 'Android', 'Sdk');
 }
 
+// 縮螢幕（`wm size`）復原完成了沒：`wm size` 不再列 Override size，而且 `dumpsys window` 的
+// mDisplayFrozen=false（WindowManager 換顯示設定時會先凍住畫面，換完才解凍）。讀不到（空字串）不算完成。
+function screenSizeRestored(wmSize, dumpsysWindow) {
+  const size = String(wmSize || '');
+  if (!/Physical size:/.test(size) || /Override size:/.test(size)) return false;
+  return /mDisplayFrozen=false/.test(String(dumpsysWindow || ''));
+}
+
 // SDK 裡的工具；找不到回 null（交給呼叫端判 exit 2）。adb 另外退回 PATH（CI 的 runner）。
 function sdkTool(name, env = process.env, platform = process.platform) {
   const exe = platform === 'win32' ? (name === 'avdmanager' || name === 'sdkmanager' ? '.bat' : '.exe') : '';
@@ -162,6 +170,7 @@ module.exports = {
   cpuIdlePercent,
   parseHomePackage,
   anrExcerpt,
+  screenSizeRestored,
   APK_PKG,
   APK_ACTIVITY,
   APK_DEV_PREFS_XML,

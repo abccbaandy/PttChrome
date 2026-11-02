@@ -6,7 +6,7 @@
 //   2. 換行版面在真 Chrome 的 viewport 下（網址列、系統列、真 DPR、真字型）不橫向溢出、
 //      長列真的折行，且終端機不被 App Bar／底部導覽蓋住、收起列真的收起。
 // 觸控與按鍵一律走 OS 的 input injection（screen.js）。
-const { test, expect, envError } = require('./fixtures');
+const { test, expect, envError, restoreScreenSize } = require('./fixtures');
 const {
   article,
   openScreen,
@@ -139,7 +139,7 @@ test.describe('Android Chrome：bottom sheet、換行版面、App Bar（真觸�
       expect(g.footerShown).toBe(false);
       expect(g.ruleH).toBe(0);
     } finally {
-      await device.shell('wm size reset');
+      await restoreScreenSize(device);
     }
   });
 });

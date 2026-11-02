@@ -43,14 +43,21 @@ export function killLines(text) {
     .filter((l) => KILL_PATTERNS.some((re) => re.test(l)));
 }
 
+// emu-crash-*.db 底下哪些是真的 crash 報告。crashpad 一啟動就會寫 `settings.dat`（資料庫設定，
+// 模擬器活得好好的也有），只有它不代表崩過；報告在 new／pending／completed 底下（.dmp、.meta）。
+export function crashDumps(crashFiles) {
+  return (crashFiles || []).filter((f) => path.basename(String(f)) !== "settings.dat");
+}
+
 // 給 job log 一行結論。lines＝killLines 的結果，crashFiles＝emu-crash-* 底下的檔名。
 export function verdict(lines, crashFiles) {
   const oom = lines.some((l) => /out of memory|oom[-_ ]kill|killed process/i.test(l));
   const fault = lines.some((l) => /segfault at|general protection|traps:/i.test(l));
   if (oom) return "kernel OOM killer 砍了程序（看 dmesg.txt 的 Killed process 是不是 qemu／emulator）";
   if (fault) return "程序被 kernel 以 segfault／GP fault 收掉（看 dmesg.txt 是哪個程序）";
-  if (crashFiles.length) return `dmesg 沒有砍程序的紀錄；模擬器自己留了 ${crashFiles.length} 個 crash 檔（ci-diagnostics/emulator-crash/）`;
-  return "dmesg 沒有砍程序的紀錄，模擬器也沒留 crash 檔（不是 OOM／segfault；記進 issue #287）";
+  const dumps = crashDumps(crashFiles);
+  if (dumps.length) return `dmesg 沒有砍程序的紀錄；模擬器自己留了 ${dumps.length} 個 crash 報告（ci-diagnostics/emulator-crash/）`;
+  return "dmesg 沒有砍程序的紀錄，模擬器也沒留 crash 報告（只有 crashpad 的 settings.dat 不算；不是 OOM／segfault；記進 issue #287）";
 }
 
 // ---- 執行 ----
