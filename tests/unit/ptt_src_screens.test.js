@@ -142,6 +142,9 @@ import replyPromptFx from "./fixtures/ptt_src_screens/reply_prompt.json";
 import postFlowFx from "./fixtures/ptt_src_screens/post_flow.json";
 import classListFx from "./fixtures/ptt_src_screens/class_list.json";
 import { editorInputAvailable } from "../../src/js/editor_input";
+import { openPromptText, openPromptHint } from "../../src/js/open_prompt";
+import liveRepeatPromptFx from "./fixtures/ptt_src_screens/live_repeat_prompt.json";
+import liveRepeatYesFx from "./fixtures/ptt_src_screens/live_repeat_yes.json";
 
 loadBig5Tables();
 
@@ -359,6 +362,44 @@ describe("upstream pttbbs 產的實況模式（490ceaf：只認 q 離開）", ()
       expect(classifyListScreen(off.facts).kind).toBe("clean-list");
       expect(off.buf.pageState).toBe(2);
     }
+  });
+});
+
+describe("upstream pttbbs 產的「同一篇連開 10 次」實況提問（f1a32e2）", () => {
+  const at = (fx, name) => screenAt(fx, name, { perFrame: true });
+
+  test("第 11 次開文 ⇒ 列表殘影的底列是 [Y/n] 輸入欄：開文交易認得出、交給使用者答", () => {
+    const q = at(liveRepeatPromptFx, "live-prompt");
+    expect(q.rowTexts[q.facts.rows - 1]).toContain("要直接進入實況模式看新推文嗎？");
+    expect(q.buf.pageState).toBe(2); // 還沒 clear：上面仍是列表
+    expect(q.buf.isPromptPending()).toBe(true);
+    const text = openPromptText(q.buf);
+    expect(text).toContain("實況模式");
+    expect(openPromptHint(text)).toContain("實況模式");
+    expect(openPromptHint(text)).toContain("請直接回答");
+  });
+
+  test("列表、正常開出來的文章、實況畫面都不是開文提問", () => {
+    for (const [fx, name] of [
+      [liveRepeatPromptFx, "list"],
+      [liveRepeatPromptFx, "article"],
+      [liveRepeatYesFx, "live-on"],
+      [liveRepeatYesFx, "live-off"],
+    ]) {
+      expect(openPromptText(at(fx, name).buf)).toBeNull();
+    }
+  });
+
+  test("答 n ⇒ 照常開文；直接 ⏎（預設 Y）⇒ 跳過 pmore 直接是實況畫面，q 回列表", () => {
+    const art = at(liveRepeatPromptFx, "article");
+    expect(art.buf.pageState).toBe(3);
+    expect(parseStatusRow(art.rowTexts[art.facts.rows - 1])).not.toBeNull();
+    const live = at(liveRepeatYesFx, "live-on");
+    const last = live.rowTexts[live.facts.rows - 1];
+    expect(last).toMatch(/^ 實況中 \d\d:\d\d \[\+0\]/);
+    expect(parseStatusRow(last)).toBeNull();
+    const off = at(liveRepeatYesFx, "live-off");
+    expect(classifyListScreen(off.facts).kind).toBe("clean-list");
   });
 });
 

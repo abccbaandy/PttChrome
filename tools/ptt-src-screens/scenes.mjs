@@ -450,6 +450,34 @@ export const SCENES = [
     ],
   },
   {
+    // upstream f1a32e2：同一篇連續開 LIVE_AUTO_PROMPT_REPEAT（10）次後，第 11 次開文前先問
+    // more.c#live_check_repeat 的 vans「要直接進入實況模式看新推文嗎？ [Y/n]: 」（畫在列表殘影的底列，
+    // 還沒 clear）；是 getdata 輸入欄（要 ⏎ 才送出），答案不是 n 就直接進實況（pmore.c#_pmore2 的 start_live）。
+    file: 'live_repeat_prompt',
+    entry: 'read:Live',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      ...Array.from({ length: 10 }, () => [{ keys: '\r' }, { keys: 'q' }]).flat(),
+      { keys: '\r', name: 'live-prompt' },
+      { keys: 'n', name: 'live-prompt-n' },
+      { keys: '\r', name: 'article' },
+    ],
+  },
+  {
+    // 同上，但直接按 ⏎（預設 Y）⇒ 跳過 pmore 直接是實況畫面。
+    file: 'live_repeat_yes',
+    entry: 'read:Live',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      ...Array.from({ length: 10 }, () => [{ keys: '\r' }, { keys: 'q' }]).flat(),
+      { keys: '\r', name: 'live-prompt' },
+      { keys: '\r', name: 'live-on' },
+      { keys: 'q', name: 'live-off' },
+    ],
+  },
+  {
     // 文章裡按 y（bbs.c#do_reply）：「回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消」之類的 getdata。
     file: 'reply_prompt',
     entry: 'read:Test',

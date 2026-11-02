@@ -63,6 +63,7 @@ import { LEFT_ARROW } from './function_key_plan';
 import { readEffectivePrefs } from './pref_storage';
 import { canQueueListClick, pendingClickDecision } from './list_pending_click';
 import { HINT_ERROR } from './status_hint';
+import { openPromptText, openPromptHint } from './open_prompt';
 import {
   BOARD_LIST,
   FAVOURITE,
@@ -3470,6 +3471,10 @@ ListSession.prototype = {
           expect: function(snap, facts) {
             return facts.kind === 'article';
           },
+          // PTT 開文前先問使用者（open_prompt.js）⇒ 馬上交給使用者答。
+          bail: function() {
+            return openPromptText(self._termBuf);
+          },
           // No fullRepaint: entering an article always repaints by itself.
           timeoutMs: CMD_PROBE_AFTER_MS,
           probeTimeoutMs: CMD_PROBE_WINDOW_MS,
@@ -3477,8 +3482,8 @@ ListSession.prototype = {
           onDone: function() {
             self.noteLastRead(lrSubject);
           },
-          onFail: function() {
-            self._openFailed();
+          onFail: function(reason, facts, prompt) {
+            self._openFailed(reason === 'bail' ? prompt : null);
           }
         });
       },
@@ -3541,13 +3546,18 @@ ListSession.prototype = {
         expect: function(snap, facts) {
           return facts.kind === 'article';
         },
+        bail: function() {
+          return openPromptText(self._termBuf);
+        },
         timeoutMs: CMD_PROBE_AFTER_MS,
         probeTimeoutMs: CMD_PROBE_WINDOW_MS,
         hardTimeoutMs: CMD_HARD_MS,
         onDone: function() {
           self.noteLastRead(lrSubject);
         },
-        onFail: fail
+        onFail: function(reason, facts, prompt) {
+          self._openFailed(reason === 'bail' ? prompt : null);
+        }
       });
     };
     this._enqueuePinnedCursorSync('open-pinned', enqueueEnter, fail);
@@ -3665,11 +3675,15 @@ ListSession.prototype = {
     });
   },
 
-  _openFailed: function() {
+  // prompt：開文的 ⏎ 換來 PTT 的問題（open_prompt.js）⇒ 不是失敗，同一條路切原生把問題
+  // 畫出來，提示改成請使用者回答。
+  _openFailed: function(prompt) {
     // v5 contract #5: failures are visible — banner, then the reducer routes
     // opening → functionMode (native mirror).
-    if (this._view.flashListHint)
-      this._view.flashListHint('開啟文章失敗，已切至原生模式', 4000, HINT_ERROR);
+    if (this._view.flashListHint) {
+      if (prompt) this._view.flashListHint(openPromptHint(prompt), 6000);
+      else this._view.flashListHint('開啟文章失敗，已切至原生模式', 4000, HINT_ERROR);
+    }
     this._dispatch({ type: 'open-timeout' }, null);
   },
 
