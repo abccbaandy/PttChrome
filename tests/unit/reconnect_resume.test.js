@@ -1,7 +1,7 @@
 // 斷線重連後回到原處（src/js/reconnect_resume.js；docs/reading-record.md「斷線重連」）：
 // 斷線那一刻要去哪（resumePlanFrom，純函式）＋什麼時候出發（登入後的主功能表）。
 // 實際的鍵序列與落地還原在 aid_navigation.test.js「startResume」。
-import { ReconnectResume, resumePlanFrom } from "../../src/js/reconnect_resume";
+import { ReconnectResume, resumePlanFrom, kickedForSearchFlood } from "../../src/js/reconnect_resume";
 import { ReadingRecord } from "../../src/js/reading_record";
 
 const LIST = {
@@ -260,5 +260,32 @@ describe("ReconnectResume（何時出發）", () => {
     h.settle(MAIN_MENU);
     h.rr.capture(false);
     expect(h.rr.hasPending()).toBe(false);
+  });
+});
+
+describe("PTT 因搜尋太頻繁踢人 ⇒ 重連後不回原處（回原處本身就是一次 #AID 搜尋）", () => {
+  const KICK = "偵測到異常高頻自動搜尋行為，請關閉自動掃描腳本或更新連線 App！";
+
+  test("斷線那一刻底列是踢人訊息 ⇒ 作廢，重連登入後不出發", () => {
+    const h = harness();
+    h.settle(MAIN_MENU);
+    h.rr.capture(false); // 先有一份待回目標
+    h.settle(MAIN_MENU);
+    h.core.aidNavigation.startResume.mockClear();
+    const rowText = h.termBuf.getRowText;
+    h.termBuf.getRowText = (row) => (row === 23 ? "                    " + KICK : rowText.call(h.termBuf, row));
+    h.rr.capture(false);
+    expect(h.rr.hasPending()).toBe(false);
+    h.termBuf.getRowText = rowText;
+    h.settle(MAIN_MENU);
+    expect(h.core.aidNavigation.startResume).not.toHaveBeenCalled();
+  });
+
+  test("kickedForSearchFlood 只認那段字", () => {
+    const buf = (last) => ({ rows: 24, cols: 80, getRowText: (y) => (y === 23 ? last : "") });
+    expect(kickedForSearchFlood(buf(KICK))).toBe(true);
+    expect(kickedForSearchFlood(buf("找不到符合條件的文章。"))).toBe(false);
+    expect(kickedForSearchFlood(buf(""))).toBe(false);
+    expect(kickedForSearchFlood(null)).toBe(false);
   });
 });
