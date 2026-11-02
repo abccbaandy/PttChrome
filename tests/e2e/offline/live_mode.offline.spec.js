@@ -10,7 +10,8 @@
 // 整個畫面再接一次，推文埋在一堆空白列後面看不到。長文（畫面已滿、上捲一列）照一般往後接。
 // 以上是 3c7d9af 的舊版實況（pmore 裡的實況，fixture 在 ptt_src_screens_legacy/）；真 PTT 跑私有 commit，
 // 新舊並存。upstream c6d35a8 起實況是 more.c 自己的迴圈（狀態列「實況中 mm:ss [+N]」）：好讀認不出 ⇒
-// 原生鏡像照實畫出推文；任何鍵都會離開實況回列表 ⇒ 守「一個鍵都不替使用者送」。
+// 原生鏡像照實畫出推文；844e8d0 版任何鍵都會離開實況回列表（fixture *_844e8d0 在 legacy/），
+// 490ceaf 起只認 q 離開 ⇒ 兩版都守「一個鍵都不替使用者送」。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootScenario, waitFed, waitScreenSettled, feedRaw } = require('../helpers/replay');
@@ -109,12 +110,14 @@ test('長文：實況推文照一般往後接，每則一列', async ({ page }) 
   expect(dom.slice(-3)[0]).toContain('長文第 40 行');
 });
 
-for (const [file, offName, offKey, offBytes] of [
-  ['live_short', 'live-off', 'v', 'v'],
-  ['live_long', 'live-off-up', 'ArrowUp', '\x1b[A'],
+for (const [file, dir, offName, offKey, offBytes] of [
+  ['live_short_844e8d0', 'ptt_src_screens_legacy', 'live-off', 'v', 'v'],
+  ['live_long_844e8d0', 'ptt_src_screens_legacy', 'live-off-up', 'ArrowUp', '\x1b[A'],
+  ['live_short', 'ptt_src_screens', 'live-off', 'q', 'q'],
+  ['live_long', 'ptt_src_screens', 'live-off', 'q', 'q'],
 ]) {
   test(`新版實況（more.c，${file}）：好讀認不出就照原生鏡像，推文看得到，一個鍵都不替使用者送；按鍵離開回列表`, async ({ page }) => {
-    const { frame, cassette } = setup(file, 'ptt_src_screens');
+    const { frame, cassette } = setup(file, dir);
     cassette.steps.push({ on: 'raw', send: b64(offBytes), recv: b64(frame(offName)) });
     await bootScenario(page, ptt, cassette, { prefs: { enableEasyReading: true } });
     await ptt.sendKey(page, 'Enter');
@@ -137,7 +140,7 @@ for (const [file, offName, offKey, offBytes] of [
     const dom = await domTexts(page);
     expect(count(dom, '實 況 開 始')).toBe(1);
     expect(count(dom, '實況中')).toBe(1);
-    // 任何鍵都會離開實況回列表 ⇒ 推文送到、好讀看到新畫面，都不可以替使用者送任何東西。
+    // 844e8d0 版任何鍵都會離開實況回列表 ⇒ 推文送到、好讀看到新畫面，都不可以替使用者送任何東西。
     expect(await page.evaluate(() => window.__replay.sent.slice())).toEqual(atLive);
 
     await page.keyboard.press(offKey);

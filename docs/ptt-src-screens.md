@@ -93,7 +93,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
 | `waterball_ofo` | `wmsg:ofo`／24 | ^R ×3 | `classifyReplyScreen`：一對一名單選中 carol → bob → alice；主功能表幀認不出 |
-| `live_short`／`live_long` | `read:Live`／24 | `⏎` `v` 推文×2 再按鍵 | 實況切換成功＋別人推文送到。c6d35a8 起是 more.c#live_run 自己的迴圈：狀態列「 實況中 mm:ss [+N]  (X)留言(B)鈴聲… (任意鍵)離開」（不是 pmore 狀態列 ⇒ 好讀照原生鏡像）、「實 況 開 始」橫幅、推文逐列往下寫；X／B／T／M／S 以外的鍵都離開實況並**回到文章列表**。offline e2e `live_mode` 守「進實況後一個鍵都不替使用者送」。3c7d9af 的舊版（pmore 裡的實況，短文原地長高、`isShortPageGrowth`）fixture 留在 `tests/unit/fixtures/ptt_src_screens_legacy/` |
+| `live_short`／`live_long` | `read:Live`／24 | `⏎` `v` 推文×2 再按 `q` | 實況切換成功＋別人推文送到。c6d35a8 起是 more.c#live_run 自己的迴圈：狀態列「 實況中 mm:ss [+N]  (X)留言(B)鈴聲…」（不是 pmore 狀態列 ⇒ 好讀照原生鏡像）、「實 況 開 始」橫幅、推文逐列往下寫；按 q **回到文章列表**。490ceaf 起只認 q／Q 離開（其他鍵忽略、**沒有任何輸出** ⇒ 場景的離開步驟不可用別的鍵，否則 generate 報「沒有任何輸出」），狀態列「… (T/M/S)調時 (q)離開」；更早（844e8d0）是「(任意鍵)離開」、X／B／T／M／S 以外的鍵都離開，fixture 留在 legacy `*_844e8d0.json`。offline e2e `live_mode` 守「進實況後一個鍵都不替使用者送」。3c7d9af 的舊版（pmore 裡的實況，短文原地長高、`isShortPageGrowth`）fixture 留在 `tests/unit/fixtures/ptt_src_screens_legacy/` |
 | `article_live` | `read:Test`／24 | `1⏎` `⏎` `v` | 非 Live 看板的 v：訂閱失敗。c6d35a8 起是 vmsg「實況服務暫時無法使用，請稍後再試。」等按鍵；3c7d9af 舊版是狀態列 part2 換成「[系統連線服務異常]」（`parseStatusRow` 照樣認得、pageState 3，legacy fixture 守） |
 | `reply_prompt` | `read:Test`／24 | `1⏎` `⏎` `y` | 文章裡 y 的「回應至 (F)看板 (M)作者信箱…」畫在倒數第二列：狀態列照樣認得（pageState 3）、游標在輸入欄、不攔 X、上傳網址走剪貼簿、編輯器輸入框不出現 |
 | `post_flow` | `read:Test`／24 | `^P` | 發文的種類 prompt：不是 clean-list、不是編輯器（pageState 不是 6）、上傳網址走剪貼簿 |
@@ -147,6 +147,7 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   ③ handler 改名 `mbbsd_ipc_handler`（`-DIPC_HANDLER`）。c6d35a8 的實況迴圈每秒醒來重畫經過時間（有逾時的等待）：
   driver 時間釘死、每秒畫同一幀 ⇒ 同時等 stdin 與 driver IPC fd 的有逾時 select 當無限期等待；IPC fd 已可讀時
   不寫 WAIT_MARK（不然推文還沒畫就切幀）。
+- 場景每一步都要有輸出（沒有就報「第 N 步沒有任何輸出」exit 2）：upstream 把某個鍵改成「忽略」時（例：490ceaf 實況只認 q 離開），改用新舊版都有反應的鍵。
 - driver.c 本身是 UTF-8：要寫 Big5 字串用跳脫序列，且拆開寫（`"\xc3" "D"`，否則 `\xc3D` 被吃成一個跳脫）。
 
 upstream 再弄壞 build（新的必要 conf、新的需要排除的物件）時 generate 會紅（exit 2）：修法補進

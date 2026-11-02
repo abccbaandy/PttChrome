@@ -67,6 +67,8 @@ import liveShortFx from "./fixtures/ptt_src_screens_legacy/live_short_3c7d9af.js
 import liveLongFx from "./fixtures/ptt_src_screens_legacy/live_long_3c7d9af.json";
 import liveShortNewFx from "./fixtures/ptt_src_screens/live_short.json";
 import liveLongNewFx from "./fixtures/ptt_src_screens/live_long.json";
+import liveShort844Fx from "./fixtures/ptt_src_screens_legacy/live_short_844e8d0.json";
+import liveLong844Fx from "./fixtures/ptt_src_screens_legacy/live_long_844e8d0.json";
 import { isShortPageGrowth } from "../../src/js/comment_parse";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
@@ -293,13 +295,14 @@ describe("upstream pttbbs 產的文章實況切換（v，連不上 IPC service�
 
 // upstream c6d35a8／844e8d0：實況搬到 more.c#live_run。狀態列換成自己的 vs_footer
 // 「 實況中 mm:ss [+N]  (X)留言(B)鈴聲… (任意鍵)離開 …」，不是 pmore 狀態列 ⇒ 好讀認不出、照原生鏡像
-// （認不出 ⇒ 原生）。這段期間任何不是 X／B／T／M／S 的鍵都會離開實況並回到文章列表（live_run 回
-// FULLUPDATE、read_post 返回），所以絕不可以替使用者送鍵。
-describe("upstream pttbbs 產的實況模式（more.c 改寫版，fbe8e67）", () => {
+// （認不出 ⇒ 原生）。844e8d0～490ceaf 之前：任何不是 X／B／T／M／S 的鍵都會離開實況並回到文章列表
+// （live_run 回 FULLUPDATE、read_post 返回）；490ceaf 起只認 q／Q（其他鍵忽略），狀態列改成
+// 「(B)鈴聲… (T/M/S)調時 (q)離開」。兩版都絕不可以替使用者送鍵。
+describe("upstream pttbbs 產的實況模式（more.c 改寫版，844e8d0 任意鍵離開）", () => {
   const at = (fx, name) => screenAt(fx, name, { perFrame: true });
 
   test("實況狀態列不是 pmore 狀態列；推文與「實 況 開 始」寫在畫面上", () => {
-    for (const fx of [liveShortNewFx, liveLongNewFx]) {
+    for (const fx of [liveShort844Fx, liveLong844Fx]) {
       const on = at(fx, "live-on");
       const last = on.rowTexts[on.facts.rows - 1];
       expect(last).toMatch(/^ 實況中 \d\d:\d\d \[\+0\]/);
@@ -312,10 +315,15 @@ describe("upstream pttbbs 產的實況模式（more.c 改寫版，fbe8e67）", (
     }
   });
 
-  test("按 v（任意鍵）離開實況 ⇒ 回到文章列表", () => {
-    const off = at(liveShortNewFx, "live-off");
-    expect(classifyListScreen(off.facts).kind).toBe("clean-list");
-    expect(off.buf.pageState).toBe(2);
+  test("按 v／↑（任意鍵）離開實況 ⇒ 回到文章列表", () => {
+    for (const [fx, name] of [
+      [liveShort844Fx, "live-off"],
+      [liveLong844Fx, "live-off-up"],
+    ]) {
+      const off = at(fx, name);
+      expect(classifyListScreen(off.facts).kind).toBe("clean-list");
+      expect(off.buf.pageState).toBe(2);
+    }
   });
 
   test("實況服務連不上 ⇒ vmsg 等按鍵（不是狀態列 override）", () => {
@@ -323,6 +331,34 @@ describe("upstream pttbbs 產的實況模式（more.c 改寫版，fbe8e67）", (
     const last = rowTexts[facts.rows - 1];
     expect(last).toContain("實況服務暫時無法使用");
     expect(parseStatusRow(last)).toBeNull();
+  });
+});
+
+describe("upstream pttbbs 產的實況模式（490ceaf：只認 q 離開）", () => {
+  const at = (fx, name) => screenAt(fx, name, { perFrame: true });
+
+  test("狀態列「(q)離開」仍不是 pmore 狀態列；推文與「實 況 開 始」寫在畫面上", () => {
+    for (const fx of [liveShortNewFx, liveLongNewFx]) {
+      const on = at(fx, "live-on");
+      const last = on.rowTexts[on.facts.rows - 1];
+      expect(last).toMatch(/^ 實況中 \d\d:\d\d \[\+0\]/);
+      expect(last).toContain("(q)離開");
+      expect(last).not.toContain("任意鍵");
+      expect(parseStatusRow(last)).toBeNull();
+      expect(on.rowTexts.some((t) => t.includes("實 況 開 始"))).toBe(true);
+      const two = at(fx, "live-2");
+      expect(two.rowTexts[two.facts.rows - 1]).toContain("[+2]");
+      expect(parseStatusRow(two.rowTexts[two.facts.rows - 1])).toBeNull();
+      expect(two.rowTexts.filter((t) => t.includes("live comment")).length).toBe(2);
+    }
+  });
+
+  test("按 q 離開實況 ⇒ 回到文章列表", () => {
+    for (const fx of [liveShortNewFx, liveLongNewFx]) {
+      const off = at(fx, "live-off");
+      expect(classifyListScreen(off.facts).kind).toBe("clean-list");
+      expect(off.buf.pageState).toBe(2);
+    }
   });
 });
 
