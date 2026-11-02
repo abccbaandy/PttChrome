@@ -26,7 +26,12 @@ describe("ci-emulator-postmortem：dmesg 判讀", () => {
     expect(verdict(l, [])).toContain("segfault");
   });
   test("dmesg 乾淨但有 crash 檔 ⇒ 模擬器自己崩", () => {
-    expect(verdict([], ["emu-crash-37.2.13.db/abc.dmp"])).toContain("crash 檔");
+    expect(verdict([], ["emu-crash-37.2.13.db/abc.dmp"])).toContain("留了 1 個 crash 報告");
+  });
+  test("只有 crashpad 的 settings.dat ⇒ 不算模擬器崩（它一啟動就寫）", () => {
+    const v = verdict([], ["emu-crash-37.2.13.db/settings.dat"]);
+    expect(v).not.toContain("留了");
+    expect(v).toContain("不是 OOM");
   });
   test("都沒有 ⇒ 明講不是 OOM／segfault", () => {
     expect(verdict(killLines("[x] eth0: Link is Up"), [])).toContain("不是 OOM");

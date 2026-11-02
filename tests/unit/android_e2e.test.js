@@ -304,6 +304,27 @@ describe("android fixture：擋畫面的對話框", () => {
   });
 });
 
+// issue #287：模擬器整台消失的現場都在 wm size／wm size reset 之後、下一條 launchBrowser 途中。
+// 縮螢幕的測試收尾一律走 restoreScreenSize（等顯示設定換完、CPU 閒），不准只送 reset 就交棒。
+describe("android spec：縮螢幕收尾", () => {
+  const { screenSizeRestored } = androidEnv;
+  test("顯示設定換完才算復原", () => {
+    const physical = "Physical size: 1080x2400\n";
+    expect(screenSizeRestored(physical, "    mDisplayFrozen=false mWindowsFreezingScreen=WINDOWS_FREEZING_SCREENS_NONE")).toBe(true);
+    expect(screenSizeRestored(physical + "Override size: 1080x1400\n", "mDisplayFrozen=false")).toBe(false);
+    expect(screenSizeRestored(physical, "mDisplayFrozen=true")).toBe(false);
+    expect(screenSizeRestored("", "")).toBe(false);
+  });
+  const dir = path.join(ROOT, "tests/e2e/android");
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".spec.js"))) {
+    test(f, () => {
+      const code = fs.readFileSync(path.join(dir, f), "utf8");
+      expect(code).not.toMatch(/shell\(\s*['"`]wm size reset/);
+      if (/wm size \d/.test(code)) expect(code).toMatch(/restoreScreenSize\(device\)/);
+    });
+  }
+});
+
 // UIAutomator 的 device.wait 等的是「UI 變化」：目標在 wait 開始前就已經出現、之後畫面
 // 不再變時，畫面上明明有它也會等滿逾時（實測 Copy 工具列）。一律 expect.poll(device.info)。
 describe("android spec：不准用 device.wait", () => {

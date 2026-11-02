@@ -3,7 +3,7 @@
 // 「加入黑名單 '作者'」與「加入標題黑名單」（context_menu_items.listBlacklistTargets）。
 // 桌機 offline 那支（mobile_list_cards）只能手捏 contextmenu；這裡走 OS 層真長按，
 // 守「真手指按下去，contextmenu 的 target 真的落在卡片裡」這一段。
-const { test, expect, webviewOrigin } = require('./fixtures');
+const { test, expect, webviewOrigin, restoreScreenSize } = require('./fixtures');
 const { openListCards, recordTouches, checkLanding } = require('./screen');
 const { toDevicePoint } = require('./android_env');
 const { loadCassette } = require('../helpers/replay');
@@ -74,7 +74,7 @@ test.describe('Android Chrome：長按列表卡片 → 黑名單（真觸控）'
         await expect(sheet).toHaveCount(0);
       }
     } finally {
-      await device.shell('wm size reset');
+      await restoreScreenSize(device);
     }
   });
 });
