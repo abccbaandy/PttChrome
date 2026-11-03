@@ -139,6 +139,10 @@ reset()       ← App.onClose：清 pending 與 _loggedIn
 
 - **pending 只在記憶體**，不落 localStorage。重整就該忘掉；幾分鐘前貼的連結在使用者
   早就跑到別處後才搶走畫面，比讓他重點一次糟。
+- **登入完成前進了信件列表就丟掉 pending**（`_dropIfMailboxDetour`）：那只會是超額信箱
+  （`mbbsd.c#user_login → check_mailbox_quota` 不進主功能表、直接 `m_read()`，遠超上限時離開
+  又被送回來）。使用者整理完自己回主功能表才算登入完成，可能是好幾分鐘後 ⇒ 同上一條，提示他整理完再開一次連結。
+  登入後自己進信箱不算（`_loggedIn` 已成立）。
 - **`_dispatch` 必須先 `autoLogin.stop()`**。AutoLogin 是 500ms 自走輪詢，其「畫面
   有『請按任意鍵』就送空白鍵」分支（`auto_login.js:407`）會踩到進板畫面，打亂
   CommandQueue 正在等的那一幀。它自己看到主功能表也會 stop，但我們可能比它的下一次

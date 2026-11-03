@@ -30,6 +30,11 @@ function makeHarness({
     cols: 80,
     row0: "",
     lastRow,
+    // 真實 TermBuf.isMailListScreen 的替身（指紋本身守在 mail_list.test.js）。
+    mailList: false,
+    isMailListScreen() {
+      return this.mailList;
+    },
     getRowText(row) {
       if (row === 0) return this.row0;
       return row === 23 ? this.lastRow : "";
@@ -152,6 +157,36 @@ describe("未登入", () => {
     h.ctl.request({ board: "movie", aid: "2AbCdEf0" });
     h.arriveAtMainMenu();
     expect(h.nav.externalCalls).toEqual([{ aid: "2AbCdEf0", board: "movie" }]);
+  });
+
+  // 超額信箱：mbbsd.c#user_login → check_mailbox_quota 不進主功能表、直接 m_read() 進信件
+  // 列表（遠超上限時離開又被送回來）。使用者要整理完、自己回主功能表才算登入完成——那可能是
+  // 好幾分鐘後，連結早就不是他眼前的事了。登入前看到信件列表就丟掉，並說清楚為什麼。
+  test("REGRESSION：登入途中被帶進信件列表（超額信箱）→ 丟掉待跳目標，整理完回主功能表也不跳", () => {
+    const h = makeHarness();
+    h.ctl.request(TARGET);
+    h.termBuf.row0 = "【郵件選單】";
+    h.termBuf.mailList = true;
+    h.settle();
+    expect(h.ctl.hasPending()).toBe(false);
+    expect(h.hints.some(m => m.includes("信箱") && m.includes("#1gIeu-3A"))).toBe(true);
+    h.termBuf.mailList = false;
+    h.arriveAtMainMenu();
+    expect(h.nav.externalCalls).toEqual([]);
+  });
+
+  test("登入後自己進信箱（已看過主功能表）不算超額：照舊收著、之後照跳", () => {
+    const h = makeHarness();
+    h.arriveAtMainMenu();
+    h.nav.active = true; // 前一個跳轉還在線上 ⇒ 收著
+    h.ctl.request(TARGET);
+    h.termBuf.row0 = "【郵件選單】";
+    h.termBuf.mailList = true;
+    h.settle();
+    expect(h.ctl.hasPending()).toBe(true);
+    h.nav.active = false;
+    h.settle();
+    expect(h.nav.externalCalls).toHaveLength(1);
   });
 
   test("尚未連上線（connectState 0）→ 一樣先收著", () => {

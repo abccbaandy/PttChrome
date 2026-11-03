@@ -27,6 +27,7 @@
 //     重連失敗之後登入成功仍回得去。
 //   - 登入後使用者先動了（離開主功能表）、或 deep link 也在等登入（使用者剛給的連結
 //     比斷線前的位置新）⇒ 作廢。
+//   - 登入途中被超額信箱帶進信件列表（check_mailbox_quota）⇒ 作廢：整理完才回主功能表。
 //   - 使用者關掉了（pref reconnectResume，預設開）：斷線時不記，重連途中才關也不出發
 //     ⇒ 停在 PTT 原生的登入落點（主功能表）。
 //   - PTT 因為搜尋太頻繁把人踢掉（斷線那一刻畫面是 read.c#select_by_aid／select_read 的
@@ -336,10 +337,19 @@ ReconnectResume.prototype = {
     return isMainMenuRow(buf.getRowText(0, 0, buf.cols));
   },
 
+  _inMailList: function() {
+    const buf = this._termBuf;
+    return !!(buf && typeof buf.isMailListScreen === 'function' && buf.isMailListScreen());
+  },
+
   _onSettled: function() {
     if (!this._atMainMenu()) {
       // 登入後不在主功能表 ＝使用者自己走開了（我們只在主功能表出發）。
       if (this._loggedIn) this.discard('moved');
+      // 登入完成前就進了信件列表＝超額信箱（mbbsd.c#user_login → check_mailbox_quota 不進
+      // 主功能表、直接 m_read()；登入前沒有別條路會進信件列表）。整理完自己回主功能表可能是
+      // 好幾分鐘後，那時才跳回斷線前的位置等於搶走畫面 ⇒ 作廢。
+      else if (this._inMailList()) this.discard('mailbox');
       return;
     }
     this._loggedIn = true;

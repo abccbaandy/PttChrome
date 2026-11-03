@@ -83,6 +83,11 @@ function harness({ pageState = 3 } = {}) {
     cols: 80,
     pageState,
     row0: "",
+    // 真實 TermBuf.isMailListScreen 的替身（指紋本身守在 mail_list.test.js）。
+    mailList: false,
+    isMailListScreen() {
+      return this.mailList;
+    },
     getRowText(row) {
       return row === 0 ? this.row0 : "";
     },
@@ -190,6 +195,21 @@ describe("ReconnectResume（何時出發）", () => {
     h.settle(MAIN_MENU);
     expect(h.core.aidNavigation.startResume).not.toHaveBeenCalled();
     expect(h.rr.hasPending()).toBe(false);
+  });
+
+  // 超額信箱：mbbsd.c#user_login → check_mailbox_quota 登入後不進主功能表、直接 m_read()
+  // 進信件列表，使用者整理完自己回主功能表才算登入完成（可能好幾分鐘後）。那時才突然跳回
+  // 斷線前的文章＝幾分鐘前的位置搶走畫面。
+  test("REGRESSION：重連登入途中被帶進信件列表（超額信箱）⇒ 作廢，整理完回主功能表也不出發", () => {
+    const h = harness();
+    h.settle(MAIN_MENU);
+    h.rr.capture(false);
+    h.termBuf.mailList = true;
+    h.settle("【郵件選單】");
+    expect(h.rr.hasPending()).toBe(false);
+    h.termBuf.mailList = false;
+    h.settle(MAIN_MENU);
+    expect(h.core.aidNavigation.startResume).not.toHaveBeenCalled();
   });
 
   test("登入後使用者先走開了（不在主功能表）⇒ 作廢，之後回主功能表也不搶畫面", () => {
