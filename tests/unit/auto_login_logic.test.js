@@ -8,6 +8,7 @@
 // Mirrors enhanced-addon.md's former「auto_login 重複送鍵帶離主選單」note.
 
 import { AutoLogin } from "../../src/js/auto_login";
+import { MAIL_LIST_ROWS } from "./fixtures/mail_list_rows";
 
 // Build an AutoLogin already past credential resolution (start() reads localStorage
 // / the credential store, which we don't exercise here). Screen + side effects are
@@ -134,6 +135,46 @@ describe("AutoLogin._tick prompt → response", () => {
     expect(al.__migrated).toBe(true);
     expect(al.__stopped).toBe(true);
     expect(al.__sent).toEqual([]);
+  });
+
+  // 超額信箱（mbbsd.c#check_mailbox_quota）：登入後 PTT 不進主功能表，先 vmsg「您保存信件數目
+  // N 超出上限 M, 請整理」再直接 m_read() 進信件列表；遠超上限（upstream babcbce 起 15 倍，
+  // 舊版 50 倍）時使用者離開信件列表會再 vmsg「遠超出上限」並再進一次。進了信件列表＝登入流程
+  // 已完成、之後是使用者自己在操作 ⇒ 收手。沒收手時 90 秒內每個「任意鍵」都被代按：那則提醒
+  // 使用者看不到（只覺得「怎麼離不開信箱」），也會跟使用者自己按的鍵重複送。
+  test("登入後被帶進信件列表（超額信箱）⇒ 視同登入完成：記帳密並收手", () => {
+    const al = makeLogin({ _sentPass: true, __screen: MAIL_LIST_ROWS.join("\n") });
+    al._tick();
+    expect(al.__migrated).toBe(true);
+    expect(al.__stopped).toBe(true);
+    expect(al.__sent).toEqual([]);
+  });
+
+  test("收手後離開信件列表的「遠超出上限, 請整理」由使用者自己按", () => {
+    const al = makeLogin({ _sentPass: true, __screen: MAIL_LIST_ROWS.join("\n") });
+    al._tick();
+    al.__screen = "您保存信件數目 3500 遠超出上限 200, 請整理\n請按任意鍵繼續";
+    al._lastActionAt = 0;
+    if (!al._done) al._tick();
+    expect(al.__sent).toEqual([]);
+  });
+
+  test("登入途中的「超出上限, 請整理」提示照舊代按（skipWelcome）", () => {
+    const al = makeLogin({
+      _sentPass: true,
+      __screen: "您保存信件數目 250 超出上限 200, 請整理\n請按任意鍵繼續"
+    });
+    al._tick();
+    expect(al.__sent).toEqual([" "]);
+    expect(al.__stopped).toBe(false);
+  });
+
+  test("只有底列像信件列表（缺欄位標題列）⇒ 不當成信件列表", () => {
+    const rows = MAIL_LIST_ROWS.slice();
+    rows[2] = " ".repeat(80);
+    const al = makeLogin({ _sentPass: true, __screen: rows.join("\n") });
+    al._tick();
+    expect(al.__stopped).toBe(false);
   });
 
   // 官方 include/common.h：

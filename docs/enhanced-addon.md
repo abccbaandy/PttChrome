@@ -669,7 +669,7 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
 polling**（setTimeout 每 500ms），每 tick 直接從 `buf.getRowText` 讀整頁（**勿用
 `#mainContainer.innerText`**：`'change'` 事件在 React re-render **之前** 觸發 → DOM 慢一幀，導致
 「要按鍵才動」）。比對提示字串沿用 `tests/e2e/helpers/ptt.js#login` 流程，帳密用 `app.sendData`(Big5)、
-空白/Y/N 同。到主功能表即 `stop()`；逾時 90s 自停；reconnect 時 `start()` 重置（`_seq` 防 async 重入）。
+空白/Y/N 同。到主功能表即 `stop()`；超額信箱登入後直接被帶進信件列表（`mbbsd.c#check_mailbox_quota`，不經主功能表）也算登入完成、`stop()`，之後的「請整理」提醒由使用者自己按；逾時 90s 自停；reconnect 時 `start()` 重置（`_seq` 防 async 重入）。
 守護：`tests/unit/auto_login_logic.test.js`（假 app 驅動 `_tick`：帳號/密碼順序、dup/err one-shot、loose「重複登入」需 `[Y/n]`/`(Y/N)`、主選單 stop、密碼錯誤 stop）；e2e shared 登入 fixture 亦間接走此路徑（需 env PTT_USER/PTT_PASS）。
 
 ### 兩階段驗證 2FA / TOTP（`_handleOtp`）

@@ -46,6 +46,7 @@ import {
   TOTP_PERIOD_SEC
 } from './totp';
 import { isLoginBlockText } from './login_block';
+import { isMailListRows } from './mail_list';
 
 const MAIN_MENU = ['主功能表', '【主功能表】'];
 const POLL_MS = 500;
@@ -385,6 +386,16 @@ AutoLogin.prototype._tick = function() {
 
   // Reached the main menu → login finished, detach.
   if (MAIN_MENU.some(m => screen.includes(m))) {
+    this._maybeMigrate();
+    this.stop();
+    return;
+  }
+
+  // 超額信箱：登入後 PTT 不進主功能表，vmsg「…超出上限, 請整理」後直接 m_read() 進信件列表，
+  // 遠超上限時離開又 vmsg 再進（mbbsd.c#check_mailbox_quota；upstream babcbce 把門檻從 50 倍
+  // 降到 15 倍）。進了信件列表＝登入已完成、之後是使用者自己在操作 ⇒ 收手，不再代按「任意鍵」
+  // （不然那則提醒使用者看不到，也會跟使用者自己按的鍵重複送）。
+  if (this._sentPass && isMailListRows(screen.split('\n'))) {
     this._maybeMigrate();
     this.stop();
     return;
