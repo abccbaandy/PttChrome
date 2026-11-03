@@ -61,6 +61,18 @@ export function isMailListRows(rowTexts) {
   return false;
 }
 
+// 信箱超過上限的 vmsg（mail.c#chkmailbox「您保存信件數目 %d 超出上限 %d, 請整理」、
+// #chkmailbox_tidy_limit「…遠超出上限…」）。出現在登入時（check_mailbox_quota）與郵件選單
+// 按 ←（menu.c#menu_cmd_left：超額時 ← 不離開，只 vmsg 後把游標移到 (R)ead）⇒ 程式化的
+// 「一路 ← 退回主功能表」在這裡永遠退不出去。兩個數字＋「請整理」都要對上才算。
+const MAILBOX_OVER_LIMIT_RE = /您保存信件數目\s*\d+\s*遠?超出上限\s*\d+\s*,\s*請整理/;
+
+export function isMailboxOverLimitNotice(lastRowText) {
+  return typeof lastRowText === 'string' && MAILBOX_OVER_LIMIT_RE.test(lastRowText);
+}
+
+export const MAILBOX_OVER_LIMIT_HINT = '信箱超過上限，PTT 要先整理信件才能離開信箱';
+
 // 欄位標題列是第幾列（卡片模式收起它）；沒有回 -1。
 export function mailHeaderRow(rowTexts) {
   if (!Array.isArray(rowTexts)) return -1;

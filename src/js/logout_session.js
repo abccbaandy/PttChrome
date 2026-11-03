@@ -25,6 +25,7 @@
 
 import { isMainMenuRow } from './aid_navigation';
 import { resolveDismiss, DISMISS_ANY_KEY, KEY_DISMISS } from './screen_dismiss';
+import { isMailboxOverLimitNotice, MAILBOX_OVER_LIMIT_HINT } from './mail_list';
 import { HINT_ERROR } from './status_hint';
 
 const KEY_LEFT = '\x1b[D';
@@ -182,11 +183,16 @@ LogoutSession.prototype = {
       hardTimeoutMs: STEP_HARD_MS,
       expect: function(snapshot, facts) {
         if (isMainMenuRow(facts.rowTexts[0] || '')) return { menu: true };
+        // 信箱超過上限：郵件選單的 ← 只會 vmsg 再把游標移到 (R)ead（menu.c#menu_cmd_left），
+        // 永遠退不出去 ⇒ 看到就停手講原因（不送空白再繞一圈到上限）。
+        const rows = facts.rowTexts || [];
+        if (isMailboxOverLimitNotice(rows[rows.length - 1] || '')) return { mailboxFull: true };
         // 畫面沒變 ＝這一鍵沒作用（編輯器裡的 ← 只移游標）：不重試，停手。
         return signature(facts.rowTexts) === prevSig ? false : { moved: true };
       },
       onDone: function(result) {
         if (result.menu) self._enqueueGoodbye();
+        else if (result.mailboxFull) self._fail(MAILBOX_OVER_LIMIT_HINT);
         else self._escapeStep(step + 1);
       },
       onFail: function(reason) {

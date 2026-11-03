@@ -72,6 +72,7 @@ import { HINT_ERROR } from './status_hint';
 import { openPromptText, openPromptHint } from './open_prompt';
 import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
+import { isMailboxOverLimitNotice, MAILBOX_OVER_LIMIT_HINT } from './mail_list';
 import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
@@ -1437,6 +1438,11 @@ AidNavigation.prototype = {
       expect: function(snapshot, facts) {
         if (isMainMenuRow(facts.rowTexts[0] || ''))
           return { menu: true };
+        // 信箱超過上限：郵件選單的 ← 只會 vmsg 再把游標移到 (R)ead（menu.c#menu_cmd_left），
+        // 永遠退不出去 ⇒ 第一次看到就停手講原因，不按到 MAX_ESCAPE_STEPS。
+        const rows = facts.rowTexts || [];
+        if (isMailboxOverLimitNotice(rows[rows.length - 1] || ''))
+          return { mailboxFull: true };
         // ← 往上退一層永遠不會落在文章畫面（文章→列表、信件→信箱、精華區文章→
         // 目錄）。文章幀只可能是好讀自動翻頁那個還在線上的 PageUp/PageDown 的遲到
         // 回應：算成「退了一層」會讓之後每一步都慢一拍，最後一個 ← 落在主功能表上
@@ -1450,6 +1456,10 @@ AidNavigation.prototype = {
       onDone: function(result) {
         if (result.menu) {
           self._enqueueBoardJump(run, true, false);
+          return;
+        }
+        if (result.mailboxFull) {
+          self._fail(MAILBOX_OVER_LIMIT_HINT);
           return;
         }
         if (step + 1 >= MAX_ESCAPE_STEPS) {

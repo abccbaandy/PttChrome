@@ -189,6 +189,21 @@ describe("停手條件（不盲送）", () => {
     expect(h.hints.some((m) => m.indexOf("登出失敗") === 0)).toBe(true);
   });
 
+  // menu.c#menu_cmd_left：信箱超過上限時郵件選單的 ← 只會 vmsg「…超出上限, 請整理」再把游標
+  // 移到 (R)ead ⇒ 永遠離不開信箱。看到那則 vmsg 就停手並講原因（不送空白再繞一圈）。
+  test("REGRESSION：信箱超過上限的 vmsg ⇒ 當場停手並說明，不再送鍵", () => {
+    const h = makeHarness(screen({ row0: "【電子郵件】", extra: "  (R)ead 我的信箱" }));
+    h.session.start();
+    h.respond(screen({
+      row0: "【電子郵件】",
+      extra: "  (R)ead 我的信箱",
+      last: " ◆ 您保存信件數目 1600 遠超出上限 100, 請整理                [按任意鍵繼續]",
+    }));
+    expect(h.session.active).toBe(false);
+    expect(h.sent).toEqual(["\x1b[D"]);
+    expect(h.hints.some((m) => m.includes("信箱") && m.includes("上限"))).toBe(true);
+  });
+
   test("一直退不回主選單 ⇒ 到上限停手", () => {
     const h = makeHarness(ARTICLE);
     h.session.start();
