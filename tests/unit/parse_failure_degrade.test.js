@@ -45,7 +45,7 @@ import { functionModeExitDecision } from "../../src/js/easy_reading";
 import { parseStatusRow } from "../../src/js/string_util";
 import { parseHelpMenuScreen, HelpMenuController } from "../../src/js/help_menu";
 import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
-import { isMailListRows, parseMailRow } from "../../src/js/mail_list";
+import { isMailListRows, parseMailRow, isMailboxOverLimitNotice } from "../../src/js/mail_list";
 import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
 
 const LISTS = {
@@ -418,6 +418,27 @@ describe("手機信件列表卡片：認不出 ⇒ 照舊格線（不畫卡片�
     ["沒有標題", "     1 + 10/01 alice"],
   ])("信件列：%s → 這一列不畫卡片", (_n, row) => {
     expect(parseMailRow(row)).toBeNull();
+  });
+});
+
+// 信箱超過上限的 vmsg（mail.c#chkmailbox／chkmailbox_tidy_limit）：認出來只會讓 AID 跳文／
+// 一鍵登出「提早停手並說明」，認不出就照舊按到層數上限 —— 兩邊都不多送鍵。
+describe("信箱超過上限提示：要素缺一就不認", () => {
+  const WARN = " ◆ 您保存信件數目 132 超出上限 100, 請整理                    [按任意鍵繼續]";
+  const TIDY = " ◆ 您保存信件數目 1600 遠超出上限 100, 請整理                 [按任意鍵繼續]";
+
+  test("對照組：一般超額與遠超出上限兩種都認得", () => {
+    expect(isMailboxOverLimitNotice(WARN)).toBe(true);
+    expect(isMailboxOverLimitNotice(TIDY)).toBe(true);
+  });
+
+  test.each([
+    ["沒有「請整理」", WARN.replace("請整理", "")],
+    ["數字被拿掉", " ◆ 您保存信件數目 超出上限, 請整理"],
+    ["只是文章標題提到超出上限", "   123 + 11/04 someone      □ 我的信箱超出上限怎麼辦"],
+    ["空列", ""],
+  ])("%s → 不認", (_n, row) => {
+    expect(isMailboxOverLimitNotice(row)).toBe(false);
   });
 });
 

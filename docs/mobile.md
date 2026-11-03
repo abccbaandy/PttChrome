@@ -247,7 +247,8 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   `xyz.c:59-85` `getdata` 確認「您確定要離開…(Y/N)？[N]」（LCECHO，要 `y\r`）→ `vmsg` 停留時間（未註冊：
   「尚未完成註冊程序。」）→ 任意鍵 → `u_exit`（`mbbsd.c:187-209`）close fd。
 - 序列（CommandQueue，一次一鍵、內容確認）：逃回主選單（每步 `resolveDismiss`：輸入欄 ^C／pressanykey 空白，
-  否則 ←；畫面沒變或超過 `MAX_ESCAPE_STEPS` 停手）→ `G\r`（expect 確認列＋游標在輸入欄）→ `y\r`（expect
+  否則 ←；畫面沒變、超過 `MAX_ESCAPE_STEPS`，或底列是信箱超過上限的 vmsg（`mail_list.isMailboxOverLimitNotice`；
+  `menu.c#menu_cmd_left` 超額時郵件選單的 ← 不離開，AID 跳文的退出同一條）就停手並說明）→ `G\r`（expect 確認列＋游標在輸入欄）→ `y\r`（expect
   pressanykey）→ 空白（`probe:false`；再遇 pressanykey 最多補 `MAX_FINAL_KEYS` 次）。認不出的畫面一律停手、不盲送。
 - 前置同 `aid_navigation._begin`（autoLogin.stop、好讀 functionMode、兩個列表 session beginExternalNavigation）；
   `serialized_op_gate` 期間吞使用者鍵。完成判定：`App.onClose` → `logout.onConnectionClosed()` 為真 ⇒

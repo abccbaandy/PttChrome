@@ -463,6 +463,25 @@ describe("AidNavigation 非 READING context（站內信／精華區）", () => {
     expect(queue.idle).toBe(true);
   });
 
+  // 信箱超過上限：郵件選單上的 ← 是 menu.c#menu_cmd_left 的 chkmailbox()：vmsg「您保存信件
+  // 數目 N 超出上限 M, 請整理」後把游標移到 (R)ead，永遠離不開信箱。第一次看到那則 vmsg 就停手、
+  // 說清楚原因，不要再按到上限才報「層數過多」。
+  test("REGRESSION：退出途中出現信箱超過上限的 vmsg → 當場停手並說明，不再多送 ←", () => {
+    const { nav, queue, sent, hints } = makeHarness({ footer: MAIL_STATUS_ROW });
+    nav.start("1gIeu-3A", "SYSOP");
+    settle(queue, facts("menu", { rowTexts: screen({ row0: "【電子郵件】", mark: "  (R)ead 我的信箱" }) }));
+    expect(sent).toEqual([ESC_LEFT, ESC_LEFT]);
+    settle(queue, facts("transient", { rowTexts: screen({
+      row0: "【電子郵件】",
+      mark: "  (R)ead 我的信箱",
+      last: " ◆ 您保存信件數目 132 超出上限 100, 請整理                    [按任意鍵繼續]"
+    }) }));
+    expect(nav.active).toBe(false);
+    expect(sent).toEqual([ESC_LEFT, ESC_LEFT]);
+    expect(hints.some(h => h.includes("信箱") && h.includes("上限"))).toBe(true);
+    expect(queue.idle).toBe(true);
+  });
+
   test("← 沒有效果（畫面簽章不變）→ probe → miss → 可見失敗", () => {
     const { nav, queue, sent, hints } = makeHarness({ footer: MAIL_STATUS_ROW });
     const frozen = screen({ last: MAIL_STATUS_ROW, mark: "文章內文" });
