@@ -314,8 +314,23 @@ DeepLinkController.prototype = {
     return isMainMenuRow(buf.getRowText(0, 0, buf.cols));
   },
 
+  // 登入完成前就進了信件列表＝超額信箱（mbbsd.c#user_login → check_mailbox_quota：不進主
+  // 功能表、直接 m_read()，遠超上限時離開又被送回來；登入前沒有別條路會進信件列表）。
+  // 使用者得先整理完、自己回主功能表——可能是好幾分鐘後，那時才突然跳走就是「幾分鐘前貼的
+  // 連結搶走畫面」（見 docs/deep-link.md 不變量）。所以丟掉，並說清楚要他整理完再點一次。
+  _dropIfMailboxDetour: function() {
+    if (this._loggedIn || !this._pending) return;
+    const buf = this._termBuf;
+    if (!buf || typeof buf.isMailListScreen !== 'function' || !buf.isMailListScreen()) return;
+    const target = this._pending;
+    this._pending = null;
+    this._hint('信箱超過上限，PTT 要求先整理信件：已取消跳至 #' + target.aid +
+      ' (' + target.board + ')，整理完請再開一次連結', 8000);
+  },
+
   _onSettled: function() {
     if (this._atMainMenu()) this._loggedIn = true;
+    this._dropIfMailboxDetour();
     this._syncAddressBar();
     if (!this._pending || !this._canNavigate()) return;
     const target = this._pending;
