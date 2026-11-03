@@ -25,10 +25,10 @@
 ## 回覆
 
 - 每一則水球都有「回覆」鈕（廣播、新信提示沒有）。送的都是 `view.sendKeyAsUser('r', { ctrlKey: true })`，跟使用者自己按 Ctrl+R 同一條路（含序列化閘門），清單收起，之後全是 PTT 原生的回覆畫面。
-- **最新一位寄件人**（清單裡最新一則水球的人，廣播不算）：只按一下。pttbbs `wmsg.c` 兩種水球模式第一下 ^R 都指向他 —— 一般模式（`wmsg_handle_ctrl_r_default`，watermode −1）回 `swater[0]` 最後一則的寄件人；一對一模式（`UF_PAGER_OFO`，`ofo_my_write`）預設選 `swater[0]`。`swater_get_slot` 每收一則就把寄件人提到 `swater[0]`。
-- **其他寄件人**（`waterball_reply.js`）：按第一下後，每次畫面停下都認一次畫面，沒對上就再按一下 ^R —— 兩種模式換人都是 ^R：
+- **第一下指向誰**：pttbbs `wmsg.c` 兩種水球模式第一下 ^R 都指向 `swater[0]` —— 一般模式（`wmsg_handle_ctrl_r_default`，watermode −1）回 `swater[0]` 最後一則的寄件人（沒收過他的就是他本人）；一對一模式（`UF_PAGER_OFO`，`ofo_my_write`）預設選 `swater[0]`。`swater_get_slot` 每收一則就把寄件人提到 `swater[0]`，**自己丟出水球（`my_write` 送出後）也把收件人提上來** ⇒ 使用者剛丟過別人時，第一下指向那個人，不是清單裡最新的寄件人。所以連最新一位都要認畫面（舊版只按一下就交給使用者，打的字會送給剛丟過的那個人）。
+- **換人**（`waterball_reply.js`，回任何一位都走這條）：按第一下後，每次畫面停下都認一次畫面，沒對上就再按一下 ^R —— 兩種模式換人都是 ^R：
   - 一對一模式：row 0 `丟<id>:`（`PROMPT_OFO`）＋row 1「↑反擊對象↓」名單（`ofo_init_screen`，最多 5 人）；^R＝`ofo_switch_user(1)`，row 0 換成下一位。
-  - 一般模式：第一下 row 0 `訊息傳過去: `（`PROMPT_TO`）；再按 ^R 在 row 1 畫「訊息回顧」面板（`wmsg_show_panel_new`），row 3 起最近 `MAX_REVIEW`=7 則，選中那則行首 `>`＋寄件人；每按一下往舊的選一則，送出時對象是選中那則的寄件人（`my_write_get_input` 的 watermode > 0 分支）。
+  - 一般模式：第一下 row 0 `訊息傳過去: `（`PROMPT_TO`）、底列 outmsg「★<對象> <上一則>」（讀不出 ★ 才退回「第一下＝最新一位寄件人」的假設）；再按 ^R 在 row 1 畫「訊息回顧」面板（`wmsg_show_panel_new`），row 3 起最近 `MAX_REVIEW`=7 則，選中那則行首 `>`＋寄件人；每按一下往舊的選一則，送出時對象是選中那則的寄件人（`my_write_get_input` 的 watermode > 0 分支）。
   - 對上就停手，交給使用者打字。**認不出 ⇒ 不送鍵**：等下一次畫面停下（按第一下時好讀切原生鏡像會先停一次舊畫面），3 秒內一直認不出就收手（小天使提示等）；換滿 8 下還沒對上（對方不在名單、超過回顧則數）也收手。收手時使用者停在 PTT 原生回覆畫面，可以自己換人或 ← 取消。
 - 一般模式第一下 ^R 會用 `outmsg` 把「★id 上一則內容」再畫一次（同水球格式）：那正是清單最新一則 ⇒ 被重畫去重擋掉，不會多收一則。
 - 不經閱讀紀錄：`my_write`／`ofo_my_write` 前後是 `scr_dump`／`scr_restore`，回覆完原畫面原樣回來，使用者的位置沒變。
