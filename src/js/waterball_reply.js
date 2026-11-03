@@ -1,11 +1,14 @@
 // 水球收件匣「回覆」最新一位以外的寄件人（docs/message-inbox.md「回覆」）。
 //
-// 第一下 ^R 在兩種水球模式都指向最新一位寄件人；要回別人得在 PTT 原生的回覆畫面裡換人。
+// 第一下 ^R 在兩種水球模式都指向 swater[0]：最近一位**往來**的人。收到水球、自己丟出水球
+// （my_write 送出後 swater_get_slot 把收件人提上來）都會換掉它 ⇒ 不一定是清單裡最新的寄件人，
+// 一律從畫面讀出目前的對象再判（一般模式讀底列 outmsg 的「★id」，一對一模式讀 row 0）。
 // 兩種模式換人都是「再按 ^R」（讀碼 mbbsd/wmsg.c）：
 //   - 一對一模式（UF_PAGER_OFO，ofo_my_write）：row 0 是 `丟<id>:` 輸入列，row 1 起是
 //     「↑反擊對象↓」名單（最多 WB_OFO_USER_NUM=5 人）；^R／↓ 換下一位（ofo_switch_user(1)），
 //     row 0 跟著改成新的對象。
-//   - 一般模式（wmsg_handle_ctrl_r_default）：第一下 row 0 是 `訊息傳過去: `；第二下起在 row 1
+//   - 一般模式（wmsg_handle_ctrl_r_default）：第一下 row 0 是 `訊息傳過去: `、底列 outmsg
+//     「★<對象> <上一則>」；第二下起在 row 1
 //     畫「訊息回顧」面板（wmsg_show_panel_new），row 3 起是最近 MAX_REVIEW=7 則水球，選中那則
 //     行首是 `>`＋寄件人；每按一下 ^R 往舊的選一則，送出時對象就是選中那則的寄件人
 //     （my_write_get_input 的 watermode > 0 分支）。
@@ -22,13 +25,15 @@ const OFO_LIST_MARK = '↑反擊對象↓';
 // wmsg_show_panel_new 的 row 1；新舊字樣都只認這段（MSG_SEPARATOR 夾字的部分）。
 const PANEL_MARK = '訊─息─回─顧';
 const PANEL_FIRST_ROW = 3;
+// 一般模式第一下的 outmsg（底列）：「★%s %s」，對象 id 緊接在 ★ 後。
+const FIRST_TARGET_RE = /^★(\S+)/;
 // 一對一模式名單最多 5 人、一般模式回顧最多 7 則；多給一輪就收手。
 export const MAX_SWITCH_STEPS = 8;
 export const STEP_TIMEOUT_MS = 3000;
 
 // 認畫面。rows＝整頁每列文字。回傳：
 //   { mode: 'ofo', selected: id }
-//   { mode: 'default', selected: null }      第一下（還沒有回顧面板）
+//   { mode: 'default', selected: id|null }   第一下（還沒有回顧面板；selected＝底列 ★ 的對象，讀不出 null）
 //   { mode: 'default', selected: id|null }   回顧面板（selected＝行首 `>` 那則的寄件人）
 //   null                                      認不出
 export function classifyReplyScreen(rows) {
@@ -37,7 +42,10 @@ export function classifyReplyScreen(rows) {
   const ofo = OFO_PROMPT_RE.exec(r0);
   if (ofo && r1.indexOf(OFO_LIST_MARK) >= 0) return { mode: 'ofo', selected: ofo[1], panel: false };
   if (r0.indexOf(DEFAULT_PROMPT) !== 0) return null;
-  if (r1.indexOf(PANEL_MARK) < 0) return { mode: 'default', selected: null, panel: false };
+  if (r1.indexOf(PANEL_MARK) < 0) {
+    const m = FIRST_TARGET_RE.exec((rows && rows[rows.length - 1]) || '');
+    return { mode: 'default', selected: m ? m[1] : null, panel: false };
+  }
   let selected = null;
   for (let i = PANEL_FIRST_ROW; i < rows.length; i++) {
     const m = /^>(\S+) /.exec(rows[i] || '');
@@ -55,10 +63,10 @@ export function classifyReplyScreen(rows) {
 // 一次舊畫面，那不是 PTT 的回應。
 export function nextReplyStep(screen, target, latest, steps) {
   if (!screen) return 'wait';
-  if (screen.mode === 'ofo' || screen.panel) {
+  if (screen.mode === 'ofo' || screen.panel || screen.selected) {
     if (screen.selected === target) return 'done';
   } else if (target === latest) {
-    // 一般模式第一下：對象就是最新一位寄件人。
+    // 一般模式第一下、底列讀不出對象：退回「第一下＝最新一位寄件人」的假設（使用者沒丟過別人時成立）。
     return 'done';
   }
   return steps < MAX_SWITCH_STEPS ? 'next' : 'stop';

@@ -122,6 +122,31 @@ describe("回覆（只代按使用者自己會按的 Ctrl+R）", () => {
     expect(sent).toEqual([]);
   });
 
+  test("回最新一位寄件人，但使用者剛丟過別人（第一下指向那個人）⇒ 照畫面再換到寄件人", () => {
+    // wmsg.c#my_write 送出後 swater_get_slot 把收件人提到 swater[0]，兩種模式第一下 ^R 都指向他。
+    const sent = [];
+    const buf = Object.assign(new EventTarget(), { rows: 24, screen: [] });
+    buf.getRowText = (i) => buf.screen[i] || "";
+    const show = (rows) => {
+      buf.screen = rows;
+      buf.dispatchEvent(new CustomEvent("screenSettled"));
+    };
+    const inbox = new MessageInbox({
+      buf,
+      view: { sendKeyAsUser: (key, mods) => sent.push([key, mods]) }
+    });
+    inbox.noteData(wire("aaa", "一"));
+    inbox.noteData(wire("bbb", "二"));
+    expect(inbox.reply(inbox.state.items.find((i) => i.from === "bbb"))).toBe(true);
+    expect(sent).toHaveLength(1);
+    // 一對一模式：第一下停在剛丟過的 ccc ⇒ 再按；換到 bbb ⇒ 停手
+    show(["丟ccc:", "                             ↑反擊對象↓ "]);
+    expect(sent).toHaveLength(2);
+    show(["丟bbb:", "                             ↑反擊對象↓ "]);
+    show(["丟aaa:", "                             ↑反擊對象↓ "]);
+    expect(sent).toHaveLength(2);
+  });
+
   test("回不是最新一位的寄件人：按 ^R 直到原生回覆畫面選中他", () => {
     const sent = [];
     const buf = Object.assign(new EventTarget(), { rows: 24, screen: [] });

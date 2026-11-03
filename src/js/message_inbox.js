@@ -203,9 +203,8 @@ MessageInbox.prototype = {
 
   // 點一則水球直接回覆：送的就是使用者自己會按的 Ctrl+R（view.sendKeyAsUser，跟真鍵盤
   // 同一條、同一組序列化閘門），之後的回覆畫面全是 PTT 原生的。pttbbs wmsg.c 兩種水球模式
-  // 的第一下 ^R 都指向「最新一位寄件人」（一般模式回最後一則的寄件人；一對一模式
-  // ofo_my_write 預設選 swater[0]，swater_get_slot 每收一則就把寄件人提到 [0]）⇒ 回他只按一下。
-  // 回別人：在原生回覆畫面裡再按 ^R 換到他為止，每一下都要從畫面認出模式與目前的對象，
+  // 的第一下 ^R 都指向 swater[0]＝最近一位往來的人（收到水球、自己丟出水球都會換掉它）⇒
+  // 不一定是清單裡最新的寄件人。每一下都從畫面認出模式與目前的對象，沒對上就再按 ^R 換人，
   // 認不出就停手（waterball_reply.js）。回傳有沒有開始。
   canReply: function(item) {
     return !!item && item.kind === 'waterball' && !!item.from;
@@ -218,11 +217,13 @@ MessageInbox.prototype = {
     if (!view || typeof view.sendKeyAsUser !== 'function') return false;
     this.setOpen(false);
     const latest = latestSender(this._state.items);
-    if (item.from === latest) {
+    if (!core.buf || typeof core.buf.addEventListener !== 'function') {
+      // 認不了畫面：只有最新一位能回（第一下 ^R，跟使用者自己按一樣）。
+      if (item.from !== latest) return false;
       view.sendKeyAsUser('r', { ctrlKey: true });
       return true;
     }
-    if (!core.buf || typeof core.buf.addEventListener !== 'function') return false;
+    // 最新一位也要認畫面：使用者剛丟過別人時，第一下 ^R 指向的是那個人（waterball_reply.js 檔頭）。
     if (this._cancelReply) this._cancelReply();
     const self = this;
     this._cancelReply = startWaterballReply(core, item.from, latest, {

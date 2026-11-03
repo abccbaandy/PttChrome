@@ -1317,9 +1317,9 @@ describe("upstream pttbbs 產的搜尋 prompt（read.c#ask_filter_predicate、do
 describe("upstream pttbbs 產的回水球畫面（一般模式）", () => {
   const step = (name) => classifyReplyScreen(screenAt(waterballDefaultFx, name).rowTexts);
 
-  test("第一下 ^R：訊息傳過去 prompt，對象是最新一位 ⇒ 回 carol 直接交給使用者", () => {
+  test("第一下 ^R：訊息傳過去 prompt，底列 ★carol ⇒ 回 carol 直接交給使用者", () => {
     const s = step("prompt");
-    expect(s).toEqual({ mode: "default", selected: null, panel: false });
+    expect(s).toEqual({ mode: "default", selected: "carol", panel: false });
     expect(nextReplyStep(s, "carol", "carol", 1)).toBe("done");
     expect(nextReplyStep(s, "alice", "carol", 1)).toBe("next");
   });

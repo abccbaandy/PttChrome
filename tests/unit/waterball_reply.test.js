@@ -28,8 +28,10 @@ describe("classifyReplyScreen", () => {
     expect(classifyReplyScreen(ofo("bbb"))).toEqual({ mode: "ofo", selected: "bbb", panel: false });
   });
 
-  test("一般模式第一下：還沒有回顧面板", () => {
-    expect(classifyReplyScreen(firstDefault())).toEqual({ mode: "default", selected: null, panel: false });
+  test("一般模式第一下：還沒有回顧面板；對象讀底列 outmsg 的「★id」", () => {
+    expect(classifyReplyScreen(firstDefault())).toEqual({ mode: "default", selected: "bbb", panel: false });
+    // 底列讀不出 ★（舊版／被別的東西蓋掉）⇒ 對象未知
+    expect(classifyReplyScreen(["訊息傳過去: ", "", "", ""])).toEqual({ mode: "default", selected: null, panel: false });
   });
 
   test("一般模式回顧面板：行首 > 那則的寄件人", () => {
@@ -58,10 +60,15 @@ describe("nextReplyStep", () => {
     expect(nextReplyStep({ mode: "default", selected: "aaa", panel: true }, "aaa", "bbb", 2)).toBe("done");
   });
 
-  test("一般模式第一下：對象是最新一位才算對上，否則再按（開回顧面板）", () => {
+  test("一般模式第一下：讀得出 ★id 就照它判，讀不出才假設是最新一位", () => {
     const first = { mode: "default", selected: null, panel: false };
     expect(nextReplyStep(first, "bbb", "bbb", 0)).toBe("done");
     expect(nextReplyStep(first, "aaa", "bbb", 0)).toBe("next");
+    // 使用者剛丟過 ccc（wmsg.c my_write 的 swater_get_slot 把收件人提到 swater[0]）⇒ 第一下指向
+    // ccc，不是清單裡最新的寄件人 bbb：照畫面再按，不可以當成對上（不然訊息送給 ccc）。
+    const toCcc = { mode: "default", selected: "ccc", panel: false };
+    expect(nextReplyStep(toCcc, "bbb", "bbb", 0)).toBe("next");
+    expect(nextReplyStep(toCcc, "ccc", "bbb", 0)).toBe("done");
   });
 
   test("換滿一輪還找不到 ⇒ 停手", () => {
