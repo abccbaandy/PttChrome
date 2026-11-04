@@ -57,6 +57,7 @@ import { appBarFromFacts } from "../../src/js/mobile_app_bar";
 import { classifyPushScreen, detectIpLogged } from "../../src/js/push_screen";
 import pushFlowFx from "./fixtures/ptt_src_screens/push_flow.json";
 import pushAgainFx from "./fixtures/ptt_src_screens/push_again.json";
+import pushContentDeniedFx from "./fixtures/ptt_src_screens/push_content_denied.json";
 import pushOwnerFx from "./fixtures/ptt_src_screens/push_owner.json";
 import pushSearchFx from "./fixtures/ptt_src_screens/push_search.json";
 import { pushMaxBytes } from "../../src/js/long_push";
@@ -1354,6 +1355,26 @@ describe("upstream pttbbs 產的長推文續推（90 秒內再按 X）", () => {
 
   test("續推的內容 ⏎ 一樣到確定[y/N]", () => {
     expect(classifyPushScreen(at("confirm").rowTexts)).toEqual({ kind: "confirm" });
+  });
+});
+
+// upstream 254a21b：確定[y/N] 之後問內容檢查服務（contentcheck.c#content_check），擋下來畫整頁
+// content_alert（vs_hdr2「 內容檢查 ／ 未送出」＋理由＋pressanykey），推文沒有寫進去。
+// driver 的假服務只擋含 spam 的推文、理由是佔位字串（真的理由由站方私有服務給）。
+describe("upstream pttbbs 產的推文被內容檢查擋下", () => {
+  const at = (name) => screenAt(pushContentDeniedFx, name, { perFrame: true });
+
+  test("y⏎ 之後的整頁警告 ⇒ fatal（不是「已離開推文流程」），訊息帶 PTT 給的理由", () => {
+    expect(classifyPushScreen(at("confirm").rowTexts)).toEqual({ kind: "confirm" });
+    expect(classifyPushScreen(at("denied").rowTexts)).toEqual({
+      kind: "fatal",
+      message: "內容檢查未送出：placeholder reason from content.svc",
+    });
+  });
+
+  test("按任意鍵後回到文章列表 ⇒ 不再是 fatal", () => {
+    expect(classifyPushScreen(at("after").rowTexts)).toEqual({ kind: "other" });
+    expect(classifyListScreen(at("after").facts).kind).toBe("clean-list");
   });
 });
 

@@ -46,6 +46,7 @@ import { parseStatusRow } from "../../src/js/string_util";
 import { parseHelpMenuScreen, HelpMenuController } from "../../src/js/help_menu";
 import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
 import { isMailListRows, parseMailRow, isMailboxOverLimitNotice } from "../../src/js/mail_list";
+import { parseContentDenied } from "../../src/js/push_screen";
 import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
 
 const LISTS = {
@@ -439,6 +440,33 @@ describe("信箱超過上限提示：要素缺一就不認", () => {
     ["空列", ""],
   ])("%s → 不認", (_n, row) => {
     expect(isMailboxOverLimitNotice(row)).toBe(false);
+  });
+});
+
+// 推文被內容檢查擋下（contentcheck.c#content_alert，upstream 254a21b）：認出來 ⇒ 長推文停手說明；
+// 兩要素（標題列＋底列 pressanykey）缺一就不認。理由本文是私有服務給的，不當要素。
+describe("內容檢查擋下的整頁警告：要素缺一就不認", () => {
+  const PAUSE = " ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ 請按任意鍵繼續 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄";
+  const screen = (row0, last) => {
+    const rows = Array(24).fill("");
+    rows[0] = row0;
+    rows[2] = "  疑似廣告內容";
+    rows[23] = last;
+    return rows;
+  };
+
+  test("對照組：真實版型認得，理由帶出來", () => {
+    expect(parseContentDenied(screen("  內容檢查    未送出", PAUSE))).toBe("內容檢查未送出：疑似廣告內容");
+  });
+
+  test.each([
+    ["標題列不是內容檢查", screen("  【板主:sysop】  內容檢查  看板《Test》", PAUSE)],
+    ["沒有「未送出」", screen("  內容檢查", PAUSE)],
+    ["底列不是 pressanykey（還在確認列）", screen("  內容檢查    未送出", "推 tester: 內容   確定[y/N]:")],
+    ["底列是 ◆ 橫幅", screen("  內容檢查    未送出", " ◆ 請按任意鍵繼續     [按任意鍵繼續]")],
+    ["文章內文第一列剛好寫著內容檢查未送出", screen(" 作者  bob   內容檢查 未送出", PAUSE)],
+  ])("%s → 不認", (_n, rows) => {
+    expect(parseContentDenied(rows)).toBeNull();
   });
 });
 

@@ -70,7 +70,9 @@ int __wrap_select(int n, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
     // 實況迴圈（upstream c6d35a8 起在 more.c#live_run）每秒醒來重畫狀態列的經過時間（有逾時的等待
     // ⇒ WAIT_MARK 永遠不出現）。driver 的時間是釘死的（見 time()），每秒重畫畫的是同一幀 ⇒ 同時在等
     // stdin 與 driver 的 IPC fd 的有逾時等待，一律當成無限期等待：等到按鍵或推文才醒。
-    if (tv && (tv->tv_sec || tv->tv_usec) && r && driver_ipc_fd > 0 && driver_ipc_fd < n &&
+    // 只限 ≥1 秒的等待（實況是 LIVE_STATUS_REFRESH_MS＝1000）：vkey_purge 的 wait_input(0.01) 是
+    // 「把殘留輸入讀掉」的短等，當成無限期會把下一個鍵吃掉、畫面也不 flush（內容檢查的 alert 就是這樣卡住）。
+    if (tv && tv->tv_sec >= 1 && r && driver_ipc_fd > 0 && driver_ipc_fd < n &&
         FD_ISSET(0, r) && FD_ISSET(driver_ipc_fd, r))
         tv = NULL;
 #endif
@@ -225,6 +227,30 @@ int __wrap_ipc_read_packet(int fd, ipc_hdr_t *hdr, void *payload_buf, size_t buf
     hdr->version = IPC_VERSION;
     hdr->type = IPC_TYPE_LIVE_COMMENT;
     hdr->len = sizeof(ps);
+    return 1;
+}
+#endif
+
+// 內容檢查（upstream 254a21b，content.svc）：推文／發文／信件／水球送出前問外部服務，擋下來時
+// contentcheck.c#content_alert 畫「 內容檢查 ／ 未送出」整頁＋pressanykey。服務是站方私有的
+// （規則、理由字串都不在 upstream），driver 沒有服務 ⇒ --wrap=content_filter：推文內容含「spam」
+// 才擋（ui＝ALERT、理由用佔位英文字串，解析端不准認理由本文），其餘一律放行（跟服務連不上一樣）。
+// generate.sh 看有沒有 include/content.h 決定 HAS_CONTENT，並在 pttbbs.conf 開 CONFIG_CONTENT_SVC。
+#if HAS_CONTENT
+#include "content.h"
+int __wrap_content_filter(int kind, const char *userid, const char *ip, const char *board,
+                          const char *target, unsigned flags, int extra, const char *path,
+                          const char *title, const char *text, size_t text_len, int timeout_ms,
+                          content_verdict_t *v)
+{
+    (void)userid; (void)ip; (void)board; (void)target; (void)flags; (void)extra;
+    (void)path; (void)title; (void)text_len; (void)timeout_ms;
+    memset(v, 0, sizeof(*v));
+    if (kind != CONTENT_KIND_COMMENT || !text || !strstr(text, "spam"))
+        return 0;
+    v->deny = 1;
+    v->ui = CONTENT_UI_ALERT;
+    STRLCPY(v->reason, "placeholder reason from content.svc");
     return 1;
 }
 #endif
