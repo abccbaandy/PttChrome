@@ -192,6 +192,29 @@ describe("致命錯誤", () => {
     expect(h.copied).toEqual([]);
   });
 
+  // upstream 254a21b content_alert（畫面取自 ptt_src_screens/push_content_denied）：確定之後整頁
+  // 「內容檢查 未送出」＋pressanykey。舊碼把「離開確認列」當成這則已送出 ⇒ 則數多算一則、
+  // 剩餘內容少了被擋的那段，接著第 2 則的 X 被 pressanykey 吃掉。
+  test("REGRESSION 確定之後被內容檢查擋下 ⇒ 這則不算送出、不再按 X，被擋的那段留在剩餘內容", () => {
+    const h = harness();
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT);
+    h.settle(CONFIRM);
+    const before = h.sent.length;
+    h.settle(" ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ 請按任意鍵繼續 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄", {
+      rows: { 0: "  內容檢查    未送出", 2: "  疑似廣告內容" },
+    });
+    expect(h.sent).toHaveLength(before);
+    expect(h.session.active).toBe(false);
+    expect(h.results[0]).toMatchObject({
+      source: "ptt",
+      message: "內容檢查未送出：疑似廣告內容",
+      sent: 0,
+      rest: "第一段\n第二段",
+    });
+  });
+
   test("認不得的畫面也停手（不繼續盲送鍵）", () => {
     const h = harness();
     h.session.start({ text: "內容", type: "push" });

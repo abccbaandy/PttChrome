@@ -17,6 +17,12 @@ trap 'rm -rf "$OUT"' EXIT
 # 是「→ id:msg推 日期」）：PTT 實跑的是推／噓／→ 三種，開著的話推文場景測的是 PTT 不會送的畫面。
 cp "$P/sample/pttbbs.conf" "$P/pttbbs.conf" &&
   printf '\n#define USE_PFTERM\n#define USE_PMORE\n#undef CONFIG_OLD_RECOMMEND\n' >> "$P/pttbbs.conf" || exit 2
+# 內容檢查（upstream 254a21b）：開 CONFIG_CONTENT_SVC，服務由 driver.c 的 __wrap_content_filter 假扮
+# （推文含「spam」才擋，其餘放行＝跟服務連不上一樣，舊場景畫面不變）。舊 upstream 沒有 content.h 就不開。
+if [ -f "$P/include/content.h" ]; then
+  HAS_CONTENT=1; CONTENT_WRAP=,--wrap=content_filter
+  printf '#define CONFIG_CONTENT_SVC 1\n' >> "$P/pttbbs.conf" || exit 2
+else HAS_CONTENT=0; CONTENT_WRAP=; fi
 # clang＋-finput-charset=big5 才不會把 Big5 尾碼 0x5C 當跳脫字元（gcc 會弄壞字串）；
 # upstream HEAD 在 -Werror 下常有 unused 警告編不過，關掉 -Werror。
 # 漏 #include 的隱式宣告（upstream 254a21b 的 content.c 用 gettimeofday 沒 include <sys/time.h>）
@@ -53,11 +59,11 @@ if grep -q 'pmore_feed_comment' ../include/proto.h || grep -q '^live_run(' more.
 # IPC handler 也從 wmsg_ipc_handler 改名 mbbsd_ipc_handler ⇒ --wrap=ipc_get_fd 交回 driver 掛的 fd（見 driver.c）。
 if grep -q 'vkey_sync_ipc' ../include/proto.h; then HAS_IPC_SYNC=1; LIVE_WRAP=$LIVE_WRAP,--wrap=ipc_get_fd; else HAS_IPC_SYNC=0; fi
 if grep -q 'mbbsd_ipc_handler' ../include/proto.h; then IPC_HANDLER=mbbsd_ipc_handler; else IPC_HANDLER=wmsg_ipc_handler; fi
-clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -DHAS_LIVE="$HAS_LIVE" -DHAS_IPC_SYNC="$HAS_IPC_SYNC" -DIPC_HANDLER="$IPC_HANDLER" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
+clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -DHAS_LIVE="$HAS_LIVE" -DHAS_CONTENT="$HAS_CONTENT" -DHAS_IPC_SYNC="$HAS_IPC_SYNC" -DIPC_HANDLER="$IPC_HANDLER" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
 # --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）；
 # passwd_query 一律「查不到」（板主 id 從 SHM->userid 來，見 driver.c#set_moderators）。
 # shellcheck disable=SC2086
-clang -o "$OUT/driver" -Wl,--wrap=read,--wrap=select,--wrap=poll,--wrap=passwd_query$LIVE_WRAP "$OUT/driver.o" "$OUT/mbbsd_nomain.o" $OBJS "$OUT/vers.o" \
+clang -o "$OUT/driver" -Wl,--wrap=read,--wrap=select,--wrap=poll,--wrap=passwd_query$LIVE_WRAP$CONTENT_WRAP "$OUT/driver.o" "$OUT/mbbsd_nomain.o" $OBJS "$OUT/vers.o" \
   -L../common/bbs -L../common/sys -L../common/osdep -lcmbbs -lcmsys -losdep -lrt -pthread || exit 2
 
 iconv -f UTF-8 -t BIG5 "$HERE/seed.tsv" >"$OUT/seed.big5" || exit 2

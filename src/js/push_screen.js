@@ -135,6 +135,33 @@ export function parseCooldownSeconds(msg) {
   return null;
 }
 
+// 內容檢查擋下（upstream 254a21b，mbbsd/contentcheck.c#content_alert）：推文在按 X 時
+// （content_precheck）或確定[y/N] 之後（content_check）問站方的內容檢查服務，擋下來時
+//   row 0     vs_hdr2(" 內容檢查 ", " 未送出")
+//   row 2..   理由（服務給的，每列前面兩格空白、可多列）
+//             「有問題的內容:」＋內容（可選）、etc/content/alert 的說明（可選）
+//   b_lines   pressanykey()＝vmsg(NULL) 的「▄▄ 請按任意鍵繼續 ▄▄」（不是 ◆ 橫幅）
+// 推文**沒有寫進去**，按鍵後 scr_restore 再 return FULLUPDATE。不認的話確認步驟會把它當成
+// 「已離開推文流程」＝送出成功，接著按 X 被 pressanykey 吃掉。服務也可以不畫畫面
+// （CONTENT_UI_NONE）直接回列表，那種從畫面上分不出來。
+// 兩要素：標題列＋底列的 pressanykey；理由本文是私有服務給的，不認字樣。
+const CONTENT_HDR_RE = /^\s*內容檢查\s+未送出\s*$/;
+const PAUSE_TEXT = '請按任意鍵繼續';
+export function parseContentDenied(rowTexts, rows) {
+  const n = rows == null ? (rowTexts ? rowTexts.length : 0) : rows;
+  if (!rowTexts || n < 3) return null;
+  if (!CONTENT_HDR_RE.test(String(rowTexts[0] || ''))) return null;
+  const last = String(rowTexts[n - 1] || '');
+  if (last.indexOf(PAUSE_TEXT) < 0 || last.indexOf(VMSG_PREFIX) >= 0) return null;
+  const reason = [];
+  for (let y = 2; y < n - 1; ++y) {
+    const t = String(rowTexts[y] || '').trim();
+    if (!t) break;
+    reason.push(t);
+  }
+  return reason.length ? '內容檢查未送出：' + reason.join(' ') : '內容檢查未送出';
+}
+
 // server 這一幀在等我們做什麼？rowTexts ＝ 原生 24 列的純文字（facts.rowTexts）。
 // 回 { kind, ... }：
 //   'typeMenu'    型別選單（booAllowed ＝ 這塊板讓不讓噓）
@@ -147,6 +174,9 @@ export function parseCooldownSeconds(msg) {
 export function classifyPushScreen(rowTexts, rows) {
   const n = rows == null ? (rowTexts ? rowTexts.length : 0) : rows;
   const last = String((rowTexts && rowTexts[n - 1]) || '');
+
+  const denied = parseContentDenied(rowTexts, n);
+  if (denied !== null) return { kind: 'fatal', message: denied };
 
   const vmsg = parseVmsgText(last);
   if (vmsg !== null) {

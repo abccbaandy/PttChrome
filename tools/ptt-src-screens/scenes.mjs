@@ -181,6 +181,22 @@ export const SCENES = [
     ],
   },
   {
+    // 推文被內容檢查擋下（upstream 254a21b，content.svc）：y⏎ 之後不寫檔，畫整頁「 內容檢查 ／ 未送出」
+    // ＋理由＋有問題的內容＋pressanykey（contentcheck.c#content_alert）；按鍵後 scr_restore 再 FULLUPDATE。
+    // driver 的假服務只擋含「spam」的推文；理由字串是佔位的（真的由站方私有服務給）。
+    file: 'push_content_denied',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: 'X' },
+      { keys: '1' },
+      { keys: 'buy spam now\r', name: 'confirm' },
+      { keys: 'y\r', name: 'denied' },
+      { keys: ' ', name: 'after' },
+    ],
+  },
+  {
     // 長推文續推：推完一則 90 秒內再按 X ⇒ 沒有型別選單，倒數第二列「時間太近, 使用 → 加註方式」
     // ＋直接是「→ id:」輸入列（bbs.c#comment 的 if/else if 互斥；driver 的時間釘死 ⇒ 間隔 0 秒）。
     file: 'push_again',

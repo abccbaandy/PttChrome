@@ -77,6 +77,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`：型別選單→typeMenu（可噓）、`1`→inputPrompt（`推 tester:`）；`inputFieldWidth`＝maxlength（62-strlen(id)）、`pushMaxBytes` |
 | `push_flow` | `read:Test`／24 | `X` `1` `hello⏎` `y⏎` `⏎` | typeMenu→inputPrompt→確定[y/N] confirm、寫入後→other；開文的推文列帶時間戳不是輸入列，`detectIpLogged`→false |
 | `push_again` | `read:Test`／24 | `X` `1` `hello⏎` `y⏎` `X` `world⏎` | 長推文續推：90 秒內再按 X ⇒ 倒數第二列「時間太近」、沒有型別選單、直接 `→ tester:` 輸入列（欄寬同上） |
+| `push_content_denied` | `read:Test`／24 | `X` `1` `buy spam now⏎` `y⏎` 空白 | 確定之後被內容檢查擋下：整頁「內容檢查 未送出」＋pressanykey ⇒ `classifyPushScreen` fatal（`parseContentDenied`）；按鍵後回列表 → other |
 | `push_owner` | `read:Mine`／24 | `X` | 推自己的文章：「作者本人」＋`→ tester:` 輸入列 |
 | `push_search` | `read:Test`／24 | `/` `Re⏎` `X` `1` | 系列文章裡推文：型別選單→輸入列（upstream 搜尋是 .DIR 過濾視圖，不印「◆您正在搜尋」警告） |
 | `search_prompts` | `read:Test`／24 | `/` ⏎ `a` ⏎ `Z` ⏎ `s` | `isSearchPromptFrame`：title／author／push／board 各自只認自己那一種（空白 ⏎ 取消回列表） |
@@ -149,7 +150,11 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   ②`vkey_process_ipc` 一次醒來連讀到 32 包、讀不到才停 ⇒ `__wrap_ipc_read_packet` 沒有下一列要回 0，不可阻塞；
   ③ handler 改名 `mbbsd_ipc_handler`（`-DIPC_HANDLER`）。c6d35a8 的實況迴圈每秒醒來重畫經過時間（有逾時的等待）：
   driver 時間釘死、每秒畫同一幀 ⇒ 同時等 stdin 與 driver IPC fd 的有逾時 select 當無限期等待；IPC fd 已可讀時
-  不寫 WAIT_MARK（不然推文還沒畫就切幀）。
+  不寫 WAIT_MARK（不然推文還沒畫就切幀）。只限 ≥1 秒的等待：`vkey_purge` 的 `wait_input(0.01)` 若也當無限期，
+  會吃掉下一個鍵、畫面也不 flush（「第 N 步沒有任何輸出」）。
+- **內容檢查**（254a21b，`-DHAS_CONTENT`：有 `include/content.h`）：`pttbbs.conf` 開 `CONFIG_CONTENT_SVC`，
+  `--wrap=content_filter` 假扮站方服務：推文內容含 `spam` 才擋（`CONTENT_UI_ALERT`、佔位理由），其餘放行＝跟服務連不上
+  一樣，其他場景畫面不變。真的規則與理由字串在私有服務裡，解析端不准認理由本文。
 - 場景每一步都要有輸出（沒有就報「第 N 步沒有任何輸出」exit 2）：upstream 把某個鍵改成「忽略」時（例：490ceaf 實況只認 q 離開），改用新舊版都有反應的鍵。
 - driver.c 本身是 UTF-8：要寫 Big5 字串用跳脫序列，且拆開寫（`"\xc3" "D"`，否則 `\xc3D` 被吃成一個跳脫）。
 
