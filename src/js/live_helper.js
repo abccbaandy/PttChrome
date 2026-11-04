@@ -94,8 +94,10 @@ export function sameLiveHelperView(a, b) {
 }
 
 // 「mm:ss」
+// 負的＝倒數到活動開始（432e98a），照 PTT 狀態列畫成 -mm:ss。
 export function formatLiveElapsed(sec) {
-  const s = Math.max(0, sec | 0);
+  const v = sec | 0;
+  const s = Math.abs(v);
   const pad = (n) => String(n).padStart(2, '0');
-  return pad(Math.floor(s / 60)) + ':' + pad(s % 60);
+  return (v < 0 ? '-' : '') + pad(Math.floor(s / 60)) + ':' + pad(s % 60);
 }

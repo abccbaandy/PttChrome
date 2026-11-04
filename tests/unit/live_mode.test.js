@@ -32,6 +32,17 @@ describe("實況狀態列", () => {
     expect(parseLiveStatusRow(STATUS.replace("[關閉]", "[打開]")).bell).toBe(true);
   });
 
+  test("432e98a 版：倒數（負的計時）、(←/q)離開", () => {
+    const row = " 實況中 -09:59 [+3]  (X)留言 (B)鈴聲[打開] (T/M/S)調時 (←/q)離開   09/27 09:06 ";
+    expect(parseLiveStatusRow(row)).toEqual({
+      elapsedSec: -599,
+      received: 3,
+      canComment: true,
+      bell: true,
+    });
+    expect(isLiveStatusRow(" 實況中 --09:59 [+3] ")).toBe(false);
+  });
+
   test("844e8d0 版（任意鍵離開）也認得；沒有留言權就沒有 (X)", () => {
     const old = " 實況中 00:00 [+0]  (B)鈴聲[關閉] (T/M/S)調時 (任意鍵)離開   09/27 09:06 ";
     expect(parseLiveStatusRow(old)).toMatchObject({ received: 0, canComment: false });

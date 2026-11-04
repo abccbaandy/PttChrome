@@ -67,6 +67,7 @@ import liveShortFx from "./fixtures/ptt_src_screens_legacy/live_short_3c7d9af.js
 import liveLongFx from "./fixtures/ptt_src_screens_legacy/live_long_3c7d9af.json";
 import liveShortNewFx from "./fixtures/ptt_src_screens/live_short.json";
 import liveLongNewFx from "./fixtures/ptt_src_screens/live_long.json";
+import liveCountdownFx from "./fixtures/ptt_src_screens/live_countdown.json";
 import liveShort844Fx from "./fixtures/ptt_src_screens_legacy/live_short_844e8d0.json";
 import liveLong844Fx from "./fixtures/ptt_src_screens_legacy/live_long_844e8d0.json";
 import { isShortPageGrowth } from "../../src/js/comment_parse";
@@ -351,7 +352,8 @@ describe("upstream pttbbs 產的實況模式（490ceaf：只認 q 離開）", ()
       const on = at(fx, "live-on");
       const last = on.rowTexts[on.facts.rows - 1];
       expect(last).toMatch(/^ 實況中 \d\d:\d\d \[\+0\]/);
-      expect(last).toContain("(q)離開");
+      // 417c9cb 起 ← 也離開：「(←/q)離開」；更早是「(q)離開」。
+      expect(last).toMatch(/\((←\/)?q\)離開/);
       expect(last).not.toContain("任意鍵");
       expect(parseStatusRow(last)).toBeNull();
       expect(on.rowTexts.some((t) => t.includes("實 況 開 始"))).toBe(true);
@@ -427,6 +429,33 @@ describe("upstream pttbbs 產的實況模式（490ceaf：只認 q 離開）", ()
       expect(classifyListScreen(off.facts).kind).toBe("clean-list");
       expect(off.buf.pageState).toBe(2);
     }
+  });
+});
+
+// upstream 432e98a：T/M/S 調時可以調成負的（倒數到活動開始），狀態列「 實況中 -10:00 [+N] 」。
+// 認不出就會掉回 PASS（_isAnsiPassFrame）、長推文閘門也不再認得實況。
+describe("upstream pttbbs 產的實況倒數（432e98a：計時可以是負的）", () => {
+  const at = (name) => screenAt(liveCountdownFx, name, { perFrame: true });
+
+  test("按 T 調成 -10:00 ⇒ 仍是實況畫面（pageState 3、不是 PASS），時間是負的", () => {
+    for (const name of ["countdown", "countdown-1"]) {
+      const s = at(name);
+      const last = s.rowTexts[s.facts.rows - 1];
+      expect(last).toMatch(/^ 實況中 -\d\d:\d\d \[\+\d+\]/);
+      expect(s.buf.isLiveScreenNow()).toBe(true);
+      expect(s.buf.isPassScreenNow()).toBe(false);
+      expect(s.buf.pageState).toBe(3);
+      expect(parseLiveStatusRow(last).elapsedSec).toBeLessThan(0);
+    }
+    expect(parseLiveStatusRow(at("countdown").rowTexts[23]).elapsedSec).toBe(-600);
+    expect(parseLiveStatusRow(at("countdown-1").rowTexts[23]).received).toBe(1);
+  });
+
+  test("按 t 調回正的、q 離開回文章列表", () => {
+    const up = at("count-up");
+    expect(parseLiveStatusRow(up.rowTexts[23]).elapsedSec).toBeGreaterThanOrEqual(0);
+    const off = at("live-off");
+    expect(classifyListScreen(off.facts).kind).toBe("clean-list");
   });
 });
 
