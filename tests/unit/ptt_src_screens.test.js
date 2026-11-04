@@ -70,6 +70,12 @@ import liveLongNewFx from "./fixtures/ptt_src_screens/live_long.json";
 import liveShort844Fx from "./fixtures/ptt_src_screens_legacy/live_short_844e8d0.json";
 import liveLong844Fx from "./fixtures/ptt_src_screens_legacy/live_long_844e8d0.json";
 import { isShortPageGrowth } from "../../src/js/comment_parse";
+import {
+  parseLiveStatusRow,
+  findLiveBanner,
+  mergeLiveArticle,
+  mergeLiveWindow,
+} from "../../src/js/live_mode";
 import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
 import { parsePostInfoAid, parsePostInfoUrl } from "../../src/js/aid_parse";
 import articlePrefFx from "./fixtures/ptt_src_screens/article_pref.json";
@@ -353,6 +359,65 @@ describe("upstream pttbbs 產的實況模式（490ceaf：只認 q 離開）", ()
       expect(two.rowTexts[two.facts.rows - 1]).toContain("[+2]");
       expect(parseStatusRow(two.rowTexts[two.facts.rows - 1])).toBeNull();
       expect(two.rowTexts.filter((t) => t.includes("live comment")).length).toBe(2);
+    }
+  });
+
+  // 實況狀態列中段同一底色、游標停右下角，以前被 _isAnsiPassFrame 當成 PASS（5）。
+  test("實況畫面是文章（pageState 3）、不是 PASS；狀態列與橫幅解析得出來", () => {
+    for (const fx of [liveShortNewFx, liveLongNewFx, liveShort844Fx, liveLong844Fx]) {
+      for (const name of ["live-on", "live-1", "live-2"]) {
+        const s = at(fx, name);
+        expect(s.buf.pageState).toBe(3);
+        expect(s.buf.isLiveScreenNow()).toBe(true);
+        expect(s.buf.isPassScreenNow()).toBe(false);
+      }
+      const two = at(fx, "live-2");
+      expect(parseLiveStatusRow(two.rowTexts[two.facts.rows - 1])).toMatchObject({ received: 2 });
+      expect(findLiveBanner(two.rowTexts.slice(0, -1))).toBeGreaterThanOrEqual(0);
+    }
+    // 一般文章頁不是實況
+    const art = at(liveLongNewFx, "article");
+    expect(art.buf.isLiveScreenNow()).toBe(false);
+  });
+
+  // 好讀累積：upstream 的位元組一幀一幀進來，mergeLiveArticle／mergeLiveWindow 接出來的實況段
+  // 要剛好是「橫幅＋每則推文各一列」。
+  test("好讀累積對齊：upstream 的實況畫面逐幀接上，推文各一列、不重複", () => {
+    for (const fx of [liveShortNewFx, liveLongNewFx]) {
+      const article = at(fx, "article");
+      const on = at(fx, "live-on");
+      const onScreen = on.rowTexts.slice(0, -1);
+      const banner = findLiveBanner(onScreen);
+      let acc = article.rowTexts.slice(0, -1);
+      if (fx === liveLongNewFx) {
+        // 長文的 article 幀只有第 1 頁（1~17 行），實況畫面的文章段是最後一頁（19~40 行）：
+        // 中間沒讀到 ⇒ 不接管（接上去會靜默缺字）。
+        expect(mergeLiveArticle({ accTexts: acc, screenTexts: onScreen })).toBeNull();
+        // 好讀自動翻頁讀完整篇之後（累積頁的尾巴就是最後一頁）才接得上。
+        acc = acc.concat(onScreen.slice(0, banner));
+      }
+      const m = mergeLiveArticle({ accTexts: acc, screenTexts: onScreen });
+      expect(m).not.toBeNull();
+      expect(m.articleFrom).toBe(m.articleTo); // 文章段整段都已在累積頁裡
+      expect(m.liveFrom).toBe(banner);
+      let live = on.rowTexts.slice(m.liveFrom, m.liveTo);
+      let received = 0;
+      for (const name of ["live-1", "live-2"]) {
+        const s = at(fx, name);
+        const st = parseLiveStatusRow(s.rowTexts[s.facts.rows - 1]);
+        const d = mergeLiveWindow({
+          liveTexts: live,
+          screenTexts: s.rowTexts.slice(0, -1),
+          receivedDelta: st.received - received,
+        });
+        received = st.received;
+        expect(d.action).toBe("append");
+        live = live.concat(s.rowTexts.slice(d.from, d.to));
+      }
+      expect(live).toHaveLength(3);
+      expect(live[0]).toContain("實 況 開 始");
+      expect(live[1]).toContain("first live comment");
+      expect(live[2]).toContain("second live comment");
     }
   });
 

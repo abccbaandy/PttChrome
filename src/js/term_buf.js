@@ -31,6 +31,7 @@ import {
   rowHasAnyTitle,
   rowHasTitle
 } from './screen_titles';
+import { isLiveStatusRow } from './live_mode';
 
 // Quiet period (ms) after the last redraw window before pageState is promoted to
 // `settledPageState`. Must exceed the 30ms notify debounce so a transient
@@ -1445,10 +1446,18 @@ TermBuf.prototype = {
   },
 
   // ansi drawing screen to pass：row0 不是反白標題列、末列中段同色、游標 park 在右下角。
+  // 官方推文實況（more.c#live_run）的狀態列中段也是同一底色、游標也停右下角 ⇒ 不排除就被
+  // 當成 PASS 畫面（pageState 5）。實況是文章的一種顯示，見 setPageState。
   _isAnsiPassFrame: function() {
     var lastRowNum = this.rows - 1;
+    if (isLiveStatusRow(this.getRowText(lastRowNum, 0, this.cols))) return false;
     return !(this.isUnicolor(0, 0, 29) && this.isUnicolor(0, this.cols-20, this.cols-10)) &&
       this.isUnicolor(lastRowNum, 28, 53) && this.cur_y == lastRowNum && this.cur_x == this.cols-1;
+  },
+
+  // 本幀是不是官方推文實況（底列是實況狀態列）。pageState 也是 3，只看 pageState 分不出來。
+  isLiveScreenNow: function() {
+    return isLiveStatusRow(this.getRowText(this.rows - 1, 0, this.cols));
   },
 
   isPassScreenNow: function() {
@@ -1489,6 +1498,13 @@ TermBuf.prototype = {
     }
     if (parseStatusRow(lastRowText)) {
       this.pageState = 3; // READING
+      return;
+    }
+    // 官方推文實況（文章裡按 v，more.c#live_run）：畫面是文章最後一頁＋推文，底列是實況自己的
+    // 狀態列。仍是「在文章裡」（q 回文章列表）⇒ 3；要分辨就問 isLiveScreenNow()。
+    // 以前落到下面的 _isAnsiPassFrame 被判成 5（PASS），好讀只能原生鏡像。
+    if (isLiveStatusRow(lastRowText)) {
+      this.pageState = 3;
       return;
     }
     // 信件列表（mail.c 走 read.c 的 i_read）：底下的單色判準認不出它（欄位標題列右端的

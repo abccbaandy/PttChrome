@@ -22,6 +22,19 @@ export function openPromptText(buf) {
   return String(text || '').trim() || '?';
 }
 
+// 底列是不是 live_check_repeat 那一題（「要直接進入實況模式看新推文嗎？ [Y/n]: 」）。
+// 只比字樣的前半：[Y/n] 與後面的游標欄是 vans 的固定格式，字樣本身才是指紋。
+export function isLiveRepeatPrompt(lastRowText) {
+  return /要直接進入實況模式看新推文嗎/.test(String(lastRowText || ''));
+}
+
+// 婉拒的答案。vans 是 vgets(buf, 3, VGET_LOWERCASE)：要帶 ⏎ 才送出，答案不是 'n' 就進實況。
+//
+// **只有「⏎ 是我們替使用者按、目的就是回到文章」的交易才可以替他答 n**（長推文的重開文章：
+// 每段推文都要開回去一次，使用者推個幾段就撞上這題，而他從頭到尾都沒有要進實況）。
+// 使用者自己的開文（列表好讀、AID 跳文／重新整理）仍照上面的規則停手讓他答。
+export const LIVE_REPEAT_DECLINE = 'n\r';
+
 // 給使用者看的提示。
 export function openPromptHint(text) {
   if (/實況模式/.test(text)) return 'PTT 問你要不要直接進入實況模式（同一篇連開多次），請直接回答';

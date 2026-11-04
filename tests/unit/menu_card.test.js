@@ -232,7 +232,6 @@ function makeApp({ cur_y = MAIN_MENU_CURSOR_ROW, leftClick = true } = {}) {
   }));
   app.activeListSession = vi.fn(() => null);
   app.onMouse_click = vi.fn();
-  app.onDisableLiveHelperModalState = vi.fn();
   app.setInputAreaFocus = vi.fn();
   app.checkClass = vi.fn(() => false);
   app._onUploadLayer = vi.fn(() => false);

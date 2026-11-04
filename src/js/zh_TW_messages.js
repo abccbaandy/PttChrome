@@ -299,7 +299,7 @@
     "message": "顯示「輸入小幫手」（打 ANSI 色碼／符號／表情）"
   },
   "options_enableLiveArticleHelper": {
-    "message": "顯示「Live 文小幫手」（定時自動更新推文）"
+    "message": "顯示「Live 文小幫手」（PTT 官方推文實況：新推文即時出現）"
   },
   "options_enableLongPush": {
     "message": "顯示「長推文一鍵發送」（自動分段依序推文）"
@@ -1706,7 +1706,7 @@
     "message": "到底"
   },
   "options_endTurnsOnLiveUpdate": {
-    "message": "END 啟用推文即時更新"
+    "message": "Live 文小幫手開著時，在文章裡按 END 開始推文實況"
   },
   "options_connection": {
     "message": "連線"
@@ -2397,15 +2397,39 @@
     "message": "其他"
   },
 
-  // live helper
-  "liveHelperEnable": {
-    "message": "啟用"
+  // live helper（PTT 官方推文實況，js/live_helper.js）
+  "liveHelperTitle": {
+    "message": "推文實況"
   },
-  "liveHelperSpan": {
-    "message": "推文每"
+  "liveHelperStart": {
+    "message": "開始實況"
   },
-  "liveHelperSpanSec": {
-    "message": "秒自動更新"
+  "liveHelperLeave": {
+    "message": "離開實況"
+  },
+  "liveHelperOn": {
+    "message": "實況中"
+  },
+  "liveHelperReceived": {
+    "message": "新推文 %d 則"
+  },
+  "liveHelperBellOn": {
+    "message": "鈴聲：開"
+  },
+  "liveHelperBellOff": {
+    "message": "鈴聲：關"
+  },
+  "liveHelperReadyNote": {
+    "message": "新推文會即時出現在文末"
+  },
+  "liveHelperNeedArticle": {
+    "message": "在文章裡才能開始實況"
+  },
+  "liveHelperBusy": {
+    "message": "指令處理中，請稍候…"
+  },
+  "liveHelperClose": {
+    "message": "關閉 Live 文小幫手"
   },
 
   // tooltips

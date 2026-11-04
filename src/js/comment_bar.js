@@ -256,7 +256,10 @@ CommentBar.prototype = {
     const core = this._core;
     const er = core.easyReading;
     const buf = core.buf;
-    return !!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode && (buf.pageLines || []).length);
+    return !!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode && (buf.pageLines || []).length &&
+      // 官方推文實況：留言走實況自己的 (X)留言（footer 上那顆）。這一列送出走長推文，而長推文
+      // 假設推完回列表再重開、取 AID 要按 Q——實況裡 Q 是「離開」（long_push_session.startPreflight）。
+      !(typeof buf.isLiveScreenNow === 'function' && buf.isLiveScreenNow()));
   },
 
   // 終端機可見內容的下緣：好讀 footer 顯示中＝它的上緣，否則 .main 的下緣。

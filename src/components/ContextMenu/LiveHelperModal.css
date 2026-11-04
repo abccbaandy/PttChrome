@@ -5,6 +5,7 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
+  max-width: calc(100vw - 32px);
 }
 
 .LiveHelperModal__Body {
@@ -13,4 +14,16 @@
 
 .LiveHelperModal__Body__Text {
   white-space: nowrap;
+}
+
+/* 「實況中 mm:ss」：配色取自 PTT 實況狀態列 part1（more.c#live_draw_status 的 1;37;42）。 */
+.LiveHelperModal__OnAir {
+  white-space: nowrap;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 700;
+  color: #fff;
+  background: #2f9e44;
+  border-radius: var(--mantine-radius-sm);
+  padding: 2px 8px;
+  font-variant-numeric: tabular-nums;
 }

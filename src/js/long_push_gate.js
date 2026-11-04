@@ -15,6 +15,7 @@
 // 「游標錨定」）。列表按 X 一律維持 PTT 原生行為。
 
 import { parsePagerFooterContext, parseStatusRow } from './string_util';
+import { isLiveStatusRow } from './live_mode';
 
 // CONFIRMED（pttbbs mbbsd/more.c:90-93）：pager 的 key handler 只有這兩個 case 回
 // RET_DORECOMMEND ⇒ 只有它們是「推文鍵」。**小寫 x 不是**（pager 完全沒綁，列表
@@ -32,6 +33,8 @@ export function isPushKey(key) {
 // footer 會因為寬度不夠整段消失（string_util.js 的說明）。
 // 看板精華區開的文章（pagerFromEssence，TermBuf.pagerContext）footer 有「推文」，
 // 但 X 只會退回精華區選單 ⇒ 同樣不給。
+// 官方推文實況（底列是實況狀態列，pageState 也是 3）：X 是實況自己的「留言」，推完留在實況裡；
+// 長推文假設推完回列表再重開、取 AID 要按 Q（實況裡 Q 是「離開」）⇒ 不給。
 export function longPushAvailable(opts) {
   const o = opts || {};
   const prefs = o.prefs || {};
@@ -39,7 +42,8 @@ export function longPushAvailable(opts) {
     !!prefs.enableLongPush &&
     o.pageState === 3 &&
     !o.pagerFromEssence &&
-    parsePagerFooterContext(o.lastRowText) !== 'mail'
+    parsePagerFooterContext(o.lastRowText) !== 'mail' &&
+    !isLiveStatusRow(o.lastRowText)
   );
 }
 

@@ -226,6 +226,17 @@ describe("NextArticle：何時出現", () => {
     expect(next.state.visible).toBe(true);
     expect(next.state.entry).toMatchObject({ num: 102, author: "bob", title: "[問題] 第二篇", recommend: "5" });
   });
+  // 官方推文實況：讀者停在文末看新推文，不是讀完了；PTT 這時只認 q，換篇的鍵送不進去。
+  test("官方推文實況中 ⇒ 不出現（文末一直在長，在文末往下捲不可以換篇）", () => {
+    const { core, next, show, read } = makeCore();
+    show(PAGE());
+    core.buf.isLiveScreenNow = () => true;
+    read("C_Chat", "alice", "[閒聊] 第一篇");
+    expect(next.state.visible).toBe(false);
+    core.buf.isLiveScreenNow = () => false;
+    show(articleScreen());
+    expect(next.state.visible).toBe(true);
+  });
   test("下一列被刪 ⇒ 跳過它", () => {
     const { next, show, read } = makeCore();
     show(PAGE());

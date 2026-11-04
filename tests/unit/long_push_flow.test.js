@@ -25,6 +25,7 @@ import {
   ANCHOR_ROW,
   PINNED_ANCHOR_ROW,
   OTHER_ROW,
+  LIVE_REPEAT_PROMPT,
 } from "./helpers/long_push_harness";
 import { VK_NORMAL, nextSendState } from "../../src/js/vtkbd_send_state";
 
@@ -279,6 +280,30 @@ describe("送完之後的落地", () => {
     h.session.start({ text: "內容", type: "push" });
     runOne(h);
     expect(h.sent).toHaveLength(4);
+  });
+
+  // more.c#live_check_repeat：同一篇連開 10 次後，第 11 次開文前在列表殘影的底列 vans
+  // 「要直接進入實況模式看新推文嗎？ [Y/n]: 」。長推文每段都要重開文章（探路一次、收工一次），
+  // 推幾段就撞上它。那個 ⏎ 是我們替使用者按的、目的是「回到文章」⇒ 答 n 繼續開文；
+  // 以前停在提示上等到逾時，畫面留著問題、使用者以為是長推文壞了。
+  test("重開文章時 PTT 問要不要進實況 → 答 n、照常回到文章", () => {
+    const h = harness();
+    h.session.start({ text: "內容", type: "push" });
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT);
+    h.settle(CONFIRM);
+    h.settleList([OTHER_ROW(1233), ANCHOR_ROW(1234, true)], 1);
+    expect(h.sent[h.sent.length - 1]).toBe("\r");
+    h.settle(LIVE_REPEAT_PROMPT, { kind: "other" });
+    // vans 讀的是 vgets(buf, 3)：要帶 ⏎ 才送出；不是 n 就會進實況。
+    expect(h.sent[h.sent.length - 1]).toBe("n\r");
+    expect(h.session.active).toBe(true);
+    h.settle(ARTICLE_FOOTER);
+    expect(h.session.active).toBe(false);
+    expect(h.results).toEqual([]);
+    expect(h.toBottom).toBe(1);
+    // 只答一次：之後沒有多送任何鍵。
+    expect(h.sent.filter((s) => s === "n\r")).toHaveLength(1);
   });
 });
 

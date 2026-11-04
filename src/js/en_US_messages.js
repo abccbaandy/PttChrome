@@ -299,7 +299,7 @@ export const en_US = {
     "message": "Show \"Input helper\" (ANSI colors, symbols, emoticons)"
   },
   "options_enableLiveArticleHelper": {
-    "message": "Show \"Live article helper\" (auto-refresh comments)"
+    "message": "Show \"Live article helper\" (PTT live comments: new comments appear as they are posted)"
   },
   "options_enableLongPush": {
     "message": "Show \"Send long comment\" (auto-split into multiple comments)"
@@ -1707,7 +1707,7 @@ export const en_US = {
     "message": "End"
   },
   "options_endTurnsOnLiveUpdate": {
-    "message": "Press END turns on thread live update."
+    "message": "While the live article helper is open, press END in an article to go live."
   },
   "options_connection": {
     "message": "Connection"
@@ -2398,15 +2398,39 @@ export const en_US = {
     "message": "Others"
   },
 
-  // live helper
-  "liveHelperEnable": {
-    "message": "Enable"
+  // live helper（PTT 官方推文實況，js/live_helper.js）
+  "liveHelperTitle": {
+    "message": "Live comments"
   },
-  "liveHelperSpan": {
-    "message": "thread refreshes every"
+  "liveHelperStart": {
+    "message": "Go live"
   },
-  "liveHelperSpanSec": {
-    "message": "sec"
+  "liveHelperLeave": {
+    "message": "Leave live"
+  },
+  "liveHelperOn": {
+    "message": "LIVE"
+  },
+  "liveHelperReceived": {
+    "message": "%d new"
+  },
+  "liveHelperBellOn": {
+    "message": "Bell: on"
+  },
+  "liveHelperBellOff": {
+    "message": "Bell: off"
+  },
+  "liveHelperReadyNote": {
+    "message": "New comments appear at the end as they are posted"
+  },
+  "liveHelperNeedArticle": {
+    "message": "Open an article to go live"
+  },
+  "liveHelperBusy": {
+    "message": "Busy, please wait…"
+  },
+  "liveHelperClose": {
+    "message": "Close live article helper"
   },
 
   // tooltips

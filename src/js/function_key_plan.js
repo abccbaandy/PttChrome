@@ -16,16 +16,23 @@
 //   send              — 一律 true（使用者按下去的按鈕不可以被靜默吞掉）。呼叫端仍會
 //                       自己判 modal / 導航中 / 指令處理中並**給提示**，那些不在這裡。
 
+import { liveKeyMirrors } from './live_mode';
+
 // 左方向鍵。與 term_keyboard 的 KeyMap['ArrowLeft'] 同一個序列；
 // list_session._enqueueLeaveKey 用的也是它。
 export const LEFT_ARROW = '\x1b[D';
 
 // mode：'article-easy'（文章好讀，累積長頁在畫面上）／其餘一律當原生處理。
+// 'live-easy'：文章好讀正在接官方推文實況（底部 footer 鏡像的是實況狀態列：(X)留言 (B)鈴聲
+// (T/M/S)調時 (q)離開）。只有留言／離開要切鏡像，其餘只改狀態列，畫面留在好讀。
 export function functionKeyClickPlan(input) {
   const o = input || {};
   const bytes = o.bytes;
   const articleEasy = o.mode === 'article-easy';
   if (!bytes) return { enterFunctionMode: false, stopEasyReading: false, send: false };
+  if (o.mode === 'live-easy') {
+    return { enterFunctionMode: liveKeyMirrors(bytes), stopEasyReading: false, send: true };
+  }
   if (!articleEasy) {
     return { enterFunctionMode: false, stopEasyReading: false, send: true };
   }

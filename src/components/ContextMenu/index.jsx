@@ -84,6 +84,14 @@ import { clearDraft, writeDraft } from "../../js/long_push_draft";
 import { quickPushPlan } from "../../js/comment_bar";
 import { serializedOpHint } from "../../js/serialized_op_gate";
 import {
+  liveHelperFacts,
+  startLive,
+  leaveLive,
+  toggleLiveBell,
+  sameLiveHelperView,
+  LIVE_HELPER_POLL_MS,
+} from "../../js/live_helper";
+import {
   availableSearchKinds,
   normalizeSearchText,
   searchGateFacts,
@@ -392,8 +400,8 @@ const initialState = {
   // 從指令面板挑了某個設定項：設定頁開啟後跳到那一項（PrefModal jumpTarget）。
   prefJump: null,
   // --- LiveHelper state ---
-  liveHelperEnabled: false,
-  liveHelperSec: 1,
+  // js/live_helper.liveHelperFacts 的結果（面板開著時每半秒重讀一次本幀）。
+  liveHelperView: null,
 };
 
 export const ContextMenu = ({ pttchrome }) => {
@@ -944,7 +952,7 @@ export const ContextMenu = ({ pttchrome }) => {
     },
     [pttchrome, openLongPush],
   );
-  // App → React 的注入，比照 onToggleLiveHelperModalState。**不掛 pref 當
+  // App → React 的注入，比照 onLiveHelperEndKey。**不掛 pref 當
   // dependency**：能不能攔是每次按鍵現算的（pageState／底列，見 long_push_gate），
   // 綁上去會做出「改完設定要重開選單才生效」的怪行為。
   useEffect(() => {
@@ -1231,7 +1239,6 @@ export const ContextMenu = ({ pttchrome }) => {
       const hint = (msg, level) =>
         pttchrome.view?.flashListHint?.(msg, 3000, level);
       if (item.kind === "setting" || item.action === "settings") {
-        pttchrome.onDisableLiveHelperModalState?.();
         // 同一次 update 關面板、開設定頁：分兩次的話 modalOpen 會 true→false→true，
         // 中間那一幀終端機把焦點搶回 #t（modal_shown_sources.test.js 守的那個坑）。
         update({
@@ -1308,7 +1315,11 @@ export const ContextMenu = ({ pttchrome }) => {
     (event) => {
       event.stopPropagation();
       pttchrome.contextMenuShown = false;
-      update({ ...initialState, showsLiveArticleHelper: true });
+      update({
+        ...initialState,
+        showsLiveArticleHelper: true,
+        liveHelperView: liveHelperFacts(pttchrome),
+      });
     },
     [pttchrome, update],
   );
@@ -1317,7 +1328,6 @@ export const ContextMenu = ({ pttchrome }) => {
     (event) => {
       event.stopPropagation();
       pttchrome.contextMenuShown = false;
-      pttchrome.onDisableLiveHelperModalState();
       update({ ...initialState, showsSettings: true });
     },
     [pttchrome, update],
@@ -1335,7 +1345,6 @@ export const ContextMenu = ({ pttchrome }) => {
     [pttchrome, openSearch],
   );
   const onToolbarSettings = useCallback(() => {
-    pttchrome.onDisableLiveHelperModalState();
     update({ ...initialState, showsSettings: true });
   }, [pttchrome, update]);
 
@@ -1409,31 +1418,21 @@ export const ContextMenu = ({ pttchrome }) => {
   );
 
   const onLiveHelperHide = useCallback(() => {
-    pttchrome.setAutoPushthreadUpdate(-1);
-    update({
-      showsLiveArticleHelper: false,
-      liveHelperEnabled: false,
-    });
-  }, [pttchrome, update]);
-  const onLiveHelperChange = useCallback(
-    (nextState) => {
-      if (nextState.enabled) {
-        // cancel easy reading mode first — always through the single exit entry point
-        // (exitEasyReading), never by flipping useEasyReadingMode by hand: the exit
-        // recipe also clears sendCommandAfterUpdate/pageLines and restores the overlay
-        // rows. Guarded by easy-reading.offline.spec.js「LiveHelper 启用 → 关好读单一出口」.
-        pttchrome.easyReading.exitEasyReading();
-        pttchrome.setAutoPushthreadUpdate(nextState.sec);
-      } else {
-        pttchrome.setAutoPushthreadUpdate(-1);
-      }
-      update({
-        liveHelperEnabled: nextState.enabled,
-        liveHelperSec: nextState.sec,
-      });
+    update({ showsLiveArticleHelper: false, liveHelperView: null });
+  }, [update]);
+  // 三個動作都只在本幀認得出來的畫面上送那一個鍵（js/live_helper.js）；送不出去＝畫面已經變了，
+  // 下一次重讀就會反映在面板上。送完把焦點還給終端機（面板不是 modal，鍵盤本來就該在 #t）。
+  const runLiveAction = useCallback(
+    (action) => {
+      action(pttchrome);
+      update({ liveHelperView: liveHelperFacts(pttchrome) });
+      pttchrome.setInputAreaFocus?.();
     },
     [pttchrome, update],
   );
+  const onLiveHelperStart = useCallback(() => runLiveAction(startLive), [runLiveAction]);
+  const onLiveHelperLeave = useCallback(() => runLiveAction(leaveLive), [runLiveAction]);
+  const onLiveHelperBell = useCallback(() => runLiveAction(toggleLiveBell), [runLiveAction]);
 
   // 錄製鈕在「⋯」浮動工具裡（純 JS 渲染鏈），由 App 的 debugMode 決定出不出現；
   // 關閉時若仍在錄製，App.setDebugMode 會先停止並下載（不丟資料）。
@@ -1459,33 +1458,33 @@ export const ContextMenu = ({ pttchrome }) => {
     [pttchrome, update],
   );
 
-  // Expose the live-helper toggle/disable hooks on pttchrome (used by term_view's
-  // End handler). Re-bind whenever the enabled flag flips. (The recompose version
-  // referenced an out-of-scope `state` here and would ReferenceError if the toggle
-  // ever ran; read the current flags from stateRef instead.)
-  const liveHelperEnabled = state.liveHelperEnabled;
+  // 面板開著時：每半秒重讀本幀（實況計時、收到幾則、鈴聲、現在能不能開始），並把 End 鍵入口
+  // （App.onLiveHelperEndKey，term_view.onKeyDown 在好讀之前問它）接上「開始實況」。
+  // 面板關掉就解綁成 noop ⇒ End 回到原本的行為。
+  const liveHelperShown = state.showsLiveArticleHelper;
   useEffect(() => {
-    if (liveHelperEnabled) {
-      pttchrome.onToggleLiveHelperModalState = () => {
-        onLiveHelperChange({
-          enabled: !stateRef.current.liveHelperEnabled,
-          sec: stateRef.current.liveHelperSec,
-        });
-        // Signal to term_view's End handler that the key was consumed; the noop
-        // bound below (helper inactive) returns undefined so End falls through.
-        return true;
-      };
-      pttchrome.onDisableLiveHelperModalState = () => {
-        onLiveHelperChange({
-          enabled: false,
-          sec: stateRef.current.liveHelperSec,
-        });
-      };
-    } else {
-      pttchrome.onToggleLiveHelperModalState =
-        pttchrome.onDisableLiveHelperModalState = noop;
+    if (!liveHelperShown) {
+      pttchrome.onLiveHelperEndKey = noop;
+      return undefined;
     }
-  }, [liveHelperEnabled, pttchrome, onLiveHelperChange]);
+    pttchrome.onLiveHelperEndKey = () => {
+      if (!startLive(pttchrome)) return false;
+      update({ liveHelperView: liveHelperFacts(pttchrome) });
+      return true;
+    };
+    const timer = setInterval(() => {
+      const next = liveHelperFacts(pttchrome);
+      setState((st) =>
+        sameLiveHelperView(st.liveHelperView, next)
+          ? st
+          : { ...st, liveHelperView: next },
+      );
+    }, LIVE_HELPER_POLL_MS);
+    return () => {
+      clearInterval(timer);
+      pttchrome.onLiveHelperEndKey = noop;
+    };
+  }, [liveHelperShown, pttchrome, update]);
 
   // Global listeners for opening/closing the menu and its hotkeys. Mounted once;
   // the callbacks are stable (deps are pttchrome + the stable `update`).
@@ -1556,6 +1555,7 @@ export const ContextMenu = ({ pttchrome }) => {
     showsTitleBlacklist,
     titleBlacklistDraft,
     showsLiveArticleHelper,
+    liveHelperView,
     showsSettings,
     showsSearch,
     searchKind,
@@ -1567,7 +1567,6 @@ export const ContextMenu = ({ pttchrome }) => {
     prefJump,
     commandPaletteEnabled,
     commandPaletteKey,
-    liveHelperSec,
     menuAnchor,
   } = state;
 
@@ -1631,9 +1630,10 @@ export const ContextMenu = ({ pttchrome }) => {
         <LiveHelperModal
           show={showsLiveArticleHelper}
           onHide={onLiveHelperHide}
-          enabled={liveHelperEnabled}
-          sec={liveHelperSec}
-          onChange={onLiveHelperChange}
+          view={liveHelperView}
+          onStart={onLiveHelperStart}
+          onLeave={onLiveHelperLeave}
+          onBell={onLiveHelperBell}
         />
       </Suspense>
       <TitleBlacklistModal

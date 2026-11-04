@@ -20,6 +20,8 @@ export const ARTICLE_FOOTER =
   "  瀏覽 第 1/2 頁 ( 50%)  目前顯示: 第 01~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
 export const vmsg = (msg) => " ◆ " + msg + "          [按任意鍵繼續]";
 export const LIST_FOOTER = " 文章選讀  (y)回應(X)推文(^X)轉錄 ";
+// more.c#live_check_repeat 的 vans（同一篇連開 10 次後，第 11 次開文前問）。
+export const LIVE_REPEAT_PROMPT = "要直接進入實況模式看新推文嗎？ [Y/n]: ";
 export const AID = "1_abcDEF";
 // 長推文綁定的那一篇，文章標頭與列表列都用它。
 export const ANCHOR_AUTHOR = "abcUser";
@@ -68,6 +70,8 @@ export function harness(opts) {
     cols: 80,
     pageState: o.pageState === undefined ? 3 : o.pageState,
     getRowText: (r) => rowTexts[r] || "",
+    // 官方推文實況（term_buf.isLiveScreenNow）：o.live 為真時當成實況畫面。
+    isLiveScreenNow: () => !!o.live,
     // 推文輸入欄的反白寬度（term_buf.inputFieldWidth）。每一幀由 settle 的
     // over.fieldWidth 設定，預設 null ＝ 量不到 ⇒ session 退回公式。
     inputFieldWidth: () => fieldWidth,

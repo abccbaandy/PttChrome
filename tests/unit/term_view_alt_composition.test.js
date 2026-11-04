@@ -14,7 +14,6 @@ import {
   TermView,
   acceptsKeyEvent,
   altRemapRecently,
-  cancelsLiveHelper,
   ALT_COMPOSITION_SUPPRESS_MS,
 } from "../../src/js/term_view";
 
@@ -171,29 +170,5 @@ describe("onInput：dead key commit 出來的重音字元不得送進 PTT", () =
     const { c, got } = ctx(Date.now() - ALT_COMPOSITION_SUPPRESS_MS - 10);
     TermView.prototype.onInput.call(c, { target: { value: "中" } });
     expect(got).toEqual(["中"]);
-  });
-});
-
-describe("cancelsLiveHelper：Alt remap 算下指令", () => {
-  test("Alt remap 與一般鍵都關掉實況更新", () => {
-    expect(cancelsLiveHelper(keyEvent("a", { altKey: true, code: "KeyA" }))).toBe(true);
-    expect(cancelsLiveHelper(keyEvent("√", { altKey: true, code: "KeyV" }))).toBe(true);
-    expect(cancelsLiveHelper(keyEvent("a"))).toBe(true);
-    expect(cancelsLiveHelper(keyEvent("a", { ctrlKey: true }))).toBe(true);
-  });
-
-  test("單獨輕點 Alt（要去開瀏覽器選單）不關 —— 不可簡化成一律 true", () => {
-    expect(cancelsLiveHelper(keyEvent("Alt", { altKey: true, code: "AltLeft" }))).toBe(
-      false
-    );
-  });
-
-  test("非 remap 的 Alt 組合（瀏覽器的）不關", () => {
-    expect(
-      cancelsLiveHelper(keyEvent("ArrowLeft", { altKey: true, code: "ArrowLeft" }))
-    ).toBe(false);
-    expect(cancelsLiveHelper(keyEvent("5", { altKey: true, code: "Digit5" }))).toBe(
-      false
-    );
   });
 });

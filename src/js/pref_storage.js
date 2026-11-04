@@ -360,8 +360,8 @@ export const DEFAULT_PREFS = {
 
   // 右鍵選單裡兩個小幫手的顯示開關。**預設關**：它們是小眾功能（打 ANSI 色碼、
   // 追 Live 文），卻長年佔著每個人的選單。關掉＝那一項不畫出來；Live 文小幫手的
-  // End 鍵 toggle 也跟著失效，因為那條路要先從選單開啟浮層才會掛上去
-  // （見 ContextMenu/index.jsx 的 onToggleLiveHelperModalState）。
+  // End 鍵（開始推文實況）也跟著失效，因為那條路要先從選單開啟浮層才會掛上去
+  // （見 ContextMenu/index.jsx 的 onLiveHelperEndKey）。
   enableInputHelper: false,
   enableLiveArticleHelper: false,
 

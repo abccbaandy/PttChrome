@@ -517,58 +517,9 @@ test.describe('好读 End 切回原生（离线重放）', () => {
   });
 });
 
-// 关好读的「单一出口」守门：任何手动关好读的路径都必须走 easyReading.exitEasyReading()，
-// 且退出后画面要回原生 24 列并**仍随后续资料重绘**。LiveHelper（Live 文小帮手）启用是其中
-// 一条只由 UI 驱动、程式无其他入口的路径（src/components/ContextMenu/index.jsx
-// onLiveHelperChange），过去只有 comment 说明没有测试；漏呼叫或改用不完整的退出配方时
-// 症状是好读长页留在画面上／退出后不再更新。故从真实右键选单驱动整链。
-const liveHelperCassette = findCassettes('article')[0];
-
-test.describe('LiveHelper 启用 → 关好读单一出口（离线重放）', () => {
-  test.skip(!liveHelperCassette, '尚无 article cassette；先 yarn record:cassette');
-
-  test('右键开 Live 文小帮手并启用 → 退出好读、回原生且画面仍能重绘', async ({ page }) => {
-    test.setTimeout(90000);
-    const errors = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-
-    await bootOffline(page, ptt);
-    // Live 文小帮手**预设不显示**在右键选单（pref enableLiveArticleHelper）：先开。
-    await ptt.applyPrefs(page, {
-      enableEasyReading: true,
-      enableLiveArticleHelper: true,
-    });
-    await replayCassette(page, liveHelperCassette, { easyReading: true });
-
-    expect(await page.evaluate(() => window.__app.view.useEasyReadingMode)).toBe(true);
-
-    // 右键选单 →「Live 文小帮手 ...」→ modal 的「启用」钮（locale 无关：走 window.__i18n）。
-    await page.locator('#BBSWindow').click({ button: 'right', position: { x: 40, y: 20 } });
-    const menu = page.locator('.DropdownMenu').first();
-    await expect(menu).toBeVisible();
-    const liveLabel = await page.evaluate(() => window.__i18n('cmenu_showLiveArticleHelper'));
-    await menu.getByText(liveLabel, { exact: true }).click();
-    const modal = page.locator('.LiveHelperModal');
-    await expect(modal).toBeVisible();
-    const enableLabel = await page.evaluate(() => window.__i18n('liveHelperEnable'));
-    await modal.getByRole('button', { name: enableLabel }).click();
-
-    // 好读必须已关闭、累积长页已清（完整退出配方，非只翻旗标）。
-    await expect
-      .poll(() => page.evaluate(() => window.__app.view.useEasyReadingMode))
-      .toBe(false);
-    expect(await page.evaluate(() => window.__app.buf.pageLines.length)).toBe(0);
-
-    // 画面仍活：喂一帧原生画面应立即反映，且 DOM 收回单页 24 列（长页不残留）。
-    await feedRaw(page, '\x1b[2J\x1b[H  LIVE HELPER REDRAW PROBE  ');
-    await expect(page.locator('#mainContainer')).toContainText('LIVE HELPER REDRAW PROBE');
-    const mcChildren = await page.evaluate(
-      () => document.getElementById('mainContainer').childNodes.length
-    );
-    expect(mcChildren).toBeLessThanOrEqual(24);
-    expect(errors).toEqual([]);
-  });
-});
+// Live 文小帮手以前启用时要先关好读（它自己轮询 ←→End，跟好读的累积页不相容），这里守过那条
+// 「关好读单一出口」。改用 PTT 官方推文实况后好读照样开着、推文接在累积页后面，见
+// live_mode.offline.spec.js「Live 文小帮手」。
 
 // ---------------------------------------------------------------------------
 // 掉页（typeahead 跳绘）回归 —— 使用者回报的「※ 发信站/※ 文章网址 那段消失」。

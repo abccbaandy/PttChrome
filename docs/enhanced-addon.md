@@ -526,8 +526,8 @@ pref keys（`DEFAULT_PREFS`，存 localStorage `pttchrome.pref.v1`）。套用�
 **「一般 → 右鍵選單」分頁**：`enableInputHelper`(**false**)、`enableLiveArticleHelper`(**false**)
 —— 右鍵選單那兩個小幫手選項的顯示開關。走 `enableImageUpload` 那條最輕的鏈路（`ContextMenu/
 index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**不進 `onPrefChange`**）。
-關掉＝選單不畫該項；Live 文小幫手的 End 鍵 toggle 也跟著失效（那條要先從選單開浮層才會掛上
-`onToggleLiveHelperModalState`）。守護 `tests/unit/dropdown_menu_preview.test.jsx`、
+關掉＝選單不畫該項；Live 文小幫手的 End 鍵（開始推文實況）也跟著失效（那條要先從選單開浮層才會掛上
+`onLiveHelperEndKey`）。守護 `tests/unit/dropdown_menu_preview.test.jsx`、
 `tests/unit/pref_modal_context_menu.test.jsx`、`tests/e2e/offline/article_link_menu.offline.spec.js`。
 
 **「一般 → 游標所在列」分頁區塊**：`cursorRowBrighten`(**true**)、`cursorRowBackground`(**false**)
@@ -624,7 +624,7 @@ index.jsx#onContextMenu` 開選單當下 `readValuesWithDefault()` 現讀，**�
 
 - 用途：PTT 改版、增強功能認錯畫面時，使用者一個開關回到原生，不必逐項找。
 - 範圍＝`pref_storage.js#NATIVE_SAFE_MODE_KEYS`：會改寫原生畫面、替使用者送鍵、或攔下原本送給 PTT
-  的按鍵的功能（好讀三件、非導覽後自動回好讀、跳過進板畫面、斷線回原處、首頁儀表板、寬螢幕雙欄閱讀、Live 文自動到底、
+  的按鍵的功能（好讀三件、非導覽後自動回好讀、跳過進板畫面、斷線回原處、首頁儀表板、寬螢幕雙欄閱讀、Live 文小幫手的 End 鍵、
   好讀 F8 切原生、F5／搜尋鍵／推文鍵攔截）。使用者主動觸發的（跳到未讀、AID 跳文、滑鼠點擊、
   圖片上傳）與自動登入（有自己的開關）不在內。新增這類功能時要把它的開關加進名單。
 - **只在讀取端覆寫，不寫回**：判斷一律讀 `readEffectivePrefs()`／`effectivePrefs(values)`

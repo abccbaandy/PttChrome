@@ -144,6 +144,13 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 
 `_enqueueReopen`（全部送完後回文章的那個 `⏎`）**套用同一張表**——開錯文章比推錯更糟。
 
+**重開文章撞上實況提示 ⇒ 替使用者答 `n⏎`**（`open_prompt.isLiveRepeatPrompt`／`LIVE_REPEAT_DECLINE`）：
+`more.c#live_check_repeat` 數「同一篇連續開幾次」（每個 session、換篇歸零），滿 10 次的下一次開文前
+在列表殘影底列 vans「要直接進入實況模式看新推文嗎？ [Y/n]: 」。長推文每段都要開回去一次（探路一次、收工一次），
+推幾段就撞上。那個 `⏎` 是我們按的、目的就是回文章 ⇒ 答 n 繼續落地（答過計數歸零，同一趟只答一次，
+再問就當回不去）。使用者自己的開文（列表好讀、AID 跳文／重新整理）仍照 `open_prompt.js` 停手讓他答。
+守護 `long_push_flow.test.js`／`long_push_preflight.test.js`「要不要進實況」。
+
 **轉錄文**：內文標頭是**原文**作者、列表上印的是轉錄者 ⇒ 第一次比對必定 `moved`，
 靠 `#AID` 定位後重採錨點自癒（`_afterRelocate`），不會每則都重複定位。
 
@@ -193,10 +200,15 @@ IME 那條非補不可：IME 開著時 keydown 的 `keyCode` 是 229，被 `keyE
 直接呼叫它），兩處不可能分歧。刻意的不對稱只有 `atPagerStatusRow`：攔截更嚴格，因為
 **吞掉按鍵比多畫一個選單項嚴重**，而攔不到的退化結果就是原生推文＝今天的行為。
 
+**官方推文實況裡不給**（底列是實況狀態列，pageState 一樣是 3）：`more.c#live_run` 的 X 是「留言」，
+推完 scr_restore 回實況、**不回列表**；取 AID 的 `Q` 在實況裡是「離開」。長推文的前提都不成立 ⇒
+`longPushAvailable` 回 false、`LongPushSession.startPreflight/start` 也拒絕（底部推文列在實況中不出現）。
+實況裡按 X 走原生的實況留言（好讀切鏡像畫出推文 prompt）。
+
 ### 開輸入框的橋接
 
 `App.prototype.openLongPushModal`，預設 `noop`，由 `ContextMenu` 的 `useEffect` 注入
-真實作（比照 `onToggleLiveHelperModalState`）。**回傳值就是合約**：`true` ＝
+真實作（比照 `onLiveHelperEndKey`）。**回傳值就是合約**：`true` ＝
 **我接手了這次按鍵**，呼叫端才可以 `preventDefault()`／不送 byte。ContextMenu 還沒
 mount、已 unmount、以及 `startPreflight` 接不下來（線路上已經有別的序列化操作）都回
 falsy ⇒ 三條入口自動退回原生推文。

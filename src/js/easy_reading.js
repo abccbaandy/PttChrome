@@ -11,6 +11,7 @@ import { renderChunksAround } from '../render/screen_chunk';
 import { isJumpParkedListScreen } from './list_session';
 import { createBottomStick } from './bottom_stick';
 import { recordFor } from './reading_record';
+import { isLiveStatusRow, liveKeyMirrors } from './live_mode';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -144,7 +145,7 @@ export function nextEasyReadingRowState({
   pageState, startedEasyReading,
   reachedPageEnd, sendCommandAfterUpdate, ignoreOneUpdate,
   curX, curY, lastRowNum, lastColNum,
-  isStatusRow, lastRowFirstChFg, lastRowFirstChBg, pagePercent
+  isStatusRow, lastRowFirstChFg, lastRowFirstChBg, pagePercent, isLiveRow
 }) {
   let pageStateOverride = null;
   let consumeIgnoreOneUpdate = false;
@@ -183,6 +184,10 @@ export function nextEasyReadingRowState({
             sendCommandAfterUpdate = '[6~';
           }
         }
+      } else if (isLiveRow) {
+        // 官方推文實況（文章裡按 v）：還在文章裡，但畫面是 live_run 的，不是 pmore 的頁 ⇒
+        // 不翻頁（PageDown 在實況裡沒有意義）、讀完與否維持原判，也不是 PASS 畫面。
+        // 推文由 term_view._accumulateLive 接進累積頁。
       } else {
         pageStateOverride = 5;
         startedEasyReading = false;
@@ -386,8 +391,11 @@ export function nextReverseReadDecision({
 //              settle re-enable pick up the next article.
 //   'stay'   — anything else (the prompt/menu is still up, or an editor/pass screen
 //              5/6/0, or a transient): keep mirroring native.
-export function functionModeExitDecision({ pageState, isStatusRow, curY, lastRowNum }) {
+export function functionModeExitDecision({ pageState, isStatusRow, curY, lastRowNum, isLiveRow }) {
   if (pageState === 3 && isStatusRow && curY === lastRowNum) return 'resume';
+  // 官方推文實況（按 v 進來、或留言完 scr_restore 回來）：狀態列是實況的 ⇒ 回好讀，由
+  // term_view._accumulateLive 把推文接在累積頁後面（認不出時它自己退回原生鏡像）。
+  if (pageState === 3 && isLiveRow && curY === lastRowNum) return 'resume';
   if (pageState === 1 || pageState === 2) return 'leave';
   return 'stay';
 }
@@ -650,6 +658,7 @@ EasyReading.prototype._computeRowState = function() {
     lastRowNum,
     lastColNum,
     isStatusRow: !!status,
+    isLiveRow: !status && isLiveStatusRow(lastRowText),
     lastRowFirstChFg: lastRowFirstCh.getFg(),
     lastRowFirstChBg: lastRowFirstCh.getBg()
   });
@@ -1544,6 +1553,7 @@ EasyReading.prototype._enterFunctionMode = function() {
   // are mirroring a native prompt.
   this.sendCommandAfterUpdate = '';
   this._savedScrollTop = this._view.mainDisplay.scrollTop;
+  this._savedAtBottom = !!(this._view._scrolledToBottom && this._view._scrolledToBottom());
   this._functionMode = true;
   this._termBuf.lineChangeds.fill(true);
   this._termBuf.changed = true;
@@ -1602,6 +1612,7 @@ EasyReading.prototype._evalFunctionModeExit = function() {
   const decision = functionModeExitDecision({
     pageState: this._termBuf.pageState,
     isStatusRow: !!parseStatusRow(lastRowText),
+    isLiveRow: isLiveStatusRow(lastRowText),
     curY: this._termBuf.cur_y,
     lastRowNum
   });
@@ -1631,6 +1642,7 @@ EasyReading.prototype._evalFunctionModeExit = function() {
   }
   this._pmorePrefSeen = false;
   if (decision === 'resume') {
+    const wasLive = isEasyReadingLive(this);
     this._termBuf.prevPageState = 3;  // force accumulatePageLines continuation branch
     // Resume = SAME article: a leftover pending-reset would make a short article's
     // first page rebuild (drop accumulation) — clear it explicitly.
@@ -1641,6 +1653,16 @@ EasyReading.prototype._evalFunctionModeExit = function() {
     // PTT 的頁指標被 goto／搜尋往回移了（上面那次 notify 的 accumulatePageLines 升
     // easyReadingSeekBack）⇒ 捲到跳轉目的地；否則（推文、回應這類沒移動的）還原原位。
     // 往**前**跳到還沒累積的地方走的是 gap 自癒，這裡維持原位（已知邊界）。
+    // 實況：剛按 v 進來 ⇒ 到底看新推文；留言回來 ⇒ 原本在底就回到底（自己剛推的那則
+    // 就接在那裡），原本捲在上面看就留在原處。
+    if (isEasyReadingLive(this)) {
+      if (!wasLive || this._savedAtBottom || this._savedScrollTop == null)
+        this._stickBottom();
+      else
+        this._view.mainDisplay.scrollTop = this._savedScrollTop;
+      this._savedScrollTop = null;
+      return;
+    }
     const seek = this._termBuf.easyReadingSeekBack;
     let landed = false;
     if (seek && !seek.scrolled) {
@@ -2093,9 +2115,15 @@ EasyReading.prototype._onKeyDown = function(e) {
   if (this._pendingScrollRestore) this._diagScrollRestore('drop', { reason: 'key', key: e.key });
   this._pendingScrollRestore = null;
 
+  // 官方推文實況但好讀沒接管（文章段對不上累積頁 ⇒ term_view 照原生鏡像）：按鍵一律原生，
+  // 不可以拿看不見的累積頁去捲、捲不動又 leaveCurrentPost（PTT 還在實況）。
+  if (!isEasyReadingLive(this) && this._termBuf.isLiveScreenNow && this._termBuf.isLiveScreenNow())
+    return;
+  // 實況中下面那幾條「替使用者翻上一篇／下一篇」都不適用（live_run 不認），整段交給 _onLiveKeyDown。
+  const live = isEasyReadingLive(this);
   if (this._onKeyDownProcessUI(e) === 'browser')
     return 'browser';
-  if (e.defaultPrevented)
+  if (e.defaultPrevented || live)
     return;
 
   var stop = false;
@@ -2328,6 +2356,82 @@ EasyReading.prototype._stickBottom = function() {
   return true;
 };
 
+// 好讀累積頁正在接官方推文實況嗎（term_view._accumulateLive 接管中）。
+// 寫成接 er 的函式而不是只靠 method：呼叫端（App.onFunctionKey、按鍵測試的假 this）不一定是
+// 完整的 EasyReading。
+export function isEasyReadingLive(er) {
+  return !!(er && er._enabled && !er._functionMode && er._view &&
+    typeof er._view.isLiveReading === 'function' && er._view.isLiveReading());
+}
+
+// 實況中的按鍵（見 _onKeyDownProcessUI 的呼叫點）。表見 docs/easy-reading.md「實況模式」。
+//   捲動鍵（↑↓ PgUp PgDn 空白 ⏎ j k Home End…）  只捲好讀長頁，一個 byte 都不送
+//   ←                                              送 q 離開實況（live_run 不認 ←；q 才是離開，
+//                                                  好讀裡 ← 一向是「離開文章」）
+//   X x % q Q                                       先切原生鏡像再送（留言 prompt／回列表要畫出來）
+//   其他單字元（B T M S…）                         照送，畫面留在好讀（狀態列由底部 footer 鏡像）
+EasyReading.prototype._onLiveKeyDown = function(e) {
+  let stop = false;
+  if (!e.ctrlKey && !e.altKey) {
+    switch (e.key) {
+      case 'PageUp':
+      case 'Backspace':
+        this._scrollBy(-this._turnPageLines);
+        stop = true;
+        break;
+      case 'PageDown':
+      case ' ':
+      case 'ArrowRight':
+        this._scrollBy(this._turnPageLines);
+        stop = true;
+        break;
+      case 'ArrowUp':
+      case 'k':
+        this._scrollBy(-1);
+        stop = true;
+        break;
+      case 'ArrowDown':
+      case 'Enter':
+      case 'j':
+        this._scrollBy(1);
+        stop = true;
+        break;
+      case 'Home':
+      case '0':
+      case 'g':
+        this._scrollTop();
+        stop = true;
+        break;
+      case 'End':
+      case '$':
+      case 'G':
+        this._stickBottom();
+        stop = true;
+        break;
+      case 'Tab':
+        stop = true;
+        break;
+      case 'ArrowLeft':
+        this._enterFunctionMode();
+        this._core.view._send('q');
+        stop = true;
+        break;
+      default:
+        if (e.key.length === 1 && liveKeyMirrors(e.key))
+          this._enterFunctionMode();
+        break;
+    }
+  } else if (ctrlLetterOf(e) === 'f') {
+    this._scrollBy(this._turnPageLines);
+    stop = true;
+  } else if (ctrlLetterOf(e) === 'b') {
+    this._scrollBy(-this._turnPageLines);
+    stop = true;
+  }
+  if (stop)
+    e.preventDefault();
+};
+
 EasyReading.prototype._onKeyDownProcessUI = function(e) {
   var stop = false;
   // 讀者按了別的鍵（捲動、翻頁、進 prompt…）⇒ 不再黏在文末。
@@ -2356,6 +2460,11 @@ EasyReading.prototype._onKeyDownProcessUI = function(e) {
     e.preventDefault();
     return;
   }
+  // 官方推文實況：live_run 只認 q（離開）、X／%（留言）、B／T／M／S（鈴聲、調時），其他鍵
+  // 一律忽略（844e8d0 版是「任意鍵離開」）⇒ 不能走下面那些「捲不動就 leaveCurrentPost＋送給
+  // PTT 翻文」的分支，否則好讀以為換了文章、PTT 卻還在實況。捲動鍵只捲長頁。
+  if (isEasyReadingLive(this))
+    return this._onLiveKeyDown(e);
   if (!e.ctrlKey && !e.altKey) {
     switch (e.key) {
       case 'Backspace':
@@ -2489,6 +2598,14 @@ EasyReading.prototype._onMouseClick = function(e) {
   // `buf.mouseAction` 是**刻意**的單一真相源：純函式決策層 mouse_regions.js 算出動作
   // 後寫進 termBuf，所有消費端（這裡、App.onMouse_click、底色）讀同一格。契約見
   // docs/mouse.md —— 這裡不要自己另算一份區域判斷。
-  if (this._termBuf.mouseAction === ACT_EXIT_ARTICLE)
-    this.stopEasyReading();
+  if (this._termBuf.mouseAction !== ACT_EXIT_ARTICLE)
+    return;
+  // 官方推文實況：離開帶送 q（live_run 不認 ←），先切原生鏡像，回到列表由 settle 收尾。
+  if (isEasyReadingLive(this)) {
+    e.preventDefault();
+    this._enterFunctionMode();
+    this._core.view._send('q');
+    return;
+  }
+  this.stopEasyReading();
 };
