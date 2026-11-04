@@ -37,7 +37,7 @@ import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
-import { COMMENT_BAR_HEIGHT } from './comment_bar';
+import { commentBarHeight } from './comment_bar';
 import { CHUNK_CLASS } from '../render/screen_chunk';
 
 export const NEXT_ARTICLE_ID = 'nextArticleCard';
@@ -627,7 +627,7 @@ NextArticle.prototype = {
         clear = Math.min(clear, footer.getBoundingClientRect().top);
       const bar = core.commentBar;
       if (bar && bar.state && bar.state.visible)
-        clear = Math.min(clear, window.innerHeight - (bar.state.bottom || 0) - COMMENT_BAR_HEIGHT);
+        clear = Math.min(clear, window.innerHeight - (bar.state.bottom || 0) - commentBarHeight(bar.state));
       inset = Math.max(0, bottom - clear);
     }
     el.style.setProperty('--next-pull-up', Math.round(trailingBlankPx(this._mainContainer())) + 'px');

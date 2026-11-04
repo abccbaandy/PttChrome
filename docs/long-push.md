@@ -494,7 +494,8 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 |---|---|---|
 | 出現條件 | `enableLongPush && enableCommentBar`（`readEffectivePrefs`，安全模式名單內）＋ pageState 3 ＋好讀開著＋不在 functionMode ＋累積頁非空（同 `article_tools._inEasyArticle`） | 認不出就是原生：原生 pmore、列表、選單一律不出現；送出期間長推文切 functionMode，列自然收起 |
 | 位置 | 與終端機同寬，貼在終端機可見內容下緣（好讀 footer 顯示中就在它之上；手機＝底部導覽之上，鍵盤彈出時 `--vv-kb-inset` 把列頂上去）。至少讓出 `view.keyboardInset`（`commentBarGeometry` 的 `bottomInset`）：手機的 `.main` 因列高取整會延伸到導覽列後面幾 px，只看 `.main` 下緣會壓在導覽列上（e2e `mobile_bottom_overlay`） | 疊在終端機上，**不改列數、不送 NAWS**（`docs/terminal-size.md` LOCKED） |
-| 被蓋住的那一截 | `html.commentBarShown #mainContainer::after` 留列高的空白 | 不動 `#mainContainer` 的 `paddingBottom`（那是 term_view 給好讀 footer 的） |
+| 被蓋住的那一截 | `html.commentBarShown #mainContainer::after` 留列高的空白（`--comment-bar-h`＝實際列高，打字中長高跟著加高） | 不動 `#mainContainer` 的 `paddingBottom`（那是 term_view 給好讀 footer 的） |
+| 長推文看得到全文 | 輸入框是 `textarea`（Enter 照樣送出不換行；貼上的換行由 `commentBarText` 換成空白）。**只在打字中**（聚焦，或手機收合展開中）跟著內容往上長高，最多 `COMMENT_BAR_MAX_LINES` 行，再多框內捲；手機另改上下兩層（`commentBar--stacked`：輸入框獨佔一層吃滿寬，推噓鈕靠左、計數與送出靠右在下層）。沒在打字縮回單行 40px。實際列高由元件 ResizeObserver 回報 `bar.setHeight`；要讓位的功能（下一篇卡片 `next_article._layout`、導覽軸 `articleNavGeometry`）一律問 `commentBarHeight(state)`，不要直接用 `COMMENT_BAR_HEIGHT` | 單行列在手機只剩十來個字寬，長推文打到後面前面就捲出框外。平常縮回單行 ⇒ 不打字時不多吃畫面；列釘下緣往上長，不改終端機列數 |
 | 鍵盤／滑鼠 | 輸入框聚焦＝ modal 來源 `commentBar`；keydown 與滑鼠事件一律 `stopPropagation`；`App._onUploadLayer` 認 `#commentBar` 放過 | 打字一個 byte 都不准漏到 PTT；離開（blur／Esc／列收起）焦點回 `#t` |
 | 送出 | `App.openQuickPush({text, type})`（ContextMenu 注入）：先 `writeDraft` 再走 `openLongPush` 的探路；探路回來由 `quickPushPlan` 決定 | 內容先進草稿 ⇒ 退回輸入框或送到一半失敗都不丟字 |
 | 回覆這則（pref `commentReplyMenu`） | 長按／右鍵推文列（`data-pusher`，整列都算；小天使匿名不給）且推文列可用（`state.available`，收合中也算） ⇒ 選單「回覆 'id'」。按下 `commentBar.prefill({type:'arrow', text:'id '})`：列切成 →、填字、下一幀聚焦且游標在最後（選單關掉會把焦點還給 `#t`，要排在它後面） | 只預填、不送鍵 ⇒ 不在安全模式名單（安全模式下推文列不出現，這項跟著不出現）。請求帶遞增序號：同一個請求重畫不會把使用者改過的字蓋回去 |
@@ -541,7 +542,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | unit | `tests/unit/long_push_error_modal.test.jsx` | 錯誤框：原文照錄、來源標示兩態、已送出則數、剩餘內容唯讀可讀回、**按了才複製** |
 | unit | `tests/unit/long_push_resume_rest.test.jsx` | P43「改成只送剩下的」：只在已送出且有剩時出現、錯誤框出現當下草稿不動、按了才換草稿＋重開探路＋開框內容是剩下的、接不下來錯誤框留著 |
 | unit | `tests/unit/long_push_modal.test.jsx` | 即時則數、濾字提示、>20 則二次確認、**插入目標註冊／游標插入／網址過長警告**、**型別每次開框回到推**、**草稿還原／還原提示／清除／開框不覆寫**、**鍵盤送出**（ctrl 與 meta 都收、單獨 Enter 不送、組字中不送、提示不進 accessible name） |
-| unit | `tests/unit/comment_bar.test.js` / `comment_bar_ui.test.jsx` / `comment_bar_quick_push.test.jsx` | 底部推文列：`quickPushPlan` 各條退回、打字計數（`commentBarCounter`／`commentBarMaxBytes`）、出現條件與位置、Enter／IME／焦點／事件不外洩、`openQuickPush` 直接送不開輸入框與退回時內容在輸入框 |
+| unit | `tests/unit/comment_bar.test.js` / `comment_bar_ui.test.jsx` / `comment_bar_quick_push.test.jsx` | 底部推文列：`quickPushPlan` 各條退回、打字計數（`commentBarCounter`／`commentBarMaxBytes`）、出現條件與位置、Enter／IME／焦點／事件不外洩、`openQuickPush` 直接送不開輸入框與退回時內容在輸入框、**長推文打字中長高（上限行數）／手機上下兩層／離開縮回單行／列高回報 `setHeight` 與 `--comment-bar-h`** |
 | offline e2e | `tests/e2e/offline/comment_bar.offline.spec.js` | 列與終端機同寬、捲到底最後一列不被蓋住、打字計數兩態且不把送出鈕擠出列外、打字不送 byte、Enter 接上探路、Esc 焦點回終端機、原生 pmore／pref 關不出現 |
 | unit | `tests/unit/platform_label.test.js` | 快捷鍵提示的平台判斷（userAgentData 優先、UA 退路、拿不到 navigator 不 throw）|
 | unit | `tests/unit/dropdown_menu_preview.test.jsx` / `pref_modal_context_menu.test.jsx` | 選單 gating、pref 預設值（含攔截開關的從屬關係與 disabled） |

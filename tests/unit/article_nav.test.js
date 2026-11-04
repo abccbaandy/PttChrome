@@ -45,6 +45,11 @@ describe("articleNavGeometry", () => {
   test("推文列顯示中 ⇒ 下緣再讓開推文列", () => {
     expect(articleNavGeometry({ mainRect, footerTop: 730, commentBarShown: true }).height).toBe(690 - COMMENT_BAR_HEIGHT);
   });
+  test("推文列打字中長高 ⇒ 讓開量到的高度", () => {
+    expect(articleNavGeometry({ mainRect, footerTop: 730, commentBarShown: true, commentBarHeight: 130 }).height).toBe(
+      690 - 130
+    );
+  });
   test("量不到終端機或太矮 ⇒ null", () => {
     expect(articleNavGeometry({ mainRect: { width: 0 } })).toBeNull();
     expect(articleNavGeometry({ mainRect: { ...mainRect, bottom: 100 } })).toBeNull();
@@ -80,6 +85,7 @@ function makeCore(opts = {}) {
       },
     },
   };
+  if (opts.commentBar) core.commentBar = opts.commentBar;
   return { nav: new ArticleNav(core), core, scrolled, settle: () => listeners.screenSettled() };
 }
 
@@ -104,6 +110,30 @@ describe("ArticleNav 控制器", () => {
     settle();
     expect(nav.state).toMatchObject({ visible: true, left: 800 - ARTICLE_NAV_WIDTH, top: 0, height: 600, total: 3, commentRow: 2 });
     expect(nav.state.marks[0]).toMatchObject({ kind: "comments", row: 2 });
+  });
+
+  // 推文列打字中長高（components/CommentBar 回報 setHeight）時沒有 screenSettled ⇒ 軸要自己跟著讓位。
+  test("推文列長高／縮回 ⇒ 軸的下緣跟著讓位，不必等下一次 settle", () => {
+    const fns = new Set();
+    const bar = {
+      state: { visible: true, height: COMMENT_BAR_HEIGHT },
+      onChange(fn) {
+        fns.add(fn);
+        fn(this.state);
+        return () => fns.delete(fn);
+      },
+      emit(patch) {
+        this.state = { ...this.state, ...patch };
+        fns.forEach((fn) => fn(this.state));
+      },
+    };
+    const { nav, settle } = makeCore({ commentBar: bar });
+    settle();
+    expect(nav.state.height).toBe(600 - COMMENT_BAR_HEIGHT);
+    bar.emit({ height: 130 });
+    expect(nav.state.height).toBe(600 - 130);
+    bar.emit({ height: COMMENT_BAR_HEIGHT });
+    expect(nav.state.height).toBe(600 - COMMENT_BAR_HEIGHT);
   });
 
   test("不在文章（列表）／pref 關 ⇒ 不出現", () => {
