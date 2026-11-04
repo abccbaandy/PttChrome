@@ -450,6 +450,23 @@ export const SCENES = [
     ],
   },
   {
+    // upstream 432e98a：T/M/S 調時可以調成負的（倒數到活動開始，歸零時響鈴）⇒ 狀態列
+    // 「 實況中 -mm:ss [+N] 」。T＝把開始時間往後 10 分鐘 ⇒ 00:00 變 -10:00；t 再調回正的。
+    file: 'live_countdown',
+    entry: 'read:Live',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '1\r' },
+      { keys: '\r', name: 'article' },
+      { keys: 'v', name: 'live-on' },
+      { keys: 'T', name: 'countdown' },
+      { live: 'first live comment', name: 'countdown-1' },
+      { keys: 't', name: 'count-up' },
+      { keys: 'q', name: 'live-off' },
+    ],
+  },
+  {
     // 好讀的常態：自動翻頁讀完整篇（PageDown 到 100%）才按 v ⇒ 實況畫面的文章段就是累積頁的尾巴。
     // 推文多到「實 況 開 始」橫幅捲出畫面（live_next_row 每列上捲一次），好讀要照上捲列數接上
     // （live_mode.mergeLiveWindow，offline e2e live_mode 守）。

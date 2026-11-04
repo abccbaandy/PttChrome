@@ -137,5 +137,8 @@ test("面板狀態沒變就不重 render；計時格式 mm:ss", () => {
   expect(sameLiveHelperView(null, { kind: "ready" })).toBe(false);
   expect(formatLiveElapsed(65)).toBe("01:05");
   expect(formatLiveElapsed(0)).toBe("00:00");
-  expect(formatLiveElapsed(-3)).toBe("00:00");
+  // 432e98a：倒數到活動開始
+  expect(formatLiveElapsed(-600)).toBe("-10:00");
+  expect(formatLiveElapsed(-5)).toBe("-00:05");
+  expect(formatLiveElapsed(-3)).toBe("-00:03");
 });

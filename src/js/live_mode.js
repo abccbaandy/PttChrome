@@ -7,7 +7,9 @@
 //   2. 補印開文之後新增的完整列（live_catchup，最多 16KB）；
 //   3. 之後每則推文（IPC PubSub）照檔案裡的原樣一列一列往下印（live_print_text）。畫面滿了
 //      ⇒ live_next_row 把整個畫面上捲一列（pfterm 送 `ESC[24;1H\n`），推文寫在 b_lines-1；
-//   4. 每秒重畫狀態列 vs_footer(" 實況中 mm:ss [+N] ", " (X)留言 (B)鈴聲[關閉] (T/M/S)調時 (q)離開\t日期")。
+//   4. 每秒重畫狀態列 vs_footer(" 實況中 mm:ss [+N] ", " (X)留言 (B)鈴聲[關閉] (T/M/S)調時 (←/q)離開\t日期")。
+//      432e98a 起 T/M/S 調時可以調成負的（倒數到活動開始）⇒「 實況中 -mm:ss [+N] 」；417c9cb 起 ← 也離開
+//      （更早是「(q)離開」）。
 //      N＝這次實況收到幾則（live_flush 每則 +1；catchup 不算）。844e8d0 版 part2 是
 //      「(X)留言(B)鈴聲… (任意鍵)離開」。
 //   5. q／Q 離開（844e8d0 版 X／B／T／M／S 以外任何鍵都離開）⇒ live_run 回 FULLUPDATE ⇒
@@ -29,10 +31,11 @@ import { findPageOverlap } from './comment_parse';
 
 export const LIVE_BANNER_TEXT = '實 況 開 始';
 
-// 實況狀態列 part1：" 實況中 %02d:%02d [+%d] "（more.c#live_draw_status）。
-const LIVE_STATUS_RE = /^ 實況中 (\d+):(\d\d) \[\+(\d+)\] /;
+// 實況狀態列 part1：" 實況中 %s%02d:%02d [+%d] "（more.c#live_draw_status；%s 是倒數的 "-"，432e98a）。
+const LIVE_STATUS_RE = /^ 實況中 (-?)(\d+):(\d\d) \[\+(\d+)\] /;
 
 // 底列是不是實況狀態列。回 { elapsedSec, received, canComment, bell } 或 null。
+//   elapsedSec：倒數中是負的。
 //   canComment：part2 有沒有「(X)留言」（hooks->comment 不存在的 pager 不印）。
 //   bell：鈴聲[打開] ⇒ true、[關閉] ⇒ false、看不到（被截）⇒ null。
 export function parseLiveStatusRow(text) {
@@ -42,9 +45,10 @@ export function parseLiveStatusRow(text) {
   let bell = null;
   if (s.indexOf('鈴聲[打開]') >= 0) bell = true;
   else if (s.indexOf('鈴聲[關閉]') >= 0) bell = false;
+  const sec = parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
   return {
-    elapsedSec: parseInt(m[1], 10) * 60 + parseInt(m[2], 10),
-    received: parseInt(m[3], 10),
+    elapsedSec: m[1] ? -sec : sec,
+    received: parseInt(m[4], 10),
     canComment: s.indexOf('(X)留言') >= 0,
     bell
   };
