@@ -4,14 +4,14 @@ import { TermView } from './term_view';
 import { TermBuf } from './term_buf';
 import { TelnetConnection } from './telnet';
 import { Websocket } from './websocket';
-import { EasyReading, switchModePlan } from './easy_reading';
+import { EasyReading, switchModePlan, isEasyReadingLive } from './easy_reading';
 import { ListSession } from './list_session';
 import { BoardListSession } from './board_list_session';
 import { OWNER_BOARD_LIST, listRenderOwnerOf } from './list_render_owner';
 import { CommandQueue, LINK_STALL_CAP_MS } from './command_queue';
 import { AidNavigation } from './aid_navigation';
 import { needsAidBoardChoice } from './aid_board_choice';
-import { ScreenRefresh, liveHelperUpdateAllowed } from './screen_refresh';
+import { ScreenRefresh } from './screen_refresh';
 import { ReadingRecord } from './reading_record';
 import { ReconnectResume, isResumeToastTarget } from './reconnect_resume';
 import { isLoginBlockScreen } from './login_block';
@@ -504,8 +504,6 @@ export const App = function() {
   this.dblclickTimer=null;
   this.mbTimer=null;
   this.timerEverySec=null;
-  this.pushthreadAutoUpdateCount = 0;
-  this.maxPushthreadAutoUpdateCount = -1;
   this.onWindowResize();
   this.setupContextMenus();
   this.contextMenuShown = false;
@@ -641,7 +639,6 @@ App.prototype.onConnect = function() {
   this.timerEverySec = setTimer(true, function() {
     self.antiIdle();
     self.view.onBlink();
-    self.incrementCountToUpdatePushthread();
   }, 1000);
 
   // Enhanced Add-on: kick off auto login (no-op unless enabled with credentials).
@@ -1138,13 +1135,11 @@ App.prototype.setModalOpen = function(source, open) {
     this.setInputAreaFocus();
 };
 
-// 即時看板小幫手的兩個入口：預設 noop，只有 pref 打開時才被注入真的實作
-// （components/ContextMenu/index.jsx 的 useEffect 依 liveHelperEnabled 綁定／解綁）。
-// 這是刻意的——消費端在 term_view.js（End 鍵的 onToggle…、任何非 Alt 鍵的
-// onDisable…），不能為了「功能沒開」在熱路徑上到處加判斷。onToggle 回 true 代表
-// 按鍵已被吃掉，noop 回 undefined ⇒ End 會落到原本的行為。
-App.prototype.onToggleLiveHelperModalState = noop;
-App.prototype.onDisableLiveHelperModalState = noop;
+// Live 文小幫手的 End 鍵入口（文章裡按 End ＝開始推文實況，js/live_helper.js）：預設 noop，
+// 只有面板開著時才由 components/ContextMenu/index.jsx 的 useEffect 注入真的實作。
+// 這是刻意的——消費端在 term_view.onKeyDown 的熱路徑上，不能為了「功能沒開」到處加判斷。
+// 回 true 代表按鍵已被吃掉，noop 回 undefined ⇒ End 落到原本的行為（好讀捲到底／原生 End）。
+App.prototype.onLiveHelperEndKey = noop;
 
 // 攔截推文鍵之後開長推文輸入框的唯一入口。同樣是預設 noop ＋ ContextMenu 的
 // useEffect 注入真實作（右鍵選單走的是同一個函式，計算點只有一處）。
@@ -1205,8 +1200,6 @@ App.prototype.switchToEasyReadingMode = function(doSwitch) {
   });
   if (plan.leavePost)
     this.easyReading.leaveCurrentPost();
-  if (doSwitch)
-    this.onDisableLiveHelperModalState();
   if (plan.restoreNativeView) {
     this.view.mainContainer.style.paddingBottom = '';
     this.view.lastRowIndex = 22;
@@ -1391,9 +1384,11 @@ App.prototype.onFunctionKey = function(bytes, label) {
   const plan = functionKeyClickPlan({
     bytes: bytes,
     mode:
-      this.view.useEasyReadingMode && this.buf.startedEasyReading
-        ? 'article-easy'
-        : 'native'
+      isEasyReadingLive(this.easyReading)
+        ? 'live-easy'
+        : this.view.useEasyReadingMode && this.buf.startedEasyReading
+          ? 'article-easy'
+          : 'native'
   });
   // 送 byte **之前**先進原生鏡像：PTT 會開 prompt（(y)回應 / (X)推文 / (h)說明），
   // 但好讀的累積長頁原封不動 ⇒ 使用者看不到輸入框。docs/easy-reading.md 的
@@ -1563,29 +1558,6 @@ App.prototype.doOpenUrlNewTab = function(a) {
     view: window,
     ctrlKey: true,
   }));
-};
-
-App.prototype.incrementCountToUpdatePushthread = function(interval) {
-  if (this.maxPushthreadAutoUpdateCount == -1) {
-    this.pushthreadAutoUpdateCount = 0;
-    return;
-  }
-
-  if (++this.pushthreadAutoUpdateCount >= this.maxPushthreadAutoUpdateCount) {
-    this.pushthreadAutoUpdateCount = 0;
-    // pageState 會黏住：推文型別選單底下還是 3，← 會被當成選「推」（screen_refresh.js）。
-    const buf = this.buf;
-    if (liveHelperUpdateAllowed({
-      pageState: buf.pageState,
-      lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
-      cursorOnInputField: buf.isCursorOnInputField()
-    })) {
-      this.view._send('\x1b[D\x1b[C\x1b[4~');
-    }
-  }
-};
-App.prototype.setAutoPushthreadUpdate = function(seconds) {
-  this.maxPushthreadAutoUpdateCount = seconds;
 };
 
 // opts.immediate：跳過 resizer 的 500ms debounce 當場重算。只給「終端機剛從
@@ -1876,9 +1848,6 @@ App.prototype.onMouse_click = function (e) {
     return;
   }
 
-  // disable auto update pushthread if any command is issued;
-  this.onDisableLiveHelperModalState();
-
   // **先取值再交給好讀**：easyReading._onMouseClick 會 stopEasyReading()，那條路徑
   // 一路走到 buf.notify() → clearHighlight() 把 mouseAction 清成 none。改版前這個
   // 順序沒事只是因為舊的 case 0（＝被清掉的狀態）也送左方向鍵，剛好跟離開同義。
@@ -1893,7 +1862,8 @@ App.prototype.onMouse_click = function (e) {
 
   switch (action) {
     case ACT_EXIT_ARTICLE:
-      this.view._send('\x1b[D'); //Arrow Left
+      // 官方推文實況（more.c#live_run）不認 ←，離開是 q（回文章列表）。
+      this.view._send(this.buf.isLiveScreenNow() ? 'q' : '\x1b[D'); //Arrow Left
       break;
     // 列表／選單的左側退出帶。送的 byte 與鍵盤左方向鍵**完全相同**，行為等價，
     // 不需要新語意（list_session._enqueueLeaveKey 用的也是它）。
@@ -2701,7 +2671,6 @@ App.prototype.mouse_click = function(e) {
           this.view.flashListHint('AID 跳文中，請稍候…');
           return;
         }
-        this.onDisableLiveHelperModalState();
         this.noteUserAction();
         this._sendRowEnter(menuCardTargetRow(e.target));
         this.setInputAreaFocus();

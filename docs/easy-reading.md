@@ -67,7 +67,15 @@
 - **settle 不在「已寫入、未 flush」時觸發**（CONFIRMED unit `settle_gating.test.js`＋offline 高負載重現）：計時器只在 notify 時 re-arm，但 server 回應是 `onData` 先寫進 TermBuf、30ms 後才 notify（BSU 期間更久）。計時器到期時 `timerUpdate || inSyncUpdate` ⇒ 不發 settle、重新 arm。否則 listener 讀到沒跑 `updateCharAttr` 的畫面 ⇒ 狀態列 Big5 未解 ⇒ `_onScreenSettled` 判成 pageState 5、`startedEasyReading=false` ⇒ 該窗口內按的 End／PgDn 原生送出（反向讀取沒啟動、改走缺頁自癒）。CPU 忙時才放大成偶發。**新增讀畫面的 settle listener 可依賴「settle 時 buffer 已 flush」**。
 - 退化情形（guess）：連線在**畫面中途**停 >`SETTLE_MS`（網路卡）才可能 premature settle；最壞首篇自動 enable 漏一次（捲動/重進即恢復），非 crash。`SETTLE_MS` 為可調常數，slow link premature-settle 就調高。
 
-- **實況模式（upstream c6d35a8 起，文章裡 v）**：more.c 自己的實況迴圈，狀態列「實況中 mm:ss [+N]」不是 pmore 狀態列 ⇒ 好讀認不出、照原生鏡像（推文照實畫出）；844e8d0 版 X／B／T／M／S 以外的鍵都會離開實況回文章列表（490ceaf 起只認 q 離開、其他鍵忽略）⇒ 進實況後不可以替使用者送任何鍵（offline e2e `live_mode` 守）。
+- **實況模式（PTT 官方推文實況，upstream c6d35a8 起，文章裡 v）**（CONFIRMED pttbbs `more.c#live_run`／`pmore.c#pmore_cmd_live`＋upstream 產畫面＋offline e2e `live_mode`）：
+  - **PTT 端**：v ⇒ pmore 先畫最後一頁、記下畫了幾列，以 RET_LIVE 退出 ⇒ `live_run` 接手整個畫面：最後一頁下一列印橫幅「實 況 開 始」、補印開文後新增的列（catchup）、之後每則推文照檔案原樣一列一列往下印，畫面滿了整個上捲一列（`ESC[24;1H\n`）。底列每秒重畫「 實況中 mm:ss [+N]  (X)留言 (B)鈴聲[關閉] (T/M/S)調時 (q)離開」。q 離開 ⇒ **回文章列表**（不是回 pmore）。X／%／x 留言（scr_dump → 一般推文流程 → scr_restore，留言期間推文排隊）。844e8d0 版 X／B／T／M／S 以外的鍵都會離開實況；490ceaf 起只認 q、其他鍵忽略。
+  - **pageState**：實況狀態列中段同色、游標停右下角，以前被 `_isAnsiPassFrame` 判成 5（PASS）、row-state 機也把它當 PASS 放手 ⇒ 好讀只能原生鏡像。現在 `term_buf.setPageState` 認 `live_mode.isLiveStatusRow` ⇒ 3，要分辨就問 `buf.isLiveScreenNow()`；`nextEasyReadingRowState` 的 `isLiveRow`：不翻頁、不改讀完與否。
+  - **累積**（`term_view._accumulateLive`，純決策 `live_mode.js`）：進實況那一幀（`mergeLiveArticle`）橫幅以上＝文章最後一頁，用 `findPageOverlap` 跟累積頁尾巴對齊（累積頁先去掉尾端空白填充列）⇒ 補上沒有的尾巴、接橫幅以下；**對不上（還沒讀到底，中間有洞）⇒ 不接管、原生鏡像**（認不出 ⇒ 原生）。之後每一幀（`mergeLiveWindow`）：橫幅還在畫面上 ⇒ 橫幅以下就是整段；橫幅捲走 ⇒ 畫面是實況段的最後 R 列，找「上捲了幾列」對齊後只接新的（同一句推文連刷好幾個位移都對得上時，取不小於 [+N] 增量的）。只在底列是實況狀態列的幀累積（live_next_row 先清狀態列再上捲，半幀不會是實況狀態列）。狀態列照樣由底部 footer 鏡像（功能鍵可點），實況分支也要設累積頁的底部 padding（不然最後一則被 footer 蓋住，offline e2e 守）。累積頁被別人換掉（長度對不上）⇒ 下一幀從橫幅重新接。
+  - **捲動**：剛進實況（`'engaged'`）、或讀者停在文末時接上新列 ⇒ `_stickBottom`（`bottom_stick` 跟著長高）；捲上去看別處的人不拖走。
+  - **按鍵**（`easy_reading._onLiveKeyDown`）：捲動鍵只捲長頁、一個 byte 都不送（不可以走一般分支「捲不動 ⇒ leaveCurrentPost＋送給 PTT 翻文」，PTT 還在實況）；← 改送 q（live_run 不認 ←）；X／x／%／q／Q 先切原生鏡像（留言 prompt、回列表要畫出來，`live_mode.liveKeyMirrors`）；B／T／M／S 等直接送、畫面留在好讀。footer 功能鍵按鈕同規（`function_key_plan` 的 `'live-easy'`）。滑鼠左側離開帶：好讀與原生都送 q。沒接管（原生鏡像）時按鍵一律原生。
+  - **functionMode**：使用者自己按 v（或留言完回來）都走一般的單字元鍵 ⇒ 先切原生鏡像（v 連不上 IPC 是 vmsg 等按鍵，好讀蓋住就看不到）；settle 時 `functionModeExitDecision` 認實況狀態列 ⇒ 'resume' ⇒ 接回好讀：剛進來就到底；留言回來時原本在底就回底、否則回原處。
+  - **實況中關掉的好讀功能**（都看 `buf.isLiveScreenNow()`）：長推文（`long_push_gate.longPushAvailable`＋`LongPushSession.startPreflight/start` 拒絕：推完留在實況不回列表、取 AID 的 `Q` 在實況裡是離開）、底部推文列（送出走長推文；留言用實況自己的 (X)留言）、讀完接著讀下一篇的標題卡（讀者停在文末看新推文不是讀完，換篇的鍵 PTT 也不收）。
+  - **一個鍵都不替使用者送**：推文是 server 主動送的，接推文不需要任何按鍵（offline e2e `live_mode` 守送出序列）。Live 文小幫手（`live_helper.js`）的開始／離開／鈴聲按鈕各送使用者自己也會按的那一個鍵，而且只在本幀認得出來的畫面上送。
 - **實況模式（upstream 3c7d9af 舊版，文章裡 v）**（CONFIRMED upstream 產畫面＋offline e2e `live_mode`）：別人推文時 PTT 主動把那一列送上畫面。畫面已滿 ⇒ 上捲一列、狀態列 S／E 都＋1，照一般往後接。**單頁短文**畫面沒滿 ⇒ 推文寫在原地、只有 E＋1；累積頁是第一幀整個畫面（含空白填充列）、行號只到 E，照往後接會把整個畫面再接一次 ⇒ `isShortPageGrowth` 認出「原地長高」走 `'regrow'`：直接換成新畫面（同一篇，不清每篇狀態）。第一則會蓋掉內文最後一列（upstream 的行為），好讀照鏡像。
 
 ## 反向讀取（讀取中按 End，CONFIRMED unit＋offline e2e）
@@ -396,7 +404,7 @@ best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原
 - `ignoreOneUpdate = false`：見上面「翻頁交易」段的硬卡死說明。
 - `mainDisplay.scrollTop = 0` ＋ `_forceRepaint()`：**不依賴 `^L` 的伺服器往返**。按熱鍵時若還有 PageDown 在途，End／`^L` 的重繪會被 P4 吞掉，DOM 就一直停在數千列的長頁且捲到底 ⇒ 使用者看到「卡在最底部、PgUp 沒反應」。另外 `redraw` 的 native 分支用 `if (useEasyReadingMode)` 守住 overlay/scroll 還原，此時已是 false，沒有別人會重設捲軸。
 
-**所有手動關好讀路徑都必須走 `exitEasyReading()`，勿自行翻 `useEasyReadingMode` 旗標**（會漏掉 `sendCommandAfterUpdate`/pageLines 清理與 overlay 還原）：End、pref 關閉（`_onChanged` 偵測 `!enableEasyReading && _enabled`）、LiveHelper 啟用(`ContextMenu/index.jsx` `onLiveHelperChange`)、e2e `applyPrefs`。LiveHelper 這條只由 UI 驅動，守護在 offline e2e「LiveHelper 启用 → 关好读单一出口」。
+**所有手動關好讀路徑都必須走 `exitEasyReading()`，勿自行翻 `useEasyReadingMode` 旗標**（會漏掉 `sendCommandAfterUpdate`/pageLines 清理與 overlay 還原）：End、pref 關閉（`_onChanged` 偵測 `!enableEasyReading && _enabled`）、e2e `applyPrefs`。（Live 文小幫手以前啟用時要先關好讀；改用 PTT 官方推文實況後好讀照開，見上面「實況模式」。）
 - `switchToEasyReadingMode(doSwitch)`：無參/falsy→還原 DOM+`^L`；truthy→進好讀。好讀開但畫面是列表/選單(pageState≠3)時，`redraw` 走 `hideEasyReadingOverlays()`（只還原 overlay 列+清 pageLines）後以 `_renderScreenLines(buf.lines)` 畫單頁（同原生路徑）。
 
 ## 鍵流（CONFIRMED）

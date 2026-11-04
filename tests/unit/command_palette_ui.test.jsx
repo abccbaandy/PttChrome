@@ -48,7 +48,6 @@ const makePttchrome = () => ({
   setModalOpen: vi.fn(),
   onValuesPrefChange: vi.fn(),
   switchToEasyReadingMode: vi.fn(),
-  onDisableLiveHelperModalState: vi.fn(),
   onDebugRecordDownloaded: () => () => {},
   contextMenuShown: false,
   openCommandPalette: function noop() {},

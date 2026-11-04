@@ -27,7 +27,6 @@ function makeApp({ action = ACT_NONE, mouseActionRow = -1, cur_y = 5 } = {}) {
   app.buf = { mouseAction: action, mouseActionRow, cur_y };
   app.view = { _send: vi.fn() };
   app.easyReading = { _onMouseClick: vi.fn() };
-  app.onDisableLiveHelperModalState = vi.fn();
   app.sendNavKeyAsUser = vi.fn(() => true);
   return app;
 }
@@ -201,7 +200,6 @@ describe("App.mouse_click：自家的浮動按鈕不得觸發翻頁", () => {
     app.activeListSession = vi.fn(() => null);
     app.sendNavKeyAsUser = vi.fn(() => true);
     app.easyReading = { _onMouseClick: vi.fn() };
-    app.onDisableLiveHelperModalState = vi.fn();
     app.setInputAreaFocus = vi.fn();
     app.checkClass = vi.fn(() => false);
     app._onUploadLayer = vi.fn(() => false);

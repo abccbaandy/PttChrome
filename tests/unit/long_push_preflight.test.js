@@ -24,6 +24,7 @@ import {
   AID,
   ANCHOR_ROW,
   OTHER_ROW,
+  LIVE_REPEAT_PROMPT,
 } from "./helpers/long_push_harness";
 
 beforeAll(() => loadBig5Tables());
@@ -94,6 +95,28 @@ describe("探路的鍵序", () => {
       // prompt 上有自己的帳號 ⇒ 單則上限算得準（不必再猜 12 字）。
       userId: "testuser",
     });
+  });
+
+  test("探完路 ⏎ 回文章時 PTT 問要不要進實況 → 答 n，照常回報可以推", () => {
+    const h = pre();
+    probe(h, ARROW_PROMPT);
+    h.settleList([ANCHOR_ROW(1234, true), OTHER_ROW(1235)], 0);
+    expect(h.sent).toEqual(["X", "\x03", "\r"]);
+    h.settle(LIVE_REPEAT_PROMPT, { kind: "other" });
+    expect(h.sent).toEqual(["X", "\x03", "\r", "n\r"]);
+    expect(h.preflight).toHaveLength(0);
+    h.settle(ARTICLE_FOOTER);
+    expect(h.session.active).toBe(false);
+    expect(h.preflight[0]).toMatchObject({ blocked: false });
+  });
+
+  // 實況裡 Q 是「離開」、推完也不回列表 ⇒ 一個鍵都不送（留言走實況自己的 X）。
+  test("官方推文實況畫面上不啟動（startPreflight／start 都回 false、不送任何鍵）", () => {
+    const h = pre({ live: true, localAid: null });
+    expect(h.session.startPreflight({})).toBe(false);
+    expect(h.session.start({ text: "內容", type: "push" })).toBe(false);
+    expect(h.sent).toEqual([]);
+    expect(h.session.active).toBe(false);
   });
 
   test("小天使匿名詢問也算推得了（型別選單被跳過）", () => {

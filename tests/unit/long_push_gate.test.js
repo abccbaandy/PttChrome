@@ -78,6 +78,19 @@ describe("longPushAvailable（選單與攔截共用的可用性）", () => {
     ).toBe(false);
   });
 
+  // more.c#live_run：X 是實況自己的留言（推完留在實況），長推文的「推完回列表再重開」、
+  // 「按 Q 取 AID」在實況裡都不成立（Q 是離開）。pageState 一樣是 3。
+  test("官方推文實況（底列是實況狀態列）→ 不可用", () => {
+    expect(
+      longPushAvailable({
+        prefs: PREFS_ON,
+        pageState: 3,
+        lastRowText:
+          " 實況中 00:12 [+3]  (X)留言 (B)鈴聲[關閉] (T/M/S)調時 (q)離開      09/27 09:06 ",
+      })
+    ).toBe(false);
+  });
+
   test.each([0, 1, 2, 5, 6])("pageState %i（非文章）→ 不可用", (pageState) => {
     expect(
       longPushAvailable({ prefs: PREFS_ON, pageState, lastRowText: READ_ROW })

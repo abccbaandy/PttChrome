@@ -244,6 +244,22 @@ describe("nextEasyReadingRowState", () => {
     expect(at(6, 4).reachedPageEnd).toBe(false);
   });
 
+  // 官方推文實況（文章裡按 v，more.c#live_run）：狀態列不是 pmore 的。以前落到
+  // 「不是狀態列 ⇒ PASS 畫面」那支（pageStateOverride 5、startedEasyReading=false），
+  // 好讀就整個放手；它其實還在文章裡，只是不翻頁。
+  it("官方推文實況的狀態列：仍在文章裡、不翻頁、不改讀完與否、不是 PASS", () => {
+    for (const reachedPageEnd of [true, false]) {
+      const r = nextEasyReadingRowState(rowInput({
+        startedEasyReading: true, curY: 23, curX: 79, isStatusRow: false, isLiveRow: true,
+        reachedPageEnd
+      }));
+      expect(r.startedEasyReading).toBe(true);
+      expect(r.pageStateOverride).toBeNull();
+      expect(r.sendCommandAfterUpdate).toBe("");
+      expect(r.reachedPageEnd).toBe(reachedPageEnd);
+    }
+  });
+
   it("does not overwrite a queued command (skipOne) with a page-down", () => {
     const r = nextEasyReadingRowState(rowInput({
       startedEasyReading: true, curY: 23, curX: 79, isStatusRow: true,
@@ -297,6 +313,16 @@ describe("functionModeExitDecision", () => {
     expect(functionModeExitDecision({
       pageState: 3, isStatusRow: true, curY: 23, lastRowNum: 23
     })).toBe("resume");
+  });
+
+  // 按 v 進實況、或實況裡留言完回來：都是實況狀態列 ⇒ 回好讀（推文由 _accumulateLive 接上）。
+  it("官方推文實況的狀態列也 resume；留言 prompt 還在（游標不在底列）就 stay", () => {
+    expect(functionModeExitDecision({
+      pageState: 3, isStatusRow: false, isLiveRow: true, curY: 23, lastRowNum: 23
+    })).toBe("resume");
+    expect(functionModeExitDecision({
+      pageState: 3, isStatusRow: false, isLiveRow: true, curY: 22, lastRowNum: 23
+    })).toBe("stay");
   });
 
   it("stays while the reply menu is up (status on row 23 but cursor on the menu row 22)", () => {

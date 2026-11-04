@@ -450,6 +450,23 @@ export const SCENES = [
     ],
   },
   {
+    // 好讀的常態：自動翻頁讀完整篇（PageDown 到 100%）才按 v ⇒ 實況畫面的文章段就是累積頁的尾巴。
+    // 推文多到「實 況 開 始」橫幅捲出畫面（live_next_row 每列上捲一次），好讀要照上捲列數接上
+    // （live_mode.mergeLiveWindow，offline e2e live_mode 守）。
+    file: 'live_long_read',
+    entry: 'read:Live',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '\r', name: 'article' },
+      { keys: '\x1b[6~', name: 'page-2' },
+      { keys: '\x1b[6~', name: 'page-3' },
+      { keys: 'v', name: 'live-on' },
+      ...Array.from({ length: 26 }, (_, i) => ({ live: `live comment ${i + 1}`, name: `live-${i + 1}` })),
+      { keys: 'q', name: 'live-off' },
+    ],
+  },
+  {
     // upstream f1a32e2：同一篇連續開 LIVE_AUTO_PROMPT_REPEAT（10）次後，第 11 次開文前先問
     // more.c#live_check_repeat 的 vans「要直接進入實況模式看新推文嗎？ [Y/n]: 」（畫在列表殘影的底列，
     // 還沒 clear）；是 getdata 輸入欄（要 ⏎ 才送出），答案不是 n 就直接進實況（pmore.c#_pmore2 的 start_live）。

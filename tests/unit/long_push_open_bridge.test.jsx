@@ -2,7 +2,7 @@
 // App（純 JS）→ React 的橋接：pttchrome.openLongPushModal。
 //
 // 攔截推文鍵的三條入口都在非 React 的那一側（term_view / App），而長推文輸入框是
-// ContextMenu 的 React state。橋接方式比照既有的 onToggleLiveHelperModalState：
+// ContextMenu 的 React state。橋接方式比照既有的 onLiveHelperEndKey：
 // App.prototype 上預設 noop，ContextMenu 掛載時注入真實作、卸載時還原。
 //
 // 這裡守三件事：

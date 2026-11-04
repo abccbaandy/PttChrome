@@ -59,6 +59,17 @@ import { toPostAid } from './aid_codec';
 // 不要在這裡再定義第二份。
 import { KEY_ABORT, KEY_DISMISS } from './screen_dismiss';
 import { recordFor } from './reading_record';
+import { isLiveRepeatPrompt, LIVE_REPEAT_DECLINE } from './open_prompt';
+
+function isLiveScreen(buf) {
+  return !!(buf && typeof buf.isLiveScreenNow === 'function' && buf.isLiveScreenNow());
+}
+
+// facts（list_session._collectFacts）的底列文字。
+function lastRow(facts) {
+  const texts = facts && facts.rowTexts;
+  return texts && texts.length ? texts[texts.length - 1] : '';
+}
 
 // 每一步的等待預算。推文的回應是 server 立刻重畫底列，正常在一個 round-trip 內。
 const STEP_TIMEOUT_MS = 5000;
@@ -371,6 +382,9 @@ LongPushSession.prototype = {
     // 只在文章裡探。列表上按 X 推的是游標所指的文章，而錨點要從文章標頭取
     // （long_push_gate 的攔截判準也是同一條線）。
     if (!this._termBuf || this._termBuf.pageState !== 3) return false;
+    // 官方推文實況（pageState 也是 3）：推完留在實況、不回列表，取 AID 的 Q 在實況裡是「離開」
+    // ⇒ 整套流程的前提都不成立。留言請用實況自己的 X（long_push_gate.longPushAvailable 同規）。
+    if (isLiveScreen(this._termBuf)) return false;
     this._reset();
     this._phase = 'preflight';
     this._maxBytes = o.maxBytes || pushMaxBytes({});
@@ -393,6 +407,7 @@ LongPushSession.prototype = {
   start: function(opts) {
     const o = opts || {};
     if (this.active) return false;
+    if (isLiveScreen(this._termBuf)) return false; // 同 startPreflight
     const armed = this._armed;
     const text = String(o.text || '');
     this._reset(); // 刻意不動 _armed
@@ -1028,20 +1043,34 @@ LongPushSession.prototype = {
       });
       onLanded(facts);
     };
-    this._step({
-      kind: 'longpush-reopen',
-      keys: '\r',
-      accept: function(c, facts) {
-        return facts.kind === 'article' || c.kind !== 'other';
-      },
-      done: function(c, result) {
-        land((result && result.facts) || null);
-      },
-      // 回不去只是停在列表，推文本身已經送完了，不該報成失敗。
-      fail: function() {
-        land(null);
-      }
-    });
+    const landed = function(c, facts) {
+      return facts.kind === 'article' || c.kind !== 'other';
+    };
+    const step = function(keys, answeredLive) {
+      self._step({
+        kind: answeredLive ? 'longpush-reopen-live-no' : 'longpush-reopen',
+        keys: keys,
+        accept: function(c, facts) {
+          return landed(c, facts) ||
+            (!answeredLive && isLiveRepeatPrompt(lastRow(facts)));
+        },
+        done: function(c, result) {
+          const facts = (result && result.facts) || null;
+          // more.c#live_check_repeat：同一篇連開 10 次後，第 11 次開文前先問要不要直接進實況。
+          // 長推文每段都要開回去一次，推幾段就撞上 ⇒ 這個 ⏎ 是我們按的、目的是回到文章，
+          // 替使用者答 n（open_prompt.LIVE_REPEAT_DECLINE 的註解寫了為什麼只有這裡可以答）。
+          // 答過就重新起算，同一趟不會再問第二次 ⇒ 只答一次，再問就當成回不去。
+          if (!answeredLive && facts && isLiveRepeatPrompt(lastRow(facts)) && !landed(c, facts))
+            return step(LIVE_REPEAT_DECLINE, true);
+          land(facts);
+        },
+        // 回不去只是停在列表，推文本身已經送完了，不該報成失敗。
+        fail: function() {
+          land(null);
+        }
+      });
+    };
+    step('\r', false);
   },
 
   // -------------------------------------------------------------------------

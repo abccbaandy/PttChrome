@@ -23,7 +23,7 @@
 | 首頁儀表板（主功能表上的面板畫著） | `home_dashboard.fetchFavorites`：`Ctrl+Z f` → 讀頁 →（跳號翻頁）→ 回游標 → `q` | 面板本來就靠這條抓我的最愛；面板的「更新」鈕也改走這個入口（同一道冷卻），見 `docs/home-dashboard.md` |
 | 文章（從搜尋結果／文摘開的） | 列表好讀記錄的身後列表 `mode:'select'` ⇒ `←`（pager FULLUPDATE，游標不動）→ `⏎`；`Q` 把我們丟回子列表（標題列 `系列《`／`文摘《`）⇒ 關框＋`⏎` | 子列表裡 `#` 被拒、`s<板>` 回來仍是子列表（協定 §8.1）；這兩條保住身後的搜尋結果。都不中時走上一列，`#` 前先 ← 離開子列表 |
 
-**為什麼文章不用 `←→`（live 文小幫手的做法）**：← 回列表後游標停在原本的 `crs_ln`，但列表
+**為什麼文章不用 `←→`（舊版 live 文小幫手的做法）**：← 回列表後游標停在原本的 `crs_ln`，但列表
 重讀之後同一個序號可能已經是別篇——置底文在有新文時整排往後挪一號、上方有文被刪時所有
 序號往前縮——→ 會**靜默開錯篇**。AID 是唯一跨重讀不變的身分（`docs/deep-link.md`、`nav_history.js`）。
 
@@ -96,15 +96,12 @@ pref `refreshMinIntervalSec`（預設 5 秒，0 ＝不限制），只在**真的
   原生那條一定要關，否則兩個一起跑：`main.css` 在手機版面給 `html`／`body` **`overscroll-behavior-y: contain`**
   （只動 y 軸；x 軸返回導航照舊放行，守護 `native_gesture_css.test.js`＋`pull_refresh.test.js`）。
 
-## live 文小幫手是怎麼監控新推文的（對照）
+## live 文小幫手（對照）
 
-`App.incrementCountToUpdatePushthread`：每秒計數，到設定秒數且 `pageState` 是 2/3 就裸送
-`←→End`（`\x1b[D\x1b[C\x1b[4~`）＝離開文章、重開游標下那篇、跳到文末。送之前問本幀
-（`screen_refresh.liveHelperUpdateAllowed`）：文章要底列是 pager 狀態列、列表要底列是列表 caption、游標不在輸入欄。
-`pageState` 會黏住，推文型別選單（`bbs.c#recommend` 的 `vkey()`）底下還是 3，← 會被當成選了預設的「推」；
-鍵盤會關掉小幫手，但滑鼠、手機工具列、右鍵選單不會。開啟時先關掉好讀模式
-（`exitEasyReading`），任何按鍵都會關掉它（`cancelsLiveHelper`）。沒有任何驗證：上面「為什麼不用 ←→」
-那段的開錯篇風險它都有，也沒有頻率保護（最小 1 秒）。
+舊版每 N 秒裸送 `←→End` 重開文章看新推文（上面「為什麼不用 ←→」的開錯篇風險它都有，還得先關好讀）。
+現在改用 PTT 官方推文實況（文章裡 `v`，新推文由 server 主動送上畫面，好讀照開、接在累積頁後面）：
+小幫手只剩「開始實況 v／離開實況 q／鈴聲 B」三顆按鈕，各送那一個鍵、只在本幀認得出來的畫面上送
+（`live_helper.js`；細節見 `docs/easy-reading.md`「實況模式」）。它不是重新整理，不走這份文件的交易。
 
 ## 守護
 

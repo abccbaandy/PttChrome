@@ -165,6 +165,7 @@ function makeCore(opts = {}) {
       cols: 80,
       getRowText: (r, s, e, acc) => String((acc || lines)[r]),
       addEventListener: (name, fn) => (listeners[name] = fn),
+      isLiveScreenNow: () => !!opts.live,
     },
     easyReading: { _enabled: opts.easy !== false, _functionMode: !!opts.functionMode },
     view: {
@@ -236,6 +237,8 @@ describe("CommentBar：何時出現、畫在哪", () => {
     ["好讀的功能鍵模式／長推文送出中的原生鏡像", { functionMode: true }],
     ["文章列表", { pageState: 2 }],
     ["累積頁是空的", { lines: [] }],
+    // 留言走實況自己的 (X)留言；這一列送出走長推文，而長推文在實況裡不成立（Q 是離開）。
+    ["官方推文實況（好讀正在接推文）", { live: true }],
   ])("%s ⇒ 不出現", (_l, opts) => {
     const { bar, settle } = makeCore(opts);
     settle();

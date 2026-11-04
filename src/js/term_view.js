@@ -22,6 +22,7 @@ import { readEffectivePrefs } from './pref_storage';
 import { cursorOffsets, paintedRowsAreBufRows } from './cursor_anchor';
 import { offsetTopWithin } from './scroll_anchor';
 import { internRow } from './term_char_intern';
+import { isLiveStatusRow, parseLiveStatusRow, mergeLiveArticle, mergeLiveWindow } from './live_mode';
 import { readSelectionText, renderChunksAround, rowsFromScrollTop } from '../render/screen_chunk';
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
@@ -87,15 +88,6 @@ export function acceptsKeyEvent(e, isComposition) {
     return false;
 
   return true;
-}
-
-// 這個 keydown 該不該取消「推文即時更新」？
-// Alt remap 是真的在下指令，必須跟 Ctrl 一樣關掉；其餘 Alt 組合仍是瀏覽器／OS 的。
-// **不可簡化成「一律 true」**：呼叫點在 keydown listener 裡，排在
-// `keyCode 16..19`（Shift/Ctrl/Alt 裸鍵）的早退**之前**，一律 true 會讓「單獨輕點
-// Alt 去開瀏覽器選單」也把實況更新關掉。
-export function cancelsLiveHelper(e) {
-  return !e.altKey || isAltRemapEvent(e);
 }
 
 // enhance 旗標，只給「好讀累積長頁」（buf.pageLines）那兩個 render 分支用。
@@ -479,6 +471,8 @@ export function TermView() {
   // 上一段反向讀取怎麼結束的（EasyReading 讀它決定收尾）：null | 'stitched' |
   // 'joined' | 'dropped'。由 beginReverse 清掉。
   this._reverseResult = null;
+  // 官方推文實況的累積狀態（見 _accumulateLive）。null＝沒在接實況。
+  this._live = null;
 
 
   this.lineWrap = 78;
@@ -647,9 +641,6 @@ export function TermView() {
   addEventListener('keydown', (e) => {
     if (!shouldAcceptInput() || belongsToClosedModal(e) || !keyEventFilter(e))
       return;
-
-    // disable auto update pushthread if any command is issued;
-    if (cancelsLiveHelper(e)) this.bbscore.onDisableLiveHelperModalState();
 
     // macOS 的 dead key（⌥E/⌥I/⌥N/⌥U）即使被 preventDefault 仍可能開一次組字，
     // 而且 compositionstart 不保證會來（Windows 上根本不來）。記一個時間窗，讓
@@ -975,8 +966,22 @@ TermView.prototype = {
         // appendRows(showsLinkPreview=true) behaviour. Hover preview off (inline
         // already shows them; avoids a duplicate floating popup).
         var wasReverse = !!this._reverse;
-        this.accumulatePageLines();
-        if (!this.buf.pageLines.length) {
+        // 官方推文實況（文章裡按 v）：畫面是「文章最後一頁＋推文」而且會上捲，不是 pmore 的頁，
+        // 另走 _accumulateLive 把新推文接在累積頁後面。認不出（對不上累積頁）⇒ 'native'＝照原生鏡像。
+        var liveResult = this.buf.isLiveScreenNow() ? this._accumulateLive() : null;
+        var liveFollow = false;
+        if (liveResult === null) {
+          this.accumulatePageLines();
+        } else if (liveResult !== 'native') {
+          // 同 accumulatePageLines 開頭：底部 footer 疊在格線最後一列上，留一列 padding，
+          // 最後一則推文才捲得出來（functionMode 鏡像時被 hideEasyReadingOverlaysKeepPage 清掉過）。
+          if (this.mainContainer) this.mainContainer.style.paddingBottom = 'calc(1em + 10px)';
+          // 讀者停在文末（或剛進實況）⇒ 新推文接上之後跟著到底。捲上去看別處的人不拖走他。
+          liveFollow = liveResult === 'engaged' ||
+            (liveResult === 'appended' && this._scrolledToBottom());
+          this._mirrorStatusRowToFooter();
+        }
+        if (liveResult === 'native' || !this.buf.pageLines.length) {
           // 防黑守門：累積頁是空的（accumulatePageLines 判這幀 incomplete → 'skip'，
           // 而先前的累積又被誰清掉了）。把空陣列丟給 <Screen> 就是渲染 0 列 ＝ **整頁
           // 全黑**，而且 prompt 幀的游標永遠不在 (rows-1, cols-1)，complete 再也不會
@@ -998,6 +1003,8 @@ TermView.prototype = {
             ? this._captureRowAnchor() : null;
           this._renderScreenLines(this.buf.pageLines, /* dropHidden */ true, /* inlinePreview */ true, /* hoverPreview */ false, this._pageRenderOverrides());
           if (stitchAnchor) this._restoreRowAnchor(stitchAnchor);
+          if (liveFollow && this.bbscore && this.bbscore.easyReading)
+            this.bbscore.easyReading._stickBottom();
         }
       } else if (
         this.useEasyReadingMode &&
@@ -1821,6 +1828,17 @@ TermView.prototype = {
       e.preventDefault();
       return;
     }
+    // Live 文小幫手開著時，文章裡按 End ＝開始推文實況（pref endTurnsOnLiveUpdate）。
+    // onLiveHelperEndKey 預設 noop（回 undefined ⇒ End 照原本的路：好讀捲到底／原生 End），
+    // 只有面板開著才由 ContextMenu 注入；回 true＝這一幀是 pmore 文章頁、v 已送出。
+    // 排在好讀之前：好讀把 End 當「捲到文末」吃掉，排在後面就永遠輪不到（舊版靠開小幫手時
+    // 先關掉好讀才繞過去）。
+    if (e.key === 'End' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey &&
+        this.bbscore.endTurnsOnLiveUpdate &&
+        this.bbscore.onLiveHelperEndKey && this.bbscore.onLiveHelperEndKey()) {
+      e.preventDefault();
+      return;
+    }
     if (this.useEasyReadingMode && this.buf.startedEasyReading &&
         !this.buf.easyReadingFunctionMode) {
       // 'browser'＝這個鍵交給瀏覽器（好讀文章的 Ctrl+F 開尋找列）：就此 return，
@@ -1854,22 +1872,7 @@ TermView.prototype = {
     // listSession.onKeyDown、文章好讀交給 easyReading._onKeyDown，沒被攔下的一律
     // 原封落到 _keyboard.onKeyDown 送給 PTT。
     var stop = false;
-    if (!e.ctrlKey && !e.altKey) {
-      switch (e.key) {
-        case 'End': //End
-          // Only swallow End when the live-update helper actually handles it
-          // (onToggleLiveHelperModalState returns true). When the helper isn't
-          // running it's a noop returning undefined → fall through to native End,
-          // so End keeps jumping to the bottom in list/article (see bug: End dead
-          // in list/article whenever endTurnsOnLiveUpdate was enabled).
-          if ((this.bbscore.buf.pageState == 2 || this.bbscore.buf.pageState == 3) &&
-            this.bbscore.endTurnsOnLiveUpdate &&
-            this.bbscore.onToggleLiveHelperModalState()) {
-            stop = true;
-          }
-          break;
-      }
-    } else if (e.ctrlKey && !e.altKey && !e.shiftKey) {
+    if (e.ctrlKey && !e.altKey && !e.shiftKey) {
       switch (e.key.toLowerCase()) {
         case 'c':
           if (!window.getSelection().isCollapsed) { //^C , do copy
@@ -3072,12 +3075,88 @@ TermView.prototype = {
   },
 
   // Accumulate the easy-reading scroll page into buf.pageLines (pure JS, no DOM).
+  // ---- 官方推文實況（文章裡按 v，more.c#live_run）----
+  // 純決策在 live_mode.js（mergeLiveArticle／mergeLiveWindow），這裡只負責把畫面列快照接進
+  // buf.pageLines。狀態 this._live：
+  //   base      累積頁裡實況段從哪一列開始（前面是文章）
+  //   texts     實況段每一列的文字（第 0 列是「實 況 開 始」橫幅），對齊下一幀用
+  //   received  上一幀狀態列的 [+N]
+  // 累積頁被別人換掉（離開文章、關好讀、重建）時長度對不上 ⇒ 視為沒接管，下一幀從橫幅重新接。
+  // 回：'engaged'（這一幀剛接管）／'appended'（接了新列）／'idle'（沒有新東西）／
+  //     'native'（認不出、不接管 ⇒ 呼叫端照原生鏡像）。
+  _accumulateLive: function() {
+    var buf = this.buf;
+    // 反向讀取還沒接合就進實況：head/tail 之間還有洞，接上去會靜默缺字 ⇒ 不接管。
+    if (this._reverse) return 'native';
+    var rows = buf.rows - 1;
+    var lines = buf.lines;
+    var screenTexts = [];
+    for (var r = 0; r < rows; ++r) screenTexts.push(rowToText(lines[r]));
+    var status = parseLiveStatusRow(buf.getRowText(rows, 0, buf.cols));
+    var received = status ? status.received : 0;
+    var snap = function(from, to) {
+      var out = [];
+      for (var i = from; i < to; ++i) out.push(internRow(lines[i]));
+      return out;
+    };
+    var live = this._live;
+    if (live && buf.pageLines.length !== live.base + live.texts.length)
+      live = this._live = null;
+    if (!live) {
+      var m = mergeLiveArticle({ accTexts: buf.pageLines.map(rowToText), screenTexts: screenTexts });
+      if (!m) return 'native';
+      var article = snap(m.articleFrom, m.articleTo);
+      buf.pageLines = buf.pageLines.slice(0, m.keep).concat(article, snap(m.liveFrom, m.liveTo));
+      this._live = {
+        base: m.keep + article.length,
+        texts: screenTexts.slice(m.liveFrom, m.liveTo),
+        received: received
+      };
+      // pmore 的行號追蹤到此為止（實況畫面沒有行號）；離開實況就回列表、整份重來。
+      this._accEndRow = null;
+      buf.easyReadingSeekBack = null;
+      return 'engaged';
+    }
+    var d = mergeLiveWindow({
+      liveTexts: live.texts,
+      screenTexts: screenTexts,
+      receivedDelta: received - live.received
+    });
+    live.received = received;
+    if (d.action === 'none') return 'idle';
+    var added = snap(d.from, d.to);
+    var addedTexts = screenTexts.slice(d.from, d.to);
+    if (d.action === 'replace') {
+      buf.pageLines = buf.pageLines.slice(0, live.base).concat(added);
+      live.texts = addedTexts;
+    } else {
+      buf.pageLines = buf.pageLines.concat(added);
+      live.texts = live.texts.concat(addedTexts);
+    }
+    return 'appended';
+  },
+
+  // 好讀累積頁是不是正在接實況推文（EasyReading 用它決定按鍵怎麼處理）。
+  isLiveReading: function() {
+    return !!this._live && this.buf.pageState === 3 &&
+      this.buf.pageLines.length === this._live.base + this._live.texts.length;
+  },
+
+  // 好讀長頁是不是捲到底了（差不到一列）。
+  _scrolledToBottom: function() {
+    var el = this.mainDisplay;
+    if (!el) return false;
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - Math.max(2, this.chh || 0);
+  },
+
   // Called only for article pages (pageState 3) from redraw; the actual draw is done
   // by the caller via _renderScreenLines(buf.pageLines). Cross-page de-dup sizes the
   // overlap from PTT's status-line row numbers ("目前顯示: 第 S~E 行") when available,
   // with row-CONTENT comparison (findPageOverlap) as cross-check / fallback — see
   // comment_parse.resolvePageOverlap and docs/enhanced-addon.md.
   accumulatePageLines: function() {
+    // 回到 pmore 的頁＝實況已經結束（實況只能離開回列表，這裡是保險）。
+    this._live = null;
     // The bottom status-row overlay (#easyReadingLastRow) sits over the last grid row
     // (main.css: margin-top -(1em+10px), since `.main` is chh*rows+10 tall). Reserve one line of bottom padding so the article's last line can
     // scroll clear of it. Critical for a SHORT (single PTT-page) article whose RENDERED
@@ -3457,7 +3536,8 @@ TermView.prototype = {
   // (empty last row) never blanks the footer — we keep the previous content then.
   _mirrorStatusRowToFooter: function() {
     var statusText = this.buf.getRowText(this.buf.rows-1, 0, this.buf.cols);
-    if (parseStatusRow(statusText)) {
+    // 實況的狀態列一樣鏡像（(X)留言／(B)鈴聲／(q)離開 也解析成可點的功能鍵）。
+    if (parseStatusRow(statusText) || isLiveStatusRow(statusText)) {
       var el = document.createElement('span');
       el.style = "background-color:black;";
       var statusChars = this.buf.lines[this.buf.rows-1];
@@ -3912,6 +3992,7 @@ TermView.prototype = {
     if (this.mainContainer) this.mainContainer.style.paddingBottom = '';
     this.mainDisplay.scrollTop = 0;
     this.buf.pageLines = [];
+    this._live = null;
     // Left the article: drop overlap tracking so a stale row number can't bias the next
     // article's first page-down (see accumulatePageLines / resolvePageOverlap).
     this._accEndRow = null;

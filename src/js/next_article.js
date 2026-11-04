@@ -286,7 +286,10 @@ NextArticle.prototype = {
       !er._functionMode &&
       !er._reverse &&
       er.easyReadingReachedPageEnd &&
-      (buf.pageLines || []).length
+      (buf.pageLines || []).length &&
+      // 官方推文實況：文末一直在長，讀者就停在文末看新推文——不是讀完了。PTT 這時只認 q，
+      // 換篇的鍵送不進去（docs/easy-reading.md「實況模式」）。
+      !(typeof buf.isLiveScreenNow === 'function' && buf.isLiveScreenNow())
     );
   },
 

@@ -58,6 +58,22 @@ describe("文章好讀模式", () => {
   });
 });
 
+// 官方推文實況：底部 footer 鏡像的是實況狀態列（(X)留言 (B)鈴聲 (T/M/S)調時 (q)離開）。
+// 留言要把推文 prompt 畫出來、離開要把列表畫出來 ⇒ 切鏡像；鈴聲／調時只改狀態列，
+// 切了反而整個畫面閃成原生 24 列再閃回來。
+describe("文章好讀＋官方推文實況", () => {
+  const plan = (bytes) => functionKeyClickPlan({ bytes, mode: "live-easy" });
+
+  test("(X)留言、(q)離開 先切原生鏡像再送", () => {
+    for (const b of ["X", "q"]) expect(plan(b)).toEqual({ enterFunctionMode: true, stopEasyReading: false, send: true });
+  });
+
+  test("(B)鈴聲、(T/M/S)調時 直接送，畫面留在好讀", () => {
+    for (const b of ["B", "T", "M", "S"])
+      expect(plan(b)).toEqual({ enterFunctionMode: false, stopEasyReading: false, send: true });
+  });
+});
+
 test("沒有 bytes 就什麼都不做（不可以誤送空鍵）", () => {
   [null, undefined, ""].forEach((b) => {
     const p = functionKeyClickPlan({ bytes: b, mode: "article-easy" });
