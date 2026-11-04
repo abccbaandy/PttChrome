@@ -53,21 +53,28 @@
   color: #ff6b6b;
 }
 
+/* textarea：平常單行高（30px＝行高 20＋上下 4＋框 1），打字中由元件設 inline height 長高
+   （最多 COMMENT_BAR_MAX_LINES 行）。長字（網址）任意處折行，不撐出橫捲軸。 */
 .commentBarInput {
+  display: block;
   flex: 1 1 auto;
   min-width: 0;
   height: 30px;
   box-sizing: border-box;
-  padding: 0 8px;
+  margin: 0;
+  padding: 4px 8px;
   border: 1px solid #3a3a44;
   border-radius: 6px;
   background: #0b0b0e;
   color: #eee;
   /* 手機 16px 以下 iOS／部分 Android 會在聚焦時自動放大頁面。 */
   font:
-    16px/1.2 system-ui,
+    16px/20px system-ui,
     sans-serif;
   outline: none;
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .commentBarInput:focus {
@@ -94,6 +101,26 @@
 .commentBarSend:not(:disabled):hover,
 .commentBarType:hover {
   background: #26262e;
+}
+
+/* 打字中：輸入框長高時按鈕貼在最下面一行旁邊（列往上長，下緣不動）。 */
+.commentBar--active {
+  align-items: flex-end;
+}
+
+/* 手機打字中：上下兩層。輸入框獨佔第一層吃滿寬（一行放得下的字是單層時的兩倍多），
+   推／噓／→ 靠左、計數與送出靠右排在第二層。 */
+.commentBar--stacked {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 6px;
+}
+.commentBar--stacked .commentBarInput {
+  order: -1;
+  flex: 1 1 100%;
+}
+.commentBar--stacked .commentBarTypes {
+  margin-right: auto;
 }
 
 /* 手機收合模式：從底部導覽上緣滑出（像 App 的留言列）。 */

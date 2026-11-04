@@ -14,7 +14,7 @@
 import { analyzeArticle } from './article_tools';
 import { getImageProxyConfig } from './image_proxy';
 import { readEffectivePrefs } from './pref_storage';
-import { COMMENT_BAR_HEIGHT } from './comment_bar';
+import { COMMENT_BAR_HEIGHT, commentBarHeight } from './comment_bar';
 import { offsetTopWithin } from './scroll_anchor';
 import { isScreenChunk, isChunkRendered } from '../render/screen_chunk';
 
@@ -52,11 +52,12 @@ export function navMarks(analysis, total, newRow) {
   return { commentRow, marks };
 }
 
-// 軸的位置：終端機右緣、從 .main 頂到可見內容下緣（好讀 footer 上緣；推文列顯示中再扣列高）。
-export function articleNavGeometry({ mainRect, footerTop, commentBarShown }) {
+// 軸的位置：終端機右緣、從 .main 頂到可見內容下緣（好讀 footer 上緣；推文列顯示中再扣列高，
+// 打字中列會長高 ⇒ 給 commentBarHeight 量到的高度，沒給就當單行高）。
+export function articleNavGeometry({ mainRect, footerTop, commentBarShown, commentBarHeight: barH }) {
   if (!mainRect || !mainRect.width) return null;
   let bottom = footerTop != null ? Math.min(mainRect.bottom, footerTop) : mainRect.bottom;
-  if (commentBarShown) bottom -= COMMENT_BAR_HEIGHT;
+  if (commentBarShown) bottom -= barH || COMMENT_BAR_HEIGHT;
   const top = Math.max(0, mainRect.top);
   const height = Math.round(bottom - top);
   if (height < 80) return null;
@@ -121,6 +122,16 @@ export function ArticleNav(core) {
     window.addEventListener('resize', function() {
       self.refresh();
     });
+  // 推文列出現／收起／打字中長高 ⇒ 軸的下緣跟著讓位（onChange 會先給一次現況，那次跳過）。
+  const bar = core.commentBar;
+  if (bar && typeof bar.onChange === 'function') {
+    let barH = null;
+    bar.onChange(function(s) {
+      const h = commentBarHeight(s);
+      if (barH !== null && h !== barH) self.refresh();
+      barH = h;
+    });
+  }
 }
 
 ArticleNav.prototype = {
@@ -191,6 +202,7 @@ ArticleNav.prototype = {
       mainRect: main.getBoundingClientRect(),
       footerTop: footerTop,
       commentBarShown: !!(bar && bar.visible),
+      commentBarHeight: commentBarHeight(bar),
     });
   },
 

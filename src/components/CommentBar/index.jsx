@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { i18n } from "../../js/i18n";
 import {
   COMMENT_BAR_HEIGHT,
   COMMENT_BAR_ID,
+  COMMENT_BAR_MAX_LINES,
   commentBarCounter,
+  commentBarText,
 } from "../../js/comment_bar";
 import "./CommentBar.css";
 
@@ -21,6 +30,12 @@ import "./CommentBar.css";
 // 系統返回由 bar 登記的 sheet dismiss 收。
 // 滑鼠：App 的滑鼠入口在 window ⇒ 列上的事件一律 stopPropagation，且 App._onUploadLayer
 // 認 #commentBar 放過（不會被當成點終端機）。
+//
+// 長推文看得到全文：輸入框是 textarea（Enter 照樣送出，不換行；貼上的換行換成空白）。
+// 打字中（聚焦，或手機收合展開中）跟著內容往上長高，最多 COMMENT_BAR_MAX_LINES 行；
+// 手機再改成上下兩層——輸入框獨佔一整列吃滿寬，推／噓／→、計數、送出排在下面。
+// 沒聚焦就縮回單行原樣。實際列高用 ResizeObserver 量，回報給 bar.setHeight（下一篇
+// 卡片、導覽軸讓位）並寫進 --comment-bar-h（累積頁尾端的空白跟著加高）。
 const TYPES = [
   { value: "push", key: "commentBar_push" },
   { value: "boo", key: "commentBar_boo" },
@@ -39,10 +54,17 @@ export const CommentBar = ({ pttchrome }) => {
   const [state, setState] = useState(() => (bar ? bar.state : null));
   const [text, setText] = useState("");
   const [type, setType] = useState("push");
+  const [focused, setFocusedState] = useState(false);
   const inputRef = useRef(null);
+  const rootRef = useRef(null);
   const visible = !!(state && state.visible);
   const prefill = state && state.prefill;
   const foldedOpen = !!(state && state.folded && state.expanded);
+  // 正在打字：輸入框長高；手機改上下兩層。收合展開中焦點下一幀才到，先排好版面不跳一下。
+  const active = visible && (focused || foldedOpen);
+  const stacked = active && !!(state && state.mobile);
+  const barWidth = state ? state.width : 0;
+  const barHeight = (state && state.height) || COMMENT_BAR_HEIGHT;
   // 打字時右邊的「剩 N 字／會分成 N 則」（只算字，不送鍵）。上限問 bar（有快取）。
   const counter = useMemo(() => {
     if (!state || !state.counter || !bar || typeof bar.maxBytes !== "function")
@@ -59,9 +81,48 @@ export const CommentBar = ({ pttchrome }) => {
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("commentBarShown", visible);
-    root.style.setProperty("--comment-bar-h", COMMENT_BAR_HEIGHT + "px");
     return () => root.classList.remove("commentBarShown");
   }, [visible]);
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--comment-bar-h",
+      barHeight + "px",
+    );
+  }, [barHeight]);
+
+  // 輸入框高度：打字中＝內容高（上限 COMMENT_BAR_MAX_LINES 行，再多框內捲）；沒在打字＝CSS 的單行高。
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (!active) {
+      el.style.height = "";
+      el.style.overflowY = "";
+      return;
+    }
+    el.style.height = "auto";
+    const cs = getComputedStyle(el);
+    const frame =
+      parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const max = parseFloat(cs.lineHeight) * COMMENT_BAR_MAX_LINES + pad + frame;
+    const want = el.scrollHeight + frame;
+    el.style.height = Math.min(want, max) + "px";
+    el.style.overflowY = want > max + 0.5 ? "auto" : "hidden";
+  }, [active, stacked, text, barWidth, visible]);
+
+  // 列的實際高度回報給 bar（下一篇卡片／導覽軸讓位）。
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!visible || !el || !bar || typeof bar.setHeight !== "function")
+      return undefined;
+    if (typeof ResizeObserver !== "function") return undefined;
+    const ro = new ResizeObserver(() => bar.setHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      bar.setHeight(COMMENT_BAR_HEIGHT);
+    };
+  }, [visible, bar]);
 
   const setFocused = useCallback(
     (on) => {
@@ -72,7 +133,10 @@ export const CommentBar = ({ pttchrome }) => {
   );
   // 列被收起時輸入框跟著卸載，不會有 blur ⇒ 這裡補解除。
   useEffect(() => {
-    if (!visible) setFocused(false);
+    if (!visible) {
+      setFocused(false);
+      setFocusedState(false);
+    }
   }, [visible, setFocused]);
   useEffect(() => () => setFocused(false), [setFocused]);
 
@@ -154,11 +218,14 @@ export const CommentBar = ({ pttchrome }) => {
 
   return (
     <div
+      ref={rootRef}
       id={COMMENT_BAR_ID}
       className={
         "commentBar" +
         (state.mobile ? " commentBar--mobile" : "") +
-        (foldedOpen ? " commentBar--unfolded" : "")
+        (foldedOpen ? " commentBar--unfolded" : "") +
+        (active ? " commentBar--active" : "") +
+        (stacked ? " commentBar--stacked" : "")
       }
       style={{
         left: state.left,
@@ -166,7 +233,8 @@ export const CommentBar = ({ pttchrome }) => {
         // 手機：輸入框叫出的鍵盤蓋住底部導覽 ⇒ 列浮到鍵盤上緣（--vv-kb-inset 由
         // App._onVisualViewport 寫，不碰終端機幾何）。
         bottom: `max(${state.bottom}px, var(--vv-kb-inset, 0px))`,
-        height: COMMENT_BAR_HEIGHT,
+        // 釘下緣、高度隨內容：打字中輸入框長高時列往上長。
+        minHeight: COMMENT_BAR_HEIGHT,
       }}
       onMouseDown={swallow}
       onMouseUp={swallow}
@@ -200,20 +268,25 @@ export const CommentBar = ({ pttchrome }) => {
           </button>
         ))}
       </div>
-      <input
+      <textarea
         ref={inputRef}
         className="commentBarInput"
         name="commentBarText"
-        type="text"
+        rows={1}
         autoComplete="off"
+        spellCheck={false}
         enterKeyHint="send"
         placeholder={i18n("commentBar_placeholder")}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => setText(commentBarText(e.target.value))}
         onKeyDown={onKeyDown}
-        onFocus={() => setFocused(true)}
+        onFocus={() => {
+          setFocused(true);
+          setFocusedState(true);
+        }}
         onBlur={() => {
           setFocused(false);
+          setFocusedState(false);
           if (foldedOpen) collapse();
         }}
       />

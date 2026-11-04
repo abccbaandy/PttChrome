@@ -14,6 +14,9 @@ import {
   commentBarGeometry,
   commentBarCounter,
   commentBarMaxBytes,
+  commentBarHeight,
+  commentBarText,
+  COMMENT_BAR_HEIGHT,
   quickPushPlan,
   QUICK_PUSH_MAX_SEGMENTS,
 } from "../../src/js/comment_bar";
@@ -215,6 +218,7 @@ describe("CommentBar：何時出現、畫在哪", () => {
       left: 10,
       width: 640,
       bottom: 140,
+      height: COMMENT_BAR_HEIGHT,
       mobile: false,
       counter: true,
       prefill: null,
@@ -286,6 +290,35 @@ describe("CommentBar：何時出現、畫在哪", () => {
     t.settle();
     t.settle();
     expect(seen).toEqual([false, true]);
+  });
+});
+
+describe("推文列高度（打字中長高，讓位的功能問 commentBarHeight）", () => {
+  test("沒畫 ⇒ 0；畫著 ⇒ 量到的高度，至少單行高", () => {
+    expect(commentBarHeight(null)).toBe(0);
+    expect(commentBarHeight({ visible: false, height: 120 })).toBe(0);
+    expect(commentBarHeight({ visible: true })).toBe(COMMENT_BAR_HEIGHT);
+    expect(commentBarHeight({ visible: true, height: 10 })).toBe(COMMENT_BAR_HEIGHT);
+    expect(commentBarHeight({ visible: true, height: 117.6 })).toBe(118);
+  });
+  test("setHeight：變了才通知；不低於單行高", () => {
+    const t = makeCore();
+    t.settle();
+    const seen = [];
+    t.bar.onChange((s) => seen.push(s.height));
+    t.bar.setHeight(118);
+    t.bar.setHeight(118);
+    t.bar.setHeight(3);
+    expect(seen).toEqual([COMMENT_BAR_HEIGHT, 118, COMMENT_BAR_HEIGHT]);
+    expect(commentBarHeight(t.bar.state)).toBe(COMMENT_BAR_HEIGHT);
+  });
+});
+
+describe("commentBarText：推文一則一行", () => {
+  test("貼上的換行換成空白（不會變成長推文分段的強制斷點）", () => {
+    expect(commentBarText("a\nb\r\nc\rd")).toBe("a b c d");
+    expect(commentBarText("推推")).toBe("推推");
+    expect(commentBarText(null)).toBe("");
   });
 });
 

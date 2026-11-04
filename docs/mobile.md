@@ -65,6 +65,7 @@
 
     推文：好讀文章且推文列收進底部導覽（pref `mobileCommentBarFold`，預設開）時＝展開推文列並叫出鍵盤，**不送 X**
     （`commentBar.expand()`；收回規則見 `docs/long-push.md`「底部常駐推文列」）；其他情況照送 X。
+    展開後打字中列改上下兩層（輸入框吃滿寬、隨內容往上長高），見同節「長推文看得到全文」。
 
     搜尋**直接開搜尋彈窗**（預設第一個可用種類，無子選單；見 `docs/article-search.md`）。分享＝`deep_link_controller.shareCurrentPostLink(title)`（與複製本篇連結同一條 AID 解析；`navigator.share`，AbortError＝完成，其他拒絕／無 API 退回複製；**click 內同步呼叫**）。
     更多＝bottom sheet（見「Bottom sheet」）：快速搜尋（**選取模式開＋有選取**才列；選取模式下長按走原生選單，

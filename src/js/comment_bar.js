@@ -18,6 +18,9 @@ export const COMMENT_BAR_ID = 'commentBar';
 // 列高（CSS px）。終端機累積頁尾端要多留這麼高的空白，最後一列才捲得出列的下面
 // （CSS 變數 --comment-bar-h，見 main.css `.commentBarShown`）。
 export const COMMENT_BAR_HEIGHT = 40;
+// 打字中（輸入框聚焦）輸入框跟著內容長高，最多這麼多行，再多就在框內捲。平常（沒聚焦）
+// 縮回一行 ⇒ 列高回到 COMMENT_BAR_HEIGHT，只在使用者正在打字時才多蓋住文章。
+export const COMMENT_BAR_MAX_LINES = 5;
 // 超過這麼多則就不直接送，退回輸入框（那裡有「還是要送」的二次確認）。同 LongPushModal。
 export const QUICK_PUSH_MAX_SEGMENTS = 20;
 
@@ -105,6 +108,20 @@ export function commentBarGeometry({ mainRect, footerTop, innerHeight, bottomIns
   };
 }
 
+// 推文列現在實際佔的高度（px）：沒畫 ⇒ 0；畫著 ⇒ 元件量到的高度（打字中會長高），
+// 至少 COMMENT_BAR_HEIGHT。要讓出推文列的功能（下一篇卡片、文章導覽軸）一律問它，
+// 不要直接用 COMMENT_BAR_HEIGHT——列長高時會被蓋住。
+export function commentBarHeight(state) {
+  if (!state || !state.visible) return 0;
+  return Math.max(COMMENT_BAR_HEIGHT, Math.round(state.height) || 0);
+}
+
+// 推文一則就是一行：貼上的換行（textarea 會留著）換成空白，跟原本單行輸入框貼上時一樣，
+// 不會在長推文分段時變成強制斷點。
+export function commentBarText(value) {
+  return String(value == null ? '' : value).replace(/\r\n?|\n/g, ' ');
+}
+
 // 手機收合（pref mobileCommentBarFold，預設開）：平常只留底部導覽，點導覽的「推文」才
 // 展開列並叫出鍵盤；送出、離開輸入框、收鍵盤、系統返回就收回。桌機不收合。
 export function commentBarFolded(prefs, mobile) {
@@ -122,6 +139,8 @@ const HIDDEN = {
   left: 0,
   width: 0,
   bottom: 0,
+  // 元件量到的列高（打字中長高時 > COMMENT_BAR_HEIGHT），讀的人走 commentBarHeight(state)。
+  height: COMMENT_BAR_HEIGHT,
   mobile: false,
   counter: false,
   prefill: null,
@@ -189,6 +208,11 @@ CommentBar.prototype = {
     if (!opts || opts.focus !== false) patch.focusN = this._state.focusN + 1;
     this._set(patch);
     return true;
+  },
+
+  // 元件回報列的實際高度（ResizeObserver）。變了才通知 ⇒ 下一篇卡片／導覽軸跟著讓位。
+  setHeight: function(px) {
+    this._set({ height: Math.max(COMMENT_BAR_HEIGHT, Math.round(px) || 0) });
   },
 
   // 收回展開的列（收合模式才有作用）。

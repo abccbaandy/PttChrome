@@ -6,10 +6,17 @@
 //  2. Enter 送出（IME 組字中的 Enter 不算）→ openQuickPush({text, type})，接手才清空；
 //  3. 輸入框聚焦 ⇒ modal 來源 "commentBar"，離開／列收起 ⇒ 解除；
 //  4. 按鍵與滑鼠事件不外洩到 window（App 的鍵盤／滑鼠入口都在 window）；
-//  5. html.commentBarShown 跟著可見與否切（累積頁尾端才會多留空白）。
+//  5. html.commentBarShown 跟著可見與否切（累積頁尾端才會多留空白）；
+//  6. 長推文看得到全文：打字中輸入框長高（上限 COMMENT_BAR_MAX_LINES 行），手機改上下兩層
+//     讓輸入框吃滿寬；沒在打字縮回單行；實際列高回報給 bar 並寫進 --comment-bar-h。
 import { render, fireEvent, act } from "@testing-library/react";
 import { CommentBar } from "../../src/components/CommentBar";
-import { isCommentBarTarget, COMMENT_BAR_ID } from "../../src/js/comment_bar";
+import {
+  isCommentBarTarget,
+  COMMENT_BAR_ID,
+  COMMENT_BAR_HEIGHT,
+  COMMENT_BAR_MAX_LINES,
+} from "../../src/js/comment_bar";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
@@ -23,6 +30,9 @@ function fakeBar(state) {
   return {
     state: { visible: true, left: 12, width: 640, bottom: 30, mobile: false, focusN: 0, ...state },
     collapse: vi.fn(),
+    setHeight: vi.fn(function (h) {
+      this.emit({ height: Math.max(COMMENT_BAR_HEIGHT, Math.round(h)) });
+    }),
     maxBytes: () => 37,
     onChange(fn) {
       listeners.add(fn);
@@ -51,7 +61,12 @@ function setup(state, quickResult = true) {
 
 afterEach(() => {
   document.documentElement.classList.remove("commentBarShown");
+  document.documentElement.style.removeProperty("--comment-bar-h");
 });
+
+const LONG = "這是一則很長很長的推文".repeat(6); // 66 個全形字：桌機寬度也要好幾行
+const HUGE = LONG.repeat(4);
+const h = (el) => el.getBoundingClientRect().height;
 
 describe("CommentBar UI", () => {
   test("計數：空的不顯示；一則放得下 ⇒「剩 N 字」；放不下 ⇒「會分成 N 則」", () => {
@@ -212,5 +227,85 @@ describe("CommentBar UI", () => {
     expect(seen).toEqual([]);
     expect(isCommentBarTarget(input())).toBe(true);
     expect(isCommentBarTarget(document.body)).toBe(false);
+  });
+});
+
+// 症狀：推文列只有一行，長推文打到後面前面就捲出框外，看不到自己打了什麼（手機尤其短：
+// 推／噓／→＋計數＋送出把輸入框擠到剩十來個字寬）。
+describe("CommentBar：長推文看得到全文", () => {
+  test("打字中輸入框跟著內容長高、整段看得到；離開輸入框縮回單行", () => {
+    const { root, input } = setup({ counter: true });
+    act(() => input().focus());
+    fireEvent.change(input(), { target: { value: LONG } });
+    expect(h(input())).toBeGreaterThan(30);
+    expect(input().scrollHeight).toBeLessThanOrEqual(input().clientHeight);
+    expect(h(root())).toBeGreaterThan(COMMENT_BAR_HEIGHT);
+    // 列釘著下緣往上長：bottom 沒變。
+    expect(root().style.bottom).toContain("30px");
+    act(() => input().blur());
+    expect(h(input())).toBe(30);
+    expect(h(root())).toBe(COMMENT_BAR_HEIGHT);
+  });
+
+  test(`超過 ${COMMENT_BAR_MAX_LINES} 行 ⇒ 停在 ${COMMENT_BAR_MAX_LINES} 行高，框內捲`, () => {
+    const { input } = setup();
+    act(() => input().focus());
+    fireEvent.change(input(), { target: { value: HUGE } });
+    const lh = parseFloat(getComputedStyle(input()).lineHeight);
+    expect(h(input())).toBeCloseTo(lh * COMMENT_BAR_MAX_LINES + 8 + 2, 0);
+    expect(input().scrollHeight).toBeGreaterThan(input().clientHeight);
+    expect(getComputedStyle(input()).overflowY).toBe("auto");
+  });
+
+  test("手機打字中：上下兩層，輸入框吃滿寬、在推噓鈕與送出鈕上面；沒在打字＝單行原樣", () => {
+    const { root, input } = setup({ mobile: true, width: 412 });
+    const send = () => root().querySelector("[data-comment-send]");
+    const types = () => root().querySelector(".commentBarTypes");
+    // 沒在打字：同一列。
+    expect(root().classList.contains("commentBar--stacked")).toBe(false);
+    expect(h(root())).toBe(COMMENT_BAR_HEIGHT);
+    act(() => input().focus());
+    expect(root().classList.contains("commentBar--stacked")).toBe(true);
+    const r = root().getBoundingClientRect();
+    const ir = input().getBoundingClientRect();
+    expect(ir.width).toBeGreaterThan(r.width - 20);
+    expect(ir.bottom).toBeLessThanOrEqual(send().getBoundingClientRect().top);
+    expect(ir.bottom).toBeLessThanOrEqual(types().getBoundingClientRect().top);
+    // 送出鈕在列內、靠右。
+    expect(send().getBoundingClientRect().right).toBeLessThanOrEqual(r.right);
+    expect(send().getBoundingClientRect().right).toBeGreaterThan(r.right - 20);
+    fireEvent.change(input(), { target: { value: LONG } });
+    expect(input().scrollHeight).toBeLessThanOrEqual(input().clientHeight);
+    act(() => input().blur());
+    expect(root().classList.contains("commentBar--stacked")).toBe(false);
+    expect(h(root())).toBe(COMMENT_BAR_HEIGHT);
+  });
+
+  test("手機收合展開中：焦點還沒到就先排成兩層（不會聚焦那一幀才跳）", () => {
+    const { root } = setup({ folded: true, expanded: true, mobile: true });
+    expect(root().classList.contains("commentBar--stacked")).toBe(true);
+  });
+
+  test("貼上的換行換成空白（推文一則一行，不變成分段斷點）；Enter 照樣送出不換行", () => {
+    const { input, pttchrome } = setup();
+    fireEvent.change(input(), { target: { value: "第一行\n第二行\r\n第三行" } });
+    expect(input().value).toBe("第一行 第二行 第三行");
+    const ev = fireEvent.keyDown(input(), { key: "Enter", shiftKey: true });
+    expect(ev).toBe(false); // preventDefault：不插入換行
+    expect(pttchrome.openQuickPush).toHaveBeenCalledWith({ text: "第一行 第二行 第三行", type: "push" });
+  });
+
+  test("列長高 ⇒ 實際高度回報給 bar.setHeight，--comment-bar-h 跟著；收起 ⇒ 回到單行高", async () => {
+    const { input, bar } = setup();
+    const varH = () => document.documentElement.style.getPropertyValue("--comment-bar-h");
+    await vi.waitFor(() => expect(varH()).toBe(COMMENT_BAR_HEIGHT + "px"));
+    act(() => input().focus());
+    fireEvent.change(input(), { target: { value: LONG } });
+    const grown = Math.round(h(document.getElementById(COMMENT_BAR_ID)));
+    expect(grown).toBeGreaterThan(COMMENT_BAR_HEIGHT);
+    await vi.waitFor(() => expect(bar.state.height).toBe(grown));
+    expect(varH()).toBe(grown + "px");
+    act(() => bar.emit({ visible: false }));
+    expect(bar.setHeight).toHaveBeenLastCalledWith(COMMENT_BAR_HEIGHT);
   });
 });
