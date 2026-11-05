@@ -255,6 +255,27 @@ int __wrap_content_filter(int kind, const char *userid, const char *ip, const ch
 }
 #endif
 
+// 使用限制提示（upstream 368f91f5，activity.svc）：服務拒絕 #AID／搜尋時帶「為什麼、到何時」的理由，
+// read.c 改畫 contentcheck.c#activity_alert（vs_hdr2(" 使用限制 ", " 未搜尋 ")＋理由＋pressanykey）。
+// 服務是站方私有的 ⇒ --wrap=activity_nav_track：只在 Mine 板（沒有別的場景在那裡搜尋）拒絕 AID 與
+// 搜尋，理由用佔位字串（解析端不准認理由本文）；其餘一律放行、不延遲（跟服務沒開一樣）。
+#if HAS_ACTIVITY_MSG
+#include "activity.h"
+int __wrap_activity_nav_track(const char *userid, time4_t firstlogin, const char *hostip,
+                              uint32_t client_code, int is_exempt, int nav_type, int target_bid,
+                              int value, int *delay_ms, char *msg, size_t msgsz)
+{
+    (void)userid; (void)firstlogin; (void)hostip; (void)client_code; (void)is_exempt;
+    (void)target_bid; (void)value;
+    if (delay_ms) *delay_ms = 0;
+    if (msg && msgsz) *msg = '\0';
+    if (strcmp(currboard, "Mine") != 0) return 0;
+    if (nav_type != ACTIVITY_NAV_SEARCH_AID && nav_type != ACTIVITY_NAV_SEARCH_SR) return 0;
+    if (msg && msgsz) strlcpy(msg, "placeholder reason from activity.svc", msgsz);
+    return 1;
+}
+#endif
+
 #define MAX_FAV 16
 static char fav_names[MAX_FAV][IDLEN + 1];
 static int fav_count = 0;

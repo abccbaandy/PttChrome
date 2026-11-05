@@ -658,6 +658,46 @@ describe("AidNavigation 返回", () => {
     expect(h.nav.canGoBack()).toBe(false);
   });
 
+  // upstream 368f91f5：activity.svc 拒絕 #AID 時畫「使用限制 未搜尋」整頁＋pressanykey（字樣取自
+  // upstream 產的 activity_denied fixture）。舊版等逾時送 \f：\f 被 pressanykey 吃掉、提示消失，
+  // 再報成「找不到文章（可能已被刪除）」⇒ 使用者看不到真正的原因。
+  const ACTIVITY_DENIED_ROWS = (() => {
+    const rowTexts = new Array(24).fill("");
+    rowTexts[0] = "  使用限制    未搜尋                                                            ";
+    rowTexts[2] = "  placeholder reason from activity.svc";
+    rowTexts[23] = " ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ 請按任意鍵繼續 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄   ";
+    return rowTexts;
+  })();
+
+  test("#AID 被 PTT 使用限制擋下 ⇒ 馬上停手（不送 \\f 探路）、提示寫 PTT 的理由而不是找不到", () => {
+    const { nav, queue, sent, hints } = makeHarness();
+    nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(queue, "1gKF7GO4");
+    settle(queue, facts("clean-list", { boardName: "Android" }));
+    expect(sent[2]).toBe("#1gIeu-3A\r\f");
+    settle(queue, facts("transient", { rowTexts: ACTIVITY_DENIED_ROWS, curY: 23, curX: 79 }));
+    expect(nav.active).toBe(false);
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS + STEP_PROBE_WINDOW_MS);
+    expect(sent.length).toBe(3);
+    expect(hints.some(h => h.includes("PTT 暫時限制搜尋") && h.includes("placeholder reason"))).toBe(true);
+    expect(hints.some(h => h.includes("找不到"))).toBe(false);
+    expect(queue.idle).toBe(true);
+  });
+
+  test("返回時 #AID 被使用限制擋下 ⇒ 不說原文已被刪除、不再送鍵", () => {
+    const h = makeHarness({ listAnchor: LIST_ANCHOR });
+    jumpForward(h);
+    h.nav.back();
+    settle(h.queue, facts("clean-list", { boardName: "C_Chat" }));
+    expect(h.sent[1]).toBe("#" + ORIGIN + "\r\f");
+    settle(h.queue, facts("transient", { rowTexts: ACTIVITY_DENIED_ROWS, curY: 23, curX: 79 }));
+    expect(h.nav.active).toBe(false);
+    vi.advanceTimersByTime(STEP_PROBE_AFTER_MS + STEP_PROBE_WINDOW_MS);
+    expect(h.sent.length).toBe(2);
+    expect(h.hints.some(hint => hint.includes("可能已被刪除"))).toBe(false);
+    expect(h.hints.some(hint => hint.includes("PTT 暫時限制搜尋"))).toBe(true);
+  });
+
   // ---- 閱讀紀錄（reading_record）：身後的列表跟著返回錨走 ----------------------
   // 身後列表的紀錄（list_session.readingPosition 在文章期間回的那一份）。
   const BEHIND = {

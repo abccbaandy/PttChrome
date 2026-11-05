@@ -55,7 +55,7 @@ import { classifyReplyScreen, nextReplyStep } from "../../src/js/waterball_reply
 import { newMailOnScreen } from "../../src/js/message_inbox";
 import { hasNewMail } from "../../src/js/home_dashboard";
 import { appBarFromFacts } from "../../src/js/mobile_app_bar";
-import { classifyPushScreen, detectIpLogged } from "../../src/js/push_screen";
+import { classifyPushScreen, detectIpLogged, parseContentDenied } from "../../src/js/push_screen";
 import pushFlowFx from "./fixtures/ptt_src_screens/push_flow.json";
 import pushAgainFx from "./fixtures/ptt_src_screens/push_again.json";
 import pushContentDeniedFx from "./fixtures/ptt_src_screens/push_content_denied.json";
@@ -138,6 +138,8 @@ import {
 import boardListRefreshFx from "./fixtures/ptt_src_screens/board_list_refresh.json";
 import aidMissFx from "./fixtures/ptt_src_screens/aid_miss.json";
 import { AID_NOT_FOUND_RE } from "../../src/js/aid_navigation";
+import activityDeniedFx from "./fixtures/ptt_src_screens/activity_denied.json";
+import { parseActivityDenied } from "../../src/js/activity_alert";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
 import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
@@ -1578,6 +1580,32 @@ describe("upstream pttbbs 產的 #AID 找不到（read.c 的 AID 搜尋）", () 
     const back = at("back");
     expect(hit(back.rowTexts)).toBe(false);
     expect(classifyListScreen(back.facts).kind).toBe("clean-list");
+  });
+});
+
+describe("upstream pttbbs 產的使用限制整頁（upstream 368f91f5，contentcheck.c#activity_alert）", () => {
+  const at = (name) => screenAt(activityDeniedFx, name, { perFrame: true });
+
+  test("#AID 與標題搜尋被拒都認得，理由原文帶回來", () => {
+    for (const name of ["aid-denied", "search-denied"]) {
+      const { facts } = at(name);
+      expect(parseActivityDenied(facts.rowTexts, facts.rows)).toBe("placeholder reason from activity.svc");
+    }
+  });
+
+  test("按任意鍵後回到列表 ⇒ 不再認成使用限制；列表本身也不是", () => {
+    for (const name of ["list", "aid-back", "search-back"]) {
+      const { facts } = at(name);
+      expect(parseActivityDenied(facts.rowTexts, facts.rows)).toBe(null);
+    }
+    expect(classifyListScreen(at("aid-back").facts).kind).toBe("clean-list");
+  });
+
+  test("與內容檢查整頁（同一個 alert_screen）互不誤認", () => {
+    const denied = at("aid-denied").facts;
+    expect(parseContentDenied(denied.rowTexts, denied.rows)).toBe(null);
+    const content = screenAt(pushContentDeniedFx, "denied", { perFrame: true }).facts;
+    expect(parseActivityDenied(content.rowTexts, content.rows)).toBe(null);
   });
 });
 
