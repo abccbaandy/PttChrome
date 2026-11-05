@@ -1849,6 +1849,12 @@
   "tooltip_mobileAppBarScrollTop": {
     "message": "手機版面點最上面的標題，文章、列表或首頁就捲回最上面。只捲畫面，不會送任何按鍵。"
   },
+  "options_mobileCardHideTitleBox": {
+    "message": "手機文章卡片拿掉標題前的「□」"
+  },
+  "tooltip_mobileCardHideTitleBox": {
+    "message": "手機的文章列表卡片不畫原文標題前的空框，標題多顯示兩格。「R:」「轉」照留。只改畫法，不會送任何按鍵。"
+  },
   "options_mobileFontSize": {
     "message": "手機字級"
   },

@@ -64,6 +64,35 @@ describe("buildListCard：文章列表", () => {
     expect(text(node.querySelector(".listCardInfo"))).not.toContain("+");
   });
 
+  // P55：原文標題前的「□」（readdoent 的 mark，cells [30,32)）在卡片上只佔寬度。
+  describe("hideTitleBox（pref mobileCardHideTitleBox）", () => {
+    // 作者欄 %-13.12s 佔滿 13 格 ⇒ mark 落在 cell 30（同 upstream 產的列表畫面）。
+    const at30 = (mark) => row(seg(" 350024 + 2 6/14 "), seg("someone      "), seg(mark + " [心得] 手機卡片"));
+    const title = (chars, hide) =>
+      text(buildListCard({ chars, row: 5, kind: "article", hideTitleBox: hide, forceWidth: 16 }).node.querySelector(".listCardTitleText"));
+
+    test("開著：「□」拿掉，標題從下一個字開始", () => {
+      expect(title(at30("□"), true)).toBe("[心得] 手機卡片");
+      expect(title(at30("□"), false)).toBe("□ [心得] 手機卡片");
+    });
+
+    test("R:／轉 帶資訊，照留", () => {
+      expect(title(at30("R:"), true)).toBe("R: [心得] 手機卡片");
+      expect(title(at30("轉"), true)).toBe("轉 [心得] 手機卡片");
+    });
+
+    test("「□」不在 mark 欄（標題自己裡面的 □）不動", () => {
+      const c = row(seg(" 350024 + 2 6/14 "), seg("someone      "), seg("R: □□ 測試"));
+      expect(title(c, true)).toBe("R: □□ 測試");
+    });
+
+    test("看板列表不受影響", () => {
+      const c = row(seg("     12   Board    類別 ◎□ 中文敘述"));
+      const { node } = buildListCard({ chars: c, row: 5, kind: "board", hideTitleBox: true, forceWidth: 16 });
+      expect(text(node)).toContain("◎□ 中文敘述");
+    });
+  });
+
   test("外部契約：bbsrow/srow、data-list-*、data-row（游標底色靠它）", () => {
     const { node } = buildListCard({
       chars,
@@ -352,6 +381,20 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
     expect(m.container.querySelectorAll(".listBodyView > .listCard").length).toBe(2);
     m.update(props(undefined));
     expect(m.container.querySelectorAll(".listCard").length).toBe(0);
+  });
+
+  test("切「□」開關 ⇒ 同一批列物件重畫（listCardHideTitleBox 進 annotationsKey）", () => {
+    const lines = LINES.slice();
+    lines[3] = row(seg(" 350024 + 2 6/14 "), seg("alice        "), seg("□ 第一篇"));
+    const p = (hide) => {
+      const base = props("article");
+      return { ...base, lines, enhance: { ...base.enhance, listCardHideTitleBox: hide } };
+    };
+    const firstTitle = (m) => text(m.container.querySelector(".listCardTitleText"));
+    const m = mountScreen(p(false));
+    expect(firstTitle(m)).toBe("□ 第一篇");
+    m.update(p(true));
+    expect(firstTitle(m)).toBe("第一篇");
   });
 });
 

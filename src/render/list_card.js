@@ -107,6 +107,16 @@ export function articleCardMark(chars) {
   return undefined;
 }
 
+// 文章列的標題型別符（bbs.c#readdoent 的 mark，cells [30,32)）是原文的「□」嗎（Big5 A1 BC）。
+// R:／轉／鎖／ˇ 帶資訊，照留；只有原文的空框是純裝飾（P55，pref mobileCardHideTitleBox）。
+// 欄位按 cell 固定：游標 >／舊游標 ●／置底 ★ 都不改 cell 30 的位置（見 comment_parse 檔頭欄位表）。
+const TITLE_MARK_COL = 30;
+export function isTitleBoxMark(chars) {
+  const a = chars && chars[TITLE_MARK_COL];
+  const b = chars && chars[TITLE_MARK_COL + 1];
+  return !!(a && b && a.isLeadByte && a.ch === "\xa1" && b.ch === "\xbc");
+}
+
 // 一行裡用到的全部 cell 範圍（測試檢查不重疊用）。
 export function layoutSpans(line) {
   return [line.lead, ...line.main, ...line.end].filter(Boolean);
@@ -116,6 +126,7 @@ export function buildListCard({
   chars,
   row,
   kind,
+  hideTitleBox,
   forceWidth,
   highlightClass,
   listAuthor,
@@ -133,8 +144,20 @@ export function buildListCard({
       ? 2
       : 1
     : 0;
+  // 標題段從「□」之後切（剩下的前導空白 cardSegment 會剪掉）。
+  const titleFrom =
+    hideTitleBox && layout === CARD_LAYOUT.article && isTitleBoxMark(chars)
+      ? TITLE_MARK_COL + 2
+      : 0;
   const part = ([a, b, cls]) =>
-    cardSegment(chars, Math.max(a, cursorCells), b, forceWidth, row, cls);
+    cardSegment(
+      chars,
+      Math.max(a, cursorCells, cls === "listCardTitleText" ? titleFrom : 0),
+      b,
+      forceWidth,
+      row,
+      cls,
+    );
   // 游標欄兩行都有（第二行空白）⇒ 左欄上下對齊。
   // 讀過之後多了幾分（new_comments.listNewPush）：標題行最前面一個小徽章。
   const badge =

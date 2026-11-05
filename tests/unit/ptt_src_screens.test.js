@@ -10,6 +10,7 @@
 // 換成 upstream HEAD 產的。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
+import { buildListCard, isTitleBoxMark } from "../../src/render/list_card";
 import { classifyListScreen } from "../../src/js/list_session";
 import { boardEntryArms, boardNoteDecision } from "../../src/js/board_note_skip";
 import {
@@ -876,6 +877,21 @@ describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", (
     const { buf, rowTexts, facts } = screenAt(editorFx, "edit");
     expect(rowTexts[facts.rows - 1]).toMatch(/^ 編輯文章 /);
     expect(buf.pageState).toBe(6);
+  });
+
+  // P55：upstream 產的文章列表（bbs.c#readdoent）裡原文的「□」落在 cell 30，游標列（>）也一樣。
+  test("文章列表：原文的「□」在 cell 30，手機卡片開關開著就拿掉", () => {
+    const { buf, rowTexts } = screenAt(editorFx, "list");
+    const y = rowTexts.findIndex((t) => t.includes("自己發的文"));
+    expect(y).toBeGreaterThan(0);
+    const chars = buf.lines[y];
+    expect(isTitleBoxMark(chars)).toBe(true);
+    const title = (hide) =>
+      buildListCard({ chars, row: y, kind: "article", hideTitleBox: hide, forceWidth: 16 }).node.querySelector(
+        ".listCardTitleText",
+      ).textContent;
+    expect(title(false)).toMatch(/^□ \[閒聊\]/);
+    expect(title(true)).toMatch(/^\[閒聊\] 自己發的文/);
   });
 
   // 編輯器內文本身可以是白底黑字（Ctrl-V 彩色預覽下的 ESC[30;47m、水平捲動時的區塊選取
