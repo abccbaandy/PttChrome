@@ -86,6 +86,9 @@ function classifyLoginScreen(screen) {
   if (s.includes('密碼不對') || s.includes('無法登入') || s.includes('密碼或代號錯誤'))
     return 'bad-credentials';
   if (s.includes('太多 guest') || s.includes('guest 在站上')) return 'guest-full';
+  // upstream 095970e／285fd63f：guest 帳號拿掉，logind 打 guest 只在底列畫
+  // REDIRECT_GUEST_MSG「請改用網頁版 <GUEST_URL>」、留在代號 prompt ⇒ 等下去不會登入。
+  if (s.includes('請改用網頁版')) return 'guest-closed';
   // 以下三個是 PTT 端的容量／維護狀態（logind 畫完就關連線），原本沒有分支 ⇒
   // 只會空轉到 40 秒逾時，然後吐一則看不出是誰的問題的泛用訊息。
   if (s.includes('部份系統正在維護中')) return 'maintenance';
@@ -311,6 +314,17 @@ function decideLoginAction(input) {
         state,
         withScreen(
           'guest 名額已滿（PTT 端限制）。請設定環境變數 PTT_USER / PTT_PASS 用真實帳號登入：\n' +
+            '  $env:PTT_USER="你的帳號"; $env:PTT_PASS="你的密碼"; yarn test:e2e',
+          screen
+        )
+      );
+
+    case 'guest-closed':
+      return fail(
+        state,
+        withScreen(
+          'PTT 已關閉 guest 登入（畫面「請改用網頁版」），沒有帳密的 live e2e／record:cassette 都登不進去。\n' +
+            '請設定環境變數 PTT_USER / PTT_PASS 用真實帳號登入：\n' +
             '  $env:PTT_USER="你的帳號"; $env:PTT_PASS="你的密碼"; yarn test:e2e',
           screen
         )

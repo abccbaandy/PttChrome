@@ -258,6 +258,17 @@ describe('既有分支的行為不變', () => {
     expect(last.message).toContain('PTT_USER');
   });
 
+  // upstream 285fd63f：guest 帳號拿掉，logind 底列畫「請改用網頁版 <GUEST_URL>」、代號
+  // prompt 還在。原本認成 unknown ⇒ 空轉到逾時才吐泛用訊息。
+  test('guest 被導去網頁版 → 終局，提示改用真實帳號', () => {
+    const screen = PROMPT + '\n 請改用網頁版 https://www.ptt.cc/bbs/ ';
+    expect(classifyLoginScreen(screen)).toBe('guest-closed');
+    const { last } = drive([{ screen, at: 1000 }]);
+    expect(last.action).toBe('fail');
+    expect(last.message).toContain('關閉 guest');
+    expect(last.message).toContain('PTT_USER');
+  });
+
   test('PTT 維護／過載 → 明講非本專案 code（原本只會空轉到泛用逾時）', () => {
     for (const screen of [
       '抱歉，部份系統正在維護中，請稍候再試。',
