@@ -1313,6 +1313,8 @@ TermView.prototype = {
       enhanceOverrides.listCards = this.listCards ? lsOv.kind : undefined;
       enhanceOverrides.listCardHideTitleBox =
         this.listCards && lsOv.kind === 'article' && !!readEffectivePrefs().mobileCardHideTitleBox;
+      enhanceOverrides.listCardBoardUnread =
+        this.listCards && lsOv.kind === 'board' && !!readEffectivePrefs().mobileBoardCardUnread;
     }
     // 這一幀實際畫出去的那一份 lines。`data-row` 的定義就是「傳給 <Screen> 的
     // lines index」（dropHidden 移除的列不位移其餘列的 data-row），所以凡是拿

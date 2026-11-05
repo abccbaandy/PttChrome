@@ -1855,6 +1855,12 @@
   "tooltip_mobileCardHideTitleBox": {
     "message": "手機的文章列表卡片不畫原文標題前的空框，標題多顯示兩格。「R:」「轉」照留。只改畫法，不會送任何按鍵。"
   },
+  "options_mobileBoardCardUnread": {
+    "message": "手機看板卡片標出有新文章的看板"
+  },
+  "tooltip_mobileBoardCardUnread": {
+    "message": "手機的我的最愛／看板列表卡片：有新文章的看板左邊畫圓點、板名變亮，沒有新文章的調暗一點，敘述前的「◎」不畫。只改畫法，不會送任何按鍵。"
+  },
   "options_mobileFontSize": {
     "message": "手機字級"
   },

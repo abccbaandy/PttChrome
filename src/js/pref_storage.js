@@ -306,6 +306,9 @@ export const DEFAULT_PREFS = {
   // 手機文章卡片拿掉原文標題前的「□」（P55，render/list_card.js#isTitleBoxMark）。只改畫法、不送鍵
   // ⇒ 不在安全模式清單；R:／轉 照留。
   mobileCardHideTitleBox: true,
+  // 手機看板卡片：有新文章的左邊圓點＋板名提亮、沒有的調暗、不畫「◎」（P54，list_card.isBoardUnreadMark）。
+  // 只改畫法、不送鍵 ⇒ 不在安全模式清單。
+  mobileBoardCardUnread: true,
   // PTT 自己畫了 '>' 游標的畫面（列表／選單）不再疊一個閃爍游標 —— 兩個游標同框是
   // 重複資訊。輸入框／編輯器不走 pttbbs 的 cursor_show，閃爍游標照舊顯示，位置資訊
   // 不會消失，所以預設開。判定見 comment_parse.js#hasServerCursorMark。

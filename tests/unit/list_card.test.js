@@ -213,6 +213,64 @@ describe("buildListCard：看板列表（board.c#brdlist_renderer 欄位）", ()
     expect(text(node.querySelector(".listCardCursor"))).toBe(">");
   });
 
+  describe("boardUnread（pref mobileBoardCardUnread）", () => {
+    // 未讀 ˇ 在 [8,10)：序號 %7d＋隱板字一格後就是 ˇ。
+    const board = (unread, bullet = "◎") =>
+      row(
+        seg("     12 "),
+        seg(unread ? "ˇ" : "  "),
+        seg("Gossiping    "),
+        seg("綜合 "),
+        seg(bullet),
+        seg("[八卦]沒有開放政問" + " ".repeat(16)),
+        seg("爆!"),
+        seg("mod1/mod2"),
+      );
+    const card = (chars, on = true) =>
+      buildListCard({ chars, row: 3, kind: "board", boardUnread: on, forceWidth: 16 }).node;
+
+    test("有新文章：左欄是圓點、data-board-unread=new", () => {
+      const n = card(board(true));
+      expect(n.getAttribute("data-board-unread")).toBe("new");
+      expect(n.querySelector(".listCardTitle .listCardLead .listCardUnreadDot")).not.toBe(null);
+      expect(text(n.querySelector(".listCardTitle .listCardLead"))).toBe("");
+    });
+
+    test("沒有新文章：左欄空、data-board-unread=none", () => {
+      const n = card(board(false));
+      expect(n.getAttribute("data-board-unread")).toBe("none");
+      expect(n.querySelector(".listCardUnreadDot")).toBe(null);
+    });
+
+    test("「◎」不畫，敘述照留", () => {
+      const meta = text(card(board(true)).querySelector(".listCardMeta"));
+      expect(meta).not.toContain("◎");
+      expect(meta).toContain("[八卦]沒有開放政問");
+    });
+
+    test("目錄列（沒有 ◎）不動：不帶屬性、照原樣畫", () => {
+      const dir = board(true, "  ");
+      const n = card(dir);
+      expect(n.hasAttribute("data-board-unread")).toBe(false);
+      expect(n.querySelector(".listCardUnreadDot")).toBe(null);
+      expect(n.outerHTML).toBe(card(dir, false).outerHTML);
+    });
+
+    test("開關關掉：照原樣（ˇ 與 ◎ 都在）", () => {
+      const n = card(board(true), false);
+      expect(n.hasAttribute("data-board-unread")).toBe(false);
+      expect(text(n)).toContain("ˇ");
+      expect(text(n)).toContain("◎");
+    });
+
+    test("文章列表不受影響", () => {
+      const chars = listRow("someone", "□ 測試");
+      const a = buildListCard({ chars, row: 5, kind: "article", boardUnread: true, forceWidth: 16 }).node;
+      const b = buildListCard({ chars, row: 5, kind: "article", forceWidth: 16 }).node;
+      expect(a.outerHTML).toBe(b.outerHTML);
+    });
+  });
+
   test("版型表的 cell 範圍前後相接、不重疊", () => {
     for (const kind of Object.keys(CARD_LAYOUT)) {
       const spans = [...layoutSpans(CARD_LAYOUT[kind].title), ...layoutSpans(CARD_LAYOUT[kind].meta)]
@@ -395,6 +453,29 @@ describe("ScreenController：只在 enhance.listCards 時畫卡片", () => {
     expect(firstTitle(m)).toBe("□ 第一篇");
     m.update(p(true));
     expect(firstTitle(m)).toBe("第一篇");
+  });
+
+  test("切看板新文章開關 ⇒ 同一批列物件重畫（listCardBoardUnread 進 annotationsKey）", () => {
+    const lines = LINES.slice();
+    lines[3] = row(
+      seg("     12 "),
+      seg("ˇ"),
+      seg("Gossiping    "),
+      seg("綜合 "),
+      seg("◎"),
+      seg("[八卦]沒有開放政問"),
+    );
+    const p = (on) => {
+      const base = props("board");
+      return { ...base, lines, enhance: { ...base.enhance, listCardBoardUnread: on } };
+    };
+    const dots = (m) => m.container.querySelectorAll(".listCardUnreadDot").length;
+    const m = mountScreen(p(false));
+    expect(dots(m)).toBe(0);
+    m.update(p(true));
+    expect(dots(m)).toBe(1);
+    m.update(p(false));
+    expect(dots(m)).toBe(0);
   });
 });
 

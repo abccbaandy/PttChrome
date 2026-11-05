@@ -1856,6 +1856,12 @@ export const en_US = {
   "tooltip_mobileCardHideTitleBox": {
     "message": "Mobile article list cards drop the empty box PTT draws before original posts, so titles show two more cells. \"R:\" and \"轉\" stay. Display only; no keys are sent."
   },
+  "options_mobileBoardCardUnread": {
+    "message": "Highlight boards with new posts on mobile board cards"
+  },
+  "tooltip_mobileBoardCardUnread": {
+    "message": "Mobile favorites/board list cards: boards with new posts get a dot and a brighter name, the rest are dimmed a little, and the \"◎\" before the description is dropped. Display only; no keys are sent."
+  },
   "options_mobileFontSize": {
     "message": "Mobile font size"
   },

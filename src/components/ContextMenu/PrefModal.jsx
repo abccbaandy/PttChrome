@@ -1538,6 +1538,16 @@ export const PrefModal = ({
                     <Text size="xs" c="dimmed" mb="xs">
                       {i18n("tooltip_mobileCardHideTitleBox")}
                     </Text>
+                    <PrefCheckbox
+                      name="mobileBoardCardUnread"
+                      checked={values.mobileBoardCardUnread}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobileBoardCardUnread")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobileBoardCardUnread")}
+                    </Text>
                   </>
                 )}
               </PrefSection>
