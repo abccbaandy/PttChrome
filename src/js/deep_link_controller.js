@@ -17,7 +17,7 @@ import { buildDeepLink, stripDeepLink } from './deep_link';
 import { parseStatusRow } from './string_util';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
-import { serializedOpHint, promptPendingNow } from './serialized_op_gate';
+import { serializedOpHint, promptPendingNow, PROMPT_PENDING_HINT } from './serialized_op_gate';
 
 export function DeepLinkController(core, view, termBuf) {
   this._core = core;
@@ -116,6 +116,12 @@ DeepLinkController.prototype = {
     if (local) {
       this._deliverLink(local, deliverOpts);
       return true;
+    }
+    // pmore 的 `/` 搜尋、`:` 跳行是 getdata(b_lines - 1, …)：底列的狀態列還在，上面的判斷照樣過。
+    // 這時按 Q ＝ Q 打進輸入欄，資訊框不會出現（還要等逾時）。免費路徑一個鍵都不送，上面照給。
+    if (promptPendingNow({ buf: buf })) {
+      this._hint(PROMPT_PENDING_HINT, 3000, HINT_ERROR);
+      return false;
     }
     // 以下是按 Q 那條路。讀 AID 是有代價的：mbbsd/bbs.c:2375-2377 對 Q 的回應是
     // `view_postinfo(...); return FULLUPDATE;` —— 那個 FULLUPDATE 會離開 pager

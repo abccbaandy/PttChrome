@@ -614,6 +614,27 @@ describe("upstream pttbbs 產的 pmore prompt（pmore.c#pmore_do_goto、pmore_se
     expect(target("landed")).toEqual({ kind: "article", board: "Test" });
   });
 
+  // F2／右鍵「複製本篇連結」讀不到文章網址時按 Q 問 PTT：prompt 開著時 Q 會打進輸入欄。
+  test("複製本篇連結：prompt 開著時不按 Q（文章幀照按）", () => {
+    const copy = (name) => {
+      const { buf } = at(name);
+      const queries = [];
+      const hints = [];
+      const nav = { active: false, findLocalPostAid: () => null, queryPostAid: (h) => queries.push(h), reopenAfterPostInfo() {} };
+      const core = { connectState: 1, aidNavigation: nav, easyReading: { _enterFunctionMode() {} } };
+      const view = { flashListHint: (m) => hints.push(m), mainDisplay: null, currentLineIndex: () => null };
+      const ctl = new DeepLinkController(core, view, buf);
+      return { ok: ctl.copyCurrentPostLink(), queries, hints };
+    };
+    expect(copy("article").queries).toHaveLength(1);
+    for (const name of ["goto", "search", "search-typed"]) {
+      const r = copy(name);
+      expect(r.ok).toBe(false);
+      expect(r.queries).toEqual([]);
+      expect(r.hints.length).toBe(1);
+    }
+  });
+
   // 開燈鈕（軌 B）替使用者送 `\` 叫 pmore 快速設定：浮動按鈕在 prompt 開著時還按得到，
   // `\` 會打進跳行／搜尋輸入欄，推文型別選單（vkey）則當成「推」。
   test("開燈切色彩模式：文章照送 `\\`，跳行／搜尋 prompt 與推文型別選單一個 byte 都不送", () => {

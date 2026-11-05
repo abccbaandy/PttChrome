@@ -31,6 +31,12 @@ function makeHarness({
     row0: "",
     lastRow,
     // 真實 TermBuf.isMailListScreen 的替身（指紋本身守在 mail_list.test.js）。
+    // 真實 TermBuf.isPromptPending 的替身（游標在輸入欄：pmore 的 / 搜尋、: 跳行畫在倒數第二列、
+    // 狀態列留著）。真畫面的認法守在 term_buf／ptt_src_screens。
+    promptPending: false,
+    isPromptPending() {
+      return this.promptPending;
+    },
     mailList: false,
     isMailListScreen() {
       return this.mailList;
@@ -415,6 +421,28 @@ describe("複製本篇連結", () => {
     expect(h.ctl.copyCurrentPostLink()).toBe(false);
     expect(h.nav.queries).toEqual([]);
     expect(h.hints.some(m => m.includes("請在文章內"))).toBe(true);
+  });
+
+  // pmore 的 `/` 搜尋、`:` 跳行是 getdata(b_lines - 1, …)：底列的 pager 狀態列還在。F2／右鍵
+  // 「複製本篇連結」這時按 Q ＝ Q 打進輸入欄，資訊框永遠不會出現，還要逾時才收手。
+  test("pager 底下有 prompt 開著 → 不按 Q、不進 functionMode，說明原因", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.termBuf.promptPending = true;
+    withClipboard(h.ctl);
+    expect(h.ctl.copyCurrentPostLink()).toBe(false);
+    expect(h.nav.queries).toEqual([]);
+    expect(h.easyReading.functionModeCalls).toBe(0);
+    expect(h.hints.length).toBe(1);
+  });
+
+  test("prompt 開著但讀得到文章網址 → 免費路徑照樣給（一個鍵都不送）", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.termBuf.promptPending = true;
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    const written = withClipboard(h.ctl);
+    expect(h.ctl.copyCurrentPostLink()).toBe(true);
+    expect(h.nav.queries).toEqual([]);
+    expect(written).toEqual([BASE + "#movie/" + FN]);
   });
 
   test("問不出看板（站內信／精華區，pttbbs 印「不明」）→ 不產生連結，但仍回原處", () => {
