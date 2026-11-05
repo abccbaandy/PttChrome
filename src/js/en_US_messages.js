@@ -1850,6 +1850,12 @@ export const en_US = {
   "tooltip_mobileAppBarScrollTop": {
     "message": "In the mobile layout, tapping the title at the top scrolls the article, list or home page back to the top. It only scrolls; no keys are sent."
   },
+  "options_mobileCardHideTitleBox": {
+    "message": "Hide the \"□\" before titles on mobile article cards"
+  },
+  "tooltip_mobileCardHideTitleBox": {
+    "message": "Mobile article list cards drop the empty box PTT draws before original posts, so titles show two more cells. \"R:\" and \"轉\" stay. Display only; no keys are sent."
+  },
   "options_mobileFontSize": {
     "message": "Mobile font size"
   },

@@ -1281,6 +1281,7 @@ export class ScreenController {
         chars: lines[row],
         row,
         kind: enhance.listCards,
+        hideTitleBox: !!enhance.listCardHideTitleBox,
         forceWidth,
         highlightClass:
           this.highlight.row === row ? this.highlight.cls : undefined,
