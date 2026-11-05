@@ -518,6 +518,62 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await expect.poll(listTop).toBeLessThan(1);
   });
 
+  // 按鍵面板展開：格線畫面放不下時是「底對齊、頂端列推出畫面」（PTT 的輸入列在底列），
+  // 但列表卡片是捲動視口 ⇒ 推上去的那一段躲在 App Bar 後面，游標往上移進那一段時
+  // isRowVisible 仍判可見、不捲 ⇒ 游標卡片看不到。卡片模式改成視口變矮、上緣不動。
+  test('按鍵面板展開：視口不躲進 App Bar 後面，↑ 移動的游標卡片一直看得到', async ({ page }) => {
+    test.setTimeout(90000);
+    await engage(page);
+    await page.locator('#mobileAppBar [data-key="__title"]').tap();
+    await expect.poll(() => page.evaluate(() => window.__app.view.componentScreen.getListScrollTop())).toBeLessThan(1);
+    await page.locator('[data-key="__keys"]').tap();
+    const panel = await waitRectStable(page, '#mobileKeypad');
+    const bar = await waitRectStable(page, '#mobileAppBar');
+    const view = await waitRectStable(page, '#mainContainer .listBodyView');
+    const barBottom = bar.top + bar.height;
+    expect(view.top).toBeGreaterThanOrEqual(barBottom - 0.5);
+    expect(view.top + view.height).toBeLessThanOrEqual(panel.top + 0.5);
+    // 捲回頂端時第一張卡片在 App Bar 下面（不是被蓋住）。展開時游標會被捲回視野，先點標題回頂端。
+    await page.locator('#mobileAppBar [data-key="__title"]').tap();
+    await expect.poll(() => page.evaluate(() => window.__app.view.componentScreen.getListScrollTop())).toBeLessThan(1);
+    const first = await waitRectStable(page, '#mainContainer .listBodyView > .listCard');
+    expect(first.top).toBeGreaterThanOrEqual(barBottom - 0.5);
+
+    // 游標移到最底那張可見卡片，再往上一路按：每一步游標卡片都在 App Bar 與面板之間。
+    const cursorRect = () =>
+      page.evaluate(() => {
+        const c = [...document.querySelectorAll('#mainContainer .listBodyView > .listCard')].find(
+          (x) => (x.querySelector('.listCardCursor') || {}).textContent === '>'
+        );
+        if (!c) return null;
+        const r = c.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom };
+      });
+    const up = page.locator('[data-key="ArrowUp"]');
+    const down = page.locator('[data-key="ArrowDown"]');
+    for (let i = 0; i < 3; i++) {
+      await down.tap();
+      await waitState(page, (x) => x.queueIdle);
+    }
+    for (let i = 0; i < 6; i++) {
+      await up.tap();
+      await waitState(page, (x) => x.queueIdle);
+      await waitScrollStable(page, '#mainContainer .listBodyView');
+      const r = await cursorRect();
+      expect(r, 'step ' + i).not.toBeNull();
+      // 1px：非整數 DPR（2.625）下 scrollTop 量化到裝置像素（list_scroll.SCROLL_QUANT_EPS 同一件事）。
+      expect(r.top, 'step ' + i).toBeGreaterThanOrEqual(barBottom - 1);
+      expect(r.bottom, 'step ' + i).toBeLessThanOrEqual(panel.top + 1);
+    }
+
+    // 收起面板 ⇒ 視口回到原高。
+    await page.locator('[data-key="__keys"]').tap();
+    await expect(page.locator('#mobileKeypad')).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => document.querySelector('#mainContainer .listBodyView').clientHeight))
+      .toBeGreaterThan(view.height + 50);
+  });
+
   test('長按卡片任一處 → 選單同時有「加入黑名單」與「加入標題黑名單」', async ({ page }) => {
     test.setTimeout(90000);
     await engage(page);

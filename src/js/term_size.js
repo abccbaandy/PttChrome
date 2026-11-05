@@ -62,3 +62,17 @@ export function termLayoutOffsets({ innerHeight, chh, rows, margin = 0, bottomIn
   if (inset > 0) return { marginTop: top + avail - contentHeight };
   return { marginTop: top + margin };
 }
+
+// 手機列表卡片（捲動視口）放不下時要讓視口**變矮**多少 px（0 ＝放得下／沒有底部 inset）。
+// 格線畫面走上面的「底對齊、頂端列推出畫面」；但列表卡片的 body 是捲動視口，推上去的那段
+// 躲在 App Bar 後面：list_scroll.isRowVisible 仍判它可見 ⇒ 游標往上移進去時不捲、看不到，
+// 捲到頂端最上面幾張也永遠在 App Bar 後面。卡片模式改成視口變矮、上緣貼 App Bar 下緣
+// （term_view.setTermFontSize＋_renderScreenLines）。守護
+// tests/e2e/offline/mobile_list_cards.offline.spec.js「按鍵面板展開」。
+export function listViewportCut({ innerHeight, chh, rows, bottomInset = 0, topInset = 0 }) {
+  const inset = bottomInset > 0 ? bottomInset : 0;
+  if (!(inset > 0)) return 0;
+  const top = topInset > 0 ? topInset : 0;
+  const cut = chh * rows - (innerHeight - inset - top);
+  return cut > 0 ? cut : 0;
+}

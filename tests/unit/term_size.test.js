@@ -10,6 +10,7 @@ import {
   MAX_ROWS,
   calcTermSize,
   termLayoutOffsets,
+  listViewportCut,
 } from "../../src/js/term_size";
 
 describe("calcTermSize（固定字體大小模式的尺寸來源）", () => {
@@ -108,5 +109,26 @@ describe("termLayoutOffsets（.main 的垂直位移）", () => {
     const o = termLayoutOffsets({ ...base, innerHeight: 1000 });
     expect(o.marginLeft).toBeUndefined();
     expect(Object.keys(o)).toEqual(["marginTop"]);
+  });
+});
+
+// 手機列表卡片：放不下時視口變矮多少（不是把頂端推進 App Bar 後面）。
+// 端到端守護：tests/e2e/offline/mobile_list_cards.offline.spec.js「按鍵面板展開」。
+describe("listViewportCut（列表卡片視口要縮多少）", () => {
+  const base = { chh: 12, rows: 24, topInset: 48 }; // 內容高 288
+
+  test("沒有底部 inset（面板／鍵盤沒開）→ 不縮", () => {
+    expect(listViewportCut({ ...base, innerHeight: 200 })).toBe(0);
+  });
+
+  test("放得下 → 不縮", () => {
+    expect(listViewportCut({ ...base, innerHeight: 600, bottomInset: 100 })).toBe(0);
+  });
+
+  test("放不下 → 縮掉超出的那段，縮完剛好等於可視高（扣 App Bar 與底部 inset）", () => {
+    const o = { ...base, innerHeight: 390, bottomInset: 197 };
+    const cut = listViewportCut(o);
+    expect(cut).toBe(288 - (390 - 197 - 48));
+    expect(base.chh * base.rows - cut).toBe(390 - 197 - 48);
   });
 });

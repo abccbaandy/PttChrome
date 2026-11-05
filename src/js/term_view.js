@@ -6,7 +6,7 @@ import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolv
 import { clickableColStart, DEFAULT_LIST_CLICK_START, DEFAULT_PUSH_CLICK_START, DEFAULT_PUSH_CLICK_END, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion, visibleHintBand } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { edgeBandRect, exitBandRect } from './mouse_geometry';
-import { calcTermSize, termLayoutOffsets } from './term_size';
+import { calcTermSize, termLayoutOffsets, listViewportCut } from './term_size';
 import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
@@ -31,7 +31,7 @@ import { hintBottomCss, hintColors, shouldShowHint } from './status_hint';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { tryOpenSearchModal } from './article_search';
 import { isRefreshKeyEvent } from './screen_refresh';
-import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry, listFillRows } from './mobile_layout';
+import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry, listFillRows, LIST_CARD_ROWS } from './mobile_layout';
 
 // 單獨按下修飾鍵本身（實體鍵盤按 Shift 準備打大寫）不算「下一個按鍵」，黏滯 Ctrl 不解除。
 var MODIFIER_KEY_NAMES = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'];
@@ -252,6 +252,9 @@ export function TermView() {
   this.keyboardInset = 0;
   // 手機頂部 App Bar 蓋住的高度（px），App._onVisualViewport 寫（setTopInset）。0 ＝桌機。
   this.topInset = 0;
+  // 手機列表卡片放不下時視口少掉的高度（term_size.listViewportCut；0 ＝不縮）。
+  this.listViewportCutPx = 0;
+  this._notifiedListViewportCut = 0;
   // 手機版面的畫面類型（docs/mobile.md「Phase 3」「Phase 4」）：
   //   mobileSurface  'grid'（塞滿縮放）｜'article'（好讀長頁換行）｜'list'（列表卡片）。
   //                  唯一寫入點 setMobileSurface，由 App._applyMobileGeometry 呼叫；
@@ -1299,7 +1302,12 @@ TermView.prototype = {
       lsOv.viewportRows = listViewportGeometry({
         rows: this.buf.rows, headerRows: lsOv.bodyStart, cards: this.listCards
       }).viewportRows;
-      lsOv.viewportPx = (lsOv.viewportRows || 0) * this.chh;
+      // 按鍵面板／軟鍵盤展開放不下時視口變矮（setTermFontSize 算好的 listViewportCutPx），
+      // 至少留一張卡片高。
+      var vpFull = (lsOv.viewportRows || 0) * this.chh;
+      lsOv.viewportPx = this.listCards && this.listViewportCutPx > 0
+        ? Math.max(Math.min(vpFull, LIST_CARD_ROWS * this.chh), vpFull - this.listViewportCutPx)
+        : vpFull;
       enhanceOverrides.listCards = this.listCards ? lsOv.kind : undefined;
     }
     // 這一幀實際畫出去的那一份 lines。`data-row` 的定義就是「傳給 <Screen> 的
@@ -1976,8 +1984,11 @@ TermView.prototype = {
       this.mainDisplay.style.height = menuLayout.height + 'px';
       this.mainDisplay.style.marginTop = menuLayout.marginTop + 'px';
     } else {
+      // 列表卡片：放不下時視口變矮、上緣貼 App Bar（不是推出畫面），見 listViewportCut。
+      var cut = this.listCards ? listViewportCut(layoutInput) : 0;
+      this.listViewportCutPx = cut;
       this.mainDisplay.style.marginTop =
-        termLayoutOffsets(layoutInput).marginTop + 'px';
+        (cut > 0 ? this.topInset : termLayoutOffsets(layoutInput).marginTop) + 'px';
     }
 
     this.firstGridOffset = this.bbscore.getFirstGridOffsets();
@@ -1996,6 +2007,19 @@ TermView.prototype = {
     if (inset === this.keyboardInset) return;
     this.keyboardInset = inset;
     if (this.chh) this.setTermFontSize(this.chw, this.chh);
+    this._notifyListViewportCut();
+  },
+
+  // 列表卡片視口高變了（listViewportCutPx）⇒ 叫列表 session 重畫並把游標捲回看得到的地方。
+  // 只在 inset 入口呼叫（不在 setTermFontSize 裡：它也會在 render 途中被叫，重入會出事）。
+  _notifyListViewportCut: function() {
+    var cut = this.listCards ? this.listViewportCutPx : 0;
+    if (cut === this._notifiedListViewportCut) return;
+    this._notifiedListViewportCut = cut;
+    var app = this.bbscore;
+    if (!app) return;
+    if (app.listSession && app.listSession.onViewportResized) app.listSession.onViewportResized();
+    if (app.boardListSession && app.boardListSession.onViewportResized) app.boardListSession.onViewportResized();
   },
 
   // 同上，頂部（手機 App Bar）。
@@ -2004,6 +2028,7 @@ TermView.prototype = {
     if (inset === this.topInset) return;
     this.topInset = inset;
     if (this.chh) this.setTermFontSize(this.chw, this.chh);
+    this._notifyListViewportCut();
   },
 
   // 手機畫面類型的開關（見建構子 mobileSurface）。只切旗標與 class；字級／寬度由
