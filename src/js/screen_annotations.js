@@ -47,6 +47,7 @@ import {
   buildMergedCommentChars,
 } from "./comment_merge";
 import { parseFunctionKeys } from "./footer_keys";
+import { isBoardBulletMark, isBoardUnreadMark } from "./board_list_parse";
 import { mergeRunKey } from "./screen_annotate_cache";
 import { detectHiddenRow } from "./hidden_text";
 import { applyJustPushedMark } from "./just_pushed";
@@ -85,6 +86,24 @@ export function annotationsAreRowIndependent(enhance) {
   // 沒有 enhance ⇒ computeAnnotations 直接回全空 annotations，逐列獨立成立。
   if (!enhance) return true;
   return enhance.pageState !== PAGE_READING;
+}
+
+// 桌機看板列表的新文章標記（P54 電腦版，pref boardListUnreadMark）→ 逐列 boardUnread：
+// 'new'（cells [8,10) 是 ˇ）／'none'（讀過）。「這一幀是看板列表」由 term_view 判好放進
+// enhance.boardUnreadMark（標題列＋footer＋欄位列，board_list_parse.classifyBoardListScreen），
+// 這裡只看該列自己的 cell：沒有 ◎（目錄／分隔線／禁入列、文章列）⇒ 不標、照原樣畫。
+// 逐列獨立（同 applyFunctionKeys），annotationsAreRowIndependent 不必跟著改；旗標進 annotationsKey。
+// **只寫 result[row]**。
+export function applyBoardUnreadMarks(result, lines, enhance) {
+  if (!enhance || !enhance.boardUnreadMark) return;
+  for (let row = 0; row < lines.length; ++row) {
+    const chars = lines[row];
+    if (!isBoardBulletMark(chars)) continue;
+    result[row] = {
+      ...(result[row] || {}),
+      boardUnread: isBoardUnreadMark(chars) ? "new" : "none",
+    };
+  }
 }
 
 // 功能鍵按鈕（`[d]刪除` / `(y)回應`）→ 逐列裝飾。
@@ -1130,6 +1149,7 @@ export function computeAnnotations(
   // 的情形：result 在函式開頭就已配置好，else-if 鏈沒命中時是一份全 undefined 的
   // 陣列，直接寫進去合法。選單（pageState 1）的功能鍵就是靠這條路。
   applyFunctionKeys(result, lines, enhance);
+  applyBoardUnreadMarks(result, lines, enhance);
   // 列表／原生 24 列畫面：列物件是 term_buf 就地改寫的活 buffer（不是快照），
   // 增量快取的前提（列參考不變 ⇒ 內容不變）在這裡**不成立**，故不回快取。
   return { annotations: result, cache: null };

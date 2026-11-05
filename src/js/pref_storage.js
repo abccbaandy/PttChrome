@@ -348,6 +348,9 @@ export const DEFAULT_PREFS = {
   // 已讀列整列低亮。判定見 comment_parse#isListRowRead；**純 CSS**：列永遠帶
   // data-list-read，這個 pref 只 toggle #mainContainer.dimReadList。預設開。
   dimReadArticles: true,
+  // 桌機看板列表（原生 80 欄）的新文章標記（P54 電腦版）：ˇ 畫成圓點、有新文章的板名加粗變亮、
+  // 讀過的調暗；欄位不動、不送鍵（screen_annotations#applyBoardUnreadMarks）⇒ 不在安全模式清單。
+  boardListUnreadMark: true,
   highlightAuthorComments: true,
   // 自己的推文：只染 id 格（綠），帳號取自選單底部狀態列（term_view._selfId）。
   highlightSelfComments: true,

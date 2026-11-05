@@ -199,6 +199,13 @@ export class LinkSegmentBuilder {
     this.colorSegBuilder = null;
     this.col = null;
     this.href = null;
+    // 固定欄位的 class 包裝：[{ start, end, cls }]（半開區間、互不重疊、由小到大），
+    // 由 row.js 在建構後指派（同 authorIdClass）。目前只有桌機看板列表的新文章標記用
+    // （P54 電腦版：ˇ 那兩格、板名那 13 格），那種畫面上沒有作者 id 包裝。只加一層 span、
+    // 不改任何一格的字。
+    this.cellWraps = null;
+    this._cellWrap = null;
+    this._cellWrapNodes = null;
   }
 
   // Push a built segment to the current target: the author-id wrapper while
@@ -207,7 +214,8 @@ export class LinkSegmentBuilder {
   // 兩個包裝不會重疊：作者 id 在 cols [3, 3+len)，而部分底色的三種起始欄都在它右邊
   // （推文內容欄）或在完全不同的畫面上（列表／選單）。
   _pushSeg(node) {
-    if (this._inAuthor) this._authorWrap.push(node);
+    if (this._cellWrap) this._cellWrapNodes.push(node);
+    else if (this._inAuthor) this._authorWrap.push(node);
     else if (this._inHighlight) this._highlightWrap.push(node);
     else this.segs.push(node);
   }
@@ -240,6 +248,15 @@ export class LinkSegmentBuilder {
     });
     this.segs = [];
     this.inlineLinkPreviews = this.enableLinkInlinePreview ? [] : false;
+  }
+
+  // 固定欄位包裝收尾：包好的 span 交給外一層（作者 id／部分底色／整列）。
+  _flushCellWrap() {
+    const w = this._cellWrap;
+    const nodes = this._cellWrapNodes;
+    this._cellWrap = null;
+    this._cellWrapNodes = null;
+    if (w && nodes && nodes.length) this._pushSeg(el("span", { class: w.cls }, nodes));
   }
 
   _flushAuthorWrap() {
@@ -403,6 +420,7 @@ export class LinkSegmentBuilder {
     // 這樣每行的自動開圖才有地方掛（見 _flushLine / build）。
     if (ch.ch === "\n") {
       if (this.colorSegBuilder !== null) this.saveSegment();
+      if (this._cellWrap) this._flushCellWrap();
       if (this._inAuthor) this._flushAuthorWrap();
       // 範圍型連結（mention/AID/giveaway/裸網域）的關閉邊界是 `i === endCol`，而
       // 這個 return 走在那些檢查**之前** ⇒ endCol 剛好落在換行 cell 上時永遠關不掉，
@@ -419,6 +437,12 @@ export class LinkSegmentBuilder {
       this._prevWasLead = false;
       this._flushLine();
       return;
+    }
+    // 固定欄位包裝的關邊界排在部分底色的開邊界**之前**：兩者落在同一欄時，前一段要留在
+    // 底色外（不然 ˇ 那兩格會被包進從板名才開始的游標底色裡）。
+    if (this._cellWrap && i === this._cellWrap.end) {
+      if (this.colorSegBuilder !== null) this.saveSegment();
+      this._flushCellWrap();
     }
     // 切點落在雙寬字的 **trail cell** 上時往後推一格（整個字留在底色外）。
     // 直接切下去的後果：ColorSegmentBuilder 的 `lead` 是 per-segment 狀態，待配對的
@@ -441,6 +465,16 @@ export class LinkSegmentBuilder {
       if (this.colorSegBuilder !== null) this.saveSegment();
       this._inHighlight = true;
       this._highlightWrap = [];
+    }
+    // 固定欄位包裝的開邊界（在部分底色之後開 ⇒ 同一欄起的話包在底色裡面）。
+    if (this.cellWraps && !this._cellWrap) {
+      for (let k = 0; k < this.cellWraps.length; ++k) {
+        if (this.cellWraps[k].start !== i) continue;
+        if (this.colorSegBuilder !== null) this.saveSegment();
+        this._cellWrap = this.cellWraps[k];
+        this._cellWrapNodes = [];
+        break;
+      }
     }
     // Open the 原PO id wrapper at the first column of the user id. floor (col 2)
     // is inserted before this, so it stays outside the wrapper.
@@ -577,6 +611,7 @@ export class LinkSegmentBuilder {
     }
     // Safety net: a user id running to the end of the line never gets its close
     // boundary, so flush any still-open wrapper here.
+    if (this._cellWrap) this._flushCellWrap();
     if (this._inAuthor) this._flushAuthorWrap();
     // 部分底色**只有開邊界**（一律包到行尾）⇒ 這裡才是它的收尾點。
     if (this._inHighlight) this._flushHighlightWrap();

@@ -634,6 +634,25 @@ html.commentBarShown #mainContainer::after {
   color: #ffffff;
   font-weight: bold;
 }
+/* 桌機看板列表（原生 80 欄，P54 電腦版，render/row.js#boardUnreadWraps）：欄位不動，ˇ 那兩格
+   的字透明、畫一個同色系的圓點；有新文章的板名加粗變亮，讀過的調暗（游標所在列不包 boardNameDim）。 */
+.boardUnreadDot {
+  background: radial-gradient(circle, #55ffff 0 0.25em, transparent 0.27em);
+}
+/* span[class]：ANSI 色 class（.qN、工作模式的 .work-mode-active .qN）要壓得過。 */
+.boardUnreadDot span,
+.boardUnreadDot span[class] {
+  color: transparent;
+}
+.boardNameNew span,
+.boardNameNew span[class] {
+  color: #ffffff;
+  font-weight: bold;
+}
+.boardNameDim {
+  opacity: 0.5;
+}
+
 span.listCard[data-board-unread="none"]:not(
     :has(> .listCardBody:not([class="listCardBody"]))
   ) {

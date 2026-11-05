@@ -1402,6 +1402,16 @@ export const PrefModal = ({
                 <Text size="xs" c="dimmed" mb="xs">
                   {i18n("tooltip_dimReadArticles")}
                 </Text>
+                <PrefCheckbox
+                  name="boardListUnreadMark"
+                  checked={values.boardListUnreadMark}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_boardListUnreadMark")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_boardListUnreadMark")}
+                </Text>
                 <PrefAnchor anchorKey="ui:theme">
                   <Text size="sm" fw={500} mb={4}>
                     {i18n("options_theme")}

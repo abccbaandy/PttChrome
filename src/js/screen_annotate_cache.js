@@ -155,6 +155,9 @@ export function annotationsKey(input) {
     stable(e.listCardHideTitleBox),
     // 看板卡片的新文章圓點（P54，pref mobileBoardCardUnread）：同理。
     stable(e.listCardBoardUnread),
+    // 桌機看板列表的新文章標記（P54 電腦版，pref boardListUnreadMark）：同理。看板列表好讀
+    // 的視窗走 rowIdentityStable，漏了它切開關後節點會被原封沿用。
+    stable(e.boardUnreadMark),
     // 手機推文卡片：同理（同一批列物件在換行版面切換時改畫成卡片），整批重建。
     stable(e.commentCards),
     // 新推文標記的列（js/new_comments.js）：一篇文章裡從 null 翻成某一列最多一次。

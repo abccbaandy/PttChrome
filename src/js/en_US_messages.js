@@ -815,6 +815,12 @@ export const en_US = {
   "floatTools_toggle": {
     "message": "Tools"
   },
+  "options_boardListUnreadMark": {
+    "message": "Highlight boards with new posts in the board list"
+  },
+  "tooltip_boardListUnreadMark": {
+    "message": "Favorites/board list: boards with new posts get a dot instead of \"ˇ\" and a bold, brighter name; the rest are dimmed a little. Columns stay put; display only, no keys are sent. Mobile cards have their own switch."
+  },
   "tooltip_dimReadArticles": {
     "message": "Dims already-read rows in the article list so unread ones (+ mark) stand out at a glance."
   },

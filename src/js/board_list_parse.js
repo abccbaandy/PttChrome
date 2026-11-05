@@ -80,6 +80,25 @@ export function isBoardListFolderRow(text) {
   return !!text && text.indexOf('目錄') >= 0 && parseBoardListNum(text) != null;
 }
 
+// 看板列（board.c#brdlist_renderer）的兩個標記，按 cell 判（TermChar 陣列，不走 rowToText）：
+//   未讀「ˇ」在 cells [8,10)（Big5 A3 BE；`unread[1]` ＝ ANSI 1;31 的 ˇ，讀過是兩格空白）；
+//   一般看板的「◎」在 [28,30)（Big5 A1 B7）—— 目錄／分隔線／禁入列沒有，拿它當「這是一般看板列」
+//   的守門。P54 的兩處畫法（手機卡片 render/list_card.js、桌機原生列 screen_annotations
+//   #applyBoardUnreadMarks）共用這兩支：認不出 ⇒ 照原樣畫。
+const BOARD_UNREAD_COL = 8;
+const BOARD_BULLET_COL = 28;
+function cellPair(chars, col, lead, trail) {
+  const a = chars && chars[col];
+  const b = chars && chars[col + 1];
+  return !!(a && b && a.isLeadByte && a.ch === lead && b.ch === trail);
+}
+export function isBoardUnreadMark(chars) {
+  return cellPair(chars, BOARD_UNREAD_COL, '\xa3', '\xbe');
+}
+export function isBoardBulletMark(chars) {
+  return cellPair(chars, BOARD_BULLET_COL, '\xa1', '\xb7');
+}
+
 // 這一列的**板名**（`%-13s` 的 `B_BH(ptr)->brdname`，board.c:1477-1486）。
 // 用途：退出看板回到看板列表時，確認「同一號碼還是同一個看板」——編號是絕對位置，
 // 但**同變體的不同清單共用同一個編號空間形狀**（分類看板的目錄列 Enter 會遞迴進

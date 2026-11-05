@@ -14,7 +14,7 @@ import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText, par
 import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, isShortPageGrowth, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, COMMENT_TYPE_FILTER_PREFIX, FilterChipCounter } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, listNumRange, isHiddenListRow, pinnedRowKey, MAX_LIST_ROWS, MAX_LIST_TOTAL_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
-import { BRD_HEADER_ROWS, boardListRowNums } from './board_list_parse';
+import { BRD_HEADER_ROWS, boardListRowNums, classifyBoardListScreen } from './board_list_parse';
 import { BOARD_LIST, isArticleListTitleRow, rowHasTitle, parseBoardName } from './screen_titles';
 import { isArticleListFooter, isBoardListFooter } from './screen_captions';
 import { OWNER_BOARD_LIST } from './list_render_owner';
@@ -1273,6 +1273,19 @@ TermView.prototype = {
     return { row: row, offset: offsetTopWithin(el, disp) - disp.scrollTop };
   },
 
+  // 活 buffer 這一幀是看板列表嗎（P54 電腦版的守門）。只讀三列：標題列、欄位列、footer。
+  _isBoardListFrameNow: function() {
+    var buf = this.buf;
+    if (!buf || !buf.rows) return false;
+    var rows = buf.rows;
+    var rowTexts = [];
+    rowTexts[0] = buf.getRowText(0, 0, buf.cols);
+    rowTexts[1] = buf.getRowText(1, 0, buf.cols);
+    rowTexts[2] = buf.getRowText(2, 0, buf.cols);
+    rowTexts[rows - 1] = buf.getRowText(rows - 1, 0, buf.cols);
+    return classifyBoardListScreen({ rowTexts: rowTexts, rows: rows }) !== null;
+  },
+
   _restoreFilterAnchor: function(anchor) {
     var disp = this.mainDisplay, mc = this.mainContainer;
     if (!anchor || !disp || !mc) return;
@@ -1392,6 +1405,15 @@ TermView.prototype = {
         this.buf.isMenuScreen()
       );
     }
+    // 桌機看板列表的新文章標記（P54 電腦版，pref boardListUnreadMark）：這一幀是不是看板列表。
+    // 看板列表好讀的視窗幀由 listScroll.kind 說；原生幀看活 buffer 的標題列＋欄位列＋footer
+    // （classifyBoardListScreen，認不出 ⇒ 不標、照原樣畫）。手機卡片另有自己的畫法
+    // （listCardBoardUnread），累積長頁（stableRows）不會是看板列表。逐列判準在
+    // screen_annotations#applyBoardUnreadMarks。
+    let boardUnreadMark = false;
+    if (!this.listCards && !ov.stableRows && readEffectivePrefs().boardListUnreadMark) {
+      boardUnreadMark = lsOv ? lsOv.kind === 'board' : this._isBoardListFrameNow();
+    }
     this.componentScreen = renderScreen(
       lines,
       this.chh,
@@ -1400,6 +1422,7 @@ TermView.prototype = {
       this.screenRoot,
       Object.assign(
         {
+          boardUnreadMark: boardUnreadMark,
           blacklist: this.blacklist,
           titleBlacklist: this.titleBlacklist,
           // 關注名單（進 annotationsKey）：開關關掉就當名單是空的。
