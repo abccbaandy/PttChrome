@@ -307,6 +307,14 @@ describe("appendBlacklistEntry（快速新增去重 append）", () => {
     expect(appendBlacklistEntry("a\nb\n", "c")).toBe("a\nb\nc");
     expect(appendBlacklistEntry("\n", "c")).toBe("c");
   });
+  // CodeQL js/polynomial-redos：去尾端換行曾用 /\n+$/，一長串換行後面不是結尾時是平方時間
+  //（6 萬個換行實測 3.4 秒）。黑名單 pref 可能被貼進大量空行。
+  test("a long run of blank lines in the middle stays linear", () => {
+    const existing = "a" + "\n".repeat(100000) + "b";
+    const t = performance.now();
+    expect(appendBlacklistEntry(existing, "c")).toBe(existing + "\nc");
+    expect(performance.now() - t).toBeLessThan(1000);
+  });
 });
 
 describe("parseListArticleNum", () => {
