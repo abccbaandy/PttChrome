@@ -2306,6 +2306,19 @@ BoardListSession.prototype = {
     if (this._view.setListLoading) this._view.setListLoading(on);
   },
 
+  // 視口高變了（同 ListSession.onViewportResized）。
+  onViewportResized: function() {
+    if (this.state !== 'active') return;
+    const screen = this._screen();
+    if (!screen || !screen.hasListViewport || !screen.hasListViewport()) return;
+    this._forceRedraw();
+    const pos = this._cursorPos();
+    if (pos >= 0 && !this._isPosVisible(pos)) {
+      this._pendingReveal = { pos: pos, block: 'nearest', behavior: 'auto' };
+      this._forceRedraw();
+    }
+  },
+
   _forceRedraw: function() {
     this._termBuf.lineChangeds.fill(true);
     this._termBuf.changed = true;

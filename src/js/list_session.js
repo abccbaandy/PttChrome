@@ -4768,6 +4768,21 @@ ListSession.prototype = {
 
   // ---- misc -------------------------------------------------------------------
 
+  // 視口高變了（手機按鍵面板／軟鍵盤展開時列表卡片視口變矮，term_view._notifyListViewportCut）：
+  // 重畫套新高度，游標掉出視野就捲回來（同 _onLanded 收尾的作法）。
+  onViewportResized: function() {
+    if (this.state !== 'active') return;
+    const screen = this._screen();
+    if (!screen || !screen.hasListViewport || !screen.hasListViewport()) return;
+    this._forceRedraw();
+    const seq = this._sequence();
+    const pos = this._cursorPos(seq);
+    if (pos >= 0 && !this._isPosVisible(seq, pos)) {
+      this._scheduleReveal(pos, { block: 'nearest', behavior: 'auto' });
+      this._forceRedraw();
+    }
+  },
+
   _forceRedraw: function() {
     this._termBuf.lineChangeds.fill(true);
     this._termBuf.changed = true;
