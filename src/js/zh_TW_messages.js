@@ -1966,6 +1966,18 @@
   "mobileToolbar_post": {
     "message": "發文"
   },
+  "mobileToolbar_editorSave": {
+    "message": "存檔"
+  },
+  "mobileAppBar_editor": {
+    "message": "編輯文章"
+  },
+  "options_mobileEditorSave": {
+    "message": "手機編輯器底部導覽加「存檔」"
+  },
+  "tooltip_mobileEditorSave": {
+    "message": "發文／回文／寫信時，底部導覽第二格是「存檔」（送 Ctrl+X，打開 PTT 的檔案處理選單，存檔或放棄由你選），標題列寫「編輯文章」。PTT 正在問問題（例如搜尋、跳行）時不出現。"
+  },
   "mobileToolbar_threadPrev": {
     "message": "同主題前篇"
   },

@@ -24,6 +24,7 @@ import {
   IconSelectAll,
   IconPhotoUp,
   IconChevronLeft,
+  IconDeviceFloppy,
   IconChevronRight,
   IconChevronsLeft,
 } from "@tabler/icons-react";
@@ -452,6 +453,19 @@ export const MobileToolbar = ({
             context.mail ? "mobileToolbar_replyMail" : "mobileToolbar_reply",
           ),
           () => sendAction("reply"),
+        );
+      case "editorSave":
+        // P57：送之前再看一次本幀（工具列的 context 是上一次 settle 算的；這中間使用者可能
+        // 自己按出了 ^S 搜尋之類的 prompt，^X 打進去就不是存檔了）。
+        return navBtn(
+          "__editorSave",
+          IconDeviceFloppy,
+          i18n("mobileToolbar_editorSave"),
+          () => {
+            const buf = pttchrome.buf;
+            if (!buf || !buf.isEditorTypingNow || !buf.isEditorTypingNow()) return;
+            sendAction("editorSave");
+          },
         );
       case "post":
         return navBtn(

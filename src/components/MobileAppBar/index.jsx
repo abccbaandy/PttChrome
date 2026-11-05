@@ -83,7 +83,9 @@ export const MobileAppBar = ({ pttchrome }) => {
         <div className="mobileAppBarTitle" data-key="__title">
           {homeVisible
             ? i18n("home_title")
-            : appBar.title || i18n("mobileAppBar_defaultTitle")}
+            : appBar.kind === "editor"
+              ? i18n("mobileAppBar_editor")
+              : appBar.title || i18n("mobileAppBar_defaultTitle")}
         </div>
         {!homeVisible && appBar.subtitle ? (
           <div className="mobileAppBarSubtitle" data-key="__subtitle">

@@ -182,6 +182,21 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(core.view.sendKeyAsUser).toHaveBeenLastCalledWith("y");
   });
 
+  // P57：編輯器第 2 格「存檔」送 ^X（Alt remap）。按下去那一刻再看本幀：使用者自己按出了 ^S 搜尋
+  // 之類的 prompt（工具列的 context 還沒更新）⇒ 不送，免得 ^X 打進 prompt。
+  test("編輯器：存檔送 ^X；按下時 prompt 開著就不送", () => {
+    const core = makeCore({ context: { editor: true, editorSave: true, search: [] } });
+    let typing = true;
+    core.buf = { isEditorTypingNow: () => typing };
+    renderBar(core);
+    expect(byKey("__editorSave").textContent).toBe(i18n("mobileToolbar_editorSave"));
+    fireEvent.click(byKey("__editorSave"));
+    expect(core.view.sendKeyAsUser).toHaveBeenLastCalledWith("x", { altKey: true });
+    typing = false;
+    fireEvent.click(byKey("__editorSave"));
+    expect(core.view.sendKeyAsUser).toHaveBeenCalledTimes(1);
+  });
+
   test("信件 pager：只有回信（label 換成回信），沒有推／分享", () => {
     renderBar(makeCore({ context: { ...ARTICLE, push: false, share: false, threadNav: false, mail: true } }));
     expect(byKey("__reply").textContent).toBe(i18n("mobileToolbar_replyMail"));
