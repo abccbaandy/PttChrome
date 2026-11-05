@@ -267,6 +267,7 @@ const AUTO_LOGIN_MAX_THROTTLE_RETRIES = 2;
 const AUTO_LOGIN_TERMINAL_PHASES = [
   'bad-credentials',
   'guest-full',
+  'guest-closed',
   'maintenance',
   'overloaded',
   'quota-rejected',

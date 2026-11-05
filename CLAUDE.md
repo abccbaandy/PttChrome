@@ -56,7 +56,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   + Auth/Firestore emulator + 真 `firestore.rules`，無 mock）。emulator 跑在 **Docker**（pinned `andreysenov/firebase-tools`；vitest 在 host 連容器埠），所以**本機跑需 Docker**。orchestration 見 `scripts/run-integration.mjs`。
   **`vitest.config.mjs` 刻意不 extends `vite.config.mjs`**：app 的 `define` 會把 emulator env 釘成 undefined，integration 混用會全滅。
   e2e 不連 Firebase，同步流程只能在這驗。細節見 `docs/pref-sync-firestore.md`。
-- **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額常滿會 fast-fail）。
+- **E2E（連真 PTT）**：`yarn test:e2e`（Playwright）。帳密走 env `PTT_USER`/`PTT_PASS`，無則 guest（名額滿、或 PTT 已關閉 guest「請改用網頁版」都會 fast-fail）。
   失敗自動截圖/錄影 + console dump。helper：`tests/e2e/helpers/ptt.js`。細節見 `tests/e2e/README.md`。
   - **live 只有核心**：`tests/e2e/core.spec.js` ＝登入／主選單・文章列表・文章不跑版不亂碼
     （`helpers/screen_sanity.js`：DOM＝buf、格線、Big5 可解、無水平溢出，**不比對畫面內容**）／開圖。

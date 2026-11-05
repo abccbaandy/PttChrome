@@ -45,7 +45,7 @@ PTT 有登入額度（見「登入預算」）⇒ live 不能像 offline 一樣�
 ## 跑
 
 ```powershell
-# guest（PTT guest 名額常滿，滿時會 fast-fail 並提示改用帳號）
+# guest（PTT guest 名額常滿；upstream 285fd63f 起 guest 帳號拿掉、只顯示「請改用網頁版」。兩種都會 fast-fail 並提示改用帳號）
 yarn test:e2e
 
 # 真實帳號（帳密只讀環境變數，不進 git）
