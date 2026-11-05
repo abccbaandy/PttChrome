@@ -6,17 +6,19 @@
 // diagnoseConnectFailure；UI 在 components/ConnectionAlert.jsx。
 // 守護：tests/unit/connection_probe.test.js、connection_alert_diagnosis.test.jsx。
 
+import { parseSite, PROTOCOL_WEBSOCKET } from './transport';
+
 // README「方法一：安裝擴充套件」—— Origin 偽裝的設定教學。
 export const ORIGIN_SETUP_URL =
   'https://github.com/abccbaandy/PttChrome#-%E6%96%B9%E6%B3%95%E4%B8%80%E5%AE%89%E8%A3%9D%E6%93%B4%E5%85%85%E5%A5%97%E4%BB%B6%E5%BC%B7%E7%83%88%E6%8E%A8%E8%96%A6%E6%9C%80%E7%A9%A9%E5%AE%9A';
 
 const PROBE_TIMEOUT_MS = 8000;
 
-// 站台 URL（wsstelnet://host/path）→ WebSocket URL。不支援的 scheme 回 null。
+// 站台 URL（wsstelnet://host/path）→ WebSocket URL。只認 WebSocket 協議的 scheme
+//（探測只對 telnet-over-WebSocket 的 proxy 有意義），其他回 null。
 export function siteToWsUrl(site) {
-  const m = /^(wsstelnet|wstelnet):\/\/([^/]+)(\/.*)?$/.exec(String(site || ''));
-  if (!m) return null;
-  return (m[1] === 'wsstelnet' ? 'wss://' : 'ws://') + m[2] + (m[3] || '/');
+  const p = parseSite(site);
+  return p && p.protocol === PROTOCOL_WEBSOCKET ? p.wsUrl : null;
 }
 
 // 試開一條 WebSocket：open ⇒ true（並立刻關掉）；error／close／逾時 ⇒ false。

@@ -84,10 +84,11 @@ TelnetConnection.prototype._onOpen = function(e) {
   this.dispatchEvent(new CustomEvent('open'));
 };
 
+// 載體的斷線原因（SSH 載體才有，見 ssh/ssh_transport.js）原樣往上傳，App 的失敗提示用。
 TelnetConnection.prototype._onClose = function(e) {
   if (this._closed) return;
   this._closed = true;
-  this.dispatchEvent(new CustomEvent('close'));
+  this.dispatchEvent(new CustomEvent('close', { detail: (e && e.detail) || null }));
 };
 
 TelnetConnection.prototype._onDataAvailable = function(e) {
@@ -319,4 +320,7 @@ TelnetConnection.prototype.sendNaws = function(cols, rows) {
   var nawsStr = String.fromCharCode(Math.floor(cols/256), cols%256, Math.floor(rows/256), rows%256).replace(/(\xff)/g,'\xff\xff');
   var rep = IAC + SB + NAWS + nawsStr + IAC + SE;
   this._sendRaw( rep );
+  // SSH 載體：pty 的尺寸另外用 window-change 告訴 bbs-sshd（docs/ssh.md「視窗大小」）。
+  // NAWS 照送：PTT 的 logind 在 SSH 通道裡一樣做 telnet 協商。
+  if (this.socket.resize) this.socket.resize(cols, rows);
 };

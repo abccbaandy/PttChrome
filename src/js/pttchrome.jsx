@@ -3,7 +3,7 @@ import { AnsiParser } from './ansi_parser';
 import { TermView } from './term_view';
 import { TermBuf } from './term_buf';
 import { TelnetConnection } from './telnet';
-import { Websocket } from './websocket';
+import { createTransport } from './transport';
 import { EasyReading, switchModePlan, isEasyReadingLive } from './easy_reading';
 import { ListSession } from './list_session';
 import { BoardListSession } from './board_list_session';
@@ -62,7 +62,7 @@ import {
   saveBackgroundRecording,
   isDebugRecording,
 } from './debug_record_control';
-import { diagnoseConnectFailure, probeWebSocket, siteToWsUrl } from './connection_probe';
+import { diagnoseConnectFailure, probeWebSocket } from './connection_probe';
 import {
   MFDISP_RAW_PLAIN,
   rawModeKey,
@@ -542,13 +542,19 @@ App.prototype.connect = function(url) {
   this.connectState = 0;
   console.log('connect: ' + url);
 
-  var wsUrl = siteToWsUrl(url);
-  if (!wsUrl) {
+  // 依 scheme 選載體（transport.js）：wstelnet/wsstelnet ＝ WebSocket，wssh/wsssh ＝ SSH over relay。
+  var self = this;
+  var transport = createTransport(url, {
+    size: function() {
+      return { cols: self.buf.cols, rows: self.buf.rows };
+    }
+  });
+  if (!transport) {
     console.log('unsupport connect url: ' + url);
     return;
   }
   var parsed = this._parseURLSimple(url);
-  // connectedUrl 先於 _setupWebsocketConn 建立：連線失敗的 close 可能早於任何
+  // connectedUrl 先於 _attachConn 建立：連線失敗的 close 可能早於任何
   // 使用者動作，onClose 要讀得到這次的 url/opened。
   this.connectedUrl = {
     url: url,
@@ -557,9 +563,11 @@ App.prototype.connect = function(url) {
     easyReadingSupported: true,
     // 這次連線是否 open 過：連線失敗診斷分辨「從未連上」與「中途斷線」
     //（connection_probe.js#diagnoseConnectFailure）。
-    opened: false
+    opened: false,
+    // 載體回報的斷線原因（SSH 載體才有：relay／tcp／hostkey…），onClose 填。
+    closeReason: null
   };
-  this._setupWebsocketConn(wsUrl);
+  this._attachConn(new TelnetConnection(transport));
 };
 
 App.prototype._parseURLSimple = function(url) {
@@ -573,6 +581,8 @@ App.prototype._parseURLSimple = function(url) {
   var port = hostport.length > 1 ? parseInt(hostport[1]) : {
     'wstelnet': 80,
     'wsstelnet': 443,
+    'wssh': 80,
+    'wsssh': 443,
     'telnet': 23,
     'ssh': 22
   }[protocol[0]];
@@ -583,11 +593,6 @@ App.prototype._parseURLSimple = function(url) {
     port: port,
     path: '/' + (hostname.length > 1 ? hostname[1] : '')
   };
-};
-
-App.prototype._setupWebsocketConn = function(url) {
-  var wsConn = new Websocket(url);
-  this._attachConn(new TelnetConnection(wsConn));
 };
 
 App.prototype._attachConn = function(conn) {
@@ -670,9 +675,11 @@ App.prototype.onData = function(data) {
   }
 };
 
-App.prototype.onClose = function() {
+App.prototype.onClose = function(e) {
   console.info("pttchrome onClose");
   this.debugRecorder?.log('app.onClose');
+  // 載體回報的斷線原因（SSH：relay／tcp／hostkey…；WebSocket 沒有）。失敗提示用。
+  if (this.connectedUrl) this.connectedUrl.closeReason = (e && e.detail && e.detail.reason) || null;
   // 先問：這次斷線是不是我們自己登出造成的（要在下面 disable 清佇列之前收攤）。
   const { loggedOut, quitApp } = this.logout.onConnectionClosed();
   // PTT 的登入封鎖畫面（login_block.js）：斷線那一刻畫面上還看得到。重連就是再登入一次 ⇒
