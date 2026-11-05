@@ -188,6 +188,13 @@ describe("Cloudflare Worker relay (relay.js)", () => {
       l: {},
       sent: [],
       closedWith: null,
+      // 照 Workers 的標準行為（compatibility_date 新到一定程度後）：binaryType 預設 'blob'，
+      // binary frame 給 Blob；設成 'arraybuffer' 才給 ArrayBuffer。
+      binaryType: "blob",
+      deliver(bytes) {
+        const data = this.binaryType === "arraybuffer" ? new Uint8Array(bytes).buffer : new Blob([new Uint8Array(bytes)]);
+        for (const f of this.l.message || []) f({ data });
+      },
       accept() {},
       addEventListener(t, f) {
         (this.l[t] = this.l[t] || []).push(f);
@@ -232,8 +239,11 @@ describe("Cloudflare Worker relay (relay.js)", () => {
     });
     expect(res.client).toBe(p.client);
     expect(c.calls).toEqual([{ hostname: "ptt.cc", port: 22 }]);
-    p.server.l.message[0]({ data: new Uint8Array([1, 2]).buffer });
+    // 斷言實際寫到 TCP 的 bytes：binaryType 沒設時 new Uint8Array(blob) 是空的，
+    // 只數「寫了幾次」會綠，實際上 PTT 一個 byte 都沒收到（SSH 卡在 banner 後、畫面全黑）。
+    p.server.deliver([1, 2]);
     await vi.waitFor(() => expect(c.written).toHaveLength(1));
+    expect([...c.written[0]]).toEqual([1, 2]);
     c.push().enqueue(new Uint8Array([9]));
     await vi.waitFor(() => expect(p.server.sent).toHaveLength(1));
     c.push().close();

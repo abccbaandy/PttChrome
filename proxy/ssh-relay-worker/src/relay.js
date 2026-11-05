@@ -40,6 +40,9 @@ export async function handleRequest(request, env, deps) {
   const upgradeResponse = deps.upgradeResponse || defaultUpgradeResponse;
   const pair = new deps.WebSocketPair();
   const [client, server] = Object.values(pair);
+  // binaryType 預設 'blob'（compatibility_date 夠新就照標準），binary frame 會是 Blob ⇒
+  // new Uint8Array(blob) 是空的，PTT 一個 byte 都收不到（SSH 卡在 banner 後）。
+  server.binaryType = 'arraybuffer';
   server.accept();
 
   // 拒絕也要先完成握手再以 close code 關：瀏覽器看不到握手被拒的 HTTP 狀態，
