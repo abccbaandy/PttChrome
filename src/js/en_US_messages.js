@@ -584,7 +584,7 @@ export const en_US = {
     "message": "Mouse browsing, click areas, wheel and back gestures"
   },
   "optionsDesc_connection": {
-    "message": "Proxy, encoding, image proxy and startup cache"
+    "message": "Protocol, proxy, encoding, image proxy and startup cache"
   },
   "optionsDesc_enhance": {
     "message": "Floors, comment merging and highlights, links, image upload, blacklist"
@@ -1724,6 +1724,30 @@ export const en_US = {
   "tooltip_proxyUrl": {
     "message": "e.g. ptt-proxy.example.workers.dev, or a full wsstelnet:// URL"
   },
+  "options_connectionProtocol": {
+    "message": "Protocol (applies on reconnect)"
+  },
+  "tooltip_connectionProtocol": {
+    "message": "WebSocket is how the PTT web client normally connects. SSH goes through a relay to ptt.cc's SSH; encryption happens in this page, so the relay (including ours) can't see your ID or password."
+  },
+  "options_protocolWebsocket": {
+    "message": "WebSocket (default)"
+  },
+  "options_protocolSsh": {
+    "message": "SSH (via relay)"
+  },
+  "options_sshRelayUrl": {
+    "message": "SSH relay address"
+  },
+  "tooltip_sshRelayUrl": {
+    "message": "Leave empty to use the project's relay. For a self-hosted one, enter the full address, e.g. wssh://127.0.0.1:<port>/ssh/<token>"
+  },
+  "tooltip_sshLocalOnly": {
+    "message": "The protocol and relay address stay on this device and are not synced."
+  },
+  "options_sshSelfHostHelp": {
+    "message": "How to self-host a relay"
+  },
   "options_connectionEncoding": {
     "message": "Connection encoding (takes effect after reconnecting)"
   },
@@ -2226,6 +2250,30 @@ export const en_US = {
   },
   "alert_connectionUnreachable": {
     "message": "PTT is unreachable right now (maintenance or network issue); this is not caused by the Origin setup."
+  },
+  "alert_connectionUseSsh": {
+    "message": "Switch to SSH"
+  },
+  "alert_connectionUseWebsocket": {
+    "message": "Switch to WebSocket"
+  },
+  "alert_connectionCheckRelay": {
+    "message": "Check the SSH relay address in Settings → Connection; a self-hosted relay must be running first."
+  },
+  "alert_connectionSshHostKey": {
+    "message": "PTT's SSH host key doesn't match the built-in one, so the connection was stopped. The relay may be intercepted; don't log in over it."
+  },
+  "alert_connectionSshUnreachable": {
+    "message": "Reached the SSH relay, but the relay can't reach PTT's SSH (ptt.cc:22): PTT may be under maintenance, or the relay's network blocks port 22."
+  },
+  "alert_connectionSshRelay": {
+    "message": "Couldn't reach the SSH relay, or it rejected this page."
+  },
+  "alert_connectionSshUnsupported": {
+    "message": "SSH isn't supported in this browser or on this address (needs https or localhost)."
+  },
+  "alert_connectionSshProtocol": {
+    "message": "SSH negotiation with PTT failed."
   },
   "alert_connectionProxyAsk": {
     "message": "Connect through the proxy instead? Traffic is relayed by a proxy server, so typing will lag a little."

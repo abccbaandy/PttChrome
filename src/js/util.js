@@ -50,6 +50,39 @@ export function defaultSite() {
 // 自架時才填自己的位址，刪空即回到這個預設——不會出現「刪掉就永遠沒有位址」。
 export const DEFAULT_PROXY_HOST = 'ptt-proxy.ptt-relay-8xquy.workers.dev';
 
+// SSH 協議（docs/ssh.md）：專案方提供的公用 SSH relay（Cloudflare Worker，proxy/ssh-relay-worker）。
+// relay 只搬 bytes、看不到帳密；**空欄位就是用它**，理由同 DEFAULT_PROXY_HOST。
+export const DEFAULT_SSH_RELAY_HOST = 'ptt-ssh-relay.ptt-relay-8xquy.workers.dev';
+
+// 協議選 SSH、relay 欄位空白時的站台。dev 是自己 dev server 的 /ssh relay（vite.config.mjs，
+// `{pageHost}` 同 DEFAULT_SITE），正式版是上面的公用 relay。
+export function defaultSshSite() {
+  return resolveDefaultSite(
+    process.env.DEFAULT_SSH_SITE || 'wsssh://' + DEFAULT_SSH_RELAY_HOST + '/ssh',
+    typeof location !== 'undefined' ? location.host : ''
+  );
+}
+
+// 協議 pref 的值（pref_storage.js#connectionProtocol）。
+export const PROTOCOL_PREF_SSH = 'ssh';
+
+// 協議選 SSH 時的 connect() 目標；不是 SSH 回 ''。sshRelayUrl 可以是：
+//  - 空白          -> defaultSshSite()
+//  - 裸 host       -> wsssh://<host>/ssh
+//  - wss:// / ws:// -> 換成 wsssh:// / wssh://（使用者常直接貼 WebSocket 網址）
+//  - wsssh:// / wssh:// 原樣；沒有路徑就補 /ssh
+export function sshSiteFromPrefs(prefs) {
+  if (!prefs || prefs.connectionProtocol !== PROTOCOL_PREF_SSH) return '';
+  var s = (prefs.sshRelayUrl || '').trim();
+  if (!s) return defaultSshSite();
+  if (/^wss:\/\//i.test(s)) s = 'wsssh://' + s.slice(6);
+  else if (/^ws:\/\//i.test(s)) s = 'wssh://' + s.slice(5);
+  else if (!/:\/\//.test(s)) s = 'wsssh://' + s;
+  var afterScheme = s.split('://')[1] || '';
+  if (afterScheme.indexOf('/') === -1) s += '/ssh';
+  return s;
+}
+
 // Build a connect() target from the proxy prefs, or '' when proxy is off.
 // Accepts a bare host (ptt-proxy.example.dev) or a full ws(s)telnet:// URL:
 //  - empty       -> DEFAULT_PROXY_HOST (the placeholder the user sees)

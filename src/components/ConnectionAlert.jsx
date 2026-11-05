@@ -16,17 +16,51 @@ import "./PageTopAlert.css";
 const PASSTHROUGH =
   '[role="dialog"], [role="menu"], input, textarea, select, [contenteditable]';
 
-// diagnose：回傳 Promise<'origin'|'unreachable'|'disconnected'|null>（決策表在
-// js/connection_probe.js#diagnoseConnectFailure）。沒給就是原本只有重連的提示。
+// diagnose：回傳 Promise<{ verdict, suggestions }>（決策表在
+// js/connection_probe.js#adviseConnectFailure）；舊形狀（只回 verdict 字串）也吃。
+// 沒給就是原本只有重連的提示（被 PTT 封鎖、正常登出都不給 ⇒ 不出現任何建議）。
 // onEnableProxy：使用者在「改用 Proxy？」選是 ⇒ App 開 useProxy 並重連。
+// onSwitchProtocol(protocol)：建議裡的「改用 SSH／改用 WebSocket」⇒ App 記住新協議並立即重連
+//（docs/ssh.md「失敗提示」）。只有使用者按了才切，不自動切。
 // loggedOut：使用者自己按了登出（App.logout，server 正常關線）⇒ 不是連線失敗，
 // 換成藍色的「已登出」標題，只留重新連線。
 // loginBlocked：斷線前畫面是 PTT 的登入封鎖（js/login_block.js）⇒ 寫明封鎖規則與「本頁自動登入
 // 已暫停」，不跑診斷（連得上，是 PTT 不讓登入）。
+// SSH 載體的失敗原因 → 說明文字（verdict 見 connection_probe.js#adviseConnectFailure）。
+const SSH_VERDICT_TEXT = {
+  sshHostKey: "alert_connectionSshHostKey",
+  sshRelay: "alert_connectionSshRelay",
+  sshUnreachable: "alert_connectionSshUnreachable",
+  sshUnsupported: "alert_connectionSshUnsupported",
+  sshProtocol: "alert_connectionSshProtocol",
+};
+
+// 「改用另一個協議」的按鈕。
+const SWITCHES = [
+  { key: "useSsh", protocol: "ssh", labelKey: "alert_connectionUseSsh" },
+  {
+    key: "useWebsocket",
+    protocol: "websocket",
+    labelKey: "alert_connectionUseWebsocket",
+  },
+];
+
+// 舊的 diagnose 只回 verdict 字串（origin 時隱含「建議 proxy」）。
+export const normalizeAdvice = (r) => {
+  if (r && typeof r === "object") {
+    return {
+      verdict: r.verdict ?? null,
+      suggestions: Array.isArray(r.suggestions) ? r.suggestions : [],
+    };
+  }
+  return { verdict: r ?? null, suggestions: r === "origin" ? ["proxy"] : [] };
+};
+
 export const ConnectionAlert = ({
   onDismiss,
   diagnose,
   onEnableProxy,
+  onSwitchProtocol,
   loggedOut,
   loginBlocked,
 }) => {
@@ -34,6 +68,7 @@ export const ConnectionAlert = ({
   useEffect(() => setMounted(true), []);
 
   const [verdict, setVerdict] = useState(diagnose ? "checking" : null);
+  const [suggestions, setSuggestions] = useState([]);
   const [proxyAsked, setProxyAsked] = useState(true);
   useEffect(() => {
     if (!diagnose) return;
@@ -41,8 +76,11 @@ export const ConnectionAlert = ({
     Promise.resolve()
       .then(diagnose)
       .catch(() => "unreachable")
-      .then((v) => {
-        if (alive) setVerdict(v);
+      .then((r) => {
+        if (!alive) return;
+        const advice = normalizeAdvice(r);
+        setVerdict(advice.verdict);
+        setSuggestions(advice.suggestions);
       });
     return () => {
       alive = false;
@@ -109,7 +147,13 @@ export const ConnectionAlert = ({
           {verdict === "unreachable" && (
             <p>{i18n("alert_connectionUnreachable")}</p>
           )}
-          {verdict === "origin" && onEnableProxy && proxyAsked && (
+          {SSH_VERDICT_TEXT[verdict] && (
+            <p>{i18n(SSH_VERDICT_TEXT[verdict])}</p>
+          )}
+          {suggestions.includes("checkRelay") && (
+            <p>{i18n("alert_connectionCheckRelay")}</p>
+          )}
+          {suggestions.includes("proxy") && onEnableProxy && proxyAsked && (
             <>
               <p>{i18n("alert_connectionProxyAsk")}</p>
               <Group gap="xs" mb="sm">
@@ -126,6 +170,18 @@ export const ConnectionAlert = ({
               </Group>
             </>
           )}
+          {onSwitchProtocol &&
+            SWITCHES.filter((s) => suggestions.includes(s.key)).map((s) => (
+              <Group gap="xs" mb="sm" key={s.key}>
+                <Button
+                  color="red"
+                  variant="outline"
+                  onClick={() => onSwitchProtocol(s.protocol)}
+                >
+                  {i18n(s.labelKey)}
+                </Button>
+              </Group>
+            ))}
           {loginBlocked && <p>{i18n("alert_connectionLoginBlocked")}</p>}
           <p>{i18n("alert_connectionText")}</p>
           <Button color={loggedOut ? "blue" : "red"} onClick={onDismiss}>

@@ -59,6 +59,11 @@ WebView  https://abccbaandy.github.io/PttChrome/
   （舊版 APK 不認得 op，給了按下去沒反應）。
 - 守護：`tests/unit/android_quit_app.test.js`（原生靜態掃描）、`logout_quit_app.test.js`、`android_bridge.test.js`。
 
+## SSH 協議
+- 本機 proxy 多一條 `/ssh/<token>`（WebSocket ⇄ TCP ptt.cc:22，目的地寫死），協議在原生「App 設定 → 連線」，
+  原生依設定注入對應站台；失敗提示的「改用另一個協議」走 bridge `setProtocol`（能力旗標 `config.setProtocol`）。
+  細節見 `docs/ssh.md`「APK」。
+
 ## 檔案下載（錄製檔／設定備份匯出）
 - WebView 不處理 `a[download]`／`blob:` 下載：點了靜默無反應（原生端也讀不到 `blob:` 網址，裝 `DownloadListener` 沒用）。
 - `util.js#downloadAsFile` 在 APK 走 bridge `saveFile`（`{ filename, mime, text }`）→ `MainActivity.saveFile` 開 SAF `ACTION_CREATE_DOCUMENT` 讓使用者選位置 → IO thread 寫 UTF-8 → Toast。免儲存權限。檔名經 `FileSave.kt#safeFileName`（JVM `FileSaveTest`）。

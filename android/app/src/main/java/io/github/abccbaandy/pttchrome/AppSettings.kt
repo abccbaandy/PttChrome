@@ -18,6 +18,14 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_DEV_URL, null) ?: PageSource.DEFAULT_DEV_URL
         set(v) = prefs.edit { putString(KEY_DEV_URL, v) }
 
+    /**
+     * 連線協議（docs/ssh.md「APK」）：'websocket'（預設）｜'ssh'。網頁的協議 pref 在 APK 不生效：
+     * 原生依這個值注入對應的本機 proxy 站台（[ConnectionService.site]）。
+     */
+    var protocol: String
+        get() = AppConfig.normalizeProtocol(prefs.getString(KEY_PROTOCOL, null))
+        set(v) = prefs.edit { putString(KEY_PROTOCOL, AppConfig.normalizeProtocol(v)) }
+
     /** 區網 IP 只在 debug APK 開放（見 [PageSource]）。 */
     val allowLan: Boolean get() = BuildConfig.DEBUG
 
@@ -27,5 +35,6 @@ class AppSettings(context: Context) {
         const val FILE = "app_settings"
         const val KEY_DEV_ENABLED = "dev_server_enabled"
         const val KEY_DEV_URL = "dev_server_url"
+        const val KEY_PROTOCOL = "connection_protocol"
     }
 }
