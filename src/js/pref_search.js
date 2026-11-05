@@ -362,6 +362,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_mobileBoardCardUnread",
       tooltipKey: "tooltip_mobileBoardCardUnread",
     },
+    {
+      key: "mobileEditorSave",
+      titleKey: "options_mobileEditorSave",
+      tooltipKey: "tooltip_mobileEditorSave",
+    },
   ]),
   ...inSection("general", "options_cursorHighlight", null, [
     {

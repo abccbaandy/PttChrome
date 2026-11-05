@@ -1967,6 +1967,18 @@ export const en_US = {
   "mobileToolbar_post": {
     "message": "Post"
   },
+  "mobileToolbar_editorSave": {
+    "message": "Save"
+  },
+  "mobileAppBar_editor": {
+    "message": "Editing"
+  },
+  "options_mobileEditorSave": {
+    "message": "Add \"Save\" to the mobile editor's bottom bar"
+  },
+  "tooltip_mobileEditorSave": {
+    "message": "While posting, replying or writing mail, the bottom bar's second slot is \"Save\" (sends Ctrl+X to open PTT's file menu; you choose save or discard), and the title bar reads \"Editing\". Hidden while PTT is asking something (search, go to line)."
+  },
   "mobileToolbar_threadPrev": {
     "message": "Prev in thread"
   },

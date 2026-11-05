@@ -32,4 +32,25 @@ test.describe('編輯器輸入框（手機，離線）', () => {
     expect(await takeCapture(page)).toBe('abc');
     await expect(box).toHaveCount(0);
   });
+
+  // P57：第 2 格「存檔」送 ^X 打開 PTT 原生的檔案處理選單（edit.c#write_file），App Bar 寫「編輯文章」。
+  // 選單那一幀底列不再是編輯器 ⇒ 存檔鈕收起（選單裡由使用者自己選存檔／放棄）。
+  test('工具列「存檔」送 ^X；App Bar 寫編輯文章；檔案處理選單出來後收起', async ({ page }) => {
+    test.setTimeout(60000);
+    await bootOffline(page, ptt);
+    for (const f of EDITOR_FRAMES) await feedRaw(page, f.bytes);
+    await page.waitForFunction(() => window.__app.buf.pageState === 6);
+    const save = page.locator('[data-key="__editorSave"]');
+    await expect(save).toBeVisible();
+    const title = await page.evaluate(() => window.__i18n('mobileAppBar_editor'));
+    await expect(page.locator('.mobileAppBarTitle')).toHaveText(title);
+
+    await startCapture(page);
+    await save.tap();
+    await expect.poll(() => peekCapture(page)).toContain('\x18');
+    expect(await takeCapture(page)).toBe('\x18');
+    const menu = screens.frames.find((fr) => fr.name === 'save-menu');
+    await feedRaw(page, menu.bytes);
+    await expect(save).toHaveCount(0);
+  });
 });

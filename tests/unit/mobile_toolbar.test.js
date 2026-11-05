@@ -160,6 +160,35 @@ describe("toolbarContextFromFacts", () => {
   test("沒有 buf ⇒ 空", () => {
     expect(toolbarContextFromFacts(null, 3)).toBe(EMPTY_TOOLBAR_CONTEXT);
   });
+  // P57：編輯器第 2 格「存檔」（^X 打開 edit.c#write_file 的檔案處理選單）。只在本幀打字會進內文時給：
+  // ^S 搜尋／F5 跳行是 getdata(b_lines - 1)，底列 caption 還在、游標在輸入欄（ptt_src_screens 的 editor_prompt）。
+  describe("editorSave（pref mobileEditorSave）", () => {
+    const EDITOR_ROW = "  編輯文章  (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開║插入│aipr│    1:   1";
+    const tail = ["refresh", "end", "keys", "more"];
+    const on = { editorSave: true };
+    test("編輯器＋游標在內文 ⇒ 第 2 格是存檔，送 ^X（Alt remap）", () => {
+      const c = toolbarContextFromFacts(frame({ 23: EDITOR_ROW }), 6, on);
+      expect(c.editorSave).toBe(true);
+      expect(toolbarSlots(c)).toEqual(["editorInput", "editorSave", ...tail]);
+      expect(TOOLBAR_KEYS.editorSave).toEqual({ key: "x", mods: { altKey: true } });
+    });
+    test("編輯器裡的 prompt 開著（底列還在、游標在輸入欄）⇒ 不給", () => {
+      const f = { ...frame({ 22: "[搜尋] 關鍵字: ", 23: EDITOR_ROW }), inputField: true };
+      expect(toolbarContextFromFacts(f, 6, on).editorSave).toBe(false);
+    });
+    test("底列已經不是編輯器（檔案處理選單、存檔後回文章）⇒ 不給；pageState 黏在 6 也一樣", () => {
+      expect(toolbarContextFromFacts(frame({ 2: "確定要儲存檔案嗎？ ", 23: "" }), 6, on).editorSave).toBe(false);
+      expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3, on).editorSave).toBe(false);
+    });
+    test("開關關掉 ⇒ 照舊空格", () => {
+      const c = toolbarContextFromFacts(frame({ 23: EDITOR_ROW }), 6, {});
+      expect(c.editorSave).toBe(false);
+      expect(toolbarSlots(c)).toEqual(["editorInput", null, ...tail]);
+    });
+    test("context 比較看得到它的翻轉", () => {
+      expect(sameToolbarContext({ editorSave: true, search: [] }, { editorSave: false, search: [] })).toBe(false);
+    });
+  });
 });
 
 test("sameToolbarContext：內容相同就相同（不必每次 settle 重 render）", () => {

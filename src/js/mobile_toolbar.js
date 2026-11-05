@@ -28,6 +28,10 @@
 //   appBar ：頂部 App Bar 的標題（mobile_app_bar.js），同一次計算、同一個通知。
 //   editor ：PTT 編輯器（pageState 6，term_buf.setPageState 的判準）。第 1 格放「輸入框」
 //            （editor_input.js；pref 關掉時元件畫空格）。
+//   editorSave：P57（pref mobileEditorSave）。編輯器、且**這一幀**打字會進內文（底列是編輯器
+//            caption、游標不在輸入欄＝term_buf.isEditorTypingNow 的同一個判準）⇒ 第 2 格「存檔」
+//            送 ^X，打開 PTT 原生的「檔案處理」選單（edit.c#write_file），存檔／放棄由使用者自己選。
+//            ^S 搜尋、F5 跳行這類 getdata(b_lines - 1) 的 prompt 開著時底列還在 ⇒ 要看游標。
 // 判準刻意不看 enableLongPush：推鈕送的是 X，長推文關掉時就是 PTT 原生推文。
 
 import { parsePagerFooterContext } from './string_util';
@@ -38,11 +42,13 @@ import { refreshTargetFromFacts, homeDashboardShown } from './screen_refresh';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
 import { appBarFromFacts, sameAppBar, EMPTY_APP_BAR } from './mobile_app_bar';
 import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
+import { isEditorFooter } from './screen_captions';
+import { readEffectivePrefs } from './pref_storage';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
   unreadJump: false, markAllRead: false, help: false, contentTools: false, refresh: false, end: false,
-  editor: false, search: [], appBar: EMPTY_APP_BAR
+  editor: false, editorSave: false, search: [], appBar: EMPTY_APP_BAR
 });
 
 // 送鍵表：key 是 term_view.sendKeyAsUser 的 keyName（單字元或 KeyMap 裡的具名鍵），
@@ -53,7 +59,9 @@ export const TOOLBAR_KEYS = Object.freeze({
   reply: { key: 'y' },
   post: { key: 'p', mods: { altKey: true } },
   end: { key: 'End' },
-  help: { key: 'h' }
+  help: { key: 'h' },
+  // ^X：同 post 走 Alt remap。
+  editorSave: { key: 'x', mods: { altKey: true } }
 });
 
 // 底列有沒有「(h)說明」這顆提示（文字判準，不看 pageState：主功能表、看板列表、文章列表、
@@ -66,14 +74,14 @@ export function hasHelpHint(lastRowText) {
 // 工具列的固定格位。**每一格的位置不隨畫面變**：按鈕依畫面有條件出現時，flex 等寬
 // 會讓同一顆按鈕在不同畫面跑到不同位置（使用者回報「搜尋／到底有時在中間有時在旁邊」）。
 //   第 1 格：主要動作 —— 文章＝推、編輯器＝輸入框、列表／主功能表＝搜尋
-//   第 2 格：次要動作 —— 文章／信件＝回文（回信）、文章列表＝發文
+//   第 2 格：次要動作 —— 文章／信件＝回文（回信）、文章列表＝發文、編輯器＝存檔（P57）
 //   第 3～6 格：重整、到底、按鍵、更多，**永遠都在**；不能用時反灰（不藏）。
 // null ＝這個畫面沒有這一格的動作，畫一個空格佔位（寬度照算）。
 export const TOOLBAR_SLOT_COUNT = 6;
 export function toolbarSlots(c) {
   const ctx = c || EMPTY_TOOLBAR_CONTEXT;
   const first = ctx.push ? 'push' : ctx.editor ? 'editorInput' : ctx.search && ctx.search.length ? 'search' : null;
-  const second = ctx.reply ? 'reply' : ctx.post ? 'post' : null;
+  const second = ctx.reply ? 'reply' : ctx.post ? 'post' : ctx.editorSave ? 'editorSave' : null;
   return [first, second, 'refresh', 'end', 'keys', 'more'];
 }
 
@@ -139,6 +147,7 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
     }),
     end: pager || lists,
     editor: pageState === 6,
+    editorSave: pageState === 6 && !!o.editorSave && !facts.inputField && isEditorFooter(last),
     search: availableSearchKinds(facts),
     appBar: appBarFromFacts(facts, { ...(opts || {}), pageState: pageState })
   };
@@ -149,19 +158,22 @@ export function mobileToolbarContext(core) {
   const view = (core && core.view) || {};
   const prev = core && core._screenContext && core._screenContext.appBar;
   const ls = core && core.listSession;
+  const editorSave = !!readEffectivePrefs().mobileEditorSave;
   return toolbarContextFromFacts(facts, core && core.buf ? core.buf.pageState : null, {
+    editorTitle: editorSave,
     articleTitle: view._articleTitle,
     articleBoard: view._articleBoard,
     prev: prev,
     connected: !!(core && core.conn && core.conn.isConnected),
     listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor()),
-    home: homeDashboardShown(core)
+    home: homeDashboardShown(core),
+    editorSave: editorSave
   });
 }
 
 const FLAGS = [
   'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'help', 'contentTools', 'refresh', 'end',
-  'editor'
+  'editor', 'editorSave'
 ];
 
 export function sameToolbarContext(a, b) {

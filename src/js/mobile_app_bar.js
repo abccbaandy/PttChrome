@@ -9,7 +9,9 @@
 //            row 0 也是 `【板主:xxx】` 形狀 ⇒ 必須先於 menu 判。
 //   boards   看板列表（我的最愛／分類／全部看板）：標題＝row 0 的【X】。
 //   menu     其他 row 0 是【X】的畫面（主功能表、所有 domenu 子選單、精華區…）。
-// 都不是（prompt、編輯器、半繪的過渡幀）⇒ 沿用上一個（prev），避免標題閃爍。
+//   editor   pageState 6 且 opts.editorTitle（P57，pref mobileEditorSave）：標題由元件寫「編輯文章」
+//            （發文／回文／寫信／改文都是同一個 edit.c 編輯器）。沒開 ⇒ 照舊沿用上一個。
+// 都不是（prompt、半繪的過渡幀）⇒ 沿用上一個（prev），避免標題閃爍。
 // newMail：row 0 中段的「你有新信件」（mbbsd/menu.c#redraw_title；主選單與文章列表共用）。
 // 沒有返回鍵：返回交給系統邊緣滑動（history_back_guard.js 把返回轉成 ←）。
 
@@ -40,6 +42,7 @@ export function appBarFromFacts(facts, opts) {
   if (o.pageState === 3) {
     return bar('article', o.articleTitle, o.articleBoard, false);
   }
+  if (o.pageState === 6 && o.editorTitle) return bar('editor', '', '', false);
   const ctx = boardListContextKind(facts);
   if (facts.listOwner === OWNER_ARTICLE_LIST || ctx === 'article-list') {
     const board = parseBoardName(row0) || (prev.kind === 'list' ? prev.title : '');

@@ -16,6 +16,17 @@ const LIST_FOOT = " 文章選讀  (y)回應(X)推文(^X)轉錄 ";
 const MENU_ROW0 = "【主功能表】               批踢踢實業坊               看板《SYSOP》";
 const READ_ROW = "  瀏覽 第 1/2 頁 ( 45%)  目前顯示: 第 1~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
 
+describe("appBarFromFacts：編輯器（P57）", () => {
+  const EDITOR_ROW = "  編輯文章  (^Z/F1)說明 (^P/^G)插入符號/範本 (^X/^Q)離開║插入│aipr│    1:   1";
+  test("pageState 6＋editorTitle ⇒ kind editor（元件寫「編輯文章」）", () => {
+    expect(appBarFromFacts(frame({ 23: EDITOR_ROW }), { pageState: 6, editorTitle: true }).kind).toBe("editor");
+  });
+  test("開關關掉 ⇒ 照舊沿用上一個", () => {
+    const prev = { kind: "list", title: "Test", subtitle: "", newMail: false };
+    expect(appBarFromFacts(frame({ 23: EDITOR_ROW }), { pageState: 6, prev })).toBe(prev);
+  });
+});
+
 describe("parseHeaderTitle", () => {
   test("col 0 的【X】取 X（去空白）", () => {
     expect(parseHeaderTitle(MENU_ROW0)).toBe("主功能表");
