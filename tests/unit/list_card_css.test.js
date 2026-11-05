@@ -79,6 +79,9 @@ describe("已讀文章低亮 CSS", () => {
   test("卡片內各段不得自帶 opacity（避免與已讀低亮疊乘）", () => {
     for (const r of rules(/\.listCard\b/)) {
       if (/data-list-mark="updated"/.test(r.sel)) continue;
+      // 看板卡片沒有新文章的調暗（P54，data-board-unread="none"）同理：data-list-read
+      // 只出現在文章列表，看板卡片不會被已讀低亮。
+      if (/data-board-unread="none"/.test(r.sel)) continue;
       expect(r.body).not.toMatch(/opacity:/);
     }
   });

@@ -117,6 +117,23 @@ export function isTitleBoxMark(chars) {
   return !!(a && b && a.isLeadByte && a.ch === "\xa1" && b.ch === "\xbc");
 }
 
+// 看板列（board.c#brdlist_renderer）：未讀「ˇ」在 cells [8,10)（Big5 A3 BE），一般看板的「◎」在
+// [28,30)（Big5 A1 B7；目錄／分隔線列沒有）。P54（pref mobileBoardCardUnread）：有新文章的卡片
+// 左欄換成圓點、板名提亮；一般看板沒有新文章的調暗一階；「◎」不畫，敘述多兩格。目錄列不動。
+const BOARD_UNREAD_COL = 8;
+const BOARD_BULLET_COL = 28;
+function cellPair(chars, col, lead, trail) {
+  const a = chars && chars[col];
+  const b = chars && chars[col + 1];
+  return !!(a && b && a.isLeadByte && a.ch === lead && b.ch === trail);
+}
+export function isBoardUnreadMark(chars) {
+  return cellPair(chars, BOARD_UNREAD_COL, "\xa3", "\xbe");
+}
+export function isBoardBulletMark(chars) {
+  return cellPair(chars, BOARD_BULLET_COL, "\xa1", "\xb7");
+}
+
 // 一行裡用到的全部 cell 範圍（測試檢查不重疊用）。
 export function layoutSpans(line) {
   return [line.lead, ...line.main, ...line.end].filter(Boolean);
@@ -127,6 +144,7 @@ export function buildListCard({
   row,
   kind,
   hideTitleBox,
+  boardUnread,
   forceWidth,
   highlightClass,
   listAuthor,
@@ -145,10 +163,15 @@ export function buildListCard({
       : 1
     : 0;
   // 標題段從「□」之後切（剩下的前導空白 cardSegment 會剪掉）。
+  const isBoard = layout === CARD_LAYOUT.board;
+  const boardMode = !!boardUnread && isBoard && isBoardBulletMark(chars);
+  const unreadBoard = boardMode && isBoardUnreadMark(chars);
   const titleFrom =
     hideTitleBox && layout === CARD_LAYOUT.article && isTitleBoxMark(chars)
       ? TITLE_MARK_COL + 2
-      : 0;
+      : boardMode
+        ? BOARD_BULLET_COL + 2
+        : 0;
   const part = ([a, b, cls]) =>
     cardSegment(
       chars,
@@ -167,7 +190,17 @@ export function buildListCard({
   const line = (spec, cls, cursor, lead) =>
     el("span", { class: cx("listCardLine", cls) }, [
       el("span", { class: "listCardCursor" }, cursor),
-      el("span", { class: "listCardLead" }, spec.lead ? part(spec.lead) : null),
+      el(
+        "span",
+        { class: "listCardLead" },
+        spec.lead && boardMode && spec === layout.title
+          ? unreadBoard
+            ? el("span", { class: "listCardUnreadDot" })
+            : null
+          : spec.lead
+            ? part(spec.lead)
+            : null,
+      ),
       el("span", { class: "listCardMain" }, [lead, ...spec.main.map(part)]),
       spec.end.length
         ? el(
@@ -190,6 +223,11 @@ export function buildListCard({
         "data-list-followed": listFollowed ? "" : undefined,
         "data-list-mark":
           layout === CARD_LAYOUT.article ? articleCardMark(chars) : undefined,
+        "data-board-unread": boardMode
+          ? unreadBoard
+            ? "new"
+            : "none"
+          : undefined,
       },
       el(
         "span",

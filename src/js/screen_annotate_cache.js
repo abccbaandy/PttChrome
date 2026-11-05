@@ -153,6 +153,8 @@ export function annotationsKey(input) {
     stable(e.listCards),
     // 文章卡片標題前的「□」拿不拿掉（P55，pref mobileCardHideTitleBox）：切開關要整批重畫。
     stable(e.listCardHideTitleBox),
+    // 看板卡片的新文章圓點（P54，pref mobileBoardCardUnread）：同理。
+    stable(e.listCardBoardUnread),
     // 手機推文卡片：同理（同一批列物件在換行版面切換時改畫成卡片），整批重建。
     stable(e.commentCards),
     // 新推文標記的列（js/new_comments.js）：一篇文章裡從 null 翻成某一列最多一次。

@@ -618,6 +618,28 @@ html.commentBarShown #mainContainer::after {
   opacity: 0.8;
 }
 
+/* 手機看板卡片的新文章標記（P54，render/list_card.js → data-board-unread）：有新文章的左欄
+   圓點（同信件卡片的 mailCardDot）、板名提亮加粗；一般看板沒有新文章的調暗一階。游標所在卡片
+   不調暗（同上）。目錄／分隔線列不帶這個屬性，不動。 */
+.listCard .listCardUnreadDot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: #55ffff;
+  vertical-align: middle;
+}
+.listCard[data-board-unread="new"] .listCardBoard,
+.listCard[data-board-unread="new"] .listCardBoard * {
+  color: #ffffff;
+  font-weight: bold;
+}
+span.listCard[data-board-unread="none"]:not(
+    :has(> .listCardBody:not([class="listCardBody"]))
+  ) {
+  opacity: 0.6;
+}
+
 /* 手機列表卡片「開啟中」（P45，cursor_highlight.LIST_CARD_OPENING_CLASS）：tap 之後到
    文章畫面回來之前，那張卡片換一層藍底、標題行右側一個小轉圈（::after，不佔版面、
    卡片固定高不受影響）。底色蓋過游標底色（同一個元素，選擇器多一層）。 */
