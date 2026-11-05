@@ -35,6 +35,7 @@ import androidx.core.view.WindowInsetsCompat
  * APK 自己的設定頁（跟網頁設定無關，存在 [AppSettings]）。入口：網頁設定頁的「App 設定」（bridge
  * `openAppSettings`）、長按 App 圖示的捷徑（網頁載不出來時也進得來）、載入失敗頁的連結。
  * 「連結」：ptt.cc 文章連結的系統預設開啟狀態＋入口（docs/deep-link.md「Android APK」）；
+ * 「連線 → SSH」（docs/ssh.md「APK」）；
  * 「開發者 → dev server 模式」（docs/android-app.md「debug 版並存與 dev server 模式」）。
  */
 // 平台 Switch：刻意不為一個開關引入 appcompat／material 依賴。
@@ -68,6 +69,18 @@ class SettingsActivity : ComponentActivity() {
                 setOnClickListener { openLinkSettings() }
             })
         }
+
+        // 連線協議：切換立即存檔；回到主畫面時 MainActivity 發現站台變了就重建 WebView 重連。
+        content.addView(header(getString(R.string.settings_connection)))
+        content.addView(Switch(this).apply {
+            text = getString(R.string.settings_ssh)
+            textSize = 16f
+            isChecked = settings.protocol == AppConfig.PROTOCOL_SSH
+            setOnCheckedChangeListener { _, checked ->
+                settings.protocol = if (checked) AppConfig.PROTOCOL_SSH else AppConfig.PROTOCOL_WEBSOCKET
+            }
+        })
+        content.addView(text(getString(R.string.settings_ssh_help), 14f, dim = true))
 
         content.addView(header(getString(R.string.settings_developer)))
         devSwitch = Switch(this).apply {

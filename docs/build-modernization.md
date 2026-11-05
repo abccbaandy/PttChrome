@@ -36,6 +36,7 @@
 | `@playwright/test`、`@testing-library/*`、husky、lint-staged、prettier、postcss 系 | 保留 | 現代且活躍；postcss-preset-mantine + postcss-simple-vars 是 Mantine 官方建議鏈 |
 | jsdom、happy-dom | 已移除，**勿加回**（守護 `unit_environment.test.js`） | DOM 模擬跟真瀏覽器不一致時測試全綠、實際卻壞。unit 的 DOM 測試改 Vitest Browser Mode（下節）；`yarn debug:screens` 改純 node（解析路徑本來就不需要 DOM，`term_buf_no_dom.test.js`） |
 | `@tabler/icons-react` | 新增（2026-10，手機底部導覽的 icon） | Mantine 官方文件採用的 icon 庫、tree-shake（只打包有 import 的那幾顆）；不手刻 inline SVG。只被 src 深處 import ⇒ 已列進 `vitest.config.mjs` unit-browser 的 `optimizeDeps.include`（否則測試中途重新預打包、瀏覽器斷線） |
+| SSH client（`@microsoft/dev-tunnels-ssh`、`ssh2` 等） | **不用函式庫，自寫最小 client**（`src/js/ssh/`）；`ssh2` 只當 devDependency 起測試用 server | 見下節「SSH client」 |
 | `@vitest/browser-playwright`、`playwright` | 新增（unit-browser project） | Vitest 官方的 Browser Mode provider；peer 是**精確**的 vitest 版本，`playwright` 必須與 `@playwright/test` 同版（Dependabot 以 group 綁一起升） |
 
 掃描結論：**無其他「過時陣營」殘留**。新增依賴時比照上表——先查是否已有內建／主流替代，無維護的小套件優先內聯。
@@ -91,6 +92,23 @@
 - worktree 的 `unitLimits`（maxWorkers 2）一樣適用。
 - Chromium 執行檔放在 Playwright 的共用快取，所有 checkout 共用；升 Playwright 版本時要重裝（`yarn playwright install chromium`）。
 - `screenshotFailures: false`；`.vitest/` 已列入 `.gitignore`。
+
+### SSH client（2026-11，docs/ssh.md）
+
+瀏覽器端要能跟 PTT 的 `bbs-sshd` 談 SSH（relay 只搬 bytes）。兩案實測：
+
+| | `@microsoft/dev-tunnels-ssh` 3.12 | 自寫最小 client（採用） |
+|---|---|---|
+| 演算法相容 | 有 PTT 提供的 dh-group14／16、ecdsa-nistp256／rsa-sha2、aes-gcm／ctr、hmac-sha2 | curve25519／dh-group14、ed25519／ecdsa-nistp256／rsa-sha2、aes-gcm（PTT 都有） |
+| 打包（Vite 8 lib build，minify） | 431 KB／gzip 89 KB，**還不含** Node `stream`／`crypto`／`buffer` polyfill（Vite 直接 externalize，原樣跑不起來） | lazy chunk 16 KB／gzip 5.8 KB |
+| 依賴 | buffer、debug、diffie-hellman、vscode-jsonrpc（＋polyfill） | 零依賴，只用 WebCrypto＋BigInt |
+| 範圍 | 完整 SSH（轉發、多通道、公鑰認證…），PTT 用不到 | 只做 PTT 那條路：kex→host key→none 認證→pty→shell，加 strict kex 與 server rekey |
+
+採用自寫：多出 80 KB 以上（加 polyfill 更多）只換到用不到的功能，而且要把 Node 的 polyfill 帶回建置鏈，違反
+「不為相容性堆 polyfill」。正確性靠對**另一份獨立實作**實測：`tests/unit/ssh_client.test.js` 用 `ssh2` 起本機
+server（ed25519／ecdsa／rsa host key、DH14 退回、host key 不符、流量窗口、rekey）。`ssh2` 是純 devDependency，
+不進 bundle；它的 `cpu-features` 原生建置被 Yarn 停用也不影響（純 JS 路徑）。
+WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋ECDSA（PTT 都有提供），不加 polyfill。
 
 ## 主 bundle 拆檔
 

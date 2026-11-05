@@ -34,7 +34,8 @@ class ConnectionService : Service() {
     /** MainActivity 綁上時設定：通知的「中斷連線並關閉」要連畫面一起收掉。 */
     var onQuitRequested: (() -> Unit)? = null
 
-    val site: String get() = proxy.site
+    /** 依 App 設定的協議注入給網頁的站台（docs/ssh.md「APK」）：WebSocket ＝ /bbs/<token>，SSH ＝ /ssh/<token>。 */
+    val site: String get() = if (settings.protocol == AppConfig.PROTOCOL_SSH) proxy.sshSite else proxy.site
 
     override fun onCreate() {
         super.onCreate()

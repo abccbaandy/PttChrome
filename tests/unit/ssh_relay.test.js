@@ -24,6 +24,24 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 const ORIGIN = "https://abccbaandy.github.io";
 
+// 每個 `name(` 呼叫的參數字串（括號配對，參數裡有巢狀呼叫也取得完整）。
+function callArgs(src, name) {
+  const out = [];
+  const re = new RegExp("\\b" + name + "\\(", "g");
+  let m;
+  while ((m = re.exec(src))) {
+    let depth = 1;
+    let j = m.index + m[0].length;
+    const start = j;
+    for (; j < src.length && depth; j++) {
+      if (src[j] === "(") depth++;
+      else if (src[j] === ")") depth--;
+    }
+    out.push(src.slice(start, j - 1).trim());
+  }
+  return out;
+}
+
 describe("destination is a constant (static guard)", () => {
   test("all three relays target ptt.cc:22", () => {
     expect([UPSTREAM_HOST, UPSTREAM_PORT]).toEqual(["ptt.cc", 22]);
@@ -35,18 +53,23 @@ describe("destination is a constant (static guard)", () => {
 
   // 每個「開 TCP」的呼叫點，參數只准是那兩個常數。新增呼叫點或改參數 ⇒ 這裡紅，逼人重新審。
   test.each([
-    ["tools/ssh-relay/ptt-ssh-relay.mjs", /\bconnect\(([^)]*)\)/g, ["UPSTREAM_PORT, UPSTREAM_HOST", "port, host"]],
-    ["proxy/ssh-relay-worker/src/relay.js", /\bconnect\(([^)]*)\)/g, ["{ hostname: UPSTREAM_HOST, port: UPSTREAM_PORT }"]],
+    ["tools/ssh-relay/ptt-ssh-relay.mjs", "connect", ["UPSTREAM_PORT, UPSTREAM_HOST", "port, host"]],
+    ["proxy/ssh-relay-worker/src/relay.js", "connect", ["{ hostname: UPSTREAM_HOST, port: UPSTREAM_PORT }"]],
     [
       "android/app/src/main/java/io/github/abccbaandy/pttchrome/LocalWebSocketProxy.kt",
-      /\bInetSocketAddress\(([^)]*)\)/g,
+      "InetSocketAddress",
       ['InetAddress.getByName("127.0.0.1"), 0', "AppConfig.SSH_UPSTREAM_HOST, AppConfig.SSH_UPSTREAM_PORT"],
     ],
-  ])("%s opens TCP only to the constants", (file, re, allowed) => {
-    const src = read(file);
-    const args = [...src.matchAll(re)].map((m) => m[1].trim()).filter((a) => !/^\s*$/.test(a));
+  ])("%s opens TCP only to the constants", (file, name, allowed) => {
+    const args = callArgs(read(file), name).filter((a) => a !== "");
     expect(args.length).toBeGreaterThan(0);
     for (const a of args) expect(allowed).toContain(a);
+  });
+
+  test("APK: the SSH connector takes no destination parameter", () => {
+    const kt = read("android/app/src/main/java/io/github/abccbaandy/pttchrome/LocalWebSocketProxy.kt");
+    expect(kt).toMatch(/private val sshConnect: \(\) -> Socket = \{ connectPttSsh\(\) \}/);
+    expect(callArgs(kt, "Socket")).toEqual([""]);
   });
 
   test("Node relay: the only net.connect wrapper is called with the constants", () => {

@@ -64,6 +64,8 @@ class MainActivity : ComponentActivity() {
     private val settings by lazy { AppSettings(this) }
     /** 目前 WebView 載入的來源；注入規則跟著 WebView 建立時決定，換來源＝重建 WebView。 */
     private var pageSource = PageSource.PRODUCTION
+    /** 注入給目前這個 WebView 的站台（協議在 App 設定改了，就要重建 WebView 重新注入）。 */
+    private var siteInUse = ""
     private var fileCallback: ValueCallback<Array<Uri>>? = null
 
     private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -186,6 +188,7 @@ class MainActivity : ComponentActivity() {
     // MissingOnRenderProcessGone：下方匿名 WebViewClient 有實作，lint 認不出 Kotlin 匿名物件（誤報）。
     @SuppressLint("SetJavaScriptEnabled", "RequiresFeature", "MissingOnRenderProcessGone")
     private fun createWebView(site: String) {
+        siteInUse = site
         val wv = WebView(this)
         wv.settings.apply {
             javaScriptEnabled = true
@@ -226,6 +229,8 @@ class MainActivity : ComponentActivity() {
             .put("restored", restoringRenderer)
             // 認得 bridge 'quitApp'：網頁據此才給「登出並關閉 App」（舊版 APK 沒有這個欄位）。
             .put("quitApp", true)
+            // 認得 bridge 'setProtocol'：網頁據此才在連線失敗提示給「改用另一個協議」（docs/ssh.md「APK」）。
+            .put("setProtocol", true)
         restoringRenderer = false
         WebViewCompat.addDocumentStartJavaScript(
             wv, "window.__PTT_ANDROID__ = Object.freeze($config);", origins
@@ -241,6 +246,22 @@ class MainActivity : ComponentActivity() {
                 }
                 "saveFile" -> {
                     saveFile(request) { reply.postMessage(it.toString()) }
+                    return@addWebMessageListener
+                }
+                "setProtocol" -> {
+                    // 連線失敗提示的「改用 SSH／改用 WebSocket」：寫進 App 設定，回新協議的本機站台，
+                    // 網頁拿它立即重連（不重建 WebView：連線狀態以外的網頁狀態都留著）。
+                    val protocol = request.optString("protocol")
+                    val s = service
+                    val res = JSONObject().put("id", request.optInt("id"))
+                    if (s == null || !AppConfig.isProtocol(protocol)) {
+                        res.put("ok", false).put("error", "failed")
+                    } else {
+                        settings.protocol = protocol
+                        siteInUse = s.site
+                        res.put("ok", true).put("site", s.site)
+                    }
+                    reply.postMessage(res.toString())
                     return@addWebMessageListener
                 }
                 "quitApp" -> {
@@ -472,9 +493,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** App 設定改了頁面來源：重建 WebView（注入的 origin 規則只能在建立時給）。回傳是否有重建。 */
+    /**
+     * App 設定改了頁面來源或連線協議：重建 WebView（注入的 origin 規則與站台只能在建立時給）。
+     * 回傳是否有重建。
+     */
     private fun applyPageSourceChange(): Boolean {
-        if (webView == null || settings.pageSource() == pageSource) return false
+        if (webView == null) return false
+        if (settings.pageSource() == pageSource && (service?.site ?: siteInUse) == siteInUse) return false
         service?.refreshNotification()
         recreateWebView()
         return true

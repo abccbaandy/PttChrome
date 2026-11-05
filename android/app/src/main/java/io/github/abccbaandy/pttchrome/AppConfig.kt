@@ -14,4 +14,25 @@ object AppConfig {
     const val UPSTREAM_ORIGIN = "https://term.ptt.cc"
 
     const val LOCAL_PATH_PREFIX = "/bbs/"
+
+    /**
+     * SSH 協議（docs/ssh.md「APK」）：本機 proxy 的 `/ssh/<token>` 只做「WebSocket ⇄ TCP ptt.cc:22」，
+     * SSH 在網頁裡解開。⚠ 安全邊界：目的地只能是這兩個常數，絕不從請求解析
+     *（tests/unit/ssh_relay.test.js 靜態守護）。
+     */
+    const val SSH_UPSTREAM_HOST = "ptt.cc"
+    const val SSH_UPSTREAM_PORT = 22
+    const val LOCAL_SSH_PATH_PREFIX = "/ssh/"
+
+    /** relay 合約（src/js/ssh/ssh_transport.js#RELAY_CLOSE）：relay → PTT 的 TCP 失敗。 */
+    const val RELAY_CLOSE_UPSTREAM_FAILED = 4502
+
+    /** 連線協議（[AppSettings.protocol]），值與網頁的 connectionProtocol pref 相同。 */
+    const val PROTOCOL_WEBSOCKET = "websocket"
+    const val PROTOCOL_SSH = "ssh"
+
+    fun isProtocol(v: String?): Boolean = v == PROTOCOL_WEBSOCKET || v == PROTOCOL_SSH
+
+    /** 不認得的值（舊版存的、壞掉的）一律當 WebSocket。 */
+    fun normalizeProtocol(v: String?): String = if (v == PROTOCOL_SSH) PROTOCOL_SSH else PROTOCOL_WEBSOCKET
 }

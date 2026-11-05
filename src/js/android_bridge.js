@@ -70,9 +70,13 @@ export function isAndroidApp() {
   return !!config();
 }
 
+// setProtocol 換過協議之後的站台（原生注入的 config 是 Object.freeze 的，不能改它）。
+let switchedSite = '';
+
 export function androidSite() {
   const c = config();
-  return (c && typeof c.site === 'string' && c.site) || '';
+  if (!c) return '';
+  return switchedSite || (typeof c.site === 'string' && c.site) || '';
 }
 
 function channel() {
@@ -164,14 +168,18 @@ export function androidCanSetProtocol() {
   return !!(c && c.setProtocol === true) && androidBridgeAvailable();
 }
 
+// 測試用：page-lifetime 的 switchedSite 歸零（browser 模式 vi.resetModules 無效）。
+export function _resetSwitchedSiteForTest() {
+  switchedSite = '';
+}
+
 // 請原生改協議；回新的站台（之後的重連也用它），失敗回 ''。
 export async function androidSetProtocol(protocol) {
   if (!androidCanSetProtocol()) return '';
   try {
     const r = await requestAndroid('setProtocol', { protocol });
     if (!r || !r.ok || typeof r.site !== 'string' || !r.site) return '';
-    const c = config();
-    if (c) c.site = r.site;
+    switchedSite = r.site;
     return r.site;
   } catch (e) {
     return '';

@@ -24,6 +24,9 @@ import kotlin.concurrent.thread
  *
  * - port 由系統挑（綁 0），路徑必須是 `/bbs/<token>`（token 每次啟動隨機）。
  * - 保活只靠 OkHttp 的 WebSocket ping；不注入 telnet 指令（會流進網頁的 telnet parser）。
+ * - `/ssh/<token>`（docs/ssh.md「APK」）：SSH 協議的位元組管線，WebSocket ⇄ TCP ptt.cc:22，
+ *   一個 byte 都不解讀（SSH 在網頁裡解開）。目的地寫死在 [connectPttSsh]；連不上 PTT 時握手照樣完成，
+ *   再以 close code 4502 關掉（relay 合約，網頁據此分辨「PTT 連不上」）。
  */
 class LocalWebSocketProxy(
     private val token: String,
@@ -34,6 +37,8 @@ class LocalWebSocketProxy(
     private val onStateChanged: (activeSessions: Int) -> Unit = {},
     /** 診斷事件（連上游耗時、第一筆 PTT 資料）；ConnectionService 接到 logcat（BootTrace）。 */
     private val onEvent: (String) -> Unit = {},
+    /** 測試注入用；參數刻意是零個：目的地不能從外面傳進來。 */
+    private val sshConnect: () -> Socket = { connectPttSsh() },
 ) {
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -47,6 +52,8 @@ class LocalWebSocketProxy(
     val port: Int get() = server?.localPort ?: -1
     val path: String get() = AppConfig.LOCAL_PATH_PREFIX + token
     val site: String get() = "wstelnet://127.0.0.1:$port$path"
+    val sshPath: String get() = AppConfig.LOCAL_SSH_PATH_PREFIX + token
+    val sshSite: String get() = "wssh://127.0.0.1:$port$sshPath"
     val activeSessions: Int get() = active.get()
 
     fun start() {
@@ -56,6 +63,14 @@ class LocalWebSocketProxy(
         server = s
         running = true
         thread(name = "ptt-proxy-accept", isDaemon = true) { acceptLoop(s) }
+    }
+
+    companion object {
+        /** ⚠ 安全邊界：SSH 管線唯一的開 TCP 處，目的地是常數（docs/ssh.md「風險與對策」）。 */
+        fun connectPttSsh(): Socket = Socket().apply {
+            tcpNoDelay = true
+            connect(InetSocketAddress(AppConfig.SSH_UPSTREAM_HOST, AppConfig.SSH_UPSTREAM_PORT), 10_000)
+        }
     }
 
     fun close() {
@@ -84,6 +99,7 @@ class LocalWebSocketProxy(
         private val pending = ArrayDeque<Pair<Int, ByteArray>>()
         @Volatile private var out: OutputStream? = null
         @Volatile private var upstream: WebSocket? = null
+        @Volatile private var sshUpstream: Socket? = null
         @Volatile private var upstreamOpened = false
         @Volatile private var localReady = false
         @Volatile private var closed = false
@@ -96,6 +112,10 @@ class LocalWebSocketProxy(
                 val o = local.getOutputStream()
                 out = o
                 val req = WsProtocol.parseHttpRequest(WsProtocol.readHttpHeader(input))
+                if (req.path == sshPath) {
+                    runSsh(req, input, o)
+                    return
+                }
                 when (val verdict = WsProtocol.evaluate(req, path, allowedPageOrigin())) {
                     is WsProtocol.Handshake.Reject -> {
                         o.write(WsProtocol.httpError(verdict.code, verdict.reason)); o.flush()
@@ -124,6 +144,72 @@ class LocalWebSocketProxy(
                 // WebView 端斷線、協定錯誤：一律收掉這條 session。
             } finally {
                 close()
+            }
+        }
+
+        /** SSH 協議：握手 → TCP ptt.cc:22 → 雙向搬 bytes。 */
+        private fun runSsh(req: WsProtocol.HttpRequest, input: java.io.InputStream, o: OutputStream) {
+            when (val verdict = WsProtocol.evaluate(req, sshPath, allowedPageOrigin())) {
+                is WsProtocol.Handshake.Reject -> {
+                    o.write(WsProtocol.httpError(verdict.code, verdict.reason)); o.flush()
+                }
+                is WsProtocol.Handshake.Accept -> {
+                    onEvent("sshAccept")
+                    synchronized(writeLock) {
+                        o.write(WsProtocol.switchingProtocols(verdict.key)); o.flush()
+                        localReady = true
+                    }
+                    val started = System.nanoTime()
+                    val tcp = try {
+                        sshConnect()
+                    } catch (e: Exception) {
+                        onEvent("sshUpstreamFailure ${e.javaClass.simpleName}")
+                        sendClose(AppConfig.RELAY_CLOSE_UPSTREAM_FAILED, "upstream connect failed")
+                        return
+                    }
+                    sshUpstream = tcp
+                    onEvent("sshUpstreamOpen +${(System.nanoTime() - started) / 1_000_000}ms")
+                    counted = true
+                    onStateChanged(active.incrementAndGet())
+                    thread(name = "ptt-ssh-upstream", isDaemon = true) {
+                        val buf = ByteArray(16 * 1024)
+                        try {
+                            val tin = tcp.getInputStream()
+                            while (true) {
+                                val n = tin.read(buf)
+                                if (n < 0) break
+                                toLocal(WsProtocol.OP_BINARY, buf.copyOf(n))
+                            }
+                            sendClose(1000, "upstream closed")
+                        } catch (_: IOException) {
+                            sendClose(1011, "upstream error")
+                        }
+                        close()
+                    }
+                    sshReadLoop(WsProtocol.FrameReader(input), tcp.getOutputStream())
+                }
+            }
+        }
+
+        private fun sshReadLoop(reader: WsProtocol.FrameReader, tcpOut: OutputStream) {
+            while (running && !closed) {
+                val msg = reader.next() ?: return
+                when (msg.opcode) {
+                    WsProtocol.OP_CLOSE -> {
+                        synchronized(writeLock) { WsProtocol.writeFrame(out!!, WsProtocol.OP_CLOSE, msg.payload) }
+                        return
+                    }
+                    WsProtocol.OP_PING -> synchronized(writeLock) { WsProtocol.writeFrame(out!!, WsProtocol.OP_PONG, msg.payload) }
+                    WsProtocol.OP_PONG -> Unit
+                    WsProtocol.OP_BINARY -> {
+                        tcpOut.write(msg.payload)
+                        tcpOut.flush()
+                    }
+                    else -> {
+                        sendClose(1003, "binary only")
+                        return
+                    }
+                }
             }
         }
 
@@ -213,6 +299,7 @@ class LocalWebSocketProxy(
                 closed = true
             }
             upstream?.close(1000, "local client closed")
+            try { sshUpstream?.close() } catch (_: IOException) {}
             try { local.close() } catch (_: IOException) {}
             sessions.remove(this)
             if (counted) {
