@@ -316,6 +316,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_dimReadArticles",
       tooltipKey: "tooltip_dimReadArticles",
     },
+    {
+      key: "boardListUnreadMark",
+      titleKey: "options_boardListUnreadMark",
+      tooltipKey: "tooltip_boardListUnreadMark",
+    },
     { kind: "ui", key: "ui:theme", titleKey: "options_theme" },
     {
       key: "fontFace",

@@ -1332,6 +1332,7 @@ export class ScreenController {
       // comment_merge.buildMergedCommentChars 重組的新序列，原列的 col 範圍全部失效
       // （同理它對 mentions/aids 也改用 m.* 而非 ann.*）。功能鍵列永遠不是推文列。
       fnKeys: ann && ann.fnKeys,
+      boardUnread: ann && ann.boardUnread,
       blacklistNotice: ann && ann.blacklistNotice,
       onHyperLinkMouseOver: this.onHyperLinkMouseOver,
       onHyperLinkMouseOut: this.onHyperLinkMouseOut,

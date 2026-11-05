@@ -814,6 +814,12 @@
   "floatTools_toggle": {
     "message": "浮動工具"
   },
+  "options_boardListUnreadMark": {
+    "message": "看板列表標出有新文章的看板"
+  },
+  "tooltip_boardListUnreadMark": {
+    "message": "我的最愛／看板列表上，有新文章的看板把「ˇ」畫成圓點、板名加粗變亮，沒有新文章的板名調暗一點。欄位位置不變，只改畫法，不會送任何按鍵。手機卡片另有自己的開關。"
+  },
   "tooltip_dimReadArticles": {
     "message": "文章列表中已讀過的文章整列調暗，未讀文章（+ 標記）一眼就能分辨。"
   },

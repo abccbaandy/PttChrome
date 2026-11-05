@@ -30,6 +30,7 @@ import {
   LIST_AUTHOR_COL_END,
   hasServerCursorMark,
 } from "../js/comment_parse";
+import { isBoardUnreadMark, isBoardBulletMark } from "../js/board_list_parse";
 
 // [start, end) cell 範圍 → 一段上色的 DOM（沒有內容回 null）。邊界落在 DBCS 中間時
 // 往外擴成完整的字；前後空白剪掉（卡片的欄位不需要補齊寬度，右對齊的序號也不必）。
@@ -117,22 +118,11 @@ export function isTitleBoxMark(chars) {
   return !!(a && b && a.isLeadByte && a.ch === "\xa1" && b.ch === "\xbc");
 }
 
-// 看板列（board.c#brdlist_renderer）：未讀「ˇ」在 cells [8,10)（Big5 A3 BE），一般看板的「◎」在
-// [28,30)（Big5 A1 B7；目錄／分隔線列沒有）。P54（pref mobileBoardCardUnread）：有新文章的卡片
-// 左欄換成圓點、板名提亮；一般看板沒有新文章的調暗一階；「◎」不畫，敘述多兩格。目錄列不動。
-const BOARD_UNREAD_COL = 8;
+// 看板列的「ˇ」／「◎」判準住在 js/board_list_parse.js（桌機原生列表 P54 電腦版也用，見那裡）。
+// P54（pref mobileBoardCardUnread）：有新文章的卡片左欄換成圓點、板名提亮；一般看板沒有新文章的
+// 調暗一階；「◎」不畫，敘述多兩格。目錄列不動。
 const BOARD_BULLET_COL = 28;
-function cellPair(chars, col, lead, trail) {
-  const a = chars && chars[col];
-  const b = chars && chars[col + 1];
-  return !!(a && b && a.isLeadByte && a.ch === lead && b.ch === trail);
-}
-export function isBoardUnreadMark(chars) {
-  return cellPair(chars, BOARD_UNREAD_COL, "\xa3", "\xbe");
-}
-export function isBoardBulletMark(chars) {
-  return cellPair(chars, BOARD_BULLET_COL, "\xa1", "\xb7");
-}
+export { isBoardUnreadMark, isBoardBulletMark };
 
 // 一行裡用到的全部 cell 範圍（測試檢查不重疊用）。
 export function layoutSpans(line) {

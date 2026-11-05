@@ -119,6 +119,7 @@ export function buildRow({
   bareDomains,
   wrapUrls,
   fnKeys,
+  boardUnread,
   blacklistNotice,
   onHyperLinkMouseOver,
   onHyperLinkMouseOut,
@@ -165,6 +166,7 @@ export function buildRow({
   );
   if (authorIdKind === "self") builder.authorIdClass = "commentBySelf";
   else if (authorIdKind === "follow") builder.authorIdClass = "commentByFollow";
+  if (boardUnread) builder.cellWraps = boardUnreadWraps(boardUnread, !!highlightClass);
   for (let i = 0; i < chars.length; ++i) builder.readChar(chars[i], i);
   const content = builder.build();
   // 列表的「+N」（new_comments.listNewPush）：80 欄格線裡沒有空位，只在列尾留白夠
@@ -197,6 +199,26 @@ export function buildRow({
     ),
     slots: builder.slots,
   };
+}
+
+// 桌機看板列表的新文章標記（P54 電腦版，annotation boardUnread，判準見
+// screen_annotations#applyBoardUnreadMarks）：欄位照 board.c#brdlist_renderer 固定 ——
+// 未讀 ˇ [8,10)、板名 %-13s [10,23)。只包 class、不動任何一格的字（複製／選取照舊是原文），
+// 欄位不位移。'new'：ˇ 那兩格畫成圓點、板名加粗變亮；'none'：板名調暗一階，但游標所在列不暗
+// （同手機卡片）。
+export const BOARD_UNREAD_DOT_COLS = [8, 10];
+export const BOARD_NAME_COLS = [10, 23];
+function boardUnreadWraps(kind, isCursorRow) {
+  if (kind === "new") {
+    return [
+      { start: BOARD_UNREAD_DOT_COLS[0], end: BOARD_UNREAD_DOT_COLS[1], cls: "boardUnreadDot" },
+      { start: BOARD_NAME_COLS[0], end: BOARD_NAME_COLS[1], cls: "boardNameNew" },
+    ];
+  }
+  if (kind === "none" && !isCursorRow) {
+    return [{ start: BOARD_NAME_COLS[0], end: BOARD_NAME_COLS[1], cls: "boardNameDim" }];
+  }
+  return null;
 }
 
 // 「+N」最多三個字（+99）＋左右各留一格。
