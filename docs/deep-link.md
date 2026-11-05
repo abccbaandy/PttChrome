@@ -51,7 +51,7 @@ rewrite: https://abccbaandy.github.io/PttChrome/#$1
 | 路徑 | 成本 | 條件 |
 |---|---|---|
 | `aidNavigation.findLocalPostAid()` | **零指令、畫面不動** | 畫面／累積頁上讀得到 `※ 文章網址: …` 那行 |
-| `aidNavigation.queryPostAid()`（按 `Q`） | 被 `FULLUPDATE` 抛回文章列表，需 `␣`+`⏎` 回原處（看得到畫面在閃） | 永遠可用 |
+| `aidNavigation.queryPostAid()`（按 `Q`） | 被 `FULLUPDATE` 抛回文章列表，需 `␣`+`⏎` 回原處（看得到畫面在閃） | 沒有 prompt 開著（`buf.isPromptPending()`）：pmore 的 `/`、`:` 畫在倒數第二列、狀態列還在，按 Q 會打進輸入欄 |
 
 `resolvePostAid()` 是統一入口（先免費、落空才按 Q），**`onDone(info, meta)` 的
 `meta.boxOpen` 不可忽略**：它說「資訊框正開著、需要關」。免費路徑下沒有框，照舊送
