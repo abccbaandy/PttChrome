@@ -50,7 +50,12 @@ import {
   credentialToStore,
   localCredentialStatus,
 } from "./pref_credential";
-import { DEFAULT_PROXY_HOST, downloadAsFile } from "../../js/util";
+import {
+  DEFAULT_PROXY_HOST,
+  DEFAULT_SSH_RELAY_HOST,
+  downloadAsFile,
+} from "../../js/util";
+import { SSH_SELF_HOST_URL, sshSupported } from "../../js/transport";
 import {
   credentialStoreAvailable,
   storeCredential as storeCredentialInManager,
@@ -1897,6 +1902,52 @@ export const PrefModal = ({
                     mb="xs"
                     {...anchor("proxyUrl")}
                   />
+                </PrefSection>
+              )}
+              {/* 連線協議（docs/ssh.md）。APK 的協議在原生 App 設定（上面的按鈕），不進網頁 prefs。
+                WebCrypto 只在 secure context：從區網 http 開 dev 時整段不出現。
+                兩個欄位都是本機專屬（LOCAL_ONLY_PREF_KEYS），不同步、不進備份。 */}
+              {!isAndroidApp() && sshSupported() && (
+                <PrefSection legendKey="options_connectionProtocol">
+                  <Select
+                    aria-label={i18n("options_connectionProtocol")}
+                    description={i18n("tooltip_connectionProtocol")}
+                    name="connectionProtocol"
+                    value={values.connectionProtocol}
+                    allowDeselect={false}
+                    onChange={(val) => onSelectStr("connectionProtocol", val)}
+                    data={[
+                      {
+                        value: "websocket",
+                        label: i18n("options_protocolWebsocket"),
+                      },
+                      { value: "ssh", label: i18n("options_protocolSsh") },
+                    ]}
+                    mb="xs"
+                    {...anchor("connectionProtocol")}
+                  />
+                  <TextInput
+                    label={i18n("options_sshRelayUrl")}
+                    description={i18n("tooltip_sshRelayUrl")}
+                    name="sshRelayUrl"
+                    disabled={values.connectionProtocol !== "ssh"}
+                    value={values.sshRelayUrl}
+                    placeholder={DEFAULT_SSH_RELAY_HOST}
+                    onChange={onTextInputChange}
+                    mb="xs"
+                    {...anchor("sshRelayUrl")}
+                  />
+                  <Text size="xs" c="dimmed">
+                    {i18n("tooltip_sshLocalOnly")}{" "}
+                    <Anchor
+                      href={SSH_SELF_HOST_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      size="xs"
+                    >
+                      {i18n("options_sshSelfHostHelp")}
+                    </Anchor>
+                  </Text>
                 </PrefSection>
               )}
               {/* 線路編碼在 telnet 層轉（js/wire_charset.js、js/unicode_cells.js），APK 的 WebView 也走同一層，

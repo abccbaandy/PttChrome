@@ -24,6 +24,10 @@
 //     「登出並關閉 App」（logout_session 走完、server 關線後由 App.onClose 呼叫）：原生走跟通知列
 //     「中斷連線並關閉」同一條 ConnectionService.quit()。網頁與 APK 分開發佈 ⇒ 只在 config.quitApp
 //     為 true（認得這個 op 的 APK 才宣告）時才給這個選項（androidCanQuit）。
+//   → { id, op: 'setProtocol', protocol }               ← { id, ok, site } | { id, ok:false, error }
+//     連線失敗提示的「改用 SSH／改用 WebSocket」（docs/ssh.md「APK」）：原生把協議寫進 App 設定
+//    （不經 pref_sync），回傳新協議的本機 proxy 站台，網頁拿它立即重連。protocol：'websocket'｜'ssh'。
+//     只在 config.setProtocol 為 true（認得這個 op 的 APK 才宣告）時才給這個選項（androidCanSetProtocol）。
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
 // googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
 //   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider
@@ -152,6 +156,26 @@ export function quitAndroidApp() {
   if (!androidCanQuit()) return false;
   requestAndroid('quitApp').catch(() => null);
   return true;
+}
+
+// 這個 APK 認得 'setProtocol'（見檔頭）。舊 APK 沒有這個旗標 ⇒ 失敗提示不出現「改用另一個協議」。
+export function androidCanSetProtocol() {
+  const c = config();
+  return !!(c && c.setProtocol === true) && androidBridgeAvailable();
+}
+
+// 請原生改協議；回新的站台（之後的重連也用它），失敗回 ''。
+export async function androidSetProtocol(protocol) {
+  if (!androidCanSetProtocol()) return '';
+  try {
+    const r = await requestAndroid('setProtocol', { protocol });
+    if (!r || !r.ok || typeof r.site !== 'string' || !r.site) return '';
+    const c = config();
+    if (c) c.site = r.site;
+    return r.site;
+  } catch (e) {
+    return '';
+  }
 }
 
 // 這個頁面是 renderer 被回收／process 被砍之後換上的（原生注入 config.restored）。

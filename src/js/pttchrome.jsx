@@ -3,7 +3,7 @@ import { AnsiParser } from './ansi_parser';
 import { TermView } from './term_view';
 import { TermBuf } from './term_buf';
 import { TelnetConnection } from './telnet';
-import { createTransport } from './transport';
+import { createTransport, sshSupported } from './transport';
 import { EasyReading, switchModePlan, isEasyReadingLive } from './easy_reading';
 import { ListSession } from './list_session';
 import { BoardListSession } from './board_list_session';
@@ -62,7 +62,7 @@ import {
   saveBackgroundRecording,
   isDebugRecording,
 } from './debug_record_control';
-import { diagnoseConnectFailure, probeWebSocket } from './connection_probe';
+import { adviseConnectFailure, probeWebSocket } from './connection_probe';
 import {
   MFDISP_RAW_PLAIN,
   rawModeKey,
@@ -96,7 +96,8 @@ import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown }
 import { i18n } from './i18n';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
-import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp } from './android_bridge';
+import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp, androidCanSetProtocol, androidSetProtocol } from './android_bridge';
+import { bootSite } from './boot_site';
 import { shouldWarnBeforeUnload } from './unload_guard';
 import {
   IMAGE_PROXY_SITES,
@@ -725,16 +726,25 @@ App.prototype.onClose = function(e) {
   this._keepAliveProbeAt = null;
 
   // 連線失敗診斷：直連從未 open ⇒ 經 proxy 探測，分辨「Origin 偽裝沒設好」與
-  // 「PTT 連不上」；前者再問要不要一鍵改走 proxy。決策表見 connection_probe.js。
+  // 「PTT 連不上」；前者再問要不要一鍵改走 proxy。另外給「改用另一個協議」（docs/ssh.md）。
+  // 決策表見 connection_probe.js#adviseConnectFailure。
   const failed = this.connectedUrl;
   const proxySite = proxySiteFromPrefs({ ...readValuesWithDefault(), useProxy: true });
-  const diagnose = () => diagnoseConnectFailure({
+  const android = isAndroidApp();
+  const diagnose = () => adviseConnectFailure({
     site: failed.url,
     opened: failed.opened,
+    closeReason: failed.closeReason,
     defaultSite: defaultSite(),
     proxySite: proxySite,
-    probe: probeWebSocket
+    probe: probeWebSocket,
+    android: android,
+    canSwitch: android ? androidCanSetProtocol() : sshSupported()
   });
+  const onSwitchProtocol = protocol => {
+    unmountFrom(container);
+    this.switchProtocolAndReconnect(protocol);
+  };
   const onDismiss = () => {
     unmountFrom(container);
     this.connect(this.connectedUrl.url);
@@ -758,10 +768,12 @@ App.prototype.onClose = function(e) {
     return;
   }
   // Android APK 的連線永遠是原生本機 proxy：「Origin 沒設好 → 改走 proxy」這條
-  // 診斷在那裡不成立，只給單純的重連提示。
+  // 診斷在那裡不成立（adviseConnectFailure 的 android 分支不探測），只剩「改用另一個協議」
+  //（新版 APK 才有，androidCanSetProtocol）。被 PTT 封鎖時不診斷、不給任何建議。
   renderInto(container, <MantineRoot><ConnectionAlert
-    onDismiss={onDismiss} diagnose={isAndroidApp() || loginBlocked ? undefined : diagnose}
-    onEnableProxy={onEnableProxy} loginBlocked={loginBlocked} /></MantineRoot>);
+    onDismiss={onDismiss} diagnose={loginBlocked ? undefined : diagnose}
+    onEnableProxy={onEnableProxy} onSwitchProtocol={onSwitchProtocol}
+    loginBlocked={loginBlocked} /></MantineRoot>);
   this.updateTabIcon('disconnect');
 };
 
@@ -773,6 +785,22 @@ App.prototype.enableProxyAndReconnect = function() {
   prefSync.savePrefs(values);
   this.onValuesPrefChange(values);
   this.connect(proxySiteFromPrefs(values));
+};
+
+// 連線失敗提示的「改用 SSH／改用 WebSocket」（docs/ssh.md「失敗提示」）：記住新協議並立即重連。
+// 網頁：寫回**本機** pref（connectionProtocol 在 LOCAL_ONLY_PREF_KEYS，不同步、不進備份）；
+// APK：bridge 'setProtocol' 寫原生設定，回新的本機 proxy 站台。
+App.prototype.switchProtocolAndReconnect = function(protocol) {
+  if (isAndroidApp()) {
+    return androidSetProtocol(protocol).then(site => {
+      this.connect(site || this.connectedUrl.url);
+    });
+  }
+  var values = { ...readValuesWithDefault(), connectionProtocol: protocol };
+  writeValues(values);
+  this.onValuesPrefChange(values);
+  this.connect(bootSite(values, ''));
+  return Promise.resolve();
 };
 
 App.prototype.sendData = function(str) {

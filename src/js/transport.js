@@ -56,6 +56,10 @@ export function createTransport(site, opts = {}) {
   return new Websocket(parsed.wsUrl);
 }
 
+// 設定頁「自架 relay 的方法」連結：docs/ssh.md 的「自架 relay」節（標題改了要一起改）。
+export const SSH_SELF_HOST_URL =
+  'https://github.com/abccbaandy/PttChrome/blob/dev/docs/ssh.md#%E8%87%AA%E6%9E%B6-relay';
+
 // 這個環境能不能跑 SSH 載體（WebCrypto 只在 secure context）。設定頁與失敗提示據此決定
 // 要不要出現 SSH 選項。
 export { sshSupported };

@@ -123,3 +123,59 @@ test("沒有 loginBlocked ⇒ 不出現封鎖說明", async () => {
   await screen.findByRole("button", { name: i18n("alert_connectionReconnect") });
   expect(screen.queryByText(i18n("alert_connectionLoginBlocked"))).toBeNull();
 });
+
+// 「改用另一個協議」（docs/ssh.md「失敗提示」）：只有建議清單裡有、且 App 給了 onSwitchProtocol 才出現，
+// 按了才切（不自動切）。被 PTT 封鎖時 App 不給 diagnose ⇒ 不會有任何建議（下面最後一條）。
+describe("switch protocol suggestions", () => {
+  test("WebSocket failed ⇒ 「改用 SSH 連線」按鈕，按下回報 'ssh'", async () => {
+    const onSwitchProtocol = vi.fn();
+    mount({
+      diagnose: async () => ({ verdict: "unreachable", suggestions: ["useSsh"] }),
+      onSwitchProtocol,
+    });
+    fireEvent.click(await screen.findByRole("button", { name: i18n("alert_connectionUseSsh") }));
+    expect(onSwitchProtocol).toHaveBeenCalledWith("ssh");
+    expect(screen.queryByRole("button", { name: i18n("alert_connectionUseWebsocket") })).toBeNull();
+  });
+
+  test("SSH relay failed ⇒ 說明＋檢查 relay 提示＋「改用 WebSocket 連線」", async () => {
+    const onSwitchProtocol = vi.fn();
+    mount({
+      diagnose: async () => ({ verdict: "sshRelay", suggestions: ["useWebsocket", "checkRelay"] }),
+      onSwitchProtocol,
+    });
+    expect(await screen.findByText(i18n("alert_connectionSshRelay"))).toBeTruthy();
+    expect(screen.getByText(i18n("alert_connectionCheckRelay"))).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: i18n("alert_connectionUseWebsocket") }));
+    expect(onSwitchProtocol).toHaveBeenCalledWith("websocket");
+  });
+
+  test("host key mismatch ⇒ 明確警告不要登入", async () => {
+    mount({ diagnose: async () => ({ verdict: "sshHostKey", suggestions: ["useWebsocket"] }), onSwitchProtocol: vi.fn() });
+    expect(await screen.findByText(i18n("alert_connectionSshHostKey"))).toBeTruthy();
+    expect(i18n("alert_connectionSshHostKey")).toContain("請勿");
+  });
+
+  test("Origin ⇒ proxy 詢問與改用 SSH 並列", async () => {
+    mount({
+      diagnose: async () => ({ verdict: "origin", suggestions: ["proxy", "useSsh"] }),
+      onEnableProxy: vi.fn(),
+      onSwitchProtocol: vi.fn(),
+    });
+    expect(await screen.findByText(i18n("alert_connectionProxyAsk"))).toBeTruthy();
+    expect(screen.getByRole("button", { name: i18n("alert_connectionUseSsh") })).toBeTruthy();
+  });
+
+  test("沒給 onSwitchProtocol（舊呼叫端）⇒ 不畫切換鈕", async () => {
+    mount({ diagnose: async () => ({ verdict: "unreachable", suggestions: ["useSsh"] }) });
+    await screen.findByText(i18n("alert_connectionUnreachable"));
+    expect(screen.queryByRole("button", { name: i18n("alert_connectionUseSsh") })).toBeNull();
+  });
+
+  test("被封鎖（不診斷）⇒ 沒有任何切換鈕", async () => {
+    mount({ loginBlocked: true, onSwitchProtocol: vi.fn() });
+    await screen.findByText(i18n("alert_connectionLoginBlocked"));
+    expect(screen.queryByRole("button", { name: i18n("alert_connectionUseSsh") })).toBeNull();
+    expect(screen.queryByRole("button", { name: i18n("alert_connectionUseWebsocket") })).toBeNull();
+  });
+});

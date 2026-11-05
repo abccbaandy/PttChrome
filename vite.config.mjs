@@ -4,6 +4,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEV_SERVER_PIDFILE } from './scripts/kill-dev-server.js';
+import { attachDevSshRelay } from './tools/ssh-relay/ptt-ssh-relay.mjs';
 
 // Build identity, surfaced in the About tab and the startup console line so a
 // running page can be matched to a commit (stale-deploy debugging).
@@ -48,13 +49,24 @@ const devServerPidfile = () => ({
   },
 });
 
+// dev 內建 /ssh relay：WebSocket ⇄ TCP ptt.cc:22，SSH 在頁面裡解開（docs/ssh.md）。
+// 與自架小程式共用同一份實作（tools/ssh-relay/ptt-ssh-relay.mjs）；dev 只收同源頁面、不帶 token。
+// 協議選 SSH 時 dev 的站台是 wssh://{pageHost}/ssh（src/js/util.js#sshSiteFromPrefs）。
+const devSshRelay = () => ({
+  name: 'pttchrome:dev-ssh-relay',
+  apply: 'serve',
+  configureServer(server) {
+    if (server.httpServer) attachDevSshRelay(server.httpServer);
+  },
+});
+
 export default defineConfig(({ command }) => {
   // dev server（vite serve）＝ developer mode；vite build ＝ production。
   const DEVELOPER_MODE = command === 'serve';
   return {
     // 部署在 GitHub Pages 子路徑，所有資源引用走相對路徑。
     base: './',
-    plugins: [react(), htmlVars(), devServerPidfile()],
+    plugins: [react(), htmlVars(), devServerPidfile(), devSshRelay()],
     // .bin（Big5 轉碼表）與 .bmp 不在 Vite 內建 asset 清單，明確納入。
     assetsInclude: ['**/*.bin', '**/*.bmp'],
     define: {
@@ -62,6 +74,9 @@ export default defineConfig(({ command }) => {
       // dev：`{pageHost}` 在 runtime 換成 location.host（util.js#resolveDefaultSite），
       // 所以從區網位址開站（手機實測）也會打到這台 dev server 的 /bbs proxy。
       'process.env.DEFAULT_SITE': JSON.stringify(DEVELOPER_MODE ? 'wstelnet://{pageHost}/bbs' : 'wsstelnet://ws.ptt.cc/bbs'),
+      // 協議選 SSH、relay 欄位空白時（util.js#defaultSshSite）：dev 走自己的 /ssh relay，
+      // 正式版留 undefined ⇒ 用公用 Worker（util.js#DEFAULT_SSH_RELAY_HOST）。
+      'process.env.DEFAULT_SSH_SITE': JSON.stringify(DEVELOPER_MODE ? 'wssh://{pageHost}/ssh' : ''),
       // Default OFF: ignore ?site= in the URL (a page-author/link could otherwise
       // point the client at an arbitrary WebSocket host). Users who want a custom
       // proxy set it in Preferences instead (useProxy + proxyUrl, see pref_storage.js).

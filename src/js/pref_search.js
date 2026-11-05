@@ -458,6 +458,18 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_proxyUrl",
     },
   ]),
+  ...inSection("connection", "options_connectionProtocol", false, [
+    {
+      key: "connectionProtocol",
+      titleKey: "options_connectionProtocol",
+      tooltipKey: "tooltip_connectionProtocol",
+    },
+    {
+      key: "sshRelayUrl",
+      titleKey: "options_sshRelayUrl",
+      tooltipKey: "tooltip_sshRelayUrl",
+    },
+  ]),
   ...inSection("connection", "options_connectionEncoding", false, [
     {
       key: "connectionEncoding",

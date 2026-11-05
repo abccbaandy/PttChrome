@@ -17,12 +17,18 @@
 // imageUploadToken is the urusai image-host credential (see image_upload.js):
 // same rule as the PTT password — a credential must not reach Firestore nor a
 // settings export. Its UI sits in the "local" tab too.
+// connectionProtocol / sshRelayUrl (docs/ssh.md): a self-hosted relay lives at
+// ws://127.0.0.1 with a per-machine token, and whether SSH works at all depends
+// on this machine's network — syncing either would break the other devices.
+// Their UI stays in the "connection" tab (marked as not synced there).
 export const LOCAL_ONLY_PREF_KEYS = [
   "autoLoginUser",
   "autoLoginPassword",
   "autoLoginOtpSecret",
   "enableWorkMode",
-  "imageUploadToken"
+  "imageUploadToken",
+  "connectionProtocol",
+  "sshRelayUrl"
 ];
 
 export const sanitizeForCloud = values => {

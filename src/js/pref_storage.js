@@ -162,6 +162,13 @@ export const DEFAULT_PREFS = {
   // 在格子裡存成 Unicode（js/unicode_cells.js），並靠回應 logind 的 CPR 偵測讓 server 切過去。
   // 預設 big5（現況最穩）；utf8 是為 PTT 未來放棄 Big5 預先準備。重連後生效。
   connectionEncoding: "big5",
+  // 連線協議（docs/ssh.md）：'websocket'（預設，現行 telnet over WebSocket）｜'ssh'（經 relay
+  // 轉送 TCP ptt.cc:22，SSH 在頁面裡解開，relay 看不到帳密）。sshRelayUrl 空白＝公用 relay
+  //（util.js#DEFAULT_SSH_RELAY_HOST，UI 拿它當 placeholder，理由同 proxyUrl）。
+  // 兩個都是**本機專屬**（pref_sync_logic.js#LOCAL_ONLY_PREF_KEYS）：自架 relay 是
+  // ws://127.0.0.1，同步到別台就連不上；協議能不能用也看這台機器的網路。重連後生效。
+  connectionProtocol: "websocket",
+  sshRelayUrl: "",
 
   // imgur 圖片快取代理。**預設開**（與上面的 BBS proxy 相反）：imgur 的 CDN 把台灣
   // 流量導到美西，同一張圖 20 次取樣有 4～5 次卡住 9～24 s，代理實測 stall 0/20；

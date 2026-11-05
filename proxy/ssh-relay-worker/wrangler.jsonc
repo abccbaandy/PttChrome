@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "ptt-ssh-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+
+  // 依來源 IP 限流（relay.js#handleRequest）：每個 IP 每 60 秒最多開 10 條新連線。
+  // 正常使用一次連線就是一條；超過多半是程式在掃。namespace_id 是帳號內唯一的任意整數字串。
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER",
+      "namespace_id": "2201",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}

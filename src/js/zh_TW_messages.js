@@ -584,7 +584,7 @@
     "message": "滑鼠瀏覽、點擊範圍、滾輪與返回手勢"
   },
   "optionsDesc_connection": {
-    "message": "Proxy、編碼、圖片代理與開站快取"
+    "message": "協議、Proxy、編碼、圖片代理與開站快取"
   },
   "optionsDesc_enhance": {
     "message": "樓層、推文合併與高亮、連結、圖片上傳、黑名單"
@@ -1723,6 +1723,30 @@
   "tooltip_proxyUrl": {
     "message": "如 ptt-proxy.example.workers.dev，或完整 wsstelnet:// 位址"
   },
+  "options_connectionProtocol": {
+    "message": "連線協議 (重新連線後生效)"
+  },
+  "tooltip_connectionProtocol": {
+    "message": "WebSocket 是 PTT 網頁版原本的連法。SSH 經 relay 轉送到 ptt.cc 的 SSH，加解密在這個網頁裡做，relay (包括我們提供的) 看不到你的帳號密碼。"
+  },
+  "options_protocolWebsocket": {
+    "message": "WebSocket (預設)"
+  },
+  "options_protocolSsh": {
+    "message": "SSH (經 relay)"
+  },
+  "options_sshRelayUrl": {
+    "message": "SSH relay 位址"
+  },
+  "tooltip_sshRelayUrl": {
+    "message": "留空＝用專案提供的 relay。自架的填 wssh://127.0.0.1:<port>/ssh/<token> 這類完整位址"
+  },
+  "tooltip_sshLocalOnly": {
+    "message": "協議與 relay 位址只存在這台裝置，不會同步到其他裝置。"
+  },
+  "options_sshSelfHostHelp": {
+    "message": "自架 relay 的方法"
+  },
   "options_connectionEncoding": {
     "message": "連線編碼 (重新連線後生效)"
   },
@@ -2225,6 +2249,30 @@
   },
   "alert_connectionUnreachable": {
     "message": "目前連不上 PTT（可能維護中或網路問題），與 Origin 設定無關。"
+  },
+  "alert_connectionUseSsh": {
+    "message": "改用 SSH 連線"
+  },
+  "alert_connectionUseWebsocket": {
+    "message": "改用 WebSocket 連線"
+  },
+  "alert_connectionCheckRelay": {
+    "message": "請到「設定 → 連線」確認 SSH relay 位址；自架的 relay 要先在電腦上啟動。"
+  },
+  "alert_connectionSshHostKey": {
+    "message": "PTT 的 SSH 主機金鑰與內建的不符，連線已中止。可能是 relay 被攔截，請勿在這條連線上登入。"
+  },
+  "alert_connectionSshUnreachable": {
+    "message": "連上 SSH relay 了，但 relay 連不到 PTT 的 SSH (ptt.cc:22)：可能 PTT 維護中，或 relay 所在的網路擋了 22 port。"
+  },
+  "alert_connectionSshRelay": {
+    "message": "連不上 SSH relay，或 relay 拒絕了這個網頁。"
+  },
+  "alert_connectionSshUnsupported": {
+    "message": "這個瀏覽器或網址不支援 SSH 連線 (需要 https 或 localhost)。"
+  },
+  "alert_connectionSshProtocol": {
+    "message": "與 PTT 的 SSH 協商失敗。"
   },
   "alert_connectionProxyAsk": {
     "message": "要改用 Proxy 連線嗎？連線會經代理伺服器轉送，操作會有延遲。"

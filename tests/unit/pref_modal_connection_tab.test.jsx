@@ -14,7 +14,7 @@ import { PrefModal } from "../../src/components/ContextMenu/PrefModal";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import { DEFAULT_IMGUR_PROXY_BASE, IMAGE_PROXY_SITES } from "../../src/js/image_proxy";
-import { DEFAULT_PROXY_HOST } from "../../src/js/util";
+import { DEFAULT_PROXY_HOST, DEFAULT_SSH_RELAY_HOST } from "../../src/js/util";
 
 // 雲端同步不是本測試的標的，且會拉 Firebase SDK。
 vi.mock("../../src/js/pref_sync", () => ({
@@ -177,6 +177,9 @@ describe("連線分頁：Android APK", () => {
     expect(field("proxyUrl")).toBeNull();
     expect(field("useImgurProxy")).toBeInTheDocument();
     expect(screen.getByText(i18n("options_androidProxyNote"))).toBeInTheDocument();
+    // APK 的協議在原生設定頁（不經 pref_sync），網頁不給選。
+    expect(field("connectionProtocol")).toBeNull();
+    expect(field("sshRelayUrl")).toBeNull();
   });
 
   // APK 自己的設定（dev server 模式）在原生頁；網頁設定頁是主要入口。
@@ -196,5 +199,45 @@ describe("連線分頁：Android APK", () => {
   test("一般瀏覽器沒有「App 設定」按鈕", () => {
     openConnectionTab();
     expect(screen.queryByRole("button", { name: i18n("options_androidAppSettings") })).toBeNull();
+  });
+});
+
+// 連線協議（docs/ssh.md）：WebSocket（預設）／SSH，SSH relay 位址只有選 SSH 時可編輯，預設位址放 placeholder。
+describe("連線分頁：協議與 SSH relay", () => {
+  test("預設 WebSocket，relay 欄位反灰、留空、placeholder 是公用 relay", () => {
+    openConnectionTab();
+    expect(field("connectionProtocol").value).toBe("websocket");
+    expect(field("sshRelayUrl")).toBeDisabled();
+    expect(field("sshRelayUrl").value).toBe("");
+    expect(field("sshRelayUrl")).toHaveAttribute("placeholder", DEFAULT_SSH_RELAY_HOST);
+  });
+
+  test("選 SSH 時 relay 欄位可編輯，自訂值保留", () => {
+    openConnectionTab({ connectionProtocol: "ssh", sshRelayUrl: "wssh://127.0.0.1:8022/ssh/tok" });
+    expect(field("connectionProtocol").value).toBe("ssh");
+    expect(field("sshRelayUrl")).not.toBeDisabled();
+    expect(field("sshRelayUrl").value).toBe("wssh://127.0.0.1:8022/ssh/tok");
+  });
+
+  test("寫明「只存在這台裝置」並附自架說明連結", () => {
+    openConnectionTab();
+    expect(screen.getByText(i18n("tooltip_sshLocalOnly"))).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: i18n("options_sshSelfHostHelp") })).toHaveAttribute(
+      "href",
+      expect.stringContaining("docs/ssh.md"),
+    );
+  });
+
+  test("非 secure context（區網 http 開 dev）不出現 SSH 選項", () => {
+    const desc = Object.getOwnPropertyDescriptor(window, "isSecureContext");
+    Object.defineProperty(window, "isSecureContext", { configurable: true, get: () => false });
+    try {
+      openConnectionTab();
+      expect(field("connectionProtocol")).toBeNull();
+      expect(field("useProxy")).toBeInTheDocument();
+    } finally {
+      if (desc) Object.defineProperty(window, "isSecureContext", desc);
+      else delete window.isSecureContext;
+    }
   });
 });
