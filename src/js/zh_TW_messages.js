@@ -1939,6 +1939,21 @@
   "mobileToolbar_threadFirst": {
     "message": "同主題首篇"
   },
+  "mobileToolbar_navGroupThread": {
+    "message": "同主題"
+  },
+  "mobileToolbar_navGroupBoard": {
+    "message": "看板"
+  },
+  "mobileToolbar_navFirst": {
+    "message": "首篇"
+  },
+  "mobileToolbar_navPrevThread": {
+    "message": "前篇"
+  },
+  "mobileToolbar_navNextThread": {
+    "message": "下篇"
+  },
   "mobileToolbar_articlePrev": {
     "message": "前一篇"
   },

@@ -1940,6 +1940,21 @@ export const en_US = {
   "mobileToolbar_threadFirst": {
     "message": "First in thread"
   },
+  "mobileToolbar_navGroupThread": {
+    "message": "Thread"
+  },
+  "mobileToolbar_navGroupBoard": {
+    "message": "Board"
+  },
+  "mobileToolbar_navFirst": {
+    "message": "First"
+  },
+  "mobileToolbar_navPrevThread": {
+    "message": "Prev"
+  },
+  "mobileToolbar_navNextThread": {
+    "message": "Next"
+  },
   "mobileToolbar_articlePrev": {
     "message": "Previous post"
   },

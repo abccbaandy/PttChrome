@@ -96,12 +96,38 @@
 }
 
 /* 「更多」裡的文章導覽（同主題前／下／首篇、列表前／下篇）。 */
+/* 文章導覽（P56）：每組一列，左邊組名、右邊成對按鈕平分寬度。 */
 .mobileToolbarNavGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 6px;
   border-bottom: 1px solid #333;
+}
+.mobileToolbarNavRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mobileToolbarNavLabel {
+  flex: none;
+  width: 3.6em;
+  font-size: 0.85em;
+  color: #9a9aa2;
+}
+/* 蓋過 .mobileSheetItem 的直排／靠左／滿寬（清單項用的版型）。 */
+.mobileToolbarNavRow > .mobileSheetItem.mobileToolbarNavBtn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
 }
 
 /* 按鍵面板貼在工具列正上方，與工具列同一個 fixed 容器（常駐開著也能看終端機，所以不做成
