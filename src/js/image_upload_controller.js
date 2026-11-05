@@ -256,6 +256,7 @@ ImageUploadController.prototype.insertUrls = function(urls) {
   const mode = decideInsertMode({
     pageState: buf.pageState,
     lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
+    cursorOnInputField: typeof buf.isCursorOnInputField === 'function' && buf.isCursorOnInputField(),
     hasTextTarget: !!this._insertTarget
   });
   if (mode === 'target') {

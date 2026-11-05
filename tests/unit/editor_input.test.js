@@ -49,6 +49,13 @@ describe("EditorInput（控制器）", () => {
       isEditorScreenNow() {
         return this.pageState === 6 && !this.promptOnFooter;
       },
+      isCursorOnInputField() {
+        return !!(this.promptOnFooter || this.promptAboveFooter);
+      },
+      // 同 term_buf.isEditorTypingNow
+      isEditorTypingNow() {
+        return this.isEditorScreenNow() && !this.isCursorOnInputField();
+      },
     },
     view: { mainDisplay: null, chh: 20 },
     onPasteDone: vi.fn(),
@@ -89,6 +96,19 @@ describe("EditorInput（控制器）", () => {
     expect(ed.open()).toBe(true);
     core.buf.promptOnFooter = true;
     expect(ed.insert("yes")).toMatchObject({ ok: false, reason: "not-editor" });
+    expect(core.onPasteDone).not.toHaveBeenCalled();
+    expect(ed.state.open).toBe(true);
+  });
+
+  // edit.c 的 ^S 搜尋／F5 跳行：prompt 在倒數第二列，底列「編輯文章」還在（真畫面見
+  // ptt_src_screens.test.js 的 editor_prompt 場景）。
+  test("框開著時編輯器倒數第二列跳出 prompt（底列還是編輯器）⇒ insert 不送、框留著", () => {
+    const core = makeCore(6);
+    const ed = new EditorInput(core);
+    expect(ed.open()).toBe(true);
+    core.buf.promptAboveFooter = true;
+    expect(core.buf.isEditorScreenNow()).toBe(true);
+    expect(ed.insert("ab\n")).toMatchObject({ ok: false, reason: "not-editor" });
     expect(core.onPasteDone).not.toHaveBeenCalled();
     expect(ed.state.open).toBe(true);
   });

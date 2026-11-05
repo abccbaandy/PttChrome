@@ -333,6 +333,22 @@ export const SCENES = [
     steps: [{ name: 'list' }, { keys: 'E', name: 'edit' }, { keys: '\x18', name: 'save-menu' }],
   },
   {
+    // 編輯器裡的倒數第二列 prompt：^S 搜尋（edit.c#search_str：getdata_buf(b_lines - 1, …,
+    // "[搜尋]關鍵字:")）。底列的「 編輯文章 」caption 沒被清掉 ⇒ 光看底列會以為還在編輯器，
+    // 這時「插入」整段字＝打進 prompt、換行＝替使用者回答（下一題「區分大小寫(Y/N/Q)?」）。
+    // F5 跳行（prompt_goto_line）、^Y/^U 暫存檔等都是同一個 getdata(b_lines - 1, …) 形狀。
+    file: 'editor_prompt',
+    entry: 'read:Mine',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: 'E', name: 'edit' },
+      { keys: '\x13', name: 'search' },
+      { keys: 'ab', name: 'search-typed' },
+      { keys: '\r', name: 'case-prompt' },
+    ],
+  },
+  {
     // 選看板 prompt 的自動完成（namecomplete）：打 M 再按空白 ⇒ Mine／Movie 兩個候選，列出清單；
     // x 沒有看板以 Mx 開頭 ⇒ bell、字被丟掉；再打 o、空白 ⇒ 唯一的 Movie 補完。
     // board_search_bridge.parseBoardPromptFrame 讀輸入欄與候選。
