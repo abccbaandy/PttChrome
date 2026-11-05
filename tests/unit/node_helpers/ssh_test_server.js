@@ -8,12 +8,22 @@ import { SshClient } from "../../../src/js/ssh/ssh_client";
 
 const { Server, utils } = ssh2;
 
+// ssh2 的 generateKeyPairSync('ed25519') 約 0.4% 機率產出自己解析不了的私鑰：驗過再用，壞的重產
+//（守護 tests/unit/ssh_test_server_keys.test.js）。
+export function generateUsableKey(type, opts, gen = utils.generateKeyPairSync) {
+  for (let i = 0; i < 20; i++) {
+    const kp = gen(type, opts);
+    if (!(utils.parseKey(kp.private) instanceof Error)) return kp;
+  }
+  throw new Error("no usable " + type + " key after 20 tries");
+}
+
 const keyCache = new Map();
 // type：'ed25519'｜'ecdsa'｜'rsa'。同一種 key 整檔共用（RSA 產生要時間）。
 export function hostKey(type) {
   if (!keyCache.has(type)) {
     const opts = type === "ecdsa" ? { bits: 256 } : type === "rsa" ? { bits: 2048 } : undefined;
-    const kp = utils.generateKeyPairSync(type, opts);
+    const kp = generateUsableKey(type, opts);
     const [keyType, b64] = kp.public.split(" ");
     const blob = Buffer.from(b64, "base64");
     const fp = "SHA256:" + crypto.createHash("sha256").update(blob).digest("base64").replace(/=+$/, "");
