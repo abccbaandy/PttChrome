@@ -235,6 +235,23 @@ export const SCENES = [
     steps: [{ name: 'list' }, { keys: 'X', name: 'owner' }],
   },
   {
+    // 使用限制（upstream 368f91f5）：activity.svc 拒絕 #AID／標題搜尋並給理由 ⇒ read.c 不再假裝
+    // 「找不到」，改畫 activity_alert 整頁（row 0「使用限制 … 未搜尋」＋理由＋pressanykey），
+    // 按鍵後 scr_restore 回列表、游標不動。driver 只在 Mine 板拒絕（見 driver.c）。
+    file: 'activity_denied',
+    entry: 'read:Mine',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '#' },
+      { keys: '1AAAAAAA\r', name: 'aid-denied' },
+      { keys: ' ', name: 'aid-back' },
+      { keys: '/' },
+      { keys: 'test\r', name: 'search-denied' },
+      { keys: ' ', name: 'search-back' },
+    ],
+  },
+  {
     // 文章列表的搜尋 prompt（read.c#ask_filter_predicate、bbs.c#do_select）：每種開一次，
     // 空白 ⏎ 取消回列表再開下一種；最後 s 選看板停在兩段式 prompt。
     file: 'search_prompts',

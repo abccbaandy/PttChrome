@@ -455,6 +455,25 @@ describe("游標錨定", () => {
     expect(h.sent[h.sent.length - 1]).toBe("X");
   });
 
+  // upstream 368f91f5：#AID 被 activity.svc 拒絕 ⇒「使用限制 未搜尋」整頁＋pressanykey。
+  // 舊版當成還沒落地、等到逾時才報「找不到原本那篇文章（timeout）」。
+  test("#<aid> 被 PTT 使用限制擋下 → 馬上停手、帶 PTT 的理由，不送 X", () => {
+    const h = harness();
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    pushOneThenList(h, [ANCHOR_ROW(1233), OTHER_ROW(1234, true)], 1);
+    expect(h.sent[h.sent.length - 1]).toBe("#" + AID + "\r\f");
+    const before = h.sent.length;
+    h.settle(" ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ 請按任意鍵繼續 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄   ", {
+      kind: "transient",
+      rows: { 0: "  使用限制    未搜尋", 2: "  placeholder reason from activity.svc" },
+    });
+    expect(h.sent.length).toBe(before);
+    expect(h.session.active).toBe(false);
+    expect(h.results[0]).toMatchObject({ source: "ptt", rest: "第二段" });
+    expect(h.results[0].message).toContain("PTT 暫時限制搜尋");
+    expect(h.results[0].message).toContain("placeholder reason");
+  });
+
   // 置底文：#AID 的落地列印的是 ★ 而不是序號（bbs.c:843）⇒ cursorRowNum 為 null。
   // 舊判準把它讀成「找不到原本那篇文章」而中止送出，剩下的內容被丟回剪貼簿。
   // 判準已與 aid_navigation 共用（aidSearchLanded），這裡守住不再回歸。

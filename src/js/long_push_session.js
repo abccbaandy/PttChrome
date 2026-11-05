@@ -53,6 +53,7 @@ import {
   anchorMatchCount
 } from './long_push_anchor';
 import { aidSearchLanded } from './aid_navigation';
+import { parseActivityDenied, activityDeniedHint } from './activity_alert';
 import { toPostAid } from './aid_codec';
 // 收尾鍵（Ctrl-C 取消輸入列／確認列，空白鍵收掉 vmsg 橫幅）與完整的 pttbbs 出處
 // 註解都在 screen_dismiss.js，與「滑鼠點空白處關框」**共用同一份**。
@@ -632,7 +633,13 @@ LongPushSession.prototype = {
         if (!self.active) return;
         cmd.done(result.screen, result);
       },
-      onFail: function(reason) {
+      bail: cmd.bail
+        ? function(snapshot, facts) {
+            return cmd.bail(facts);
+          }
+        : undefined,
+      onFail: function(reason, facts, bailed) {
+        if (reason === 'bail' && bailed) return self._fail(bailed, 'ptt');
         if (cmd.fail) cmd.fail(reason);
         else self._fail(cmd.failMsg + '（' + reason + '）');
       },
@@ -972,6 +979,11 @@ LongPushSession.prototype = {
       failMsg: '找不到原本那篇文章',
       accept: function(c, facts) {
         return aidSearchLanded(facts);
+      },
+      // PTT 的使用限制整頁（activity_alert.js）：不等逾時，理由交給使用者、畫面留給 PTT。
+      bail: function(facts) {
+        const reason = facts ? parseActivityDenied(facts.rowTexts, facts.rows) : null;
+        return reason == null ? null : activityDeniedHint(reason);
       },
       done: function(c, result) {
         // #AID 是權威的：select_by_aid 要嘛把 crs_ln 設到那一筆，要嘛回「找不到」

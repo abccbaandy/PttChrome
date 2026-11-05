@@ -74,6 +74,7 @@ import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
 import { isMailboxOverLimitNotice, MAILBOX_OVER_LIMIT_HINT } from './mail_list';
 import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
+import { parseActivityDenied, activityDeniedHint } from './activity_alert';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -1888,10 +1889,20 @@ AidNavigation.prototype = {
       expect: function(snapshot, facts) {
         return aidSearchLanded(facts);
       },
+      // PTT 的使用限制整頁（upstream 368f91f5，activity_alert.js）：馬上停手，不等逾時送 \f 探路
+      // （\f 會被 pressanykey 吃掉、提示消失，再被報成「找不到／可能已被刪除」）。
+      bail: function(snapshot, facts) {
+        const reason = facts ? parseActivityDenied(facts.rowTexts, facts.rows) : null;
+        return reason == null ? null : { reason: reason };
+      },
       onDone: function() {
         self._enqueueOpen(run);
       },
-      onFail: function(reason) {
+      onFail: function(reason, facts, bailed) {
+        if (reason === 'bail') {
+          self._fail('PTT 暫時限制搜尋', activityDeniedHint(bailed && bailed.reason));
+          return;
+        }
         // Going back, a miss means the post is really gone (deleted) — a
         // PINNED post is findable, see aidSearchLanded. There is no number
         // to fall back to by design: say so and stay on the board's list.
