@@ -2326,9 +2326,11 @@ EasyReading.prototype._scrollBy = function(lines) {
   var cont = this._view.mainDisplay;
   if (lines < 0 && cont.scrollTop == 0)
     return false;
+  // 手機按鍵面板／軟鍵盤展開時 .main 變矮（term_view.reflowViewportCutPx）：視窗項跟著扣，
+  // 不然下界比真正的 maxScroll 低一截 ⇒ 還沒捲到底就回 false（呼叫端當到底、關掉文章）。
   if (lines > 0 && cont.scrollTop >=
     this._view.mainContainer.clientHeight -
-      this._view.chh * this._termBuf.rows)
+      (this._view.chh * this._termBuf.rows - (this._view.reflowViewportCutPx || 0)))
     return false;
   cont.scrollTop += this._view.chh * lines;
   return true;

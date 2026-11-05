@@ -117,7 +117,8 @@
   （頂端列被推出畫面）。**列表卡片例外**：body 是捲動視口，推上去的那段會躲在 App Bar 後面
   （`isRowVisible` 仍判可見 ⇒ 游標往上移進去不捲、看不到），改成視口變矮、上緣貼 App Bar
   （`term_size.listViewportCut` → `view.listViewportCutPx`，inset 變了由 `_notifyListViewportCut`
-  叫列表 session `onViewportResized` 重畫＋把游標捲回視野）。同一個值寫進 CSS 變數 `--kb-inset` 推高底部工具列（fixed 錨在 layout viewport）；終端機的 inset 另加工具列與按鍵面板（見上）。
+  叫列表 session `onViewportResized` 重畫＋把游標捲回視野）。好讀文章換行版面同理：捲動容器就是 `.main`，
+  直接縮它的高（`view.reflowViewportCutPx`，`easy_reading._scrollBy` 的下界跟著扣，不然沒捲到底就當到底關文章）。同一個值寫進 CSS 變數 `--kb-inset` 推高底部工具列（fixed 錨在 layout viewport）；終端機的 inset 另加工具列與按鍵面板（見上）。
   只在 `softKeyboard` 時算；`visualViewport.scale ≠ 1`（雙指縮放）不算。
 - **開站原點**：`#BBSWindow` 顯示前量到的 `firstGridOffset` 是 0；`main.jsx` 顯示後呼叫
   `onWindowResize({ immediate: true })` 跳過 resizer 的 500ms debounce（手機與桌機 fixed-font-size 都有 resizer）。

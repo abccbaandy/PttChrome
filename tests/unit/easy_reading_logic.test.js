@@ -1275,6 +1275,25 @@ describe("_scrollBy 的捲動下界", () => {
     expect(er._scrollBy(-22)).toBe(true);
     expect(er._view.mainDisplay.scrollTop).toBe(900 - 30 * 22);
   });
+
+  // 手機按鍵面板展開：.main 縮掉 cut（term_view.reflowViewportCutPx），maxScroll 變大 cut。
+  // 下界沒跟著扣的話，舊 maxScroll 1970 那一點就判到底 ⇒ 最後 cut px 還沒看到文章就被關掉。
+  describe("視口縮掉 cut（按鍵面板展開）", () => {
+    const cut = 300;
+    const shrunk = (scrollTop) => {
+      const er = makeER({ scrollTop, scrollHeight: 2700, clientHeight: 730 - cut, containerHeight: 2700 });
+      er._view.reflowViewportCutPx = cut;
+      return er;
+    };
+
+    it("捲到舊 maxScroll 還沒到真正的底 ⇒ 捲得動", () => {
+      expect(shrunk(1980)._scrollBy(22)).toBe(true);
+    });
+
+    it("捲到真正的底（2270）⇒ 仍回 true，不關文章（下界照樣高 10px）", () => {
+      expect(shrunk(2700 - (730 - cut))._scrollBy(22)).toBe(true);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

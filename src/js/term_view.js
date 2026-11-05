@@ -254,6 +254,8 @@ export function TermView() {
   this.topInset = 0;
   // 手機列表卡片放不下時視口少掉的高度（term_size.listViewportCut；0 ＝不縮）。
   this.listViewportCutPx = 0;
+  // 好讀文章換行版面放不下時 .main 少掉的高度（同上，easy_reading._scrollBy 要扣）。
+  this.reflowViewportCutPx = 0;
   this._notifiedListViewportCut = 0;
   // 手機版面的畫面類型（docs/mobile.md「Phase 3」「Phase 4」）：
   //   mobileSurface  'grid'（塞滿縮放）｜'article'（好讀長頁換行）｜'list'（列表卡片）。
@@ -1984,9 +1986,19 @@ TermView.prototype = {
       this.mainDisplay.style.height = menuLayout.height + 'px';
       this.mainDisplay.style.marginTop = menuLayout.marginTop + 'px';
     } else {
-      // 列表卡片：放不下時視口變矮、上緣貼 App Bar（不是推出畫面），見 listViewportCut。
-      var cut = this.listCards ? listViewportCut(layoutInput) : 0;
-      this.listViewportCutPx = cut;
+      // 列表卡片／好讀文章換行版面（都是捲動視口）：放不下時視口變矮、上緣貼 App Bar
+      // （不是推出畫面），見 listViewportCut。列表卡片縮的是 body 視口（_renderScreenLines），
+      // 換行版面的捲動容器就是 .main 本身 ⇒ 直接縮它。
+      var cut = this.listCards || this.reflow ? listViewportCut(layoutInput) : 0;
+      this.listViewportCutPx = this.listCards ? cut : 0;
+      // 換行版面縮了多少（easy_reading._scrollBy 的捲動下界要跟著扣，見那裡的註解）。
+      // 保留平常的 +10（_scrollBy 的下界刻意比真正的 maxScroll 高 10px，靠的就是它）。
+      this.reflowViewportCutPx = 0;
+      if (this.reflow && cut > 0) {
+        var h = Math.max(this.chh * 3, this.chh * this.buf.rows - cut);
+        this.reflowViewportCutPx = this.chh * this.buf.rows - h;
+        this.mainDisplay.style.height = (h + 10) + 'px';
+      }
       this.mainDisplay.style.marginTop =
         (cut > 0 ? this.topInset : termLayoutOffsets(layoutInput).marginTop) + 'px';
     }
