@@ -6,7 +6,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { findCassette, bootOffline, replayCassette } = require('../helpers/replay');
-const { waitPreviewsSettled, scrollIntoViewStable, waitDialogSettled } = require('../helpers/layout');
+const { waitPreviewsSettled, scrollIntoViewStable, waitDialogSettled, waitRectStable } = require('../helpers/layout');
 
 const article = findCassette('article');
 
@@ -80,6 +80,38 @@ test.describe('手機 Phase 3：好讀文章換行版面（離線重放）', () 
     expect(g.docScrollWidth).toBeLessThanOrEqual(g.innerWidth);
     expect(g.wrapped).toBeGreaterThan(0);
     expect(await nawsCount(page)).toBe(0);
+  });
+
+  // 按鍵面板展開放不下：格線畫面是「底對齊、頂端推出畫面」，但好讀文章的 .main 是捲動容器，
+  // 推上去的那段躲在 App Bar 後面 ⇒ 捲到頂端時檔頭與前幾列永遠看不到。換行版面改成 .main
+  // 變矮、上緣貼 App Bar（同列表卡片，term_size.listViewportCut）。
+  test('按鍵面板展開：文章不躲進 App Bar 後面，捲到頂端看得到檔頭；收起面板回原高', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await expect.poll(() => page.evaluate(() => window.__app.view.reflow)).toBe(true);
+    await waitPreviewsSettled(page);
+    const before = await page.evaluate(() => document.querySelector('.main').clientHeight);
+
+    await page.locator('[data-key="__keys"]').tap();
+    const panel = await waitRectStable(page, '#mobileKeypad');
+    const bar = await waitRectStable(page, '#mobileAppBar');
+    const barBottom = bar.top + bar.height;
+    await page.evaluate(() => { document.querySelector('.main').scrollTop = 0; });
+    const main = await waitRectStable(page, '.main');
+    expect(main.top).toBeGreaterThanOrEqual(barBottom - 0.5);
+    // +10：.main 平常就比 chh*rows 高 10px（easy_reading._scrollBy 的下界靠它），縮的時候照留。
+    expect(main.top + main.height).toBeLessThanOrEqual(panel.top + 10.5);
+    const first = await page.evaluate(() => {
+      const r = document.querySelector('#mainContainer span[type="bbsrow"]').getBoundingClientRect();
+      return r.top;
+    });
+    expect(first).toBeGreaterThanOrEqual(barBottom - 1);
+
+    await page.locator('[data-key="__keys"]').tap();
+    await expect(page.locator('#mobileKeypad')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => document.querySelector('.main').clientHeight)).toBe(before);
   });
 
   test('進 functionMode（原生鏡像）／退出好讀 ⇒ 回到 Phase 2 的塞滿縮放', async ({ page }) => {
