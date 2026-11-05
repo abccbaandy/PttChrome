@@ -77,14 +77,29 @@ export function toolbarSlots(c) {
   return [first, second, 'refresh', 'end', 'keys', 'more'];
 }
 
-// 「更多」裡的文章導覽（label 是 i18n key）。
-export const THREAD_NAV_KEYS = Object.freeze([
-  { key: '[', label: 'mobileToolbar_threadPrev' },
-  { key: ']', label: 'mobileToolbar_threadNext' },
-  { key: '=', label: 'mobileToolbar_threadFirst' },
-  { key: 'b', label: 'mobileToolbar_articlePrev' },
-  { key: 'f', label: 'mobileToolbar_articleNext' }
+// 「更多」裡的文章導覽（label／short／title 是 i18n key）。P56：兩列成對排——「同主題：首篇｜前篇｜下篇」、
+// 「看板：前一篇｜下一篇」，前／下各配左右箭頭（dir：'first'｜'prev'｜'next'）。按鈕上只寫 short，
+// 完整名稱（label）給 aria-label。送的鍵不變。
+export const THREAD_NAV_GROUPS = Object.freeze([
+  Object.freeze({
+    title: 'mobileToolbar_navGroupThread',
+    keys: Object.freeze([
+      { key: '=', label: 'mobileToolbar_threadFirst', short: 'mobileToolbar_navFirst', dir: 'first' },
+      { key: '[', label: 'mobileToolbar_threadPrev', short: 'mobileToolbar_navPrevThread', dir: 'prev' },
+      { key: ']', label: 'mobileToolbar_threadNext', short: 'mobileToolbar_navNextThread', dir: 'next' }
+    ])
+  }),
+  Object.freeze({
+    title: 'mobileToolbar_navGroupBoard',
+    keys: Object.freeze([
+      { key: 'b', label: 'mobileToolbar_articlePrev', short: 'mobileToolbar_articlePrev', dir: 'prev' },
+      { key: 'f', label: 'mobileToolbar_articleNext', short: 'mobileToolbar_articleNext', dir: 'next' }
+    ])
+  })
 ]);
+export const THREAD_NAV_KEYS = Object.freeze(
+  THREAD_NAV_GROUPS.reduce((all, g) => all.concat(g.keys), [])
+);
 
 function isArticleList(facts) {
   if (facts.inputField) return false;

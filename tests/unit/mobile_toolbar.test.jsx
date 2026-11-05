@@ -304,6 +304,26 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(byKey("__threadNav")).toBeNull();
   });
 
+  // P56：「前一篇」「下一篇」不再被拆到兩列；同一組的前／下在同一列，箭頭標方向。
+  test("更多：文章導覽兩列成對——同主題（首篇｜前篇｜下篇）、看板（前一篇｜下一篇）", async () => {
+    renderBar(makeCore({ context: ARTICLE }));
+    await openMore();
+    const rows = [...byKey("__threadNav").querySelectorAll(".mobileToolbarNavRow")];
+    expect(rows).toHaveLength(2);
+    const keysOf = (r) => [...r.querySelectorAll("button")].map((b) => b.getAttribute("data-key"));
+    expect(keysOf(rows[0])).toEqual(["=", "[", "]"]);
+    expect(keysOf(rows[1])).toEqual(["b", "f"]);
+    expect(rows[0].querySelector(".mobileToolbarNavLabel").textContent).toBe(i18n("mobileToolbar_navGroupThread"));
+    expect(rows[1].querySelector(".mobileToolbarNavLabel").textContent).toBe(i18n("mobileToolbar_navGroupBoard"));
+    // 每顆都有方向圖示；完整名稱留在 aria-label。
+    for (const b of byKey("__threadNav").querySelectorAll("button")) expect(b.querySelector("svg")).not.toBeNull();
+    expect(byKey("[").getAttribute("aria-label")).toBe(i18n("mobileToolbar_threadPrev"));
+    expect(byKey("f").getAttribute("aria-label")).toBe(i18n("mobileToolbar_articleNext"));
+    // 「下」的箭頭在字後面、「前」在字前面。
+    expect(byKey("]").lastElementChild.tagName.toLowerCase()).toBe("svg");
+    expect(byKey("b").firstElementChild.tagName.toLowerCase()).toBe("svg");
+  });
+
   test("按下有觸覺回饋（navigator.vibrate 短震）", () => {
     const vibrate = vi.fn(() => true);
     const orig = Object.getOwnPropertyDescriptor(Navigator.prototype, "vibrate");

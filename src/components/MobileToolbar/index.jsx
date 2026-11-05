@@ -23,6 +23,9 @@ import {
   IconShare,
   IconSelectAll,
   IconPhotoUp,
+  IconChevronLeft,
+  IconChevronRight,
+  IconChevronsLeft,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import { readValuesWithDefault } from "../../js/pref_storage";
@@ -43,7 +46,7 @@ import {
 import {
   EMPTY_TOOLBAR_CONTEXT,
   TOOLBAR_KEYS,
-  THREAD_NAV_KEYS,
+  THREAD_NAV_GROUPS,
   toolbarSlots,
 } from "../../js/mobile_toolbar";
 import {
@@ -52,6 +55,13 @@ import {
   MORE_GRID_LABEL_KEYS,
 } from "./more_sheet_layout";
 import "./MobileToolbar.css";
+
+// 文章導覽按鈕的方向圖示（THREAD_NAV_GROUPS 的 dir）。
+const NAV_DIR_ICONS = {
+  first: IconChevronsLeft,
+  prev: IconChevronLeft,
+  next: IconChevronRight,
+};
 
 // 手機底部導覽（docs/mobile.md「底部導覽」）。只在 pttchrome.mobile 時渲染。
 // Material 風格：icon＋小字，動作依畫面換（App.onScreenContextChange ← mobile_toolbar.js）：
@@ -661,19 +671,30 @@ export const MobileToolbar = ({
     if (key === "__threadNav")
       return (
         <div key={key} className="mobileToolbarNavGrid" data-key="__threadNav">
-          {THREAD_NAV_KEYS.map((k) => (
-            <button
-              key={k.key}
-              type="button"
-              className="nomouse_command mobileSheetItem pttRipple"
-              data-key={k.key}
-              onClick={() => {
-                setPanel(null);
-                sendKey(k.key);
-              }}
-            >
-              {i18n(k.label)}
-            </button>
+          {THREAD_NAV_GROUPS.map((g) => (
+            <div key={g.title} className="mobileToolbarNavRow">
+              <span className="mobileToolbarNavLabel">{i18n(g.title)}</span>
+              {g.keys.map((k) => {
+                const Icon = NAV_DIR_ICONS[k.dir];
+                return (
+                  <button
+                    key={k.key}
+                    type="button"
+                    className="nomouse_command mobileSheetItem mobileToolbarNavBtn pttRipple"
+                    data-key={k.key}
+                    aria-label={i18n(k.label)}
+                    onClick={() => {
+                      setPanel(null);
+                      sendKey(k.key);
+                    }}
+                  >
+                    {k.dir !== "next" && <Icon size={18} stroke={2} aria-hidden="true" />}
+                    <span>{i18n(k.short)}</span>
+                    {k.dir === "next" && <Icon size={18} stroke={2} aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
           ))}
         </div>
       );
