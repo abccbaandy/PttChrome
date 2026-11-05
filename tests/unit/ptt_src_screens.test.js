@@ -153,6 +153,7 @@ import { editorInputAvailable } from "../../src/js/editor_input";
 import { openPromptText, openPromptHint } from "../../src/js/open_prompt";
 import liveRepeatPromptFx from "./fixtures/ptt_src_screens/live_repeat_prompt.json";
 import liveRepeatYesFx from "./fixtures/ptt_src_screens/live_repeat_yes.json";
+import editorPromptFx from "./fixtures/ptt_src_screens/editor_prompt.json";
 
 loadBig5Tables();
 
@@ -903,6 +904,38 @@ describe("upstream pttbbs 產的編輯器（edit.c，自己的文章按 E）", (
       inputPromptText: buf.inputPromptText(),
     });
     expect(esc.bytes).not.toBe("\x03");
+  });
+
+  // 編輯器裡 ^S 搜尋（edit.c#search_str）、F5 跳行、暫存檔這些 prompt 都是 getdata(b_lines - 1, …)：
+  // 底列的「編輯文章」caption 還在、pageState 還是 6。這時插入整段字＝打進 prompt，換行＝替使用者
+  // 回答（「區分大小寫(Y/N/Q)?」、暫存檔的「確定刪除嗎」）；上傳的網址也一樣會被打進去。
+  test("編輯器倒數第二列的 prompt：輸入框不出現、上傳網址走剪貼簿", () => {
+    const facts = (name) => {
+      const { buf, rowTexts } = screenAt(editorPromptFx, name, { perFrame: true });
+      return { buf, rowTexts };
+    };
+    for (const name of ["search", "search-typed", "case-prompt"]) {
+      const { buf, rowTexts } = facts(name);
+      expect(rowTexts[buf.rows - 1]).toMatch(/^ 編輯文章 /);
+      expect(rowTexts[buf.rows - 2]).toMatch(name === "case-prompt" ? /區分大小寫/ : /\[搜尋\]關鍵字:/);
+      expect(buf.pageState).toBe(6);
+      expect(buf.isEditorScreenNow()).toBe(true);
+      expect(buf.isEditorTypingNow()).toBe(false);
+      expect(
+        editorInputAvailable({ enabled: true, safeMode: false, pageState: buf.pageState, editorNow: buf.isEditorTypingNow() }),
+      ).toBe(false);
+      expect(
+        decideInsertMode({
+          pageState: buf.pageState,
+          lastRowText: rowTexts[buf.rows - 1],
+          cursorOnInputField: buf.isCursorOnInputField(),
+          hasTextTarget: false,
+        }),
+      ).toBe("clipboard");
+    }
+    // 對照組：同一個場景進 prompt 之前的編輯器本體
+    const { buf } = facts("edit");
+    expect(buf.isEditorTypingNow()).toBe(true);
   });
 
   // 上傳完的網址插到哪：image_upload.decideInsertMode（底列分類共用 classifyPushScreen）。

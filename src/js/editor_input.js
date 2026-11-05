@@ -21,9 +21,10 @@ export function isEditorInputTarget(el) {
   return !!(el && typeof el.closest === 'function' && el.closest('#' + EDITOR_INPUT_ID));
 }
 
-// 這一幀要不要有入口（純函式）。editorNow ＝本幀底列就是編輯器（buf.isEditorScreenNow）：
+// 這一幀要不要有入口（純函式）。editorNow ＝本幀打字會進內文（buf.isEditorTypingNow）：
 // pageState 6 會黏住，編輯器裡跳出的確認 prompt（^Q「結束但不儲存 [y/N]?」）底下還是 6，
-// 那時送字＝替使用者回答 prompt（首字 y 就整篇丟掉）。
+// 那時送字＝替使用者回答 prompt（首字 y 就整篇丟掉）；^S 搜尋、F5 跳行這類倒數第二列的
+// prompt 連底列的「編輯文章」都還在，只能靠游標在輸入欄上認。
 export function editorInputAvailable(facts) {
   const f = facts || {};
   return !!(f.enabled && !f.safeMode && f.pageState === EDITOR_PAGE_STATE && f.editorNow);
@@ -82,7 +83,7 @@ EditorInput.prototype = {
       enabled: !!prefs.enableEditorInput,
       safeMode: !!prefs.nativeSafeMode,
       pageState: core.buf ? core.buf.pageState : null,
-      editorNow: !!(core.buf && core.buf.isEditorScreenNow && core.buf.isEditorScreenNow())
+      editorNow: !!(core.buf && core.buf.isEditorTypingNow && core.buf.isEditorTypingNow())
     });
   },
 

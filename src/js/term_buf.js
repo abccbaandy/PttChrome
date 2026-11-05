@@ -1472,6 +1472,13 @@ TermBuf.prototype = {
     return isEditorFooter(this.getRowText(this.rows - 1, 0, this.cols));
   },
 
+  // 本幀打的字會進編輯器內文（不是進 prompt）：底列是編輯器、游標不在輸入欄。
+  // edit.c 的 ^S 搜尋、F5 跳行、暫存檔等 prompt 是 getdata(b_lines - 1, …)，底列的「編輯文章」
+  // caption 不會被清掉 ⇒ 只看底列會把 prompt 當成內文，替使用者送字／換行＝回答 prompt。
+  isEditorTypingNow: function() {
+    return this.isEditorScreenNow() && !this.isCursorOnInputField();
+  },
+
   // pager 現在是誰的：string_util.parsePagerFooterContext 讀底列，再加一條底列看不出來的：
   // 看板精華區（文章列表的 z，bbs.c#b_man）不 setutmpmode，currstat 還是 READING ⇒
   // footer 照印 pager_reading_cmds，跟看板文章一字不差；但那裡 s／#／Q／X／y 都只會讓

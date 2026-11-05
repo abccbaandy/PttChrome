@@ -88,13 +88,14 @@ export function parseUploadResponse(raw, status) {
 //   typeMenu 型別選單 vkey() 只吃 1 byte ⇒ 網址首字被當型別鍵吞掉；
 //   confirm  確定[y/N] ans 只吃 1 字元 ⇒ 非 y ＝整則推文靜默取消；
 //   angel／cooldown／fatal 橫幅同理都不是能打字的地方。
-export function decideInsertMode({ pageState, lastRowText, hasTextTarget }) {
+export function decideInsertMode({ pageState, lastRowText, cursorOnInputField, hasTextTarget }) {
   // 頁面上有註冊過的文字輸入目標（目前唯一的消費者是長推文輸入框）就一律插進去，
   // 而且**優先於** send：那個 modal 開著時底下的畫面是文章／文章列表，走 send 等於
   // 把網址的每個字元當成列表快捷鍵按下去。所以這是最優先，不是並列的第三個分支。
   if (hasTextTarget) return 'target';
   // pageState 6 會黏住（編輯器裡底列跳出 prompt 時還是 6）⇒ 底列本身也要是編輯器的。
-  if (pageState === 6 && isEditorFooter(lastRowText)) return 'send';
+  // 編輯器的 ^S 搜尋／F5 跳行是倒數第二列的 prompt，底列 caption 還在 ⇒ 游標在輸入欄上就不是內文。
+  if (pageState === 6 && isEditorFooter(lastRowText)) return cursorOnInputField ? 'clipboard' : 'send';
   if (lastRowText && classifyPushScreen([lastRowText], 1).kind === 'inputPrompt')
     return 'send';
   return 'clipboard';
