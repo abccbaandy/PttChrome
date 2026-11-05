@@ -598,7 +598,11 @@ export function appendBlacklistEntry(existing, entry) {
   for (let i = 0; i < lines.length; ++i) {
     if (lines[i].trim().toLowerCase() === lower) return null;
   }
-  const base = (existing || '').replace(/\n+$/, '');
+  // 去尾端換行用迴圈，不用 /\n+$/：中間有一長串換行時那個 regex 是平方時間（CodeQL js/polynomial-redos）。
+  const src = existing || '';
+  let end = src.length;
+  while (end > 0 && src.charCodeAt(end - 1) === 10) end--;
+  const base = src.slice(0, end);
   return base ? base + '\n' + trimmed : trimmed;
 }
 
