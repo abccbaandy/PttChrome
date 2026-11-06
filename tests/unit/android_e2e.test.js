@@ -315,6 +315,14 @@ describe("android spec：縮螢幕收尾", () => {
     expect(screenSizeRestored(physical, "mDisplayFrozen=true")).toBe(false);
     expect(screenSizeRestored("", "")).toBe(false);
   });
+  // CI 實際讀到的（android-34 google_apis）：有些 run 的 dumpsys window 根本沒有 mDisplayFrozen 這一欄，
+  // 只有 mLastDisplayFreezeDuration。舊判準只認 mDisplayFrozen=false ⇒ 這種 run 每次都空等滿 15s。
+  test("dumpsys 沒有 mDisplayFrozen 欄位、只有上次凍結紀錄 ⇒ 沒在凍結，算復原", () => {
+    const physical = "Physical size: 1080x2400\n";
+    expect(screenSizeRestored(physical, "    mLastDisplayFreezeDuration=0 due to new-config")).toBe(true);
+    expect(screenSizeRestored(physical + "Override size: 1080x1400\n", "mLastDisplayFreezeDuration=0 due to new-config")).toBe(false);
+    expect(screenSizeRestored(physical, "mDisplayFrozen=true\nmLastDisplayFreezeDuration=0 due to new-config")).toBe(false);
+  });
   const dir = path.join(ROOT, "tests/e2e/android");
   for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".spec.js"))) {
     test(f, () => {
