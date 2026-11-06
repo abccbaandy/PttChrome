@@ -353,6 +353,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileAppBarScrollTop",
     },
     {
+      key: "mobileAppBarArticleDetail",
+      titleKey: "options_mobileAppBarArticleDetail",
+      tooltipKey: "tooltip_mobileAppBarArticleDetail",
+    },
+    {
       key: "mobileCardHideTitleBox",
       titleKey: "options_mobileCardHideTitleBox",
       tooltipKey: "tooltip_mobileCardHideTitleBox",

@@ -1,8 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { i18n } from "../../js/i18n";
 import { EMPTY_APP_BAR } from "../../js/mobile_app_bar";
 import { scrollContentToTop } from "../../js/app_bar_scroll_top";
 import { readEffectivePrefs } from "../../js/pref_storage";
+import {
+  articleHeaderVisible,
+  articleBarText,
+} from "../../js/app_bar_article_header";
 import MessageInbox from "../MessageInbox";
 import "./MobileAppBar.css";
 
@@ -55,6 +59,41 @@ export const MobileAppBar = ({ pttchrome }) => {
     return pttchrome.onBusyChange((b) => setBusy(!!b));
   }, [pttchrome]);
 
+  // 好讀文章：檔頭卡片（標題）看不看得到（P58，js/app_bar_article_header.js）。
+  // 捲動（.main＝view.mainDisplay）與換畫面時重算，一幀最多一次；只讀版面。
+  const barRef = useRef(null);
+  const [headerVisible, setHeaderVisible] = useState(null);
+  const isArticle = mobile && appBar.kind === "article";
+  useEffect(() => {
+    if (!isArticle) {
+      setHeaderVisible(null);
+      return undefined;
+    }
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const bar = barRef.current;
+      const bottom = bar ? bar.getBoundingClientRect().bottom : 0;
+      setHeaderVisible(articleHeaderVisible(document, bottom));
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(measure);
+    };
+    schedule();
+    const scroller = pttchrome.view && pttchrome.view.mainDisplay;
+    if (scroller)
+      scroller.addEventListener("scroll", schedule, { passive: true });
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      if (scroller) scroller.removeEventListener("scroll", schedule);
+    };
+  }, [isArticle, appBar, pttchrome]);
+  const text = articleBarText(
+    appBar,
+    headerVisible,
+    !!readEffectivePrefs().mobileAppBarArticleDetail,
+  );
+
   // 點標題捲回頂端（app_bar_scroll_top.js）。新信徽章、收件匣不在這塊裡，點它們不捲。
   const onTitleClick = () => {
     if (!readEffectivePrefs().mobileAppBarScrollTop) return;
@@ -73,6 +112,7 @@ export const MobileAppBar = ({ pttchrome }) => {
   return (
     <header
       id="mobileAppBar"
+      ref={barRef}
       className="nomouse_command mobileAppBar"
       data-kind={homeVisible ? "home" : appBar.kind}
       onMouseDown={keepFocus}
@@ -85,11 +125,11 @@ export const MobileAppBar = ({ pttchrome }) => {
             ? i18n("home_title")
             : appBar.kind === "editor"
               ? i18n("mobileAppBar_editor")
-              : appBar.title || i18n("mobileAppBar_defaultTitle")}
+              : text.title || i18n("mobileAppBar_defaultTitle")}
         </div>
-        {!homeVisible && appBar.subtitle ? (
+        {!homeVisible && text.subtitle ? (
           <div className="mobileAppBarSubtitle" data-key="__subtitle">
-            {appBar.subtitle}
+            {text.subtitle}
           </div>
         ) : null}
       </div>

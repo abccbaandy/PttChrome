@@ -910,7 +910,9 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="enableListFastScroll"
                   checked={values.enableListFastScroll}
-                  disabled={values.nativeSafeMode || !values.enableEasyReadingList}
+                  disabled={
+                    values.nativeSafeMode || !values.enableEasyReadingList
+                  }
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableListFastScroll")}
@@ -1542,6 +1544,16 @@ export const PrefModal = ({
                     </PrefCheckbox>
                     <Text size="xs" c="dimmed" mb="xs">
                       {i18n("tooltip_mobileAppBarScrollTop")}
+                    </Text>
+                    <PrefCheckbox
+                      name="mobileAppBarArticleDetail"
+                      checked={values.mobileAppBarArticleDetail}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobileAppBarArticleDetail")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobileAppBarArticleDetail")}
                     </Text>
                     <PrefCheckbox
                       name="mobileCardHideTitleBox"

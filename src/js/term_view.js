@@ -11,7 +11,7 @@ import { renderOverlayRow, renderScreen } from './term_ui';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText, parseStatusUserid } from './string_util';
-import { rowToText, articleContextFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, isShortPageGrowth, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, COMMENT_TYPE_FILTER_PREFIX, FilterChipCounter } from './comment_parse';
+import { rowToText, articleContextFromScreen, articleBylineFromScreen, findPageOverlap, resolvePageOverlap, decideAccumulateBranch, classifyPageTransition, isShortPageGrowth, decideReverseBranch, resolveJoinOverlap, locateScreenInPage, pageArticleNums, isPinnedListRow, parseListArticleNumLoose, hasServerCursorMark, COMMENT_TYPE_FILTER_PREFIX, FilterChipCounter } from './comment_parse';
 import { mergeListPage, flattenListBuffer, evictListBuffer, listGrowthDir, listNumRange, isHiddenListRow, pinnedRowKey, MAX_LIST_ROWS, MAX_LIST_TOTAL_ROWS, isLastReadStyledListRow, normalizeLastReadListRow, paintLastReadListRow, subjectOfListRow } from './list_session';
 import { labelListCursor, pruneListToSegment, LIST_HEADER_ROWS } from './list_window';
 import { BRD_HEADER_ROWS, boardListRowNums, classifyBoardListScreen } from './board_list_parse';
@@ -443,6 +443,8 @@ export function TermView() {
   this._articleBoard = null;
   // 文章檔頭「標題」列（同一個 header 事件），手機 App Bar 的標題。
   this._articleTitle = null;
+  // 同一個檔頭事件的作者 id（原大小寫）＋發文時間，手機 App Bar 捲過檔頭後的副標（P58）。
+  this._articleByline = null;
   this.onAidClick = null;
   // 「開燈」需要切 pmore 色彩顯示模式時的入口（App 指派，見 pttchrome.jsx）。
   this.onLightsRawMode = null;
@@ -779,6 +781,7 @@ TermView.prototype = {
   // 離開文章時整組清空（App 的 screenSettled，comment_parse.shouldClearArticleContextOnSettle）。
   clearArticleContext: function() {
     this._setArticleContext({ author: null, board: null, title: null });
+    this._articleByline = null;
   },
 
   redraw: function(force) {
@@ -808,7 +811,12 @@ TermView.prototype = {
         rowToText(lines[0]),
         lines[1] ? rowToText(lines[1]) : '',
         parseStatusRow(rowToText(lines[rows - 1])));
-      if (ctx) this._setArticleContext(ctx);
+      if (ctx) {
+        this._setArticleContext(ctx);
+        // 檔頭列 ⇒ 作者＋時間；沒有檔頭的首頁（ctx 是清空）⇒ null。
+        this._articleByline = articleBylineFromScreen(
+          rowToText(lines[0]), lines[2] ? rowToText(lines[2]) : '');
+      }
     } else {
       // Leaving the article clears any pusher highlight selection. 只設欄位就好：
       // 這裡跑在 _renderScreenLines **之前**，下面那次 render 會把新值同步進

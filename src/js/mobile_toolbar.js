@@ -163,6 +163,7 @@ export function mobileToolbarContext(core) {
     editorTitle: editorSave,
     articleTitle: view._articleTitle,
     articleBoard: view._articleBoard,
+    articleByline: view._articleByline,
     prev: prev,
     connected: !!(core && core.conn && core.conn.isConnected),
     listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor()),

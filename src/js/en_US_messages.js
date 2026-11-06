@@ -1880,6 +1880,12 @@ export const en_US = {
   "tooltip_mobileAppBarScrollTop": {
     "message": "In the mobile layout, tapping the title at the top scrolls the article, list or home page back to the top. It only scrolls; no keys are sent."
   },
+  "options_mobileAppBarArticleDetail": {
+    "message": "Mobile article title bar: show the author after scrolling"
+  },
+  "tooltip_mobileAppBarArticleDetail": {
+    "message": "While the article title is on screen, the top bar shows only the board name; once it scrolls away, the bar shows the title and \"author · board · post time\". It only changes the bar's text; no keys are sent."
+  },
   "options_mobileCardHideTitleBox": {
     "message": "Hide the \"□\" before titles on mobile article cards"
   },

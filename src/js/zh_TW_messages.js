@@ -1879,6 +1879,12 @@
   "tooltip_mobileAppBarScrollTop": {
     "message": "手機版面點最上面的標題，文章、列表或首頁就捲回最上面。只捲畫面，不會送任何按鍵。"
   },
+  "options_mobileAppBarArticleDetail": {
+    "message": "手機文章標題列：捲下去後顯示作者"
+  },
+  "tooltip_mobileAppBarArticleDetail": {
+    "message": "文章標題還在畫面上時，最上面只寫看板名；捲到看不到標題後，換成標題和「作者 · 看板 · 發文時間」。只改標題列的文字，不會送任何按鍵。"
+  },
   "options_mobileCardHideTitleBox": {
     "message": "手機文章卡片拿掉標題前的「□」"
   },
