@@ -13,7 +13,7 @@ import {
   parseArticleTitle,
   parseComment,
   parseModernCommentHeader,
-  MODERN_COMMENT_BODY_MARK,
+  modernCommentBodyText,
 } from './comment_parse';
 import { COMMENT_TIME_RE, charCells } from './string_util';
 
@@ -94,13 +94,20 @@ export function parseCommentLine(text) {
 }
 
 // 新格式推文（post.svc，見 comment_parse.parseModernCommentHeader）的標頭列 →
-// { type: 'modern', seq, user, content: '', ip, time }；內容由呼叫端把緊接的 `│` 列接上。
-// 時間是 creation 原樣（`MM/DD/YYYY HH:MM`），與舊格式的 `MM/DD HH:MM` 不同形。
+// { type: 'modern', seq, user, content, ip, time }；續行由呼叫端用 modernCommentBodyText 接上。
+// 時間是 creation 原樣（`MM/DD/YYYY HH:MM`），與舊格式的 `MM/DD HH:MM` 不同形；87c3a1f3 之後
+// 塞不下時 pmore 會退成 `MM/DD HH:MM` 或只有 `HH:MM`，照畫面給。內容在標頭列上（之前是空的）。
 const MODERN_TAIL_RE = /(?:\s(\d{1,3}(?:\.\d{1,3}){3}))?\s+(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})\s*$/;
 export function parseModernCommentLine(text) {
   const h = parseModernCommentHeader(text);
   if (!h) return null;
-  // 刪除的推文：單列，內容就是「留言已刪除」／「留言不顯示 (原因)」，沒有時間。
+  // 87c3a1f3 之後：內容、IP、時間都在標頭列上；刪除的內容是「留言已刪除」／「留言已隱藏 (原因)」。
+  if (h.bodyCol != null) {
+    const c = { type: 'modern', seq: h.seq, user: h.user, content: h.content, ip: h.ip, time: h.time, bodyCol: h.bodyCol };
+    if (h.deleted) c.deleted = true;
+    return c;
+  }
+  // 之前的刪除推文：單列，內容就是「留言已刪除」／「留言不顯示 (原因)」，沒有時間。
   if (h.deleted) return { type: 'modern', seq: h.seq, user: h.user, content: h.deleted, ip: null, time: null, deleted: true };
   const t = text.match(MODERN_TAIL_RE);
   return {
@@ -142,18 +149,20 @@ export function parseArticleLines(lines) {
   }
   const body = [];
   const comments = [];
-  let modern = null; // 新格式推文：目前這一則（後面的 `│` 列是它的內容）
+  let modern = null; // 新格式推文：目前這一則
+  let modernHead = null; // 它的續行怎麼認（modernCommentBodyText）；刪除的沒有續行
   for (; i < lines.length; i++) {
     const text = lines[i];
-    if (modern && text.charAt(0) === MODERN_COMMENT_BODY_MARK) {
-      // 內容列的縮排：舊版 pmore 是「│」，現行 comments.c 的 body_indent 是「│ 」（檔案的 2 格
-      // 空白換掉之後才是原文）⇒ 只吃掉緊接的一格空白，原文自己的縮排留著。
-      const part = text.slice(1).replace(/^ /, '').trimEnd();
+    const part = modernHead ? modernCommentBodyText(text, modernHead) : null;
+    if (part != null) {
       modern.content = modern.content ? modern.content + '\n' + part : part;
       continue;
     }
+    modernHead = null;
     modern = parseModernCommentLine(text);
     if (modern) {
+      if (!modern.deleted) modernHead = { bodyCol: modern.bodyCol };
+      delete modern.bodyCol;
       comments.push(modern);
       continue;
     }

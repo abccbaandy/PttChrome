@@ -12,7 +12,7 @@
 
 import { parseArticleHeader, mentionsUser } from './comment_parse';
 import { parseCommentLine, parseModernCommentLine } from './agent_parse';
-import { MODERN_COMMENT_BODY_MARK } from './comment_parse';
+import { modernCommentBodyText } from './comment_parse';
 import { RE_IMAGE_EXT, RE_IMGUR_SINGLE, RE_TWIMG, RE_TENOR } from './image_url_detect';
 import { getImageProxyConfig, imgurCandidates, twimgCandidates, twimgOrigFormat } from './image_proxy';
 import { aidToFn } from './aid_codec';
@@ -78,6 +78,7 @@ export function analyzeArticle(lines, config, selfId) {
   const images = [];
   const seen = new Set();
   let modern = null;
+  let modernHead = null; // 目前這一則的續行怎麼認（comment_parse.modernCommentBodyText）
   for (let row = 0; row < t.length; row++) {
     const text = t[row] || '';
     if (images.length < IMAGE_LIMIT) {
@@ -89,15 +90,18 @@ export function analyzeArticle(lines, config, selfId) {
         images.push({ url, row, thumbs });
       }
     }
-    if (modern && text.charAt(0) === MODERN_COMMENT_BODY_MARK) {
-      const part = text.slice(1).trim();
-      modern.content = modern.content ? modern.content + ' ' + part : part;
+    const part = modernHead ? modernCommentBodyText(text, modernHead) : null;
+    if (part != null) {
+      const p = part.trim();
+      modern.content = modern.content ? modern.content + ' ' + p : p;
       continue;
     }
     modern = null;
+    modernHead = null;
     let c = parseModernCommentLine(text);
     if (c) {
       stats.modern++;
+      if (!c.deleted) modernHead = { bodyCol: c.bodyCol };
     } else {
       c = parseCommentLine(text);
       if (!c) continue;

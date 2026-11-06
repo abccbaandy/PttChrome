@@ -466,7 +466,8 @@ static void seed(const char *path)
             SHM->bcache[bid - 1].bupdate = FIXED_NOW;
         } else if (f[0][0] == 'T' && n >= 2) {
             // 文章檔尾的一列（原樣，含行首空白）：發信站「※ 」列與 post.svc 的新格式推文
-            // （"[N] id creation"＋"  內容"）。pmore 從最後一個「※ 」列之後畫成推文。
+            // （upstream 87c3a1f3 起 "|id[!]|內容|ip 日期 時間|[~]N"＋"| 續行"；之前是 "[N] id creation"＋"  內容"）。
+            // pmore 從最後一個「※ 」列之後畫成推文。
             if (!last_article[0]) die("T before A");
             FILE *tf = fopen(last_article, "a");
             if (!tf) die("article append");

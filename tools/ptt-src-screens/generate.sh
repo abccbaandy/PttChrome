@@ -52,8 +52,12 @@ for o in *.o; do
 done
 # fileheader_t 的推文數欄位：upstream b500faf 把 char pad＋char recommend 併成 int16_t rating（畫面不變）。
 # 新舊 upstream 都要編得過 ⇒ 看 header 決定 driver 寫哪個欄位。
+# upstream 8d5a7928 再把 rating 改名 score（一樣是淨推數，畫面不變）。
+SCORE_RE='^[[:space:]]*int16_t[[:space:]]+score;'
 RATING_RE='^[[:space:]]*int16_t[[:space:]]+rating;'
-if grep -Eq "$RATING_RE" ../include/pttstruct.h; then FH_RATING=rating; else FH_RATING=recommend; fi
+if grep -Eq "$SCORE_RE" ../include/pttstruct.h; then FH_RATING=score
+elif grep -Eq "$RATING_RE" ../include/pttstruct.h; then FH_RATING=rating
+else FH_RATING=recommend; fi
 # boardheader_t 的板主：upstream 653523c 把 char BM[] 換成 user_t moderators[]（見 driver.c#set_moderators）。
 if grep -Eq '^[[:space:]]*user_t[[:space:]]+moderators\[' ../include/pttstruct.h; then BH_MODERATORS=1; else BH_MODERATORS=0; fi
 # 等鍵也等 IPC service fd：upstream acee9aa 起沒連上時改成有逾時的等待（見 driver.c 的 HAS_IPC_FD）。
