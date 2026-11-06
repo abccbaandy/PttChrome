@@ -170,14 +170,51 @@ export function isBlacklistableUserId(id) {
 // - 刪除的推文（engine.go#RenderFullPostText）改成單列 `[N] id 留言已刪除`（本人刪）或
 //   `[N] id 留言不顯示 (<原因>)`（別人刪），沒有 creation、沒有內容列。
 //   comment_render_modern_header 認「留言」開頭，照樣畫成標頭列。
-// 兩者都由 upstream 原始碼產的畫面守（ptt_src_screens.test.js 的 modern_comments）。
+// 兩者都由 upstream 原始碼產的畫面守（ptt_src_screens_legacy/modern_comments_768b172a.json）。
+//
+// upstream 87c3a1f3（11/05）再改一次，檔案與畫面都換了（CONFIRMED，同樣新舊都吃）：
+// - 檔案（engine.go#RenderFullPostText）："|id[!]|第一行內容|creation|[~]N" ＋ 續行 "| 內容"；
+//   ! ＝刪除（內容是「留言已刪除」或「留言已隱藏 (原因)」，沒有續行），~ ＝改過。
+// - 畫面（comments.c#comment_render_modern_header）：`id: 內容` ＋ 空白填到右邊 ＋ 灰色 meta
+//   ＋ ` [N]`（改過是 `[~N]`），樓號永遠貼右邊 79 欄。對齊顯示主題 id 靠右對齊到 IDLEN（12）
+//   格，其餘主題從第 0 欄起。meta 照塞得下的程度依序退成「IP 日期 時間」「IP 月/日 時間」「日期 時間」
+//   「月/日 時間」「時間」，再塞不下就整段不印（內容太長時連樓號都不印）。
+// - 續行：前面空白縮到內容起始欄（id 寬＋2；對齊顯示是 14），不再有「│」。
+// 認法：要有列尾 ` [N]` 與它前面的 HH:MM —— 內文裡「someone: 某句話」這類寫法沒有；
+// meta 整段被擠掉的極長推文就不認（fail-safe：當一般內文，最多少藏一則）。
+const PIPE_COMMENT_HEADER_RE =
+  /^( *)([A-Za-z][0-9A-Za-z]{1,11}): (.*?) +(?:(\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+) )?(?:(\d{2}\/\d{2}(?:\/\d{4})?) )?(\d{2}:\d{2}) \[~?(\d+)\]\s*$/;
+const PIPE_TOMBSTONE_RE = /^(留言已刪除|留言已隱藏(?: \(.*\))?)$/;
+const PTT_IDLEN = 12;
+function parsePipeCommentHeader(text) {
+  const m = PIPE_COMMENT_HEADER_RE.exec(text);
+  if (!m) return null;
+  const pad = m[1].length;
+  const id = m[2];
+  // 對齊顯示：前面的空白剛好把 id 補到 IDLEN 格；其他主題從第 0 欄。其餘縮排都不是 pmore 畫的。
+  if (pad !== 0 && pad + id.length !== PTT_IDLEN) return null;
+  const content = m[3].trimEnd();
+  const h = {
+    seq: parseInt(m[7], 10),
+    userid: id.toLowerCase(),
+    user: id,
+    idCol: pad,
+    bodyCol: pad + id.length + 2,
+    content,
+    ip: m[4] || null,
+    time: m[5] ? m[5] + ' ' + m[6] : m[6],
+  };
+  if (PIPE_TOMBSTONE_RE.test(content)) h.deleted = content;
+  return h;
+}
+
 const MODERN_COMMENT_HEADER_RE =
   /^((?:[╭├] )?)\[(\d+)\] ([A-Za-z][0-9A-Za-z]{1,11}) (?:.*\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}|(留言已刪除|留言不顯示 \(.*\)))\s*$/;
 export const MODERN_COMMENT_BODY_MARK = '│';
 export function parseModernCommentHeader(text) {
   if (!text) return null;
   const c0 = text.charCodeAt(0);
-  if (c0 !== 0x5b && c0 !== 0x256d && c0 !== 0x251c) return null; // [ ╭ ├
+  if (c0 !== 0x5b && c0 !== 0x256d && c0 !== 0x251c) return parsePipeCommentHeader(text); // [ ╭ ├
   const m = MODERN_COMMENT_HEADER_RE.exec(text);
   if (!m) return null;
   const h = {
@@ -190,12 +227,29 @@ export function parseModernCommentHeader(text) {
   return h;
 }
 
-// 新格式一則推文的「目前這一則」狀態：標頭列設定，緊接的 `│` 內容列沿用，其他列結束。
+// 新格式一則推文的內容續行 → 去掉縮排的原文；不是這一則的續行 ⇒ null。
+// h ＝這一則的標頭（parseModernCommentHeader 的結果，或 ModernCommentThread）。
+// 87c3a1f3 之後（h.bodyCol 有值）：前面剛好 bodyCol 格空白、接著不是空白。
+// 之前：「│」開頭（現行 body_indent「│ 」⇒ 只吃掉緊接的一格空白，原文自己的縮排留著）。
+export function modernCommentBodyText(text, h) {
+  if (!text || !h) return null;
+  if (h.bodyCol != null) {
+    const n = h.bodyCol;
+    if (text.length <= n || text.charAt(n) === ' ') return null;
+    for (let i = 0; i < n; i++) if (text.charAt(i) !== ' ') return null;
+    return text.slice(n).trimEnd();
+  }
+  if (text.charAt(0) !== MODERN_COMMENT_BODY_MARK) return null;
+  return text.slice(1).replace(/^ /, '').trimEnd();
+}
+
+// 新格式一則推文的「目前這一則」狀態：標頭列設定，緊接的內容續行沿用，其他列結束。
 // 只往前推（同 FloorCounter），由 computeAnnotations 持有生命週期。
 export class ModernCommentThread {
   constructor() {
     this.userid = null;
     this.hidden = false;
+    this.bodyCol = null;
   }
 }
 
@@ -312,7 +366,7 @@ function markAuthorId(result, userid, idCol, ctx) {
 // 新格式推文（見 parseModernCommentHeader）。標頭列：推文者／黑名單／原PO 高亮，
 // **不給樓層**（`[N]` 就是 server 給的樓號）、不給推文可點區欄位（沒有內容欄）。
 // `modern: true` 讓 comment_merge.groupSameAuthorRuns 不把它當舊格式推文合併。
-// 內容列（`│` 開頭）：該則被黑名單藏起來時回 { hidden }；內容提到我（ctx.selfId）時回
+// 內容續行（modernCommentBodyText）：該則被黑名單藏起來時回 { hidden }；內容提到我（ctx.selfId）時回
 // { mentionsSelf }；其餘回 null。
 // 沒有 ctx.modernThread（反向讀取的 tail）時內容列一律不標 ⇒ 最多少藏幾列，不會藏錯。
 function annotateModernComment(text, ctx) {
@@ -320,13 +374,14 @@ function annotateModernComment(text, ctx) {
   const h = parseModernCommentHeader(text);
   if (!h) {
     if (thread && thread.userid) {
-      if (text && text.charAt(0) === MODERN_COMMENT_BODY_MARK) {
+      const body = modernCommentBodyText(text, thread);
+      if (body != null) {
         if (thread.hidden)
           return thread.filtered
             ? { hidden: true, modernBody: true, filtered: true }
             : { hidden: true, modernBody: true };
         // 提到我：標在含那段字的 │ 內容列（標頭列只有帳號與時間）。
-        if (thread.userid !== ctx.selfId && mentionsUser(text.slice(1), ctx.selfId)) {
+        if (thread.userid !== ctx.selfId && mentionsUser(body, ctx.selfId)) {
           return { hidden: false, modernBody: true, mentionsSelf: true };
         }
         return null;
@@ -342,10 +397,15 @@ function annotateModernComment(text, ctx) {
     thread.userid = h.userid;
     thread.hidden = hidden;
     thread.filtered = filtered;
+    thread.bodyCol = h.bodyCol != null ? h.bodyCol : null;
   }
   const result = { type: 'modern', modern: true, userid: h.userid, hidden, pusher: h.userid };
   if (filtered) result.filtered = true;
-  if (!hidden) markAuthorId(result, h.userid, h.idCol, ctx);
+  if (!hidden) {
+    markAuthorId(result, h.userid, h.idCol, ctx);
+    // 87c3a1f3 之後內容就在標頭列上（「id: 內容」）。
+    if (h.content && h.userid !== ctx.selfId && mentionsUser(h.content, ctx.selfId)) result.mentionsSelf = true;
+  }
   return result;
 }
 

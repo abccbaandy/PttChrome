@@ -1379,7 +1379,16 @@ pmore 只在 `comments_start`（檔案最後一個 `※ ` 開頭行之後）且 
   `comment_render_body_prefix`；內容列縮排是 `│ `（多一格空白）。留言色彩主題（`bpref.comment_theme`，pmore 設定頁 `c`）：
   經典醒目（預設）／單純易讀只換顏色；**典雅邊框**在標頭列前加 `╭ `（第一則）／`├ `（其他）、id 與 creation 之間用 `─` 填。
   刪除的推文改成單列 `[N] id 留言已刪除`（本人刪）／`[N] id 留言不顯示 (<原因>)`（別人刪），沒有 creation、沒有內容列。
-  三種主題與刪除列都由 upstream 原始碼產的畫面守（`ptt_src_screens.test.js` 的 `modern_comments`）。
+  三種主題與刪除列都由 upstream 原始碼產的畫面守（`ptt_src_screens_legacy/modern_comments_768b172a.json`）。
+- **87c3a1f3（11/05）檔案與畫面都再換一次（新舊都吃）**：
+  - 檔案（`engine.go`）：`|id[!]|第一行內容|creation|[~]N` ＋ 續行 `| 內容`。`!`＝刪除（內容「留言已刪除」或
+    「留言已隱藏 (<原因>)」，沒有續行），`~`＝改過。
+  - 畫面（`comments.c#comment_render_modern_header`）：`id: 內容` ＋ 空白填 ＋ 灰色 meta ＋ ` [N]`／` [~N]`，樓號貼右邊
+    （`max_width` = 79）。meta 依塞得下的程度退成「IP 日期 時間」→「IP 月/日 時間」→「日期 時間」→「月/日 時間」→「時間」→
+    不印；內容太長時連樓號都不印。第三個主題改名**對齊顯示**：id 前補空白到 `IDLEN`（12）格、不再有 `╭ ├ ─`。
+  - 續行（`comment_render_body_prefix`）：印 `cur_header_width`（id 寬＋2；對齊顯示 14）格空白再接原文，不再有 `│`。
+  - client 認法：列尾 ` [N]` 前要有 `HH:MM`、前導空白只能是 0 或補到 12 格；續行要剛好縮到內容欄。meta 被擠光的極長推文
+    不認（fail-safe）。由 `ptt_src_screens/modern_comments.json`（現行 seed）守。
 - **終端推文仍是舊格式**：`bbs.c#comment` → `post.c#CommentAddRecord` 寫的是 `FormatCommentString` 那一列。
   ⇒ 一篇文章可以「上半舊格式、下半新格式」並存；兩種都要認。
 - client：`comment_parse.parseModernCommentHeader`（要求列尾 creation，80 欄下一定塞得下；id 照 `is_validuserid`）、

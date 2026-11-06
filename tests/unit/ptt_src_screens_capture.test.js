@@ -50,17 +50,26 @@ test("driver.c 的 WAIT_MARK 跟 capture.mjs 同一串，且 generate.sh 用 --w
   expect(gen).toContain("--wrap=read,--wrap=select,--wrap=poll");
 });
 
-test("fileheader_t 推文數欄位新舊 header 都編得過：driver.c 只經 FH_RATING 寫，generate.sh 依 header 選 rating／recommend", () => {
+test("fileheader_t 推文數欄位新舊 header 都編得過：driver.c 只經 FH_RATING 寫，generate.sh 依 header 選 score／rating／recommend", () => {
   const dir = path.join(__dirname, "../../tools/ptt-src-screens");
   const c = fs.readFileSync(path.join(dir, "driver.c"), "utf8");
-  expect(c).not.toMatch(/\.(recommend|rating)\b/);
+  expect(c).not.toMatch(/\.(recommend|rating|score)\b/);
   expect(c).toContain("fh.FH_RATING =");
   const gen = fs.readFileSync(path.join(dir, "generate.sh"), "utf8");
   expect(gen).toContain('-DFH_RATING="$FH_RATING"');
-  const re = new RegExp(gen.match(/^RATING_RE='([^']*)'$/m)[1].replaceAll("[[:space:]]", "\\s"), "m");
-  // upstream b500faf 前後的 fileheader_t
-  expect(re.test("    time4_t modified;\n    int16_t rating;                  /* was pad + recommend */\n")).toBe(true);
-  expect(re.test("    char    pad;\t\t     /* padding */\n    char    recommend;               /* important level */\n")).toBe(false);
+  const reOf = (name) => new RegExp(gen.match(new RegExp(`^${name}='([^']*)'$`, "m"))[1].replaceAll("[[:space:]]", "\\s"), "m");
+  const score = reOf("SCORE_RE");
+  const rating = reOf("RATING_RE");
+  // upstream 8d5a7928 後、b500faf 後、b500faf 前的 fileheader_t
+  const nowH = "    time4_t modified;\n    int16_t score;                   /* net votes (upvotes - downvotes); was pad + recommend */\n";
+  const midH = "    time4_t modified;\n    int16_t rating;                  /* was pad + recommend */\n";
+  const oldH = "    char    pad;\t\t     /* padding */\n    char    recommend;               /* important level */\n";
+  expect([score.test(nowH), rating.test(nowH)]).toEqual([true, false]);
+  expect([score.test(midH), rating.test(midH)]).toEqual([false, true]);
+  expect([score.test(oldH), rating.test(oldH)]).toEqual([false, false]);
+  // 先認 score 再認 rating，都沒有才是 recommend
+  expect(gen.indexOf('"$SCORE_RE"')).toBeGreaterThan(-1);
+  expect(gen.indexOf('"$SCORE_RE"')).toBeLessThan(gen.indexOf('"$RATING_RE"'));
 });
 
 test("送鍵之後沒有任何輸出 ⇒ CaptureError（鍵在 upstream 失效，不存空幀）", async () => {

@@ -35,6 +35,7 @@ import {
 } from "../../src/js/comment_parse";
 import { parseArticleLines } from "../../src/js/agent_parse";
 import modernCommentsFx from "./fixtures/ptt_src_screens/modern_comments.json";
+import modernCommentsLegacyFx from "./fixtures/ptt_src_screens_legacy/modern_comments_768b172a.json";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
 import articleListTallFx from "./fixtures/ptt_src_screens/article_list_tall.json";
@@ -752,7 +753,8 @@ describe("upstream pttbbs 產的 pmore 設定頁（o 完整設定、\\ 快速設
   test("完整設定頁多出「留言色彩主題」列（upstream f30655b，同樣三段＋*）不會被當成色彩顯示方式", () => {
     for (const name of ["pref", "pref-cycled"]) {
       const theme = rows(name).find((t) => t.includes("留言色彩主題"));
-      expect(theme, name).toMatch(/\*經典醒目 \| 單純易讀 \| 典雅邊框/);
+      // 第三個主題 87c3a1f3 從「典雅邊框」改名「對齊顯示」
+      expect(theme, name).toMatch(/\*經典醒目 \| 單純易讀 \| 對齊顯示/);
     }
     // 循環的是色彩顯示方式：主題列的 * 停在第 0 段，讀到的仍是第 1 段（原始ANSI控制碼）
     expect(parseRawModeFromPrefRow(rows("pref-cycled"))).toBe(MFDISP_RAW_NOANSI);
@@ -1674,7 +1676,30 @@ describe("upstream pttbbs 產的離站流程（xyz.c#Goodbye）", () => {
   });
 });
 
-describe("upstream pttbbs 產的新格式推文（post.svc 檔尾＋pmore 三種留言色彩主題）", () => {
+// 兩代格式都守（PTT 實跑私有 commit，哪一代先上線未知）：
+// - 87c3a1f3 之後（seed.tsv 現行）：檔案 "|id[!]|內容|creation|[~]N"，畫面「id: 內容 … meta [N]」，
+//   續行縮到內容欄；第三個主題「對齊顯示」把 id 靠右對齊到 12 格。
+// - 768b172a 之前（legacy fixture）：檔案 "[N] id creation"＋"  內容"，畫面「[N] id … creation」＋「│」內容列；
+//   第三個主題「典雅邊框」加「╭ 」「├ 」。
+const MODERN_COMMENT_GENERATIONS = [
+  {
+    label: "87c3a1f3 之後（id: 內容 … [N]）",
+    fx: modernCommentsFx,
+    headerOf: (id) => new RegExp(`^ *${id}: `),
+    bobBodyRows: 1,
+    hiddenReason: "留言已隱藏 (廣告)",
+  },
+  {
+    label: "768b172a 之前（[N] id … creation）",
+    fx: modernCommentsLegacyFx,
+    headerOf: (id) => new RegExp(`\\[\\d\\] ${id} `),
+    bobBodyRows: 2,
+    hiddenReason: "留言不顯示 (廣告)",
+  },
+];
+
+describe.each(MODERN_COMMENT_GENERATIONS)("upstream pttbbs 產的新格式推文（post.svc 檔尾＋pmore 三種留言色彩主題）：$label", (gen) => {
+  const { fx: modernCommentsFx } = gen;
   // seed.tsv 的 Comment 板：作者 nina；[1] alice（帶 IP）、[2] bob（兩列內容）、[3] nina（原PO）、
   // [4] carol 本人刪、[5] dave 別人刪、[6] erin。
   const annotate = (rowTexts, blacklist) => {
@@ -1703,16 +1728,17 @@ describe("upstream pttbbs 產的新格式推文（post.svc 檔尾＋pmore 三種
 
       test("黑名單連內容列一起藏；刪除的推文那一列也藏", () => {
         const a = annotate(rowTexts, ["bob", "carol"]);
-        const bob = rowOf(rowTexts, /\[2\] bob /);
-        expect([a[bob], a[bob + 1], a[bob + 2]].map((x) => x && x.hidden)).toEqual([true, true, true]);
-        expect(a[bob + 3]).toMatchObject({ userid: "nina", hidden: false });
-        expect(a[rowOf(rowTexts, /\[4\] carol /)]).toMatchObject({ hidden: true });
-        expect(a[rowOf(rowTexts, /\[5\] dave /)]).toMatchObject({ hidden: false });
+        const bob = rowOf(rowTexts, gen.headerOf("bob"));
+        const n = gen.bobBodyRows;
+        expect(a.slice(bob, bob + 1 + n).map((x) => x && x.hidden)).toEqual(Array(1 + n).fill(true));
+        expect(a[bob + 1 + n]).toMatchObject({ userid: "nina", hidden: false });
+        expect(a[rowOf(rowTexts, gen.headerOf("carol"))]).toMatchObject({ hidden: true });
+        expect(a[rowOf(rowTexts, gen.headerOf("dave"))]).toMatchObject({ hidden: false });
       });
 
-      test("原PO 高亮的 id 欄落在畫面上 id 的那幾格（典雅邊框的「╭ 」「├ 」佔 3 格）", () => {
+      test("原PO 高亮的 id 欄落在畫面上 id 的那幾格（典雅邊框的「╭ 」「├ 」佔 3 格、對齊顯示靠右補到 12 格）", () => {
         const a = annotate(rowTexts, []);
-        const row = rowOf(rowTexts, /\[3\] nina /);
+        const row = rowOf(rowTexts, gen.headerOf("nina"));
         const { authorIdStart, authorIdEnd } = a[row];
         expect(buf.getRowText(row, authorIdStart, authorIdEnd)).toBe("nina");
       });
@@ -1724,10 +1750,11 @@ describe("upstream pttbbs 產的新格式推文（post.svc 檔尾＋pmore 三種
           [2, "bob", "第二則推文第一行\n第二行回 >>1"],
           [3, "nina", "原PO回覆"],
           [4, "carol", "留言已刪除"],
-          [5, "dave", "留言不顯示 (廣告)"],
+          [5, "dave", gen.hiddenReason],
           [6, "erin", "最後一則"],
         ]);
         expect(comments[0]).toMatchObject({ ip: "1.2.3.4", time: "10/28/2026 12:00" });
+        expect(comments.filter((c) => c.deleted).map((c) => c.user)).toEqual(["carol", "dave"]);
       });
     });
   }

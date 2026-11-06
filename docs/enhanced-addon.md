@@ -10,7 +10,8 @@
   **必須**結尾有時間戳 `COMMENT_TIME_RE=/\s\d{1,2}\/\d{2}\s+\d{2}:\d{2}\s*$/`（`string_util.js`，與 `push_screen.js` 共用），
   用以排除「內文中的推文格式文字（無時間戳）」與「`※ 編輯: … MM/DD/YYYY HH:MM:SS`」被誤計樓層。
   id 照 `names.c#is_validuserid`（`[A-Za-z][0-9A-Za-z]{1,11}`）或小天使匿名 `<暱稱>小天使`。官方終端格式（型別色碼、IP iff `BRD_IPLOGRECMD`、對齊 iff `BRD_ALIGNEDCMT`、FORWARD/轉錄不計樓）內嵌 `comment_parse.js` 的「Official cross-validation」docstring；交叉驗證測試見 `comment_parse.test.js`「official cross-validation」+ fixture `IpComment_M.1621089154.txt`／`Forward_M.1644506392.txt`。背景見 `docs/ptt-official-app-research.md`。
-- **新格式推文**（post.svc：`[N] id 時間` 標頭＋`│` 內容列，與舊格式可同篇並存）：`parseModernCommentHeader`＋
+- **新格式推文**（post.svc：`[N] id 時間` 標頭＋`│` 內容列；upstream 87c3a1f3 起改成 `id: 內容 … [N]`＋縮到內容欄的續行，
+  兩代與舊格式都可同篇並存，續行判準 `modernCommentBodyText`）：`parseModernCommentHeader`＋
   `ModernCommentThread`，自帶樓號、不吃 FloorCounter、不參與合併；黑名單連內容列一起藏。協定見
   `docs/pttbbs-screen-protocol.md` §11.11，守護 `tests/unit/modern_comment_parse.test.js`。
 - `parseListAuthor(text)`→userid|null。**欄位常數 cols 17~28**（CONFIRMED 2026-06 對 C_Chat 校準）。
