@@ -57,6 +57,7 @@ const layout = (page) =>
       barBottom: bar ? bar.getBoundingClientRect().bottom : null,
       toolbarTop: tb ? tb.getBoundingClientRect().top : null,
       title: app.view._articleTitle,
+      board: app.view._articleBoard,
       // 好讀的 80 欄狀態列是 #easyReadingLastRow；檔頭分隔線收成 0 高（檔頭改卡片）。
       footerShown: (() => {
         const f = document.getElementById('easyReadingLastRow');
@@ -128,9 +129,10 @@ test.describe('Android Chrome：bottom sheet、換行版面、App Bar（真觸�
       expect(g.docScrollWidth).toBeLessThanOrEqual(g.innerWidth);
       expect(g.wrapped).toBeGreaterThan(0);
 
-      // App Bar（Phase 6）：標題＝文章標題；終端機與第一列都在它下面、底部導覽上面。
+      // App Bar（Phase 6）：剛開文章、檔頭標題看得到 ⇒ App Bar 只寫看板（P58，pref mobileAppBarArticleDetail
+      // 預設開；站內信沒有看板才寫標題）；終端機與第一列都在它下面、底部導覽上面。
       expect(g.title).toBeTruthy();
-      await expect(page.locator('#mobileAppBar [data-key="__title"]')).toHaveText(g.title);
+      await expect(page.locator('#mobileAppBar [data-key="__title"]')).toHaveText(g.board || g.title);
       expect(g.barBottom).not.toBeNull();
       expect(g.mainTop).toBeGreaterThanOrEqual(g.barBottom - 0.5);
       expect(g.firstLineTop).toBeGreaterThanOrEqual(g.barBottom - 0.5);
