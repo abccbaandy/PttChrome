@@ -51,7 +51,8 @@
   ⇒ offline 拆 4 片、slow 桶拆 2 片（其餘 job 都在 3 分內）。同一份 code 單片耗時可差 1.5 倍
   （runner CPU 型號，見上一條；e2e job 的 `Runner resources` 也印機型），比較前先對機型、看多輪。
   **再慢時的判準**：最慢的 e2e job 測試本體 > ~3 分就加片；加到單片本體 < ~1.5 分就不划算
-  （固定成本過半）。不改 worker 數：4 vCPU 跑 4 workers 已吃滿 CPU（slow 桶例外，見 test.yml）。
+  （固定成本過半）。2026-11-07：4 片時單片 315–370s（本體 265–320s，超過 3 分）、比 android（348s）還慢、是關鍵路徑 ⇒ 加到 5 片。
+  不改 worker 數：4 vCPU 跑 4 workers 已吃滿 CPU（slow 桶例外，見 test.yml）。
 - **已判定不做**：關掉每條都錄的 video（失敗現場唯一的影像，見 `playwright.config.js`）；live e2e 並行（共用 session 是 worker-scoped，多 worker＝多登入）。
 - **runner 變慢（整個 job 慢數倍、開頭一批 `page.goto` 逾時）**：e2e job 都有 `Runner resources`（`scripts/ci-resource-monitor.mjs start`：機型＋記憶體，背景每 10s 取樣）與 `if: always()` 的 `Runner resources report`（摘要＋逐筆），失敗 artifact 另帶 `ci-diagnostics/resources.jsonl`。**綠 run 基準（2026-10-10，`5deea56`，4 vCPU）**：offline 分片／adverse 各桶 `user+sys` avg 77–97%（本來就設計成吃滿 4 核）、`steal` 0、`iowait` avg ≤1%、load1 max 9–24（slow 桶 8 workers 最高）；Android job `user` avg 53%、開跑前等系統穩定 21s（閒置 75%）。⇒ **`user+sys` 滿是常態，不能單獨當異常訊號**。判讀：`steal` 明顯 >0＝同主機其他 VM 搶 CPU，換台機器就好 ⇒ 重跑失敗 job；`iowait` 遠高於 ~1%＝卡磁碟；兩者都正常、job 卻慢數倍 ⇒ 看取樣時間軸是不是某段 CPU 反而閒下來（卡在等待而不是算不完）。實例：adverse slow 2/2 一次 17 分（平常 3 分）、重跑即綠，當時尚無取樣，根因 `unknown`。
 - **容器裡 adverse runner 的 dev server 180s 等不到**（2026-10-01 發生一次，根因 `unknown`）：再發生時看 `scripts/run-adverse-e2e.mjs#waitForDevServer` 附的 vite 輸出與各位址探測結果，不要從頭猜。
