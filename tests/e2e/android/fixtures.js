@@ -107,13 +107,26 @@ async function restoreScreenSize(device) {
   const sh = (cmd) => device.shell(cmd).then(String, () => '');
   const t0 = Date.now();
   await sh('wm size reset');
+  let last = { size: '', frozen: '' };
   const ok = await expect
-    .poll(async () => screenSizeRestored(await sh('wm size'), await sh('dumpsys window | grep mDisplayFrozen')), {
+    .poll(async () => {
+      last = { size: await sh('wm size'), frozen: await sh('dumpsys window | grep mDisplayFrozen') };
+      return screenSizeRestored(last.size, last.frozen);
+    }, {
       timeout: 15000,
     })
     .toBe(true)
     .then(() => true, () => false);
   console.log(`[android] wm size reset：${ok ? '顯示設定已換完' : '15s 內沒等到換完'}（${Math.round((Date.now() - t0) / 1000)}s）`);
+  // 逾時時把最後一次讀到的原文印出來：判準對不上真機輸出時（例如 dumpsys 沒有這個欄位），
+  // 等待會每次都空等滿 15s，只有看原文才知道是哪一個要素沒成立。
+  if (!ok) {
+    const freezeLines = (await sh('dumpsys window | grep -i -E "frozen|freez"')).trim().slice(0, 600);
+    console.log(
+      `[android] wm size 最後讀到：${JSON.stringify(last.size.trim())}｜grep mDisplayFrozen：${JSON.stringify(last.frozen.trim().slice(0, 300))}｜` +
+        `含 frozen/freez 的列：${JSON.stringify(freezeLines)}`
+    );
+  }
   await waitSystemSettled(device, { home: false });
 }
 
