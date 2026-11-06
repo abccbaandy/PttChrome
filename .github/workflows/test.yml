@@ -101,7 +101,7 @@ jobs:
   # `--user 1001`＝runner 使用者，checkout／cache 的檔案權限才對得上；`--ipc=host` 是
   # Playwright 官方建議：Docker 預設 /dev/shm 只有 64MB，多 worker 的 Chromium 會被它撐爆。
   #
-  # 拆 4 個 shard 平行跑（fullyParallel ⇒ 以 test 為單位切，各約四分之一）。每個 job 固定付
+  # 拆 5 個 shard 平行跑（fullyParallel ⇒ 以 test 為單位切，各約五分之一）。每個 job 固定付
   # ~50s（拉 image ~30s＋checkout／setup-node／yarn install），所以 shard 數跟著測試量調：
   # 2026-10 兩個 shard 時每片 ~215 條、測試本體 200–350s，是整輪的關鍵路徑（量測與取捨見
   # docs/ci-troubleshooting.md「CI 耗時」）。
@@ -112,7 +112,7 @@ jobs:
       # 一個 shard 紅不砍另一個：要看到整輪所有失敗，而不是修一條才冒下一條。
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     # 卡住保險：預設 360 分鐘，而 deploy.yml 的 concurrency 不取消舊 run ⇒ 一個卡住的 job
     # 會讓之後所有 push 排隊（2026-10-01：dev server 沒起來、子進程撐住 node 不退出）。
     # 數值＝串行時代的實測耗時（14／17 分）再放兩倍多，正常不可能碰到。
@@ -144,10 +144,10 @@ jobs:
       # firefox 是 offline-firefox project 用的（tests/e2e/offline/selection.offline.spec.js）：
       # issue #22 的選取／複製症狀只在 Firefox 出現，Chromium 永遠綠。image 已內建。
       # Yarn v4 把多出的參數接在 script 尾端 ⇒ --shard 落在 playwright 指令上。
-      - name: Offline E2E tests (Playwright replay, shard ${{ matrix.shard }}/4)
+      - name: Offline E2E tests (Playwright replay, shard ${{ matrix.shard }}/5)
         run: |
           yarn install --immutable
-          yarn test:e2e:offline --shard=${{ matrix.shard }}/4
+          yarn test:e2e:offline --shard=${{ matrix.shard }}/5
 
       - name: Runner resources report
         if: always()
