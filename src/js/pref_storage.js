@@ -310,6 +310,9 @@ export const DEFAULT_PREFS = {
   mobileFontSize: 16,
   // 手機 App Bar：點標題捲回頂端（app_bar_scroll_top.js）。只捲畫面、不送鍵 ⇒ 不在安全模式清單。
   mobileAppBarScrollTop: true,
+  // 手機文章 App Bar（P58，components/MobileAppBar）：檔頭標題看得到時只寫看板，捲出畫面後換成
+  // 標題＋「作者 · 看板 · 時間」。只改 App Bar 文字、不送鍵 ⇒ 不在安全模式清單。
+  mobileAppBarArticleDetail: true,
   // 手機文章卡片拿掉原文標題前的「□」（P55，render/list_card.js#isTitleBoxMark）。只改畫法、不送鍵
   // ⇒ 不在安全模式清單；R:／轉 照留。
   mobileCardHideTitleBox: true,

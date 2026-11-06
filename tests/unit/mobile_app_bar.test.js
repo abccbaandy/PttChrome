@@ -1,5 +1,7 @@
 // 手機頂部 App Bar 的標題決策（src/js/mobile_app_bar.js）。docs/mobile.md「App Bar」。
-import { appBarFromFacts, sameAppBar, EMPTY_APP_BAR, NEW_MAIL_MARK } from "../../src/js/mobile_app_bar";
+import { appBarFromFacts, sameAppBar, EMPTY_APP_BAR, NEW_MAIL_MARK, articleDetail } from "../../src/js/mobile_app_bar";
+import { articleBarText } from "../../src/js/app_bar_article_header";
+import { articleBylineFromScreen } from "../../src/js/comment_parse";
 import { parseHeaderTitle } from "../../src/js/screen_titles";
 import { OWNER_ARTICLE_LIST } from "../../src/js/list_render_owner";
 import { boardListContextKind } from "../../src/js/board_list_parse";
@@ -44,12 +46,20 @@ describe("appBarFromFacts", () => {
   test("文章（pageState 3）：標題＝檔頭標題，副標＝看板", () => {
     expect(
       appBarFromFacts(frame({ 23: READ_ROW }), { pageState: 3, articleTitle: "[問卦] 有沒有", articleBoard: "Gossiping" })
-    ).toEqual({ kind: "article", title: "[問卦] 有沒有", subtitle: "Gossiping", newMail: false });
+    ).toEqual({ kind: "article", title: "[問卦] 有沒有", subtitle: "Gossiping", newMail: false, detail: "Gossiping" });
+  });
+
+  // P58：捲過檔頭後的副標＝作者 · 看板 · 時間（缺的省略）。
+  test("文章：detail＝作者 · 看板 · 時間", () => {
+    const o = { pageState: 3, articleTitle: "T", articleBoard: "ask", articleByline: { author: "Jason050117", time: "08/12 00:19" } };
+    expect(appBarFromFacts(frame({ 23: READ_ROW }), o).detail).toBe("Jason050117 · ask · 08/12 00:19");
+    expect(articleDetail({ author: "a", time: null }, null)).toBe("a");
+    expect(articleDetail(null, "ask")).toBe("ask");
   });
 
   test("文章列表：標題＝看板名（【板主:x】必須先被當成列表，不是選單）", () => {
     expect(appBarFromFacts(frame({ 0: LIST_ROW0, 23: LIST_FOOT }), { pageState: 2 })).toEqual({
-      kind: "list", title: "Test", subtitle: "", newMail: false,
+      kind: "list", title: "Test", subtitle: "", newMail: false, detail: "",
     });
   });
 
@@ -98,4 +108,42 @@ test("sameAppBar 比全部欄位", () => {
   expect(sameAppBar(a, { ...a })).toBe(true);
   expect(sameAppBar(a, { ...a, newMail: true })).toBe(false);
   expect(sameAppBar(a, { ...a, title: "個人設定" })).toBe(false);
+});
+
+describe("articleBylineFromScreen（P58）", () => {
+  test("檔頭：作者保留大小寫、時間轉成 MM/DD HH:MM", () => {
+    expect(
+      articleBylineFromScreen(" 作者  Jason050117 (暱稱)                                 看板  ask", " 時間  Wed Aug 12 00:19:48 2026")
+    ).toEqual({ author: "Jason050117", time: "08/12 00:19" });
+  });
+  test("純文字模式（冒號）也吃；時間認不出 ⇒ time null", () => {
+    expect(articleBylineFromScreen("作者: someuser (x) 看板: Test", "時間: Sun Feb  1 09:05:00 2026")).toEqual({
+      author: "someuser",
+      time: "02/01 09:05",
+    });
+    expect(articleBylineFromScreen("作者  a (b) 看板  X", "轉信  something")).toEqual({ author: "a", time: null });
+  });
+  test("不是檔頭 ⇒ null", () => {
+    expect(articleBylineFromScreen("隨便一行", " 時間  Wed Aug 12 00:19:48 2026")).toBeNull();
+  });
+});
+
+describe("articleBarText（P58：標題看得到只寫看板，捲出去才補作者）", () => {
+  const art = { kind: "article", title: "Re: 標題", subtitle: "ask", detail: "a · ask · 08/12 00:19", newMail: false };
+  test("檔頭看得到 ⇒ 只寫看板", () => {
+    expect(articleBarText(art, true, true)).toEqual({ title: "ask", subtitle: "" });
+  });
+  test("檔頭看不到（或找不到檔頭卡片）⇒ 標題＋作者 · 看板 · 時間", () => {
+    expect(articleBarText(art, false, true)).toEqual({ title: "Re: 標題", subtitle: "a · ask · 08/12 00:19" });
+    expect(articleBarText(art, null, true)).toEqual({ title: "Re: 標題", subtitle: "a · ask · 08/12 00:19" });
+  });
+  test("開關關掉 ⇒ 照舊（標題＋看板）", () => {
+    expect(articleBarText(art, true, false)).toEqual({ title: "Re: 標題", subtitle: "ask" });
+  });
+  test("站內信沒有看板：檔頭看得到時照舊寫標題", () => {
+    expect(articleBarText({ ...art, subtitle: "", detail: "a" }, true, true)).toEqual({ title: "Re: 標題", subtitle: "" });
+  });
+  test("不是文章 ⇒ 不動", () => {
+    expect(articleBarText({ kind: "list", title: "Test", subtitle: "" }, true, true)).toEqual({ title: "Test", subtitle: "" });
+  });
 });

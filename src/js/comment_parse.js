@@ -448,6 +448,25 @@ export function articleContextFromScreen(row0, row1, status) {
   return atTop ? { ...NO_ARTICLE_CONTEXT } : null;
 }
 
+// 手機 App Bar 捲過檔頭後的副標（P58）：作者 id（保留大小寫，_articleAuthor 是小寫比對用）
+// ＋發文時間「MM/DD HH:MM」。時間列是 pmore 檔頭第三列 `時間  Wed Aug 12 00:19:48 2026`
+// （ctime 形狀；純文字模式是 `時間: …`）。row0 不是檔頭 ⇒ null（沿用）；時間認不出 ⇒ time null。
+const ARTICLE_TIME_RE = /^\s*時間[:：]?\s+[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})/;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function articleBylineFromScreen(row0, row2) {
+  if (!parseArticleHeader(row0)) return null;
+  const a = String(row0).match(ARTICLE_AUTHOR_RE);
+  let time = null;
+  const t = row2 ? String(row2).match(ARTICLE_TIME_RE) : null;
+  const mon = t ? MONTHS.indexOf(t[1]) : -1;
+  if (mon >= 0) {
+    const pad = (n) => String(n).padStart(2, '0');
+    time = pad(mon + 1) + '/' + pad(+t[2]) + ' ' + pad(+t[3]) + ':' + t[4];
+  }
+  return { author: a ? a[1] : null, time: time };
+}
+
 // 離開文章（settle 判定，不吃逐幀抖動）⇒ 整組清空，免得哪個消費端漏清又顯示舊值。
 // 例外都是「之後還會回到同一篇的非首頁」：好讀 functionMode（推文／回應 prompt、
 // 編輯器）、跳行修補的 prompt、按任意鍵繼續。

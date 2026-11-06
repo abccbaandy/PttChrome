@@ -43,8 +43,10 @@ test.describe('手機頂部 App Bar', () => {
     expect(c.mainBottom).toBeLessThanOrEqual(c.toolbarTop + 0.5);
   });
 
-  test('好讀文章：標題＝文章標題、副標＝看板；第一列不被 App Bar 蓋住', async ({ page }) => {
+  // P58（pref mobileAppBarArticleDetail 關掉＝舊行為）：標題＝文章標題、副標＝看板。
+  test('好讀文章（P58 關掉）：標題＝文章標題、副標＝看板；第一列不被 App Bar 蓋住', async ({ page }) => {
     await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { mobileAppBarArticleDetail: false });
     await replayCassette(page, article, { easyReading: true });
     await page.waitForFunction(() => window.__app.view.reflow === true);
     const want = await page.evaluate(() => ({
@@ -76,6 +78,49 @@ test.describe('手機頂部 App Bar', () => {
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     expect(await page.evaluate(() => (window.__sent || []).join(''))).toBe('');
     expect(await page.evaluate(() => document.activeElement === document.getElementById('t'))).toBe(true);
+  });
+
+  // P58：檔頭卡片（標題）看得到時 App Bar 只寫看板；真觸控捲到檔頭離開畫面 ⇒ 換成標題＋
+  // 「作者 · 看板 · 時間」；捲回頂端又只剩看板。全程不送鍵。
+  test('好讀文章（P58）：標題看得到只寫看板，捲下去換成標題＋作者 · 看板 · 時間', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await replayCassette(page, article, { easyReading: true });
+    await page.waitForFunction(() => window.__app.view.reflow === true);
+    const want = await page.evaluate(() => ({
+      title: window.__app.view._articleTitle,
+      board: window.__app.view._articleBoard,
+      byline: window.__app.view._articleByline,
+    }));
+    expect(want.title).toBeTruthy();
+    expect(want.board).toBeTruthy();
+    expect(want.byline && want.byline.author).toBeTruthy();
+    expect(want.byline.time).toMatch(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
+    await expect(page.locator('#mainContainer .articleMeta--title')).toHaveCount(1);
+    await expect(title(page)).toHaveText(want.board);
+    await expect(subtitle(page)).toHaveCount(0);
+    await page.evaluate(() => {
+      window.__sent = [];
+      window.__stubWSSent = (s) => window.__sent.push(s);
+    });
+
+    const box = await waitRectStable(page, '.main');
+    const x = box.left + box.width / 2;
+    await touchDrag(page, { x, y: box.top + box.height - 20 }, { x, y: box.top + 20 });
+    await waitScrollStable(page, '.main');
+    // 檔頭真的離開了 App Bar 下緣（不然這條斷言沒有意義）。
+    const gone = await page.evaluate(() => {
+      const r = document.querySelector('#mainContainer .articleMeta--title').getBoundingClientRect();
+      return r.bottom <= document.getElementById('mobileAppBar').getBoundingClientRect().bottom;
+    });
+    expect(gone).toBe(true);
+    await expect(title(page)).toHaveText(want.title);
+    await expect(subtitle(page)).toHaveText(`${want.byline.author} · ${want.board} · ${want.byline.time}`);
+
+    // 點標題捲回頂端（真 tap，app_bar_scroll_top）⇒ 檔頭回到畫面上，又只剩看板。
+    await title(page).tap();
+    await expect.poll(() => page.evaluate(() => window.__app.view.mainDisplay.scrollTop)).toBe(0);
+    await expect(title(page)).toHaveText(want.board);
+    expect(await page.evaluate(() => (window.__sent || []).join(''))).toBe('');
   });
 
   // 點標題捲回頂端（app_bar_scroll_top.js）：真觸控往上滑到文章中段 → tap 標題 → 回到頂端、不送鍵。
