@@ -137,12 +137,17 @@ function sdkRoot(env = process.env, platform = process.platform) {
   return path.join(os.homedir(), 'Android', 'Sdk');
 }
 
-// 縮螢幕（`wm size`）復原完成了沒：`wm size` 不再列 Override size，而且 `dumpsys window` 的
-// mDisplayFrozen=false（WindowManager 換顯示設定時會先凍住畫面，換完才解凍）。讀不到（空字串）不算完成。
+// 縮螢幕（`wm size`）復原完成了沒：`wm size` 不再列 Override size，而且 `dumpsys window` 沒在凍結
+// （WindowManager 換顯示設定時會先凍住畫面，換完才解凍）。dumpsysWindow 是
+// `dumpsys window | grep -E "mDisplayFrozen|mLastDisplayFreeze"` 的輸出：CI 的 android-34 映像有的 run
+// 印 mDisplayFrozen=false，有的 run 整個沒有這一欄、只有 mLastDisplayFreezeDuration ⇒ 兩種都算沒凍結，
+// 只有 mDisplayFrozen=true 才算還在換。兩欄都讀不到（dumpsys 失敗、空字串）不算完成。
 function screenSizeRestored(wmSize, dumpsysWindow) {
   const size = String(wmSize || '');
   if (!/Physical size:/.test(size) || /Override size:/.test(size)) return false;
-  return /mDisplayFrozen=false/.test(String(dumpsysWindow || ''));
+  const win = String(dumpsysWindow || '');
+  if (/mDisplayFrozen=true/.test(win)) return false;
+  return /mDisplayFrozen=false|mLastDisplayFreeze/.test(win);
 }
 
 // SDK 裡的工具；找不到回 null（交給呼叫端判 exit 2）。adb 另外退回 PATH（CI 的 runner）。

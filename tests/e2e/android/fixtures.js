@@ -110,7 +110,7 @@ async function restoreScreenSize(device) {
   let last = { size: '', frozen: '' };
   const ok = await expect
     .poll(async () => {
-      last = { size: await sh('wm size'), frozen: await sh('dumpsys window | grep mDisplayFrozen') };
+      last = { size: await sh('wm size'), frozen: await sh('dumpsys window | grep -E "mDisplayFrozen|mLastDisplayFreeze"') };
       return screenSizeRestored(last.size, last.frozen);
     }, {
       timeout: 15000,
@@ -123,7 +123,7 @@ async function restoreScreenSize(device) {
   if (!ok) {
     const freezeLines = (await sh('dumpsys window | grep -i -E "frozen|freez"')).trim().slice(0, 600);
     console.log(
-      `[android] wm size 最後讀到：${JSON.stringify(last.size.trim())}｜grep mDisplayFrozen：${JSON.stringify(last.frozen.trim().slice(0, 300))}｜` +
+      `[android] wm size 最後讀到：${JSON.stringify(last.size.trim())}｜dumpsys 凍結欄位：${JSON.stringify(last.frozen.trim().slice(0, 300))}｜` +
         `含 frozen/freez 的列：${JSON.stringify(freezeLines)}`
     );
   }
