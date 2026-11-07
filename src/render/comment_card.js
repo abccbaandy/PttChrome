@@ -26,6 +26,11 @@ import { el } from "./dom";
 import LinkSegmentBuilder from "./link_segment";
 import { cardSegment } from "./list_card";
 import { commentContentCells } from "../js/comment_merge";
+import {
+  rowToText,
+  parseModernCommentHeader,
+  cellColOf,
+} from "../js/comment_parse";
 import { i18n } from "../js/i18n";
 
 const ASCII_ID_RE = /[0-9A-Za-z]/;
@@ -169,6 +174,222 @@ export function buildCommentCard({
         "data-new-comments": newCommentsStart ? i18n("new_comments_divider") : undefined,
       },
       [head, el("span", { class: "commentCardText" }, builder.build())],
+    ),
+    slots: builder.slots,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 新格式推文（P60，pref mobileModernCommentCards；格式見 comment_parse.parseModernCommentHeader
+// 檔頭，兩代都吃）。一則推文跨多列，每列仍是自己的 bbsrow（dirty-row patch 的列獨立前提）：
+//   標頭列 → .commentCard.modernCommentCard：「id #樓號（已編輯）…… IP 日期 時間」＋內容
+//            （87c3a1f3 之後內容就在標頭列上；之前的「[N] id … creation」標頭列沒有內容）
+//   續行   → .commentCard.commentCardCont：只有內容（從 ann.modernBodyCol 讀）
+// 分隔線畫在標頭卡片的**上緣**（續行不知道自己是不是最後一列，畫在下緣會切開同一則）。
+// 刪除的推文（「留言已刪除」「留言已隱藏 (…)」「留言不顯示 (…)」）內容灰色。
+// 欄位一律換算成 cell（cellColOf），內容照原欄號餵 LinkSegmentBuilder（連結範圍照舊）。
+
+const MODERN_SEQ_TAIL_RE = /\[(~?)(\d+)\]\s*$/;
+const MODERN_TIME_TAIL_RE =
+  /(?:\d{1,3}(?:\.\d{1,3}){3} )?\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}\s*$/;
+
+// 標頭列的區段（cell 空間，半開）；認不出回 null（caller 退回 buildRow）。
+export function modernCommentCardRegions(chars) {
+  const text = rowToText(chars);
+  const h = parseModernCommentHeader(text);
+  if (!h) return null;
+  const idStart = h.idCol;
+  const idEnd = idStart + h.user.length;
+  let contentStart = null;
+  let contentEnd = null;
+  let metaStart = null;
+  let metaEnd = null;
+  let edited = false;
+  if (h.bodyCol != null) {
+    // 87c3a1f3 之後：「id: 內容 …… meta [N]」。id／空白／冒號都是半形 ⇒ 字元索引＝cell。
+    const seq = MODERN_SEQ_TAIL_RE.exec(text);
+    if (!seq) return null;
+    edited = seq[1] === "~";
+    const contentEndIdx = h.bodyCol + h.content.length;
+    contentStart = h.bodyCol;
+    contentEnd = cellColOf(text, contentEndIdx);
+    metaStart = contentEnd;
+    metaEnd = cellColOf(text, seq.index);
+  } else {
+    // 768b172a 之前：「[N] id …… creation」或「[N] id 留言已刪除」，內容在後面的「│」列。
+    const t = MODERN_TIME_TAIL_RE.exec(text);
+    const afterId = text.indexOf(h.user, 0) + h.user.length;
+    if (h.deleted) {
+      const at = text.indexOf(h.deleted, afterId);
+      contentStart = cellColOf(text, at);
+      contentEnd = cellColOf(text, at + h.deleted.length);
+    } else if (t) {
+      metaStart = cellColOf(text, t.index);
+      metaEnd = cellColOf(text, text.trimEnd().length);
+    }
+  }
+  // 年份不畫（卡片寬度有限；同舊格式推文只有「月/日 時間」）：記下「/YYYY」那 5 格。
+  let yearStart = null;
+  if (metaStart != null) {
+    const re = /\d{2}\/\d{2}(\/\d{4}) /g;
+    let ym;
+    while ((ym = re.exec(text))) {
+      const col = cellColOf(text, ym.index + 5);
+      if (col >= metaStart && col < metaEnd) yearStart = col;
+    }
+  }
+  return {
+    seq: h.seq,
+    yearStart,
+    edited,
+    deleted: !!h.deleted,
+    idStart,
+    idEnd,
+    contentStart,
+    contentEnd,
+    metaStart,
+    metaEnd,
+  };
+}
+
+function modernSeqBadge(seq) {
+  return el(
+    "span",
+    { class: "floorBadge", "data-floor": "true", title: `第${seq}樓` },
+    el("span", { class: "floorBadgeNum" }, String(seq)),
+  );
+}
+
+function authorIdClasses(authorIdStart, authorIdKind) {
+  return {
+    commentByAuthor:
+      authorIdStart !== undefined &&
+      authorIdKind !== "self" &&
+      authorIdKind !== "follow",
+    commentBySelf: authorIdKind === "self",
+    commentByFollow: authorIdKind === "follow",
+  };
+}
+
+function contentBuilder(o, chars, start, end) {
+  const builder = new LinkSegmentBuilder(
+    o.row,
+    o.enableLinkInlinePreview,
+    o.forceWidth,
+    o.highlightClass,
+    undefined,
+    o.onHyperLinkMouseOver,
+    o.onHyperLinkMouseOut,
+    undefined,
+    undefined,
+    undefined,
+    o.fixedUrls,
+    o.mentions,
+    o.aids,
+    o.giveaways,
+    o.bareDomains,
+    o.sizeMode,
+  );
+  for (let i = start; i < end; ++i) builder.readChar(chars[i], i);
+  return builder;
+}
+
+// 尾端空白不讀（pre-wrap 會把補位空白折成空行）。
+function trimmedEnd(chars, start, end) {
+  let b = Math.min(end, chars.length);
+  while (b > start && chars[b - 1] && !chars[b - 1].isLeadByte && /^[ \u3000]?$/.test(chars[b - 1].ch)) b--;
+  return b;
+}
+
+export function buildModernCommentCard(o) {
+  const { chars, regions: r, row } = o;
+  const seg = (a, b, cls) => cardSegment(chars, a, b, o.forceWidth, row, cls);
+  const head = el(
+    "span",
+    {
+      class: cx("commentCardHead", o.highlightClass),
+      "data-type": "bbsline",
+      "data-row": row,
+    },
+    [
+      seg(
+        r.idStart,
+        r.idEnd,
+        cx("commentCardId", authorIdClasses(o.authorIdStart, o.authorIdKind)),
+      ),
+      modernSeqBadge(r.seq),
+      r.edited
+        ? el("span", { class: "commentCardEdited" }, i18n("commentCard_edited"))
+        : null,
+      r.metaStart != null
+        ? el(
+            "span",
+            { class: "commentCardMeta" },
+            r.yearStart != null
+              ? [
+                  seg(r.metaStart, r.yearStart, "commentCardTime"),
+                  seg(r.yearStart + 5, r.metaEnd, "commentCardClock"),
+                ]
+              : [seg(r.metaStart, r.metaEnd, "commentCardTime")],
+          )
+        : null,
+    ],
+  );
+  let slots = [];
+  const kids = [head];
+  if (r.contentStart != null) {
+    const end = trimmedEnd(chars, r.contentStart, r.contentEnd);
+    const builder = contentBuilder(o, chars, r.contentStart, end);
+    kids.push(
+      el(
+        "span",
+        { class: cx("commentCardText", { commentCardDeleted: r.deleted }) },
+        builder.build(),
+      ),
+    );
+    slots = builder.slots;
+  }
+  return {
+    node: el(
+      "span",
+      {
+        type: "bbsrow",
+        srow: row,
+        "data-pusher": o.pusher,
+        class: cx("commentCard", "modernCommentCard", {
+          pusherHighlight: o.pusherHighlight,
+          mentionsSelf: o.mentionsSelf,
+          newCommentsStart: o.newCommentsStart,
+          justPushed: o.justPushed,
+        }),
+        "data-new-comments": o.newCommentsStart
+          ? i18n("new_comments_divider")
+          : undefined,
+      },
+      kids,
+    ),
+    slots,
+  };
+}
+
+// 續行：只有內容。bodyCol 之前是縮排（空白或「│」）。
+export function buildModernCommentCont(o) {
+  const { chars, row, bodyCol } = o;
+  if (bodyCol == null || !chars || bodyCol >= chars.length) return null;
+  const end = trimmedEnd(chars, bodyCol, chars.length);
+  if (end <= bodyCol) return null;
+  const builder = contentBuilder(o, chars, bodyCol, end);
+  return {
+    node: el(
+      "span",
+      {
+        type: "bbsrow",
+        srow: row,
+        class: cx("commentCard", "commentCardCont", {
+          mentionsSelf: o.mentionsSelf,
+        }),
+      },
+      [el("span", { class: "commentCardText" }, builder.build())],
     ),
     slots: builder.slots,
   };

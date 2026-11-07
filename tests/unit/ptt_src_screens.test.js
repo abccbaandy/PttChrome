@@ -159,6 +159,8 @@ import liveRepeatPromptFx from "./fixtures/ptt_src_screens/live_repeat_prompt.js
 import liveRepeatYesFx from "./fixtures/ptt_src_screens/live_repeat_yes.json";
 import editorPromptFx from "./fixtures/ptt_src_screens/editor_prompt.json";
 
+import { mountScreen, unmountAll } from "./helpers/mount_screen";
+
 loadBig5Tables();
 
 // 場景的第 0..i 幀依序餵進同一個 TermBuf（每幀只是上一幀之後 server 多吐的位元組），
@@ -1741,6 +1743,54 @@ describe.each(MODERN_COMMENT_GENERATIONS)("upstream pttbbs 產的新格式推文
         const row = rowOf(rowTexts, gen.headerOf("nina"));
         const { authorIdStart, authorIdEnd } = a[row];
         expect(buf.getRowText(row, authorIdStart, authorIdEnd)).toBe("nina");
+      });
+
+      // P60：手機好讀（換行版面）的新格式推文卡片。標頭列一張卡片（id・#樓號 …… meta），內容另起
+      // 一行，續行接在同一則下面；刪除的內容灰色；原PO 的 id 標示。開關關掉 ⇒ 一張都不畫（照 80 欄原樣）。
+      test("P60 手機推文卡片：六張卡片、內容接上、meta 不混進內容", () => {
+        const enhance = (on) => ({
+          pageState: 3,
+          easyReading: true,
+          highlightAuthor: true,
+          articleAuthor: "nina",
+          commentCards: true,
+          modernCommentCards: on,
+        });
+        const lines = buf.lines.slice(0, buf.rows - 1);
+        const m = mountScreen({ lines, enhance: enhance(true), enableLinkInlinePreview: false });
+        const cards = [];
+        for (const node of m.container.querySelectorAll('[type="bbsrow"]')) {
+          if (node.classList.contains("modernCommentCard")) {
+            const t = node.querySelector(":scope > .commentCardText");
+            cards.push({ node, lines: t ? [t.textContent.replace(/\u00a0/g, " ").trim()] : [] });
+          } else if (node.classList.contains("commentCardCont")) {
+            cards[cards.length - 1].lines.push(node.textContent.replace(/\u00a0/g, " ").trim());
+          }
+        }
+        const id = (c) => c.node.querySelector(".commentCardId").textContent.trim();
+        expect(cards.map(id)).toEqual(["alice", "bob", "nina", "carol", "dave", "erin"]);
+        expect(cards.map((c) => c.node.querySelector(".floorBadge[data-floor]").textContent)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(cards.map((c) => c.lines.join("\n"))).toEqual([
+          "第一則推文",
+          "第二則推文第一行\n第二行回 >>1",
+          "原PO回覆",
+          "留言已刪除",
+          gen.hiddenReason,
+          "最後一則",
+        ]);
+        const meta = cards[0].node.querySelector(".commentCardMeta").textContent;
+        expect(meta).toContain("1.2.3.4");
+        expect(meta).toContain("12:00");
+        for (const c of cards) {
+          const body = c.lines.join(" ");
+          expect(body).not.toMatch(/\d{2}:\d{2}|\[\d\]|│/);
+        }
+        expect(cards[2].node.querySelector(".commentCardId .commentByAuthor, .commentCardId.commentByAuthor")).not.toBeNull();
+        expect(cards[3].node.querySelector(".commentCardDeleted")).not.toBeNull();
+        expect(cards[0].node.querySelector(".commentCardDeleted")).toBeNull();
+        m.update({ lines, enhance: enhance(false), enableLinkInlinePreview: false });
+        expect(m.container.querySelectorAll(".modernCommentCard, .commentCardCont").length).toBe(0);
+        unmountAll();
       });
 
       test("agent 全文解析：六則、內容接上、刪除的帶原因", () => {

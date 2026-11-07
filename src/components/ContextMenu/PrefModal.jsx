@@ -1586,6 +1586,16 @@ export const PrefModal = ({
                       {i18n("tooltip_mobileMailListTools")}
                     </Text>
                     <PrefCheckbox
+                      name="mobileModernCommentCards"
+                      checked={values.mobileModernCommentCards}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobileModernCommentCards")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobileModernCommentCards")}
+                    </Text>
+                    <PrefCheckbox
                       name="mobileEditorSave"
                       checked={values.mobileEditorSave}
                       onChange={onCheckboxChange}

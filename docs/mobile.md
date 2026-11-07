@@ -283,6 +283,14 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
 - 契約：外層 `span[type=bbsrow][srow][data-pusher][data-pusher-col]`（`.commentSpacing` 直接子選擇器、長按黑名單），
   標頭與內容每行都是 `[data-type=bbsline][data-row]`。
 - 守護：unit `comment_card.test.js`；offline e2e `mobile_reflow`「手機推文卡片」。
+- **新格式推文**（P60，pref `mobileModernCommentCards` → `enhance.modernCommentCards`，進 `annotationsKey`）：兩代都吃
+  （87c3a1f3 之後「id: 內容 …… meta [N]」＋縮到內容欄的續行；之前「[N] id … creation」＋「│」內容列）。
+  一則跨多列、每列仍是自己的 bbsrow（列獨立）：標頭列 `.modernCommentCard`（id・`#N`・已編輯 …… IP 月/日 時間，年份不畫）
+  ＋內容；續行 `.commentCardCont`（只有內容，從 annotation 的 `modernBodyCol` 讀——`annotateModernComment` 對每條續行都回
+  `{ modernBody, modernBodyCol }`，桌機不用它）。分隔線畫在標頭卡片**上緣**（續行不知道自己是不是最後一列）。
+  刪除／隱藏的內容 `.commentCardDeleted` 灰色。守護：unit `ptt_src_screens`「P60 手機推文卡片」（upstream 產的兩代畫面）。
+- id 標示（原PO `.commentByAuthor` 青／我 `.commentBySelf` 綠／關注 `.commentByFollow` 橘，桌機同一組 class）：字換色＋同色淡底
+  （P60：深藍底看不出來）；上班模式與游標列加亮的特異度較高，照舊由它們決定。
 
 ### 文末補白收起
 - 成因：文章短於一頁／末頁時 pmore 把 EOF 之後的列清成空白，`pageLines` 照收 ⇒ 推文區下方一大塊空白。

@@ -33,6 +33,9 @@ import {
   buildCommentCard,
   commentCardRegions,
   mergedCommentCardRegions,
+  buildModernCommentCard,
+  buildModernCommentCont,
+  modernCommentCardRegions,
 } from "./comment_card";
 import {
   createMergeImageCaptionButton,
@@ -1214,6 +1217,23 @@ export class ScreenController {
       const meta = buildArticleMetaRow(lines[row], row);
       if (meta) return meta;
     }
+    // 手機推文卡片：新格式推文（P60，enhance.modernCommentCards）。標頭列一張卡片、續行接在
+    // 它下面；都只看該列自己的 annotation（續行的 modernBodyCol 由 ModernCommentThread 算好）。
+    // 認不出退回 buildRow。
+    if (
+      enhance &&
+      enhance.commentCards &&
+      enhance.modernCommentCards &&
+      ann &&
+      !ann.hidden &&
+      (ann.modern || ann.modernBody)
+    ) {
+      const card = this._buildModernCommentCard(row, lines[row], ann);
+      if (card) {
+        for (let i = 0; i < card.slots.length; ++i) slots.push(card.slots[i]);
+        return card.node;
+      }
+    }
     // 手機推文卡片：單一推文列（合併塊在 _buildRowNode 另接）。認不出推文形狀退回 buildRow。
     if (enhance && enhance.commentCards && ann && ann.pusher && !ann.hidden) {
       const card = this._buildCommentCard(
@@ -1378,6 +1398,38 @@ export class ScreenController {
       onHyperLinkMouseOut: this.onHyperLinkMouseOut,
       sizeMode: this._sizeMode(),
     });
+  }
+
+  _buildModernCommentCard(row, chars, ann) {
+    const { forceWidth, enableLinkInlinePreview } = this.props;
+    const o = {
+      chars,
+      row,
+      forceWidth,
+      enableLinkInlinePreview,
+      highlightClass:
+        this.highlight.row === row ? this.highlight.cls : undefined,
+      pusher: ann.pusher,
+      pusherHighlight: isPusherHighlighted(ann, this._selectedPusher),
+      authorIdStart: ann.authorIdStart,
+      authorIdKind: ann.authorIdKind,
+      mentionsSelf: ann.mentionsSelf,
+      newCommentsStart: ann.newCommentsStart,
+      justPushed: ann.justPushed,
+      fixedUrls: ann.fixedUrls,
+      mentions: ann.mentions,
+      aids: ann.aids,
+      giveaways: ann.giveaways,
+      bareDomains: ann.bareDomains,
+      onHyperLinkMouseOver: this.onHyperLinkMouseOver,
+      onHyperLinkMouseOut: this.onHyperLinkMouseOut,
+      sizeMode: this._sizeMode(),
+    };
+    if (ann.modern) {
+      const regions = modernCommentCardRegions(chars);
+      return regions ? buildModernCommentCard({ ...o, regions }) : null;
+    }
+    return buildModernCommentCont({ ...o, bodyCol: ann.modernBodyCol });
   }
 
   _buildCommentCardNode(row, chars, regions, ann, links) {

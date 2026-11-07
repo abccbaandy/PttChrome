@@ -1987,6 +1987,15 @@
   "tooltip_mobileMailListTools": {
     "message": "信件列表的底部導覽前兩格是「搜尋」（標題／作者）與「寫信」，「到底」也能按；卡片上方那列鍵盤說明收起來。送的都是 PTT 自己的按鍵（/、a、Ctrl+P、End）。"
   },
+  "commentCard_edited": {
+    "message": "已編輯"
+  },
+  "options_mobileModernCommentCards": {
+    "message": "手機新格式推文也排成卡片"
+  },
+  "tooltip_mobileModernCommentCards": {
+    "message": "PTT 新格式推文（「id: 內容 …… 時間 [樓號]」）在手機好讀文章裡跟一般推文一樣排成卡片：一行帳號、樓號與時間，內容另起一行用滿寬。"
+  },
   "options_mobileEditorSave": {
     "message": "手機編輯器底部導覽加「存檔」"
   },

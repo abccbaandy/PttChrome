@@ -1988,6 +1988,15 @@ export const en_US = {
   "tooltip_mobileMailListTools": {
     "message": "In the mail list the bottom bar's first two slots are \"Search\" (title / author) and \"Write\", and \"End\" works; the keyboard hint row above the cards is hidden. All of them send PTT's own keys (/, a, Ctrl+P, End)."
   },
+  "commentCard_edited": {
+    "message": "edited"
+  },
+  "options_mobileModernCommentCards": {
+    "message": "Show new-format comments as cards on mobile"
+  },
+  "tooltip_mobileModernCommentCards": {
+    "message": "PTT's new comment format (\"id: text … time [floor]\") is laid out as cards in mobile easy reading, like regular comments: one line with the id, floor and time, the text on its own line at full width."
+  },
   "options_mobileEditorSave": {
     "message": "Add \"Save\" to the mobile editor's bottom bar"
   },
