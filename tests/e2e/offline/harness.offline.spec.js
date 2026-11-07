@@ -31,6 +31,9 @@ test.describe('离线重放 harness', () => {
   //   实际拿到 'X{"type":"custom","event":"vite:forward-console",...}'。
   // 触发条件＝页面里冒出 console error / unhandled rejection，所以这里主动制造一个。
   test('送出纪录只收 BBS 那条连线的 bytes，不混进 Vite HMR 流量', async ({ page }) => {
+    // 打包版（E2E_SERVER=bundle，CI 的 offline shard）沒有 HMR socket：這條要防的混流不存在，前提柵欄
+    // 永遠等不到。它守的是 dev server 下跑 offline（本機預設）時 harness 不被 HMR 汙染。
+    test.skip(process.env.E2E_SERVER === 'bundle', '打包版沒有 Vite HMR socket（只在 dev server 下有意義）');
     // 柵欄：Node 端直接看 HMR socket 真的把 forward-console 送出去了，才断言「没混进来」。
     // 只 sleep 的话，慢机器上转发还没发生也会绿。
     let forwarded = false;
