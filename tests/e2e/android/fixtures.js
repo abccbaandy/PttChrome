@@ -200,6 +200,9 @@ const test = base.extend({
 
   context: async ({ android }, use) => {
     let timer;
+    // 減少 test 時間（todo「減少 test 時間」）：android job 是 CI 牆鐘，每條 20～33s 花在哪裡要先量。
+    // 開 Chrome 與開站（screen.js#openScreen）各印一行，CI log 直接看得到。
+    const launchStart = Date.now();
     const context = await Promise.race([
       android.device.launchBrowser({ baseURL: `http://localhost:${PORT}` }),
       new Promise((_, reject) => {
@@ -213,6 +216,7 @@ const test = base.extend({
         throw gone ? new Error(gone) : e;
       })
       .finally(() => clearTimeout(timer));
+    console.log(`[android] launchBrowser：${((Date.now() - launchStart) / 1000).toFixed(1)}s`);
     await use(context);
     await context.close();
   },
