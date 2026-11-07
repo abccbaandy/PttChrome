@@ -38,6 +38,7 @@ async function forceMobileLayout(page, prefs = {}) {
 // opts.reload：頁面已經開著（APK 的 WebView 開機就載好了）⇒ 裝好 stub／init script 後 reload，
 // 不 goto（goto 會多一筆 history）。
 async function openScreen(page, prefs = {}, opts = {}) {
+  const t0 = Date.now();
   await forceMobileLayout(page, prefs);
   if (opts.reload) {
     await installReplay(page);
@@ -52,14 +53,18 @@ async function openScreen(page, prefs = {}, opts = {}) {
   }
   await replayCassette(page, article, { easyReading: !!prefs.enableEasyReading });
   await expect.poll(() => page.evaluate(() => window.__app.buf.getRowText(0).trim().length)).toBeGreaterThan(0);
+  // 開站＋重放到第一個畫面花多久（dev server 未打包的模組在模擬器上逐一載入；見 fixtures.js 的 context）。
+  console.log(`[android] openScreen${opts.reload ? '（reload）' : ''}：${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
 // 列表好讀的卡片畫面（view.listCards）。cassette 是 24 列，模擬器原生 49 列 ⇒ 呼叫端要先
 // 用 `wm size` 縮螢幕高，讓手機版面的 rows 落到下限 24（mobile_layout.mobileTermGeometry）。
 // 不用 setDeviceMetricsOverride 湊列數：觸控 y 會偏（見 docs/android-e2e.md）。
 async function openListCards(page, cassette) {
+  const t0 = Date.now();
   await forceMobileLayout(page);
   await bootOffline(page, ptt);
+  console.log(`[android] openListCards bootOffline：${((Date.now() - t0) / 1000).toFixed(1)}s`);
   if (!(await page.evaluate(() => window.__app.mobile))) {
     throw envError('沒有進手機版面（mobileLayout pref 沒套上）');
   }
