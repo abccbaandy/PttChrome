@@ -62,7 +62,11 @@ const devSshRelay = () => ({
 
 export default defineConfig(({ command }) => {
   // dev server（vite serve）＝ developer mode；vite build ＝ production。
-  const DEVELOPER_MODE = command === 'serve';
+  // 例外 PTTCHROME_E2E_BUNDLE=1：打包版但保留 developer mode（e2e 探針 window.__app 等），輸出到
+  // dist-e2e/。給 android e2e 用：模擬器上逐一載入 dev server 的未打包模組每次開站要 9～12s，
+  // 打包版只要幾個檔（tests/e2e/android/bundle_server.js）。絕不部署。
+  const E2E_BUNDLE = command === 'build' && process.env.PTTCHROME_E2E_BUNDLE === '1';
+  const DEVELOPER_MODE = command === 'serve' || E2E_BUNDLE;
   return {
     // 部署在 GitHub Pages 子路徑，所有資源引用走相對路徑。
     base: './',
@@ -97,9 +101,9 @@ export default defineConfig(({ command }) => {
       'process.env.GCLOUD_PROJECT': 'undefined',
     },
     build: {
-      outDir: 'dist',
+      outDir: E2E_BUNDLE ? 'dist-e2e' : 'dist',
       emptyOutDir: true,
-      sourcemap: true,
+      sourcemap: !E2E_BUNDLE,
       // 目標＝主流桌機瀏覽器現代版（見 CLAUDE.md 慣例）；不考慮手機/舊版/冷門瀏覽器。
       //
       // **用 Vite 的字面值，不要手寫版本號陣列**。'baseline-widely-available' 由 Vite
