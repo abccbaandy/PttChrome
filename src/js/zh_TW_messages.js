@@ -1987,6 +1987,27 @@
   "tooltip_mobileMailListTools": {
     "message": "信件列表的底部導覽前兩格是「搜尋」（標題／作者）與「寫信」，「到底」也能按；卡片上方那列鍵盤說明收起來。送的都是 PTT 自己的按鍵（/、a、Ctrl+P、End）。"
   },
+  "options_mobilePromptChoices": {
+    "message": "手機上 PTT 問「選一個」時浮出可點選項"
+  },
+  "tooltip_mobilePromptChoices": {
+    "message": "發文種類、回文對象、編輯器的存檔選單、是非題（Y/N）出現時，底部導覽上方列出選項，點一下就是替你打那個字再按 Enter。只認得 PTT 固定的提問字樣，認不出就不出現。"
+  },
+  "promptChoices_postType": {
+    "message": "選擇文章種類"
+  },
+  "promptChoices_none": {
+    "message": "不選"
+  },
+  "promptChoices_yes": {
+    "message": "是"
+  },
+  "promptChoices_no": {
+    "message": "否"
+  },
+  "promptChoices_aria": {
+    "message": "PTT 提問的選項"
+  },
   "commentCard_edited": {
     "message": "已編輯"
   },

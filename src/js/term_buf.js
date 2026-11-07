@@ -1657,6 +1657,18 @@ TermBuf.prototype = {
     return this.getRowText(this.cur_y, 0, start);
   },
 
+  // 游標所在那條反白輸入欄**裡面**已經打了什麼（去掉尾端空白）；不在輸入欄上回 null。
+  // prompt_choices 用它確認欄位還是空的：使用者自己打了一半就不替他加字。
+  inputFieldText: function() {
+    if (!this.isCursorOnInputField()) return null;
+    var line = this.lines[this.cur_y];
+    var start = this.cur_x;
+    var end = this.cur_x;
+    while (start > 0 && isReversedCell(line[start - 1])) --start;
+    while (end + 1 < this.cols && isReversedCell(line[end + 1])) ++end;
+    return this.getRowText(this.cur_y, start, end + 1).replace(/\s+$/, '');
+  },
+
   // 這一幀有沒有一個「滑鼠關得掉的框」（pressanykey／vmsg 橫幅／vgetstring 輸入
   // 欄）→ { kind, bytes }，沒有回 null。判斷本身在純函式
   // screen_dismiss.resolveDismiss（pttbbs 出處逐條在那裡），這裡只餵事實。

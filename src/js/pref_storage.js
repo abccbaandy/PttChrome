@@ -326,6 +326,7 @@ export const DEFAULT_PREFS = {
   // 底部導覽第 1、2 格放「搜尋」（/、a）與「寫信」（^P）、「到底」（End）可按。都是使用者自己按的
   // PTT 原生指令 ⇒ 不在安全模式清單（同 mobileEditorSave）。
   mobileMailListTools: true,
+  mobilePromptChoices: true,
   // 手機好讀文章的新格式推文（「id: 內容 … [N]」與更早的「[N] id … creation」）也排成推文卡片
   // （P60，render/comment_card.buildModernCommentCard）。只改畫法、不送鍵 ⇒ 不在安全模式清單。
   mobileModernCommentCards: true,

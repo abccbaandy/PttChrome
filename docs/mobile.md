@@ -123,6 +123,22 @@
 - **開站原點**：`#BBSWindow` 顯示前量到的 `firstGridOffset` 是 0；`main.jsx` 顯示後呼叫
   `onWindowResize({ immediate: true })` 跳過 resizer 的 500ms debounce（手機與桌機 fixed-font-size 都有 resizer）。
 
+## 提問選項（P61，`prompt_choices.js`，pref `mobilePromptChoices`，預設開）
+
+PTT 問「選一個」時，底部導覽上方浮出可點選項（`MobileToolbar` 的 `#mobilePromptChoices`），tap ＝替使用者在輸入欄打那個字＋⏎
+（vgets 一律要 ⏎ 才收）。送鍵走 `sendKeyAsUser`，跟自己打字同一條。
+
+- **只認固定字樣、認不出不出現**：發文種類（bbs.c#do_post「種類：1.… (1-N或不選)」，種類名從畫面讀）、回文對象
+  （do_generalboardreply 三句整句比對）、編輯器檔案處理（edit.c#write_file：標題「檔案處理」＋選項列格式＋第 2 列提問；
+  R/W/D 暫存檔不放）、是非題（提示結尾 `[y/N]`／`[Y/n]`／`(y/N)`／`(Y/N)？[N]`）。出處逐條在檔頭。
+- 共同條件：游標在 PTT 輸入欄上（`isCursorOnInputField`）而且欄位是空的（`term_buf.inputFieldText`）——使用者自己打了一半就不出現。
+- **送鍵前用本幀再認一次**（`promptChoicesSig` 要跟面板上那組相同）：context 是上次 settle 算的，提問可能已經換了。
+- **讓位看提問在哪**（`anchor`）：提問在下半部 ⇒ 面板高度併進 `setMobileKeysPanelInset`（同按鍵面板，終端機往上排、提問列不被蓋）；
+  在上半部（檔案處理在第 2 列）⇒ 不讓位，不然整個往上排會把提問推進 App Bar 後面。按鍵／更多開著時不出現（同時只一個面板）。
+- 面板標題就是提問本身：主功能表卡片版面比視窗高時「離開」確認落在折疊線下，看面板就知道在問什麼。
+- 守護：`tests/unit/prompt_choices.test.js`（upstream 產的四種畫面＋字樣突變）、`mobile_toolbar.test.jsx`、
+  `tests/e2e/offline/mobile_prompt_choices.offline.spec.js`（提問列不被蓋、真 tap 送出的 byte）。
+
 ## 浮動工具「⋯」（`render/merge_buttons.js#createFloatingTools`，桌機＋手機共用）
 
 圖文並排／AI 校正／開燈（文章頁）與 debug 錄製鈕（debug 模式下任何畫面）收在一顆圓鈕裡（攤開的一疊在 reflow 版面會蓋住文章字；
