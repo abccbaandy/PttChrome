@@ -144,7 +144,10 @@ jobs:
       # firefox 是 offline-firefox project 用的（tests/e2e/offline/selection.offline.spec.js）：
       # issue #22 的選取／複製症狀只在 Firefox 出現，Chromium 永遠綠。image 已內建。
       # Yarn v4 把多出的參數接在 script 尾端 ⇒ --shard 落在 playwright 指令上。
+      # E2E_SERVER=bundle：開站用打包版（scripts/serve-e2e-bundle.mjs），不逐一載入 dev server 的未打包模組。
       - name: Offline E2E tests (Playwright replay, shard ${{ matrix.shard }}/5)
+        env:
+          E2E_SERVER: bundle
         run: |
           yarn install --immutable
           yarn test:e2e:offline --shard=${{ matrix.shard }}/5

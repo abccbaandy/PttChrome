@@ -5,6 +5,7 @@
 // 打包版只有幾個檔。build 本身約 2～3s，整輪一次（worker 層）。
 //
 // 逃生門 ANDROID_E2E_DEV_SERVER=1：照舊連 host 的 dev server（要看 HMR／改完不重 build 時）。
+// offline e2e 在 CI 也用同一份（E2E_SERVER=bundle，scripts/serve-e2e-bundle.mjs 當 Playwright 的 webServer）。
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../../..');
@@ -14,8 +15,9 @@ function useDevServer(env = process.env) {
   return env.ANDROID_E2E_DEV_SERVER === '1';
 }
 
-// 回傳 { port, close }。
-async function startBundleServer() {
+// opts：{ host, port, strictPort, tag }（預設 android 用：127.0.0.1、4173 起找空埠）。回傳 { port, close }。
+async function startBundleServer(opts = {}) {
+  const o = Object.assign({ host: '127.0.0.1', port: 4173, strictPort: false, tag: 'android' }, opts);
   const vite = await import('vite');
   const configFile = path.join(ROOT, 'vite.config.mjs');
   const prev = process.env.PTTCHROME_E2E_BUNDLE;
@@ -33,10 +35,10 @@ async function startBundleServer() {
     configFile,
     logLevel: 'warn',
     build: { outDir: OUT_DIR },
-    preview: { host: '127.0.0.1', port: 4173, strictPort: false, open: false },
+    preview: { host: o.host, port: o.port, strictPort: o.strictPort, open: false },
   });
   const port = server.httpServer.address().port;
-  console.log(`[android] 開站用打包版：build＋preview ${((Date.now() - t0) / 1000).toFixed(1)}s，port ${port}`);
+  console.log(`[${o.tag}] 開站用打包版：build＋preview ${((Date.now() - t0) / 1000).toFixed(1)}s，port ${port}`);
   return {
     port,
     close: () => new Promise((r) => server.httpServer.close(() => r())),

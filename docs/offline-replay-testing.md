@@ -515,6 +515,11 @@ project 名，同 `image_load_conditions.offline.spec.js`）。這樣兩個 job 
 （長素材在一般桶就會紅，實測）。
 
 ### 踩坑（此段修過兩次，別再重來）
+- **CI 的 offline shard 開站用打包版**（`E2E_SERVER=bundle` ⇒ webServer 換成 `scripts/serve-e2e-bundle.mjs`：
+  `PTTCHROME_E2E_BUNDLE=1` build＋vite preview 開在 8080，保留 developer mode 探針、輸出 `dist-e2e/`、絕不部署）。
+  dev server 每條測試開站都要逐一載入未打包模組（本機 offline-mobile 31 條：dev 83s、打包版 64s）。
+  本機預設照舊是 dev server；要重現 CI 就加 `E2E_SERVER=bundle`。live／record 不准用（`/bbs` proxy 只有 dev server 有）。
+  守護 `tests/unit/e2e_bundle_mode.test.js`。android e2e 也用同一份（`tests/e2e/android/bundle_server.js`）。
 - **`page.route` 必須用述詞過濾，不可用 `'**/*'` + `route.continue()`**：Vite dev server
   一頁幾百個 module 請求，全部拉進攔截層再 `continue()`（等於每筆重發）會讓整批 offline
   e2e 大面積逾時，且失敗散落在與圖片毫無關係的 spec（`ui_behavior`／`debug_record`…），
