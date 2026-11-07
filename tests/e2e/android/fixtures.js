@@ -2,7 +2,8 @@
 // 設計與踩坑見 docs/android-e2e.md。
 //
 // worker 層（整輪一次）：選模擬器 → OS 層斷網 → 清 Chrome 狀態 → host 端 IPv4 轉送
-// ＋ adb reverse ⇒ 手機內 http://localhost:8080 ＝ host 的 dev server。
+// ＋ adb reverse ⇒ 手機內 http://localhost:8080 ＝ host 的開站伺服器（預設是打包版＋vite preview，
+// 見 bundle_server.js；ANDROID_E2E_DEV_SERVER=1 改連 dev server）。
 // test 層：每條測試一個 launchBrowser() 的 context，`page` 覆寫成手機裡的 Chrome 分頁，
 // 桌機瀏覽器完全不會被啟動。
 const net = require('net');
@@ -24,6 +25,7 @@ const {
   vanishedDeviceError,
   screenSizeRestored,
 } = require('./android_env');
+const { startBundleServer, useDevServer } = require('./bundle_server');
 
 const PORT = 8080;
 const CHROME = 'com.android.chrome';
@@ -39,10 +41,10 @@ const LAUNCH_TIMEOUT_MS = 60000;
 // （CLAUDE.md「跑起來」）⇒ 直接 reverse 到 8080 得到 ERR_EMPTY_RESPONSE。
 // 中間墊一層 TCP 轉送：127.0.0.1:<隨機埠> → localhost:8080（autoSelectFamily 兩種都試）。
 // 原始 TCP 轉送，WebSocket upgrade 照常通過。
-function startBridge() {
+function startBridge(targetPort) {
   return new Promise((resolve, reject) => {
     const server = net.createServer((c) => {
-      const u = net.connect({ host: 'localhost', port: PORT, autoSelectFamily: true });
+      const u = net.connect({ host: 'localhost', port: targetPort, autoSelectFamily: true });
       c.pipe(u).pipe(c);
       const kill = () => { c.destroy(); u.destroy(); };
       c.on('error', kill);
@@ -183,13 +185,15 @@ const test = base.extend({
 
       await waitSystemSettled(device);
 
-      const bridge = await startBridge();
+      const bundle = useDevServer() ? null : await startBundleServer();
+      const bridge = await startBridge(bundle ? bundle.port : PORT);
       adb(serial, ['reverse', `tcp:${PORT}`, `tcp:${bridge.address().port}`]);
       try {
         await use({ device, serial });
       } finally {
         try { adb(serial, ['reverse', '--remove', `tcp:${PORT}`]); } catch (e) {}
         bridge.close();
+        if (bundle) await bundle.close();
         await device.shell('svc wifi enable; svc data enable').catch(() => {});
         await device.close();
       }

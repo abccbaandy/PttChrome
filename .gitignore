@@ -34,6 +34,7 @@ ui-debug.log
 
 js/constants_local.js
 dist/*
+dist-e2e/
 !dist/.gitkeep
 
 .idea/

@@ -26,6 +26,7 @@
 | 路徑 | 職責 |
 |---|---|
 | `tests/e2e/android/android_env.js` | 純函式：選模擬器、CSS px→device px、adb 輸出解析、SDK 工具定位 |
+| `tests/e2e/android/bundle_server.js` | 開站伺服器：`PTTCHROME_E2E_BUNDLE=1` 打包版（保留 developer mode 探針，輸出 `dist-e2e/`，絕不部署）＋ vite preview，整輪 build 一次（約 2～3s）。dev server 的未打包模組在模擬器上每次開站要 9～12s，打包版省掉大半。逃生門 `ANDROID_E2E_DEV_SERVER=1` 改連 dev server |
 | `tests/e2e/android/fixtures.js` | worker：選機→OS 斷網→清 Chrome→IPv4 轉送＋adb reverse、裝 debug APK；test：`launchBrowser` 覆寫 `page`、`apk`（清 App→dev server 模式→連 WebView）；失敗存整個螢幕 |
 | `tests/e2e/android/screen.js` | spec 共用：強制手機版面開畫面（`openScreen`／列表卡片 `openListCards`）、OS 層真 tap（含落點自檢）／keyevent、收送出的 bytes、軟鍵盤蓋住的高度 |
 | `tests/e2e/android/*.android.spec.js` | spec（project `android`，`playwright.config.js`） |
