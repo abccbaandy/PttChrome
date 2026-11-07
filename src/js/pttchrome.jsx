@@ -390,6 +390,8 @@ export const App = function() {
       healInFlight: this.buf.easyReadingHealInFlight
     })) this.view.clearArticleContext();
     this._refreshScreenContext();
+    // 提問出現／消失 ⇒ 浮動提示換位置，不蓋住 PTT 的提問（status_hint.hintPlacement）。
+    if (this.view.placeListHint) this.view.placeListHint();
     this._busyEvent({ type: 'settled' });
   });
   // 首頁儀表板收起／出現不一定伴隨 settle（打字收起是 keydown）：工具列的「重整」跟著它。

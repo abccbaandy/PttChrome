@@ -11,7 +11,9 @@ import {
   HINT_ERROR,
   hintBottomCss,
   hintColors,
+  hintPlacement,
   shouldShowHint,
+  HINT_TOP_CSS,
 } from "../../src/js/status_hint";
 import { TermView } from "../../src/js/term_view";
 import { ListSession } from "../../src/js/list_session";
@@ -55,6 +57,51 @@ describe("shouldShowHint", () => {
   });
   test("錯誤與一般的顏色不同", () => {
     expect(hintColors(HINT_ERROR).background).not.toBe(hintColors().background);
+  });
+});
+
+// 症狀：手機文章列表按「發文」，PTT 問「種類：1.問題 2.建議 …（1-8或不選）」，同一刻的
+// 「已切至原生操作」提示整條蓋在那一列上（提示貼底、提問也在最底下幾列）。
+describe("PTT 正在問問題時提示改到上方（placeListHint）", () => {
+  const viewWith = (pending, cover) => ({
+    showStatusHints: true,
+    _hintDialogCover: cover,
+    buf: { isPromptPending: () => pending },
+    placeListHint: TermView.prototype.placeListHint,
+  });
+  test("hintPlacement：有提問 ⇒ 上方；對話框蓋滿時照舊貼底", () => {
+    expect(hintPlacement(true, false)).toBe("top");
+    expect(hintPlacement(false, false)).toBe("bottom");
+    expect(hintPlacement(true, true)).toBe("bottom");
+  });
+  test("顯示當下有提問 ⇒ top；沒有 ⇒ bottom", () => {
+    const v = viewWith(true);
+    flash.call(v, "已切至原生操作");
+    const el = document.querySelector(".ListHint");
+    expect(el.style.top).toBe(HINT_TOP_CSS);
+    expect(el.style.bottom).toBe("auto");
+    const w = viewWith(false);
+    w._listHintEl = el;
+    flash.call(w, "已切至原生操作");
+    expect(el.style.top).toBe("auto");
+    expect(el.style.bottom).toBe(hintBottomCss(48, false));
+  });
+  test("提示先出現、提問下一幀才到 ⇒ settle 時換到上方；提問收掉 ⇒ 回到底部", () => {
+    let pending = false;
+    const v = { showStatusHints: true, buf: { isPromptPending: () => pending }, placeListHint: TermView.prototype.placeListHint };
+    flash.call(v, "已切至原生操作");
+    const el = document.querySelector(".ListHint");
+    expect(el.style.bottom).toBe(hintBottomCss(48, false));
+    pending = true;
+    v.placeListHint();
+    expect(el.style.top).toBe(HINT_TOP_CSS);
+    pending = false;
+    v.placeListHint();
+    expect(el.style.bottom).toBe(hintBottomCss(48, false));
+  });
+  test("沒有 buf（測試替身、還沒連線）⇒ 貼底", () => {
+    flash.call({ showStatusHints: true, placeListHint: TermView.prototype.placeListHint }, "x");
+    expect(document.querySelector(".ListHint").style.bottom).toBe(hintBottomCss(48, false));
   });
 });
 

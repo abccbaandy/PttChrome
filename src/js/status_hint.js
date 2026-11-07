@@ -33,6 +33,14 @@ export function hintBottomCss(px, underDialog) {
     : 'calc(var(--term-bottom-inset, 0px) + ' + px + 'px)';
 }
 
+// PTT 正在問問題（本幀 buf.isPromptPending：輸入欄、推文型別選單）時，提問就畫在畫面最底下
+// 幾列 —— 剛好是底部提示的位置（例：手機上按「發文」，「已切至原生操作」整條蓋在「種類：1.問題
+// 2.建議…」上面）。這時提示改到畫面上方（手機讓開 App Bar）。對話框蓋滿畫面時照舊貼底。
+export const HINT_TOP_CSS = 'calc(var(--safe-top, 0px) + 60px)';
+export function hintPlacement(promptPending, underDialog) {
+  return promptPending && !underDialog ? 'top' : 'bottom';
+}
+
 // 底色／字色。錯誤用明顯的紅底白字；一般維持原本的深灰底。
 export function hintColors(level) {
   return isErrorHint(level)
