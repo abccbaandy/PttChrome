@@ -228,7 +228,9 @@ module.exports = defineConfig({
   webServer: {
     // 直接跑單一 node 進程（vite bin），不經 npx/yarn 多層 wrapper，
     // teardown 才殺得乾淨、不留孤兒。vite serve 即 development mode，無需 NODE_ENV。
-    command: 'node node_modules/vite/bin/vite.js',
+    // E2E_SERVER=bundle（CI 的 offline shard 設）：改開打包版（scripts/serve-e2e-bundle.mjs，
+    // 保留 developer mode 探針），開站不用逐一載入未打包模組。live／record 不准用（/bbs proxy 只有 dev server 有）。
+    command: process.env.E2E_SERVER === 'bundle' ? 'node scripts/serve-e2e-bundle.mjs' : 'node node_modules/vite/bin/vite.js',
     url: 'http://localhost:8080',
     timeout: 180000,
     // teardown 先送 SIGTERM 讓 dev server 自己收掉 socket，再強制收。
