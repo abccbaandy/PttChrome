@@ -45,7 +45,7 @@ import { functionModeExitDecision } from "../../src/js/easy_reading";
 import { parseStatusRow } from "../../src/js/string_util";
 import { parseHelpMenuScreen, HelpMenuController } from "../../src/js/help_menu";
 import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
-import { isMailListRows, parseMailRow, isMailboxOverLimitNotice } from "../../src/js/mail_list";
+import { isMailListRows, parseMailRow, isMailboxOverLimitNotice, isMailKeyHintRow } from "../../src/js/mail_list";
 import { parseContentDenied } from "../../src/js/push_screen";
 import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
 
@@ -419,6 +419,19 @@ describe("手機信件列表卡片：認不出 ⇒ 照舊格線（不畫卡片�
     ["沒有標題", "     1 + 10/01 alice"],
   ])("信件列：%s → 這一列不畫卡片", (_n, row) => {
     expect(parseMailRow(row)).toBeNull();
+  });
+
+  // P59：按鍵說明列（第 1 列）收起。認不出 ⇒ 照舊縮小格線（不藏任何字）。
+  test("對照組：upstream 的按鍵說明列認得出", () => {
+    expect(isMailKeyHintRow(MAIL_LIST_ROWS[1], 1)).toBe(true);
+  });
+  test.each([
+    ["改成一般文字", "讀信請按右鍵，寄信請按 Ctrl+P"],
+    ["夾了提示字", "[→]讀信 [z]信件夾 [~]資源回收筒 ★ 您有 3 封新信"],
+    ["只剩兩項", "[→]讀信 [z]信件夾"],
+    ["改用（鍵）括號", "(→)讀信 (z)信件夾 (~)資源回收筒 (/)搜尋"],
+  ])("按鍵說明列：%s → 不收起", (_n, row) => {
+    expect(isMailKeyHintRow(row, 1)).toBe(false);
   });
 });
 

@@ -386,6 +386,11 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   信件列不靠欄寬，認「編號 狀態? 日期 作者 ◇／R:／轉 標題」的順序；認不出的列照舊格線，整個畫面認不出照舊格線。
 - 渲染：信件列 → 兩行卡片（標題；寄件人・日期；未讀＝`+`／`M`／`R` 粗體＋圓點，高 `MAIL_CARD_PX`=60）；
   欄位標題列、第 0 列、末列收起；按鍵說明列（第 1 列，功能鍵可點）照舊縮小格線。
+- P59（pref `mobileMailListTools`，預設開）：按鍵說明列收起（`mail_list.isMailKeyHintRow`：第 1～3 列、整列都是
+  「[鍵]名稱」且至少 3 項，只看該列自己；認不出照舊縮小格線），`enhance.mailHideKeyHint` 進 `annotationsKey`。
+  底部導覽第 1 格「搜尋」（只給標題／作者：`searchGateFacts.mailListTools`＝手機＋pref＋信件列表；推文數在
+  `RMAIL` 被 `ask_filter_predicate` 直接取消、`s` 不是信箱指令；桌機的 `/`、`a` 照舊原生 prompt）、第 2 格「寫信」
+  送 ^P（`mail.c#mail_comms` 的 `Ctrl('P')`，按下前再驗本幀還是信件列表、沒有 prompt）、「到底」送 End（read.c 共用）。
 - 第一版只做卡片＋點開；不做累積捲動與背景預讀（信箱不接列表好讀）。讀信是同一個 pmore 狀態列，好讀照常接手（upstream 產的 `mail_read` 場景驗過）。
 - 守護：unit `mail_card`（upstream 產的畫面＋各種狀態＋DOM）、`parse_failure_degrade`（突變）；offline e2e
   `mobile_mail_cards`（卡片高、真 tap 送「↑↑＋⏎」、認不出 ⇒ 格線）。

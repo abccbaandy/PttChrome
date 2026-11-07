@@ -467,6 +467,20 @@ export const MobileToolbar = ({
             sendAction("editorSave");
           },
         );
+      case "mailCompose":
+        // P59：信件列表的「寫信」送 ^P。送之前再看一次本幀：還在信件列表、沒有 prompt 開著
+        // （工具列的 context 是上一次 settle 算的，^P 打進輸入欄就不是寄信了）。
+        return navBtn(
+          "__mailCompose",
+          IconPencilPlus,
+          i18n("mobileToolbar_mailCompose"),
+          () => {
+            const buf = pttchrome.buf;
+            if (!buf || !buf.isMailListScreen || !buf.isMailListScreen()) return;
+            if (buf.isPromptPending && buf.isPromptPending()) return;
+            sendAction("mailCompose");
+          },
+        );
       case "post":
         return navBtn(
           "__post",

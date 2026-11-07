@@ -14,6 +14,7 @@ import {
   isSearchPromptFrame,
   normalizeSearchText,
   searchKindOfKey,
+  searchGateFacts,
   SEARCH_INFLIGHT_MAX_MS,
   shouldInterceptSearchKey,
   submitSearch,
@@ -98,6 +99,57 @@ describe("availableSearchKinds", () => {
     f.rowTexts[23] = "  瀏覽 第 1/2 頁 ( 45%)  目前顯示: 第 1~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
     expect(availableSearchKinds(f)).toEqual([]);
     expect(availableSearchKinds(null)).toEqual([]);
+  });
+});
+
+// P59：手機信件列表。read.c 共用表的 / 與 a 在 RMAIL 也能用；推文數 Z 在 RMAIL 直接取消
+// （ask_filter_predicate `currstat == RMAIL ||`）、s 不是信箱的指令 ⇒ 只給標題、作者。
+// 只在手機開：桌機的 / 與 a 照舊是 PTT 原生 prompt（鍵盤攔截讀同一個判準）。
+describe("信件列表（P59，searchGateFacts.mailListTools）", () => {
+  const MAIL_FOOTER = " 信件列表  (^P)寄信 (y)回信 (x)轉寄 (d)刪信 (v)全部已讀       (←)離開 (h)說明  ";
+  const core = ({ mobile = true, mail = true } = {}) => {
+    const rowTexts = blank();
+    rowTexts[23] = MAIL_FOOTER;
+    return {
+      mobile,
+      buf: {
+        rows: ROWS,
+        cols: 80,
+        cur_x: 0,
+        cur_y: 5,
+        getRowText: (r) => rowTexts[r],
+        isCursorOnInputField: () => false,
+        isMailListScreen: () => mail,
+        listRenderMode: "native",
+      },
+      openSearchModal: vi.fn(() => true),
+    };
+  };
+  test("手機＋信件列表 ⇒ 標題、作者", () => {
+    const f = searchGateFacts(core());
+    expect(f.mailListTools).toBe(true);
+    expect(availableSearchKinds(f)).toEqual(["title", "author"]);
+  });
+  test("桌機 ⇒ 不給、/ 不攔（照舊原生 prompt）", () => {
+    const c = core({ mobile: false });
+    expect(availableSearchKinds(searchGateFacts(c))).toEqual([]);
+    expect(tryOpenSearchModal(c, "/", null)).toBe(false);
+  });
+  test("開關關掉 ⇒ 不給", () => {
+    writeValues({ ...readValuesWithDefault(), mobileMailListTools: false });
+    expect(availableSearchKinds(searchGateFacts(core()))).toEqual([]);
+  });
+  test("不是信件列表 ⇒ 不給", () => {
+    expect(availableSearchKinds(searchGateFacts(core({ mail: false })))).toEqual([]);
+  });
+  test("prompt 開著 ⇒ 不給", () => {
+    expect(availableSearchKinds({ ...searchGateFacts(core()), inputField: true })).toEqual([]);
+  });
+  test("推文數 Z 不攔（RMAIL 不支援）", () => {
+    const c = core();
+    expect(tryOpenSearchModal(c, "Z", null)).toBe(false);
+    expect(tryOpenSearchModal(c, "a", null)).toBe(true);
+    expect(c.openSearchModal).toHaveBeenCalledWith("author");
   });
 });
 

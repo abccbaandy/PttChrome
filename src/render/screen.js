@@ -23,7 +23,7 @@ import { buildRow } from "./row";
 import { buildListCard } from "./list_card";
 import { buildMenuCard, buildMenuBlankRow, isBlankRow } from "./menu_card";
 import { buildMailCard } from "./mail_card";
-import { MAIL_HEADER_RE } from "../js/mail_list";
+import { MAIL_HEADER_RE, isMailKeyHintRow } from "../js/mail_list";
 import { buildCollapsedRow } from "./collapsed_row";
 import {
   buildArticleMetaRow,
@@ -1237,9 +1237,13 @@ export class ScreenController {
       if (row === 0 || row === lines.length - 1)
         return buildCollapsedRow(row, "menuChromeRow");
       // 信件列表（P31，render/mail_card.js）：信件列畫成卡片，欄位標題列收起（卡片自己
-      // 帶寄件人／日期）；按鍵說明列照舊縮小格線（功能鍵可點）。
+      // 帶寄件人／日期）；按鍵說明列照舊縮小格線（功能鍵可點），P59 開著時收起。
       if (enhance.menuCards === "mail") {
-        if (MAIL_HEADER_RE.test(rowToText(lines[row])))
+        const rowText = rowToText(lines[row]);
+        if (MAIL_HEADER_RE.test(rowText))
+          return buildCollapsedRow(row, "menuChromeRow");
+        // P59：按鍵說明列也收起（動作在底部導覽）；只看該列自己，認不出照舊縮小格線。
+        if (enhance.mailHideKeyHint && isMailKeyHintRow(rowText, row))
           return buildCollapsedRow(row, "menuChromeRow");
         const mail = buildMailCard({
           chars: lines[row],

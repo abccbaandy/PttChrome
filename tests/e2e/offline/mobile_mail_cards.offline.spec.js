@@ -8,7 +8,7 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline, waitScreenSettled } = require('../helpers/replay');
-const { startCapture, expectOnlyFence } = require('../helpers/capture');
+const { startCapture, peekCapture, takeCapture, expectOnlyFence } = require('../helpers/capture');
 const { scrollIntoViewStable } = require('../helpers/layout');
 
 const MAIL_CARD_PX = 60;
@@ -90,6 +90,51 @@ test.describe('手機信件列表卡片', () => {
       '\x1b[A\x1b[A\r',
       'tap 第一封'
     );
+  });
+
+  // P59（pref mobileMailListTools，預設開）：按鍵說明列收起；底部導覽第 1 格搜尋（標題／作者）、
+  // 第 2 格寫信（^P，mail.c#mail_comms）、到底送 End（read.c 共用的 KEY_END）。
+  test('P59：說明列收起；底部導覽搜尋／寫信／到底', async ({ page }) => {
+    const byKey = (k) => page.locator(`[data-key="${k}"]`);
+    await drawMailList(page);
+    await page.waitForFunction(() => document.querySelectorAll('#mainContainer .mailCard').length === 3);
+    const hintH = await page.evaluate(
+      () => document.querySelector('#mainContainer [type="bbsrow"][srow="1"]').getBoundingClientRect().height
+    );
+    expect(hintH).toBe(0);
+    await expect(byKey('__mailCompose')).toBeVisible();
+    await expect(byKey('__end')).toBeEnabled();
+
+    await startCapture(page);
+    await byKey('__mailCompose').tap();
+    await expect.poll(() => peekCapture(page)).toContain('\x10');
+    expect(await takeCapture(page)).toBe('\x10');
+
+    await startCapture(page);
+    await byKey('__end').tap();
+    await expect.poll(() => peekCapture(page)).toContain('\x1b[4~');
+    expect(await takeCapture(page)).toBe('\x1b[4~');
+
+    await byKey('__search').tap();
+    const sheet = page.locator('[data-sheet="search"]');
+    await expect(sheet).toBeVisible();
+    // 種類只有標題、作者（推文數在信箱裡 PTT 直接取消，看板 s 不是信箱的指令）
+    const kinds = await sheet.locator('input[type="radio"]').evaluateAll((els) => els.map((e) => e.value));
+    expect(kinds).toEqual(['title', 'author']);
+  });
+
+  test('P59 關掉 ⇒ 說明列照舊、前兩格空、到底反灰', async ({ page }) => {
+    const byKey = (k) => page.locator(`[data-key="${k}"]`);
+    await ptt.applyPrefs(page, { mobileMailListTools: false });
+    await drawMailList(page);
+    await page.waitForFunction(() => document.querySelectorAll('#mainContainer .mailCard').length === 3);
+    const hintH = await page.evaluate(
+      () => document.querySelector('#mainContainer [type="bbsrow"][srow="1"]').getBoundingClientRect().height
+    );
+    expect(hintH).toBeGreaterThan(0);
+    await expect(byKey('__mailCompose')).toHaveCount(0);
+    await expect(byKey('__search')).toHaveCount(0);
+    await expect(byKey('__end')).toBeDisabled();
   });
 
   test('認不出（底列不是信件列表）⇒ 照舊格線、沒有卡片', async ({ page }) => {

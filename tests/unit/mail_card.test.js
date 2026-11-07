@@ -10,7 +10,7 @@
 // real-input: tests/e2e/offline/mobile_mail_cards.offline.spec.js
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
-import { isMailListRows, mailHeaderRow, parseMailRow } from "../../src/js/mail_list";
+import { isMailKeyHintRow, isMailListRows, mailHeaderRow, parseMailRow } from "../../src/js/mail_list";
 import { MAIL_CARD_PX, buildMailCard } from "../../src/render/mail_card";
 import { menuCardTargetRow } from "../../src/js/mobile_layout";
 import { mountScreen, unmountAll } from "./helpers/mount_screen";
@@ -42,6 +42,20 @@ function upstreamMailBuf() {
   if (buf._settleTimer) clearTimeout(buf._settleTimer);
   return buf;
 }
+
+// P59：按鍵說明列只看該列自己（列號＋「[鍵]名稱」排滿整列）。認不出 ⇒ 不收（照舊縮小格線）。
+describe("isMailKeyHintRow", () => {
+  test("upstream 產的信件列表：只有第 1 列是", () => {
+    expect(MAIL_LIST_ROWS.map((t, y) => isMailKeyHintRow(t, y))).toEqual(MAIL_LIST_ROWS.map((t, y) => y === 1));
+  });
+  test("列號超出範圍、項目太少、夾了別的字 ⇒ 不是", () => {
+    expect(isMailKeyHintRow(MAIL_LIST_ROWS[1], 0)).toBe(false);
+    expect(isMailKeyHintRow(MAIL_LIST_ROWS[1], 4)).toBe(false);
+    expect(isMailKeyHintRow("[→]讀信 [z]信件夾", 1)).toBe(false);
+    expect(isMailKeyHintRow("[→]讀信 [z]信件夾 [~]資源回收筒 您有新信", 1)).toBe(false);
+    expect(isMailKeyHintRow(null, 1)).toBe(false);
+  });
+});
 
 describe("parseMailRow／isMailListRows", () => {
   test("upstream 產的信件列表：指紋成立，三封信都解得出來", () => {
@@ -115,12 +129,12 @@ const line = (str) =>
     getColor: () => NORMAL,
   }));
 const LINES = MAIL_LIST_ROWS.map(line);
-const render = (menuCards) =>
+const render = (menuCards, extra) =>
   mountScreen({
     lines: LINES,
     enableLinkInlinePreview: false,
     enableLinkHoverPreview: false,
-    enhance: { pageState: 1, menuCards },
+    enhance: { pageState: 1, menuCards, ...extra },
   });
 const rowNode = (s, r) => s.container.querySelector(`[type="bbsrow"][srow="${r}"]`);
 
@@ -154,6 +168,13 @@ describe("render：menuCards === 'mail'", () => {
   test("主功能表模式（true）與桌機（undefined）不畫信件卡片", () => {
     expect(render(true).container.querySelector(".mailCard")).toBe(null);
     expect(render(undefined).container.querySelector(".mailCard")).toBe(null);
+  });
+
+  // P59（pref mobileMailListTools ⇒ enhance.mailHideKeyHint）：按鍵說明列收起，動作在底部導覽。
+  test("mailHideKeyHint ⇒ 按鍵說明列也收起；卡片照舊", () => {
+    const s = render("mail", { mailHideKeyHint: true });
+    expect(rowNode(s, 1).classList.contains("mobileCollapsedRow")).toBe(true);
+    for (const r of MAIL_ITEM_ROWS) expect(rowNode(s, r).classList.contains("mailCard")).toBe(true);
   });
 
   test("CSS 高度與常數一致", () => {
