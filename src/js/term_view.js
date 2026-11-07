@@ -1499,6 +1499,12 @@ TermView.prototype = {
           menuCards: this.menuCards ?
             (this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen() ? 'mail' : true) :
             undefined,
+          // P59（pref mobileMailListTools）：手機信件列表卡片收起「[→]讀信 [z]信件夾…」按鍵說明列
+          // （render/screen.js 的 mail 分支，mail_list.isMailKeyHintRow 只看該列自己）。進 annotationsKey。
+          mailHideKeyHint: !!(
+            this.menuCards && this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen() &&
+            readEffectivePrefs().mobileMailListTools
+          ),
           // 「開燈」的軌 B：目前的 pmore 色彩顯示模式（0/1/2，null＝還沒看過設定
           // 頁）＋切換入口。App 在啟動時指派 onLightsRawMode，**引用必須穩定**
           // （同 onFunctionKey/onAidClick 的 view-optional callback 慣例）。

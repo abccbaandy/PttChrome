@@ -73,6 +73,21 @@ export function isMailboxOverLimitNotice(lastRowText) {
 
 export const MAILBOX_OVER_LIMIT_HINT = '信箱超過上限，PTT 要先整理信件才能離開信箱';
 
+// 信件列表上方的按鍵說明列（「[→]讀信 [z]信件夾 [~]資源回收筒 [/]搜尋 [a]找作者 …」，
+// mail.c#mail_comms 的 CMD_PRIO_NORM 項目由 psb 畫成「[鍵]名稱」）。P59 手機卡片模式收起它
+// （動作改在底部導覽）。只看這一列自己：整列都是「[鍵]名稱」、至少 3 項、出現在欄位標題列能出現
+// 的範圍內（第 1～HEADER_MAX_ROW 列）。認不出 ⇒ 照舊縮小格線。
+const KEY_HINT_ITEM_RE = /\[[^\s\]]{1,8}\]\S+|\[\]\]\S+/g;
+export function isMailKeyHintRow(text, row) {
+  if (typeof text !== 'string') return false;
+  if (!(row >= 1 && row <= HEADER_MAX_ROW)) return false;
+  const t = text.trim();
+  if (!t || MAIL_HEADER_RE.test(t) || parseMailRow(text)) return false;
+  const items = t.match(KEY_HINT_ITEM_RE) || [];
+  if (items.length < 3) return false;
+  return t.replace(KEY_HINT_ITEM_RE, '').trim() === '';
+}
+
 // 欄位標題列是第幾列（卡片模式收起它）；沒有回 -1。
 export function mailHeaderRow(rowTexts) {
   if (!Array.isArray(rowTexts)) return -1;

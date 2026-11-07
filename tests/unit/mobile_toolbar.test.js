@@ -189,6 +189,31 @@ describe("toolbarContextFromFacts", () => {
       expect(sameToolbarContext({ editorSave: true, search: [] }, { editorSave: false, search: [] })).toBe(false);
     });
   });
+  // P59：手機信件列表（searchGateFacts 的 mailListTools＝手機＋pref＋buf.isMailListScreen）。
+  // mail.c#mail_comms 的 Ctrl('P') 寄信；read.c 共用表的 / a（標題／作者）與 KEY_END。
+  describe("mailList（pref mobileMailListTools）", () => {
+    const MAIL_FOOTER = " 信件列表  (^P)寄信 (y)回信 (x)轉寄 (d)刪信 (v)全部已讀       (←)離開 (h)說明  ";
+    const mail = (extra) => ({ ...frame({ 23: MAIL_FOOTER }), mailListTools: true, ...extra });
+    test("信件列表 ⇒ 第 1 格搜尋（標題、作者）、第 2 格寫信（^P）、到底可按", () => {
+      const c = toolbarContextFromFacts(mail(), 1);
+      expect(c).toMatchObject({ mailList: true, end: true, search: ["title", "author"], post: false });
+      expect(toolbarSlots(c)).toEqual(["search", "mailCompose", "refresh", "end", "keys", "more"]);
+      expect(TOOLBAR_KEYS.mailCompose).toEqual({ key: "p", mods: { altKey: true } });
+    });
+    test("prompt 開著（游標在輸入欄）⇒ 都不給", () => {
+      const c = toolbarContextFromFacts(mail({ inputField: true }), 1);
+      expect(c).toMatchObject({ mailList: false, end: false, search: [] });
+      expect(toolbarSlots(c).slice(0, 2)).toEqual([null, null]);
+    });
+    test("開關關掉／不是手機（facts 沒有 mailListTools）⇒ 照舊：兩格空、到底反灰", () => {
+      const c = toolbarContextFromFacts(frame({ 23: MAIL_FOOTER }), 1);
+      expect(c).toMatchObject({ mailList: false, end: false, search: [] });
+      expect(toolbarSlots(c).slice(0, 2)).toEqual([null, null]);
+    });
+    test("context 比較看得到它的翻轉", () => {
+      expect(sameToolbarContext({ mailList: true, search: [] }, { mailList: false, search: [] })).toBe(false);
+    });
+  });
 });
 
 test("sameToolbarContext：內容相同就相同（不必每次 settle 重 render）", () => {

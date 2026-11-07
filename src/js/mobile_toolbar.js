@@ -32,6 +32,10 @@
 //            caption、游標不在輸入欄＝term_buf.isEditorTypingNow 的同一個判準）⇒ 第 2 格「存檔」
 //            送 ^X，打開 PTT 原生的「檔案處理」選單（edit.c#write_file），存檔／放棄由使用者自己選。
 //            ^S 搜尋、F5 跳行這類 getdata(b_lines - 1) 的 prompt 開著時底列還在 ⇒ 要看游標。
+//   mailList：P59（pref mobileMailListTools，searchGateFacts 的 mailListTools：手機＋信件列表）。
+//            第 1 格「搜尋」（/、a，availableSearchKinds）、第 2 格「寫信」送 ^P（mail.c#mail_comms
+//            的 Ctrl('P') mail_cmd_send，打開原生寄信流程）、「到底」送 End（read.c 共用的 KEY_END）。
+//            游標在輸入欄時不給（同 post）。
 // 判準刻意不看 enableLongPush：推鈕送的是 X，長推文關掉時就是 PTT 原生推文。
 
 import { parsePagerFooterContext } from './string_util';
@@ -48,7 +52,7 @@ import { readEffectivePrefs } from './pref_storage';
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
   unreadJump: false, markAllRead: false, help: false, contentTools: false, refresh: false, end: false,
-  editor: false, editorSave: false, search: [], appBar: EMPTY_APP_BAR
+  editor: false, editorSave: false, mailList: false, search: [], appBar: EMPTY_APP_BAR
 });
 
 // 送鍵表：key 是 term_view.sendKeyAsUser 的 keyName（單字元或 KeyMap 裡的具名鍵），
@@ -58,6 +62,8 @@ export const TOOLBAR_KEYS = Object.freeze({
   push: { key: MOBILE_KEYPAD_PUSH_KEY },
   reply: { key: 'y' },
   post: { key: 'p', mods: { altKey: true } },
+  // ^P：信件列表的「寄信」（同 post 走 Alt remap）。
+  mailCompose: { key: 'p', mods: { altKey: true } },
   end: { key: 'End' },
   help: { key: 'h' },
   // ^X：同 post 走 Alt remap。
@@ -74,14 +80,16 @@ export function hasHelpHint(lastRowText) {
 // 工具列的固定格位。**每一格的位置不隨畫面變**：按鈕依畫面有條件出現時，flex 等寬
 // 會讓同一顆按鈕在不同畫面跑到不同位置（使用者回報「搜尋／到底有時在中間有時在旁邊」）。
 //   第 1 格：主要動作 —— 文章＝推、編輯器＝輸入框、列表／主功能表＝搜尋
-//   第 2 格：次要動作 —— 文章／信件＝回文（回信）、文章列表＝發文、編輯器＝存檔（P57）
+//   第 2 格：次要動作 —— 文章／信件＝回文（回信）、文章列表＝發文、編輯器＝存檔（P57）、
+//            信件列表＝寫信（P59）
 //   第 3～6 格：重整、到底、按鍵、更多，**永遠都在**；不能用時反灰（不藏）。
 // null ＝這個畫面沒有這一格的動作，畫一個空格佔位（寬度照算）。
 export const TOOLBAR_SLOT_COUNT = 6;
 export function toolbarSlots(c) {
   const ctx = c || EMPTY_TOOLBAR_CONTEXT;
   const first = ctx.push ? 'push' : ctx.editor ? 'editorInput' : ctx.search && ctx.search.length ? 'search' : null;
-  const second = ctx.reply ? 'reply' : ctx.post ? 'post' : ctx.editorSave ? 'editorSave' : null;
+  const second = ctx.reply ? 'reply' : ctx.post ? 'post' : ctx.editorSave ? 'editorSave' :
+    ctx.mailList ? 'mailCompose' : null;
   return [first, second, 'refresh', 'end', 'keys', 'more'];
 }
 
@@ -129,6 +137,7 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
   const o = opts || {};
   const lists = !facts.inputField && (isArticleList(facts) || !!classifyBoardListScreen(facts));
   const menu = boardListContextKind(facts) === 'menu';
+  const mailList = !facts.inputField && !!facts.mailListTools;
   return {
     push: article,
     reply: pager && !essence,
@@ -145,9 +154,10 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
       listOpened: o.listOpened,
       home: o.home
     }),
-    end: pager || lists,
+    end: pager || lists || mailList,
     editor: pageState === 6,
     editorSave: pageState === 6 && !!o.editorSave && !facts.inputField && isEditorFooter(last),
+    mailList: mailList,
     search: availableSearchKinds(facts),
     appBar: appBarFromFacts(facts, { ...(opts || {}), pageState: pageState })
   };
@@ -174,7 +184,7 @@ export function mobileToolbarContext(core) {
 
 const FLAGS = [
   'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'help', 'contentTools', 'refresh', 'end',
-  'editor', 'editorSave'
+  'editor', 'editorSave', 'mailList'
 ];
 
 export function sameToolbarContext(a, b) {

@@ -1978,6 +1978,15 @@
   "mobileAppBar_editor": {
     "message": "編輯文章"
   },
+  "mobileToolbar_mailCompose": {
+    "message": "寫信"
+  },
+  "options_mobileMailListTools": {
+    "message": "手機信件列表加「搜尋」「寫信」"
+  },
+  "tooltip_mobileMailListTools": {
+    "message": "信件列表的底部導覽前兩格是「搜尋」（標題／作者）與「寫信」，「到底」也能按；卡片上方那列鍵盤說明收起來。送的都是 PTT 自己的按鍵（/、a、Ctrl+P、End）。"
+  },
   "options_mobileEditorSave": {
     "message": "手機編輯器底部導覽加「存檔」"
   },

@@ -1979,6 +1979,15 @@ export const en_US = {
   "mobileAppBar_editor": {
     "message": "Editing"
   },
+  "mobileToolbar_mailCompose": {
+    "message": "Write"
+  },
+  "options_mobileMailListTools": {
+    "message": "Add \"Search\" and \"Write\" to the mobile mail list"
+  },
+  "tooltip_mobileMailListTools": {
+    "message": "In the mail list the bottom bar's first two slots are \"Search\" (title / author) and \"Write\", and \"End\" works; the keyboard hint row above the cards is hidden. All of them send PTT's own keys (/, a, Ctrl+P, End)."
+  },
   "options_mobileEditorSave": {
     "message": "Add \"Save\" to the mobile editor's bottom bar"
   },

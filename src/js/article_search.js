@@ -106,17 +106,30 @@ export function searchGateFacts(core) {
     inputField: typeof buf.isCursorOnInputField === 'function' && buf.isCursorOnInputField(),
     listOwner: listRenderOwnerOf(buf),
     // pager 是看板精華區開的（TermBuf.pagerContext）：footer 跟看板文章一樣，按鍵卻不通
-    pagerFromEssence: !!buf.pagerFromEssence
+    pagerFromEssence: !!buf.pagerFromEssence,
+    // P59：手機信件列表（pref mobileMailListTools）。只在手機開：桌機的 / 與 a 照舊是 PTT
+    // 原生的搜尋 prompt（鍵盤攔截也讀這個判準）。
+    mailListTools:
+      !!core.mobile &&
+      !!readEffectivePrefs().mobileMailListTools &&
+      typeof buf.isMailListScreen === 'function' &&
+      buf.isMailListScreen()
   };
 }
+
+// 信件列表能用的搜尋：read.c 的共用指令（/ 標題、a 作者）；推文數在 RMAIL 直接取消
+// （read.c#ask_filter_predicate `currstat == RMAIL ||`），看板 s 不是這裡的指令。
+export const MAIL_SEARCH_KINDS = Object.freeze(['title', 'author']);
 
 // 這一幀可以開哪幾種搜尋（工具列的選單與鍵盤攔截共用同一個判準）。
 //   文章列表 → 全部；看板列表 → 只有看板（看板列表的 / 是「看板中文關鍵字」，
 //   board.c:2063，另一種東西，不接）；主功能表 → 只有看板（menu.c:767，只有
 //   MMENU/TMENU/XMENU 的 s 是選擇看板，其他選單的 s 是跳到 s 開頭的項目）；
+//   手機信件列表（P59，facts.mailListTools）→ 標題、作者；
 //   其他（文章、prompt、編輯器…）→ 無。
 export function availableSearchKinds(facts) {
   if (!facts || facts.inputField) return [];
+  if (facts.mailListTools) return MAIL_SEARCH_KINDS.slice();
   if (facts.listOwner === OWNER_ARTICLE_LIST) return SEARCH_KINDS.slice();
   const ctx = boardListContextKind(facts);
   if (ctx === 'article-list') return SEARCH_KINDS.slice();

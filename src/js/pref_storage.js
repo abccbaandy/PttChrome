@@ -322,6 +322,10 @@ export const DEFAULT_PREFS = {
   // 手機編輯器：底部導覽第 2 格「存檔」（送 ^X 打開 PTT 原生檔案處理選單）＋App Bar 寫「編輯文章」
   // （P57，mobile_toolbar.editorSave）。使用者自己按的鍵、只在本幀打字會進內文時出現。
   mobileEditorSave: true,
+  // 手機信件列表（P59，mobile_toolbar.mailList）：卡片模式收起「[→]讀信 [z]信件夾…」按鍵說明列、
+  // 底部導覽第 1、2 格放「搜尋」（/、a）與「寫信」（^P）、「到底」（End）可按。都是使用者自己按的
+  // PTT 原生指令 ⇒ 不在安全模式清單（同 mobileEditorSave）。
+  mobileMailListTools: true,
   // PTT 自己畫了 '>' 游標的畫面（列表／選單）不再疊一個閃爍游標 —— 兩個游標同框是
   // 重複資訊。輸入框／編輯器不走 pttbbs 的 cursor_show，閃爍游標照舊顯示，位置資訊
   // 不會消失，所以預設開。判定見 comment_parse.js#hasServerCursorMark。

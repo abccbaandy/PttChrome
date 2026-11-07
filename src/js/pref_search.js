@@ -368,6 +368,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileBoardCardUnread",
     },
     {
+      key: "mobileMailListTools",
+      titleKey: "options_mobileMailListTools",
+      tooltipKey: "tooltip_mobileMailListTools",
+    },
+    {
       key: "mobileEditorSave",
       titleKey: "options_mobileEditorSave",
       tooltipKey: "tooltip_mobileEditorSave",

@@ -169,6 +169,8 @@ export function annotationsKey(input) {
     stable(e.listNewPushKey),
     // 手機主功能表大按鈕：同理（同一批列物件改畫成按鈕），整批重建。
     stable(e.menuCards),
+    // 手機信件列表收起按鍵說明列（P59，pref mobileMailListTools）：切開關要整批重畫。
+    stable(e.mailHideKeyHint),
     stable(input.mergeCaption),
     stable(input.captionAi),
     stable(input.aiKeep),
