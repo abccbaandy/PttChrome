@@ -373,6 +373,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileMailListTools",
     },
     {
+      key: "mobileModernCommentCards",
+      titleKey: "options_mobileModernCommentCards",
+      tooltipKey: "tooltip_mobileModernCommentCards",
+    },
+    {
       key: "mobileEditorSave",
       titleKey: "options_mobileEditorSave",
       tooltipKey: "tooltip_mobileEditorSave",

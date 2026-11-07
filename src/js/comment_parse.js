@@ -109,7 +109,7 @@ function commentContentCol(text, userid) {
 
 // 文字 index → cell 欄號：rowToText 把每個 DBCS 字收合成 1 個字元（佔 2 格），
 // 所以每多一個非 ASCII 字元欄號就多 1。
-function cellColOf(text, idx) {
+export function cellColOf(text, idx) {
   let wide = 0;
   for (let i = 0; i < idx; ++i) wide += charCells(text.charAt(i)) - 1;
   return idx + wide;
@@ -225,6 +225,14 @@ export function parseModernCommentHeader(text) {
   };
   if (m[4]) h.deleted = m[4];
   return h;
+}
+
+// 內容續行的內容從第幾格開始（cell 空間；手機推文卡片 P60 從這格讀內容）。
+// 87c3a1f3 之後＝bodyCol（前面全是半形空白）；之前＝「│」（全形 2 格）＋緊接的一格空白。
+export function modernCommentBodyCol(text, h) {
+  if (!text || !h) return null;
+  if (h.bodyCol != null) return h.bodyCol;
+  return cellColOf(text, 1) + (text.charAt(1) === ' ' ? 1 : 0);
 }
 
 // 新格式一則推文的內容續行 → 去掉縮排的原文；不是這一則的續行 ⇒ null。
@@ -366,8 +374,8 @@ function markAuthorId(result, userid, idCol, ctx) {
 // 新格式推文（見 parseModernCommentHeader）。標頭列：推文者／黑名單／原PO 高亮，
 // **不給樓層**（`[N]` 就是 server 給的樓號）、不給推文可點區欄位（沒有內容欄）。
 // `modern: true` 讓 comment_merge.groupSameAuthorRuns 不把它當舊格式推文合併。
-// 內容續行（modernCommentBodyText）：該則被黑名單藏起來時回 { hidden }；內容提到我（ctx.selfId）時回
-// { mentionsSelf }；其餘回 null。
+// 內容續行（modernCommentBodyText）：該則被黑名單藏起來時回 { hidden }；其餘回
+// { modernBody, modernBodyCol }（內容提到我（ctx.selfId）時另帶 mentionsSelf）。
 // 沒有 ctx.modernThread（反向讀取的 tail）時內容列一律不標 ⇒ 最多少藏幾列，不會藏錯。
 function annotateModernComment(text, ctx) {
   const thread = ctx.modernThread;
@@ -381,10 +389,12 @@ function annotateModernComment(text, ctx) {
             ? { hidden: true, modernBody: true, filtered: true }
             : { hidden: true, modernBody: true };
         // 提到我：標在含那段字的 │ 內容列（標頭列只有帳號與時間）。
+        // modernBodyCol：手機推文卡片（P60）把這一列畫成上一張卡片的續行，從這格讀內容。
+        const bodyCol = modernCommentBodyCol(text, thread);
         if (thread.userid !== ctx.selfId && mentionsUser(body, ctx.selfId)) {
-          return { hidden: false, modernBody: true, mentionsSelf: true };
+          return { hidden: false, modernBody: true, modernBodyCol: bodyCol, mentionsSelf: true };
         }
-        return null;
+        return { hidden: false, modernBody: true, modernBodyCol: bodyCol };
       }
       thread.userid = null;
     }

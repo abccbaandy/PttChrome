@@ -413,6 +413,31 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 .commentCard .floorBadgeNum::before {
   content: "#";
 }
+/* 新格式推文（P60，render/comment_card.buildModernCommentCard）：一則跨多列、每列各自一個
+   bbsrow ⇒ 分隔線改畫在標頭卡片的上緣（續行不知道自己是不是最後一列），續行不留上下間距、
+   接在標頭卡片下面。 */
+.main.mobileReflow #mainContainer span[type="bbsrow"].commentCard.modernCommentCard {
+  padding-block: 4px 0;
+  box-shadow: inset 0 1px 0 #333;
+}
+.main.mobileReflow #mainContainer span[type="bbsrow"].commentCard.commentCardCont {
+  padding-block: 0;
+  box-shadow: none;
+}
+.main.mobileReflow #mainContainer span[type="bbsrow"].commentCard.modernCommentCard.mentionsSelf {
+  box-shadow: inset 3px 0 0 #3f9a63, inset 0 1px 0 #333;
+}
+.main.mobileReflow #mainContainer span[type="bbsrow"].commentCard.commentCardCont.mentionsSelf {
+  box-shadow: inset 3px 0 0 #3f9a63;
+}
+.commentCard .commentCardEdited {
+  font-size: 0.8em;
+  color: #888;
+}
+/* 刪除／隱藏的推文：內容灰色（PTT 自己的色碼照留在字上，這裡蓋過去）。 */
+.commentCard .commentCardText.commentCardDeleted span {
+  color: #888;
+}
 
 /* 手機 Phase 4：列表好讀的卡片（render/list_card.js，docs/mobile.md「Phase 4」）。
    **高度鎖死 2.5em（＝LIST_CARD_ROWS × chh，.main 的 font-size 就是 chh）**：
@@ -1262,21 +1287,34 @@ span {
 
 /* Same-author (原PO) comment highlight (Enhanced Add-on). Wraps just the user-id
    columns inside a comment line (see LinkSegmentBuilder); the id's char spans are
-   b0/transparent so this tint shows through without overriding ANSI colours. */
-.commentByAuthor {
-  background-color: #103a5c;
-}
-
-/* 自己的推文：同一個形狀（只染 id 格）、換低彩度綠，跟原PO的藍分得開又不搶眼
-   （annotation authorIdKind 'self'，我同時是原PO 時以「我」為準）。 */
-.commentBySelf {
-  background-color: #1d4a32;
-}
-
-/* 關注名單（P33，annotation authorIdKind 'follow'）：同一個形狀（只染 id 格）、低彩度琥珀。
-   優先序：我＞原PO＞關注（comment_parse#markAuthorId）。 */
+   b0/transparent so this tint shows through.
+   P60（L：深藍底幾乎看不出來）：三種都改成「字換色＋同色淡底」—— 原PO 青、我 綠、關注 琥珀，
+   色相分得開、在推文的黃字裡一眼找得到。字色蓋過 id 原本的 ANSI 色（.qN 是單一 class，
+   這裡多一層後代選擇器就贏）；上班模式（.work-mode-active .qN）與游標列加亮
+   （.cursorBrighten .qN）的特異度更高，照舊由它們決定。
+   我同時是原PO 時以「我」為準，優先序：我＞原PO＞關注（comment_parse#markAuthorId）。 */
+.commentByAuthor,
+.commentBySelf,
 .commentByFollow {
-  background-color: #4a3a12;
+  border-radius: 2px;
+}
+.commentByAuthor {
+  background-color: rgba(34, 211, 238, 0.16);
+}
+.commentByAuthor span {
+  color: #67e8f9;
+}
+.commentBySelf {
+  background-color: rgba(74, 222, 128, 0.16);
+}
+.commentBySelf span {
+  color: #86efac;
+}
+.commentByFollow {
+  background-color: rgba(251, 146, 60, 0.2);
+}
+.commentByFollow span {
+  color: #fdba74;
 }
 
 /* 關注名單命中的文章列（data-list-followed，格線列與手機卡片都有）：左緣一條琥珀色條＋很淡

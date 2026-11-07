@@ -160,6 +160,8 @@ export function annotationsKey(input) {
     stable(e.boardUnreadMark),
     // 手機推文卡片：同理（同一批列物件在換行版面切換時改畫成卡片），整批重建。
     stable(e.commentCards),
+    // 新格式推文卡片（P60，pref mobileModernCommentCards）：同理。
+    stable(e.modernCommentCards),
     // 新推文標記的列（js/new_comments.js）：一篇文章裡從 null 翻成某一列最多一次。
     stable(e.newCommentsRow),
     // 推完文剛推的那幾則（js/just_pushed.js）：設定、到期各翻一次 ⇒ 那一幀全量重算。

@@ -116,10 +116,11 @@ describe('annotateComment：新格式', () => {
     const rows = [H1, '│第一行沒有', '│第二行 @MeUser 看這', ''];
     const anns = rows.map((t) => annotateComment(t, ctx));
     expect(anns[0].mentionsSelf).toBeUndefined();
-    expect(anns[1]).toBeNull();
-    expect(anns[2]).toEqual({ hidden: false, modernBody: true, mentionsSelf: true });
+    // 續行一律標 modernBody（P60 手機卡片從 modernBodyCol 讀內容：「│」2 格，後面沒有空白）。
+    expect(anns[1]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 2 });
+    expect(anns[2]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 2, mentionsSelf: true });
     const own = ctxOf({ selfId: 'someuser' });
-    expect([H1, '│someuser 自己'].map((t) => annotateComment(t, own))[1]).toBeNull();
+    expect([H1, '│someuser 自己'].map((t) => annotateComment(t, own))[1].mentionsSelf).toBeUndefined();
   });
 
   test('黑名單：標頭與其後的 │ 內容列一起藏，遇到非內容列就停', () => {
@@ -130,8 +131,13 @@ describe('annotateComment：新格式', () => {
     expect(anns[1]).toEqual({ hidden: true, modernBody: true });
     expect(anns[2]).toEqual({ hidden: true, modernBody: true });
     expect(anns[3]).toMatchObject({ hidden: false, userid: 'someuser' });
-    expect(anns[4]).toBeNull();
+    expect(anns[4]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 2 });
     expect(anns[5]).toBeNull();
+  });
+
+  test('「│ 」後面的一格空白算縮排：內容從第 3 格起', () => {
+    const ctx = ctxOf();
+    expect([H1, '│ 內容'].map((t) => annotateComment(t, ctx))[1]).toMatchObject({ modernBodyCol: 3 });
   });
 
   test('標頭之前就出現的 │ 列（一般內文）不受影響', () => {
@@ -286,7 +292,7 @@ describe('annotateComment：87c3a1f3 之後', () => {
     expect(anns[1]).toEqual({ hidden: true, modernBody: true });
     expect(anns[2]).toMatchObject({ hidden: false, userid: 'alice' });
     expect(anns[2].floor).toBeUndefined();
-    expect(anns[3]).toBeNull();
+    expect(anns[3]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 7 });
     expect(anns[4]).toBeNull();
     expect(anns[5]).toBeNull();
   });
@@ -309,7 +315,7 @@ describe('annotateComment：87c3a1f3 之後', () => {
     const ctx2 = ctxOf({ selfId: 'meuser' });
     const anns = [pipeHeader('bob', '第一行', '10/28/2026 12:00', '3'), '     MeUser 看這'].map((t) => annotateComment(t, ctx2));
     expect(anns[0].mentionsSelf).toBeUndefined();
-    expect(anns[1]).toEqual({ hidden: false, modernBody: true, mentionsSelf: true });
+    expect(anns[1]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 5, mentionsSelf: true });
     const own = ctxOf({ selfId: 'bob' });
     expect(annotateComment(head.replace('@meuser', '@bob'), own).mentionsSelf).toBeUndefined();
   });
