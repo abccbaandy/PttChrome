@@ -166,3 +166,59 @@
 .mobileKeypadWide2 {
   grid-column: span 2;
 }
+
+/* P61：PTT 提問的可點選項（prompt_choices.js）。貼在工具列正上方、同一個 fixed 容器，高度回報給
+   App（setMobileKeysPanelInset）⇒ 終端機排在它上面，提問那一列不會被蓋住。選項多（發文種類 8＋1）
+   就換行；觸控目標 ≥44px。預設選項（PTT 的 [F]、[N]…，只按 Enter 的那個）加框色提示。 */
+.mobilePromptChoices {
+  padding: 8px 10px 10px;
+  background: rgba(20, 20, 24, 0.96);
+  border-top: 1px solid #444;
+}
+
+.mobilePromptChoicesTitle {
+  margin: 0 2px 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: #b8b8c2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobilePromptChoicesRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mobilePromptChoice {
+  min-height: 44px;
+  min-width: 56px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #555;
+  border-radius: 22px;
+  background: #2b2b30;
+  color: #eee;
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mobilePromptChoice:active {
+  background: #3a3a42;
+}
+
+.mobilePromptChoice.isDefault {
+  border-color: #5a8ee0;
+}
+
+.mobilePromptChoiceKey {
+  font-size: 13px;
+  font-weight: 600;
+  color: #8fb4f0;
+}

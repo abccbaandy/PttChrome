@@ -51,6 +51,10 @@ import {
   toolbarSlots,
 } from "../../js/mobile_toolbar";
 import {
+  promptChoicesFromBuf,
+  promptChoicesSig,
+} from "../../js/prompt_choices";
+import {
   splitMoreGrid,
   stableMoreSplit,
   MORE_GRID_LABEL_KEYS,
@@ -142,6 +146,9 @@ export const MobileToolbar = ({
   // pointerdown（手指剛碰到、手勢還沒判定）先記下來。
   const pressSelectionRef = useRef("");
   const keysRef = useRef(null);
+  // P61：PTT 提問的可點選項（context.choices）。和按鍵面板一樣貼在工具列上方、回報高度給 App
+  // （終端機排在它上面，提問那一列才不會被蓋住）。按鍵／更多開著時不出現（同一時間一個面板）。
+  const choicesRef = useRef(null);
 
   useEffect(() => {
     setMobile(!!pttchrome.mobile);
@@ -164,17 +171,25 @@ export const MobileToolbar = ({
     );
   }, [pttchrome]);
 
-  // 按鍵面板蓋住的高度回報給 App（終端機排在它上面，見 setMobileKeysPanelInset）。
+  // 按鍵面板（或提問選項）蓋住的高度回報給 App（終端機排在它上面，見 setMobileKeysPanelInset）。
   const visible = mobile && !hidden;
+  const choices = panel === null ? context.choices : null;
+  const choicesSig = promptChoicesSig(choices);
   useLayoutEffect(() => {
     if (typeof pttchrome.setMobileKeysPanelInset !== "function")
       return undefined;
-    const el = keysRef.current;
-    pttchrome.setMobileKeysPanelInset(
-      visible && panel === "keys" && el ? el.offsetHeight : 0,
-    );
+    // 提問選項只在提問靠下時讓位（anchor，見 prompt_choices.js）：提問在上半部時讓位反而把它推進
+    // App Bar 後面。
+    const el =
+      panel === "keys"
+        ? keysRef.current
+        : choices && choices.anchor === "bottom"
+          ? choicesRef.current
+          : null;
+    pttchrome.setMobileKeysPanelInset(visible && el ? el.offsetHeight : 0);
     return undefined;
-  }, [pttchrome, visible, panel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pttchrome, visible, panel, choicesSig]);
   useEffect(
     () => () => {
       if (typeof pttchrome.setMobileKeysPanelInset === "function")
@@ -192,6 +207,18 @@ export const MobileToolbar = ({
       else pttchrome.view.sendKeyAsUser(key);
     },
     [pttchrome],
+  );
+
+  // 點提問選項：先用**本幀**畫面再認一次（工具列的 context 是上次 settle 算的），同一組選項
+  // 還在才送「字＋⏎」；不一樣就不送（context 下一次 settle 會跟上）。
+  const sendChoice = useCallback(
+    (it) => {
+      const now = promptChoicesFromBuf(pttchrome.buf);
+      if (!now || promptChoicesSig(now) !== choicesSig) return;
+      for (const ch of it.send) sendKey(ch);
+      sendKey("Enter");
+    },
+    [pttchrome, sendKey, choicesSig],
   );
 
   const sendAction = useCallback(
@@ -463,7 +490,8 @@ export const MobileToolbar = ({
           i18n("mobileToolbar_editorSave"),
           () => {
             const buf = pttchrome.buf;
-            if (!buf || !buf.isEditorTypingNow || !buf.isEditorTypingNow()) return;
+            if (!buf || !buf.isEditorTypingNow || !buf.isEditorTypingNow())
+              return;
             sendAction("editorSave");
           },
         );
@@ -476,7 +504,8 @@ export const MobileToolbar = ({
           i18n("mobileToolbar_mailCompose"),
           () => {
             const buf = pttchrome.buf;
-            if (!buf || !buf.isMailListScreen || !buf.isMailListScreen()) return;
+            if (!buf || !buf.isMailListScreen || !buf.isMailListScreen())
+              return;
             if (buf.isPromptPending && buf.isPromptPending()) return;
             sendAction("mailCompose");
           },
@@ -582,7 +611,43 @@ export const MobileToolbar = ({
   };
 
   let panelEl = null;
-  if (panel === "keys") {
+  if (choices) {
+    panelEl = (
+      <div
+        id="mobilePromptChoices"
+        ref={choicesRef}
+        className="nomouse_command mobilePromptChoices"
+        role="group"
+        aria-label={i18n("promptChoices_aria")}
+      >
+        <div className="mobilePromptChoicesTitle">
+          {choices.titleKey ? i18n(choices.titleKey) : choices.title}
+        </div>
+        <div className="mobilePromptChoicesRow">
+          {choices.items.map((it) => (
+            <button
+              key={it.send || "__enter"}
+              type="button"
+              className={
+                "nomouse_command mobilePromptChoice pttRipple" +
+                (it.isDefault ? " isDefault" : "")
+              }
+              data-choice={it.send || "Enter"}
+              onClick={() => {
+                haptic();
+                sendChoice(it);
+              }}
+            >
+              {it.key ? (
+                <span className="mobilePromptChoiceKey">{it.key}</span>
+              ) : null}
+              {it.labelKey ? i18n(it.labelKey) : it.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  } else if (panel === "keys") {
     panelEl = (
       <div
         id="mobileKeypad"
@@ -716,9 +781,13 @@ export const MobileToolbar = ({
                       sendKey(k.key);
                     }}
                   >
-                    {k.dir !== "next" && <Icon size={18} stroke={2} aria-hidden="true" />}
+                    {k.dir !== "next" && (
+                      <Icon size={18} stroke={2} aria-hidden="true" />
+                    )}
                     <span>{i18n(k.short)}</span>
-                    {k.dir === "next" && <Icon size={18} stroke={2} aria-hidden="true" />}
+                    {k.dir === "next" && (
+                      <Icon size={18} stroke={2} aria-hidden="true" />
+                    )}
                   </button>
                 );
               })}

@@ -10,6 +10,7 @@ import {
   hasHelpHint,
 } from "../../src/js/mobile_toolbar";
 import { KeyMap } from "../../src/js/term_keyboard";
+import { promptChoices } from "../../src/js/prompt_choices";
 
 const ROWS = 24;
 const frame = (rows) => {
@@ -213,6 +214,22 @@ describe("toolbarContextFromFacts", () => {
     test("context 比較看得到它的翻轉", () => {
       expect(sameToolbarContext({ mailList: true, search: [] }, { mailList: false, search: [] })).toBe(false);
     });
+  });
+});
+
+describe("choices（P61，pref mobilePromptChoices）", () => {
+  const yn = (title) => promptChoices({ promptText: title + " [y/N]: ", fieldText: "", cursorRow: 22, rowTexts: [] });
+  test("opts.choices 原樣帶進 context；沒給是 null", () => {
+    const c = yn("確定嗎?");
+    expect(toolbarContextFromFacts(frame({}), 1, { choices: c }).choices).toBe(c);
+    expect(toolbarContextFromFacts(frame({}), 1).choices).toBeNull();
+    expect(EMPTY_TOOLBAR_CONTEXT.choices).toBeNull();
+  });
+  test("context 比較看得到選項出現／消失／換一題", () => {
+    const base = { push: false, search: [] };
+    expect(sameToolbarContext({ ...base, choices: yn("A?") }, { ...base, choices: yn("A?") })).toBe(true);
+    expect(sameToolbarContext({ ...base, choices: yn("A?") }, { ...base, choices: null })).toBe(false);
+    expect(sameToolbarContext({ ...base, choices: yn("A?") }, { ...base, choices: yn("B?") })).toBe(false);
   });
 });
 

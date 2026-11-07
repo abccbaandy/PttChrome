@@ -12,6 +12,7 @@ import { MobileToolbar, HAPTIC_MS } from "../../src/components/MobileToolbar";
 import { MOBILE_TOOLBAR_PX } from "../../src/js/mobile_layout";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { readValuesWithDefault, writeValues } from "../../src/js/pref_storage";
+import { promptChoicesFromBuf } from "../../src/js/prompt_choices";
 import toolbarCss from "../../src/components/MobileToolbar/MobileToolbar.css?raw";
 
 beforeAll(() => {
@@ -411,6 +412,83 @@ describe("按鍵面板", () => {
     act(() => core.emit(true, false, false, false));
     expect(byKey("__ctrl").getAttribute("aria-pressed")).toBe("false");
     expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("提問選項（P61）", () => {
+  // 本幀畫面：sendChoice 送之前用它再認一次（prompt_choices.promptChoicesFromBuf）。
+  const fakeBuf = (promptText, fieldText = "") => ({
+    cols: 80,
+    cur_y: 22,
+    inputFieldText: () => fieldText,
+    inputPromptText: () => promptText,
+    getRowText: () => "",
+  });
+  const EXIT = "您確定要離開【 批踢踢實業坊 】嗎(Y/N)？[N] ";
+  const choicesOf = (buf) => promptChoicesFromBuf(buf);
+
+  test("有提問就在工具列上方列出選項，標題是提問本身；點一下送「字＋Enter」", () => {
+    const buf = fakeBuf(EXIT);
+    const core = makeCore({ context: { push: false, search: [], choices: choicesOf(buf) } });
+    core.buf = buf;
+    renderBar(core);
+    const panel = document.getElementById("mobilePromptChoices");
+    expect(panel).not.toBeNull();
+    expect(panel.querySelector(".mobilePromptChoicesTitle").textContent).toMatch(/您確定要離開/);
+    const btns = [...panel.querySelectorAll("button")];
+    expect(btns.map((b) => b.textContent)).toEqual([
+      "Y" + i18n("promptChoices_yes"),
+      "N" + i18n("promptChoices_no"),
+    ]);
+    expect(btns[1].classList.contains("isDefault")).toBe(true);
+    fireEvent.click(btns[0]);
+    expect(core.view.sendKeyAsUser.mock.calls.map((c) => c[0])).toEqual(["y", "Enter"]);
+  });
+
+  test("「不選」只送 Enter", () => {
+    const buf = fakeBuf("種類：1.問題 2.建議 (1-2或不選)");
+    const core = makeCore({ context: { push: false, search: [], choices: choicesOf(buf) } });
+    core.buf = buf;
+    renderBar(core);
+    fireEvent.click(document.querySelector('[data-choice="Enter"]'));
+    expect(core.view.sendKeyAsUser.mock.calls.map((c) => c[0])).toEqual(["Enter"]);
+  });
+
+  test("點下去時畫面已經換了（提問消失、或使用者已經打了字）⇒ 不送", () => {
+    const buf = fakeBuf(EXIT);
+    const core = makeCore({ context: { push: false, search: [], choices: choicesOf(buf) } });
+    core.buf = fakeBuf(EXIT, "y");
+    renderBar(core);
+    fireEvent.click(document.querySelector('[data-choice="n"]'));
+    core.buf = fakeBuf("別的提問：");
+    fireEvent.click(document.querySelector('[data-choice="n"]'));
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+  });
+
+  test("提問在畫面上半部（anchor top）⇒ 不讓位（回報 0），面板照樣出現", () => {
+    const buf = { ...fakeBuf(EXIT), cur_y: 2 };
+    const core = makeCore({ context: { push: false, search: [], choices: choicesOf(buf) } });
+    core.buf = buf;
+    renderBar(core);
+    expect(document.getElementById("mobilePromptChoices")).not.toBeNull();
+    const calls = core.setMobileKeysPanelInset.mock.calls;
+    expect(calls.length === 0 || calls.at(-1)[0] === 0).toBe(true);
+  });
+
+  test("高度回報給 App（終端機排在上面、提問列不被蓋）；提問消失回 0；按鍵面板開著時讓位", () => {
+    const buf = fakeBuf(EXIT);
+    const core = makeCore({ context: { push: false, search: [], choices: choicesOf(buf) } });
+    core.buf = buf;
+    renderBar(core);
+    const last = () => core.setMobileKeysPanelInset.mock.calls.at(-1)[0];
+    expect(last()).toBeGreaterThan(0);
+    fireEvent.click(byKey("__keys"));
+    expect(document.getElementById("mobilePromptChoices")).toBeNull();
+    fireEvent.click(byKey("__keys"));
+    expect(document.getElementById("mobilePromptChoices")).not.toBeNull();
+    act(() => core.setContext({ push: false, search: [], choices: null }));
+    expect(document.getElementById("mobilePromptChoices")).toBeNull();
+    expect(last()).toBe(0);
   });
 });
 

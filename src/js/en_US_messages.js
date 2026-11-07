@@ -1988,6 +1988,27 @@ export const en_US = {
   "tooltip_mobileMailListTools": {
     "message": "In the mail list the bottom bar's first two slots are \"Search\" (title / author) and \"Write\", and \"End\" works; the keyboard hint row above the cards is hidden. All of them send PTT's own keys (/, a, Ctrl+P, End)."
   },
+  "options_mobilePromptChoices": {
+    "message": "Tappable choices when PTT asks you to pick one (mobile)"
+  },
+  "tooltip_mobilePromptChoices": {
+    "message": "For the post category, reply target, the editor's save menu and yes/no questions, the choices appear above the bottom bar; tapping one types that key and Enter for you. Only PTT's fixed prompt wording is recognized; anything else shows nothing."
+  },
+  "promptChoices_postType": {
+    "message": "Post category"
+  },
+  "promptChoices_none": {
+    "message": "None"
+  },
+  "promptChoices_yes": {
+    "message": "Yes"
+  },
+  "promptChoices_no": {
+    "message": "No"
+  },
+  "promptChoices_aria": {
+    "message": "Choices for PTT's question"
+  },
   "commentCard_edited": {
     "message": "edited"
   },

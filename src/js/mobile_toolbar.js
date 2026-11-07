@@ -36,6 +36,8 @@
 //            第 1 格「搜尋」（/、a，availableSearchKinds）、第 2 格「寫信」送 ^P（mail.c#mail_comms
 //            的 Ctrl('P') mail_cmd_send，打開原生寄信流程）、「到底」送 End（read.c 共用的 KEY_END）。
 //            游標在輸入欄時不給（同 post）。
+//   choices：P61（pref mobilePromptChoices）。PTT 正在問「選一個」（發文種類、回文對象、編輯器檔案處理、
+//            是非題）⇒ 底部導覽上方浮出可點選項（prompt_choices.js：只認固定字樣、欄位要是空的）。
 // 判準刻意不看 enableLongPush：推鈕送的是 X，長推文關掉時就是 PTT 原生推文。
 
 import { parsePagerFooterContext } from './string_util';
@@ -48,11 +50,12 @@ import { appBarFromFacts, sameAppBar, EMPTY_APP_BAR } from './mobile_app_bar';
 import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
 import { isEditorFooter } from './screen_captions';
 import { readEffectivePrefs } from './pref_storage';
+import { promptChoicesFromBuf, promptChoicesSig } from './prompt_choices';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
   unreadJump: false, markAllRead: false, help: false, contentTools: false, refresh: false, end: false,
-  editor: false, editorSave: false, mailList: false, search: [], appBar: EMPTY_APP_BAR
+  editor: false, editorSave: false, mailList: false, search: [], appBar: EMPTY_APP_BAR, choices: null
 });
 
 // 送鍵表：key 是 term_view.sendKeyAsUser 的 keyName（單字元或 KeyMap 裡的具名鍵），
@@ -159,7 +162,8 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
     editorSave: pageState === 6 && !!o.editorSave && !facts.inputField && isEditorFooter(last),
     mailList: mailList,
     search: availableSearchKinds(facts),
-    appBar: appBarFromFacts(facts, { ...(opts || {}), pageState: pageState })
+    appBar: appBarFromFacts(facts, { ...(opts || {}), pageState: pageState }),
+    choices: o.choices || null
   };
 }
 
@@ -178,7 +182,8 @@ export function mobileToolbarContext(core) {
     connected: !!(core && core.conn && core.conn.isConnected),
     listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor()),
     home: homeDashboardShown(core),
-    editorSave: editorSave
+    editorSave: editorSave,
+    choices: readEffectivePrefs().mobilePromptChoices && core && core.buf ? promptChoicesFromBuf(core.buf) : null
   });
 }
 
@@ -191,5 +196,6 @@ export function sameToolbarContext(a, b) {
   if (!a || !b) return a === b;
   for (const f of FLAGS) if (!!a[f] !== !!b[f]) return false;
   return (a.search || []).join(',') === (b.search || []).join(',') &&
+    promptChoicesSig(a.choices) === promptChoicesSig(b.choices) &&
     sameAppBar(a.appBar || EMPTY_APP_BAR, b.appBar || EMPTY_APP_BAR);
 }
