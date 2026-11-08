@@ -358,8 +358,7 @@ describe("AidNavigation", () => {
   });
 
   test("看板文章（footer 有「回應」）維持文章內直接 s 的快路徑", () => {
-    // 回歸守護：這條路徑 mbbsd/more.c:177 只呼叫 Select()（不經 Read()），
-    // 所以沒有進板畫面、也不該多繞主功能表。
+    // 回歸守護：文章內的 s 不必多繞主功能表（進板畫面由 _boardJumpExpect 認，見下一條）。
     const { nav, queue, sent } = makeHarness({ footer: STATUS_ROW });
     nav.start("1gIeu-3A", "Android");
     answerOriginInfo(queue, "1gKF7GO4");
@@ -428,9 +427,22 @@ describe("AidNavigation 非 READING context（站內信／精華區）", () => {
     expect(queue.idle).toBe(true);
   });
 
+  test("文章內的 s 換板：upstream adc87d0 起也會先出進板畫面 ⇒ 收掉再送 #AID（不空等逾時報失敗）", () => {
+    const { nav, queue, sent } = makeHarness({ footer: STATUS_ROW });
+    nav.start("1gIeu-3A", "Android");
+    answerOriginInfo(queue, "1gKF7GO4");
+    expect(sent[1]).toBe(" sAndroid\r\f");
+    // 一頁的進板畫面：pmore 自動離開後的 pressanykey。
+    settle(queue, facts("transient", { rowTexts: screen({ last: PRESS_ANY_KEY_ROW }) }));
+    expect(sent[2]).toBe(ESC_LEFT);
+    settle(queue, facts("clean-list", { boardName: "Android" }));
+    expect(sent[3]).toBe("#1gIeu-3A\r\f");
+    expect(nav.active).toBe(true);
+  });
+
   test("主功能表的 s 會走 Read() → 進板畫面 ＋ pressanykey 要自動化解", () => {
     // mbbsd/bbs.c:4482-4492：ReadSelect() → Read() 在本 session 首次進該板時
-    // 先跑 more(notes) 再 pressanykey()。文章內的 s 不會，所以只有這條路徑要處理。
+    // 先跑 more(notes) 再 pressanykey()（文章內的 s 在 upstream adc87d0 起也會，見上一條）。
     const { nav, queue, sent } = makeHarness({ footer: MAIL_STATUS_ROW });
     nav.start("1gIeu-3A", "SYSOP");
     settle(queue, facts("menu", { rowTexts: MAIN_MENU_SCREEN }));

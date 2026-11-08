@@ -14,8 +14,9 @@
 // 2. 呼叫 Read() 的入口：看板列表 board_cmd_select（board.c:2343 起的鍵表：
 //    KEY_RIGHT／KEY_ENTER／'r'／'l'）、看板列表 `s` 的 board_cmd_search_global
 //    （board.c:2122，「搜尋全站看板」prompt ⏎）、主功能表 `s` 的 ReadSelect
-//    （menu.c:670 → bbs.c:4489，「選擇看板」prompt ⏎）。文章列表的 `s` 只跑
-//    do_select、**不**進 Read()（bbs.c:4393）——arm 了也只會等到文章列表就解除。
+//    （menu.c:670 → bbs.c:4489，「選擇看板」prompt ⏎）。文章列表／文章內的 `s`：舊版只跑
+//    do_select、**不**進 Read()——arm 了也只會等到文章列表就解除；upstream adc87d0 起改成
+//    關掉舊列表、由 Read() 重新進板，換到有進板畫面的板時一樣會先畫進板畫面（同一個 prompt arm）。
 //    文章列表的 `(b)進板畫面` 是使用者**要看**，不在入口集合內（不是看板列表畫面）。
 // 3. 動畫：PMORE_AUTO_EXIT 下有 ASCII movie 就自動播放（pmore.c:3094-3110），
 //    footer 是 pmore.c:163-169 的「動畫播放中… 可按 q, Ctrl-C 或其它任意鍵停止」／
@@ -82,7 +83,7 @@ const PRESS_ANY_KEY_RE = /請按任意鍵繼續|請按 空白鍵 繼續/;
 // board.c#board_cmd_search_global「【 搜尋全站看板 】」）。必須連【】一起認：新版 UI
 // 文章列表 row 1 的指令說明列（bbs.c 指令表）就寫著「[s]選擇看板」，裸字會把文章列表的
 // ⏎（開文）誤 arm，文章被當成進板公告送 ← 退出。
-const BOARD_PROMPT_RE = /【\s*(?:選擇看板|搜尋全站看板)\s*】/;
+export const BOARD_PROMPT_RE = /【\s*(?:選擇看板|搜尋全站看板)\s*】/;
 
 // 「已經離開進板流程」的 row 0 標題（主選單／看板列表／精華區…）。
 const LANDED_TITLES = [MAIN_MENU, CLASS_LIST, ARCHIVE_LIST, BOARD_LIST, FAVOURITE];

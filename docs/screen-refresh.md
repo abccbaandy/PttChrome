@@ -17,7 +17,7 @@
 
 | 畫面 | 送出 | 為什麼是它（讀碼） |
 |---|---|---|
-| 文章列表 | `s` → 等 CompleteBoard prompt → `<本板>⏎` | `bbs.c#do_select` → `enter_board` → 回 `NEWDIRECT` ⇒ `read_apply_mode` reload；`read_exec_noitem` 先存 `crs_ln/top_ln`，`getkeep(currdirect)` 還原 ⇒ 游標原地；這條**不經 `Read()`** ⇒ 不出進板畫面 |
+| 文章列表 | `s` → 等 CompleteBoard prompt → `<本板>⏎` | `bbs.c#do_select` → `enter_board` → 回 `NEWDIRECT` ⇒ `read_apply_mode` reload；`read_exec_noitem` 先存 `crs_ln/top_ln`，`getkeep(currdirect)` 還原 ⇒ 游標原地；這條**不經 `Read()`** ⇒ 不出進板畫面（upstream adc87d0 起改成關掉列表、`Read()` 重新進**同一板**：`bnote_lastbid` 相同 ⇒ 一樣不出進板畫面，游標由同一份 `getkeep` 還原） |
 | 看板列表 | `/` → 等「請輸入看板中文關鍵字」→ `⏎` | `board.c#board_cmd_search_keyword`：`getdata_buf` 以原關鍵字為預設值，⏎ 原樣送出 ⇒ `brdnum = -1; reload` ⇒ 未讀旗標與人氣重算；`ctx->curr` 保留（newflag 模式下 loader 會跳到第一個未讀，與原生一致） |
 | 文章 | `aid_navigation.refresh()`：（免費網址列或 `Q` 取 AID）→ `s<本板>⏎` → `#<AID>⏎` → `⏎` | 與 AID 跳文同一條、每步依畫面內容驗證的序列；落地後還原閱讀位置（見下） |
 | 首頁儀表板（主功能表上的面板畫著） | `home_dashboard.fetchFavorites`：`Ctrl+Z f` → 讀頁 →（跳號翻頁）→ 回游標 → `q` | 面板本來就靠這條抓我的最愛；面板的「更新」鈕也改走這個入口（同一道冷卻），見 `docs/home-dashboard.md` |

@@ -466,7 +466,12 @@ gate 是 `currbid != bnote_lastbid`，而 `bnote_lastbid` 是**行程內的 stat
 （`static int bnote_lastbid = -1`，只在 `b_notes` 編輯進板畫面時 `bbs.c:4053` 重設成 -1）
 ⇒ **同一連線第二次進同一個板就不再顯示**，直接落在文章列表。
 ⇒ client 端「開板之後畫面會是什麼」**不可以假設是文章列表**：第一次進是
-`pmore` 的進板畫面或「請按任意鍵繼續」，第二次進才是文章列表。看板列表平滑捲動
+`pmore` 的進板畫面或「請按任意鍵繼續」，第二次進才是文章列表。
+**文章列表／文章內的 `s<板>⏎` 也一樣**（upstream adc87d0）：舊版 `do_select` 在原列表裡直接
+`enter_board`、不出進板畫面；新版 `select_board_to_read` 只選板、`DOQUIT` 關掉舊列表，由 `Read()`
+的迴圈重新進板 ⇒ 換到「有進板畫面、又不是上一個看的板」時同樣先畫進板畫面。文章內的 `s` 不管換不換得成
+都先離開 pmore（進不去 ⇒ 落回原板列表）。PTT 實跑哪一版未知 ⇒ 兩種都要吃（`aid_navigation#_boardJumpExpect`，
+`ptt_src_screens/board_switch.json` 守）。看板列表平滑捲動
 就踩過這個坑（守門寫成「落點是文章列表才保留緩衝」⇒ 手測時好時壞，
 見 `docs/board-list-smooth-scroll.md` §4.3 別名守門）。分類看板的**群組看板**
 （`BRD_GROUPBOARD`）遞迴進另一份 `choose_board` 之前也跑同一段

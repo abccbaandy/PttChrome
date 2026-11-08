@@ -613,4 +613,27 @@ export const SCENES = [
       { keys: 'q', name: 'bordered' },
     ],
   },
+  {
+    // 文章內／文章列表的 `s<板>⏎`（aid_navigation 的換板那一步）：upstream adc87d0 起 s 只選板、
+    // 關掉舊列表，由 Read() 重新進板 ⇒ 換到「有進板畫面、又不是上一個看的板」時先畫進板畫面＋
+    // pressanykey（舊版 do_select 直接進板、沒有進板畫面）。文章內的 s 不管換不換得成都先離開 pmore：
+    // 進不去的板名落回原板的文章列表，不會回到文章。
+    file: 'board_switch',
+    entry: 'read:Test',
+    rows: 24,
+    steps: [
+      { name: 'list' },
+      { keys: '1' },
+      { keys: '\r' },
+      { keys: '\r', name: 'article' },
+      { keys: 's', name: 'prompt' },
+      { keys: 'Notes\r', name: 'note' },
+      { keys: ' ', name: 'notes-list' },
+      { keys: 'sTest\r', name: 'test-list' },
+      { keys: '\r', name: 'article-2' },
+      { keys: 'sZzz\r', name: 'rejected' },
+      { keys: 'sNotes\r', name: 'note-again' },
+      { keys: ' ', name: 'notes-list-again' },
+    ],
+  },
 ];
