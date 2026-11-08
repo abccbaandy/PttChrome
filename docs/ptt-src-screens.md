@@ -78,6 +78,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `push_flow` | `read:Test`／24 | `X` `1` `hello⏎` `y⏎` `⏎` | typeMenu→inputPrompt→確定[y/N] confirm、寫入後→other；開文的推文列帶時間戳不是輸入列，`detectIpLogged`→false |
 | `push_again` | `read:Test`／24 | `X` `1` `hello⏎` `y⏎` `X` `world⏎` | 長推文續推：90 秒內再按 X ⇒ 倒數第二列「時間太近」、沒有型別選單、直接 `→ tester:` 輸入列（欄寬同上） |
 | `push_content_denied` | `read:Test`／24 | `X` `1` `buy spam now⏎` `y⏎` 空白 | 確定之後被內容檢查擋下：整頁「內容檢查 未送出」＋pressanykey ⇒ `classifyPushScreen` fatal（`parseContentDenied`）；按鍵後回列表 → other |
+| `activity_slow` | `read:Gossip`／24（env 通知 board,read,aid） | 空白 ⏎ 空白 q `#` `1AAAAAAA⏎` 空白 | 進板／開文／#AID 前的「使用限制 限速中」＋理由＋pressanykey，按鍵後照常繼續 ⇒ `activity_alert.parseActivityAlert`（跳過進板畫面 yield、AID 進板／重新整理 bail、開文 openPromptText 停手，都不送鍵） |
 | `activity_denied` | `read:Mine`／24 | `#` `1AAAAAAA⏎` 空白 `/` `test⏎` 空白 | #AID／標題搜尋被 activity.svc 拒絕：整頁「使用限制 未搜尋」＋理由＋pressanykey ⇒ `activity_alert.parseActivityDenied`（aid_navigation／長推文定位馬上停手、不送 \f 探路）；按鍵後回列表 |
 | `push_owner` | `read:Mine`／24 | `X` | 推自己的文章：「作者本人」＋`→ tester:` 輸入列 |
 | `push_search` | `read:Test`／24 | `/` `Re⏎` `X` `1` | 系列文章裡推文：型別選單→輸入列（upstream 搜尋是 .DIR 過濾視圖，不印「◆您正在搜尋」警告） |
@@ -159,6 +160,9 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   一樣，其他場景畫面不變。真的規則與理由字串在私有服務裡，解析端不准認理由本文。
 - **使用限制**（368f91f5，`-DHAS_ACTIVITY_MSG`：`include/activity.h` 的 `activity_nav_track` 有 `msgsz`）：
   `--wrap=activity_nav_track` 假扮 activity.svc：只在 `Mine` 板拒絕 #AID 與搜尋（佔位理由），其餘放行、不延遲。
+- **限速通知**（f369626a，`-DHAS_ACTIVITY_SLOW`：`include/activity.h` 有 `activity_delay_fn`）：`activity_nav_track` 的
+  `delay_ms` 拿掉、改帶 `on_delay` callback（簽名不同，舊 wrapper 照新簽名呼叫會 SIGSEGV），並多 `--wrap=activity_read_post`。
+  場景用 `env: { PTT_SRC_ACTIVITY_SLOW: 'board,read,aid' }`（capture.mjs 傳給 driver）指定哪幾種要通知，各一次；沒設＝不通知。
 - 場景每一步都要有輸出（沒有就報「第 N 步沒有任何輸出」exit 2）：upstream 把某個鍵改成「忽略」時（例：490ceaf 實況只認 q 離開），改用新舊版都有反應的鍵。
 - driver.c 本身是 UTF-8：要寫 Big5 字串用跳脫序列，且拆開寫（`"\xc3" "D"`，否則 `\xc3D` 被吃成一個跳脫）。
 

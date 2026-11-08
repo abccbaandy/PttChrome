@@ -57,6 +57,7 @@ import {
 } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
 import { parseHelpMenuScreen } from './help_menu';
+import { parseActivityAlert } from './activity_alert';
 
 export const KEY_LEFT = '\x1b[D';
 export const KEY_ANY = ' ';
@@ -124,6 +125,7 @@ export function boardEntryArms(rowTexts, bytes) {
 // facts 本來就帶；缺的話這裡補算）。回：
 //   { action: 'landed' }                已到文章列表／看板列表／選單 ⇒ 解除
 //   { action: 'skip', key, shape }      進板畫面 ⇒ 送 key
+//   { action: 'yield' }                 PTT 的使用限制整頁 ⇒ 解除、一個鍵都不送
 //   { action: 'wait' }                  認不出（半繪、vmsg 錯誤訊息…）⇒ 不動
 export function boardNoteDecision(facts) {
   const f = facts || {};
@@ -155,6 +157,9 @@ export function boardNoteDecision(facts) {
     classifyBoardListScreen(f)
   )
     return { action: 'landed' };
+  // PTT 的「使用限制」整頁（upstream f369626a：進板前先畫「限速中」通知，activity_alert.js）也是
+  // pressanykey 結尾，但它是站方要使用者本人看的通知，不是進板畫面 ⇒ 不按、解除。
+  if (parseActivityAlert(rowTexts, rows)) return { action: 'yield' };
   if (PRESS_ANY_KEY_RE.test(last))
     return { action: 'skip', key: KEY_ANY, shape: 'pause' };
   if (kind === 'article')
@@ -283,6 +288,7 @@ BoardNoteSkip.prototype = {
       row2Reversed: buf.isUnicolor ? buf.isUnicolor(2, 0, buf.cols - 10) : false
     });
     if (d.action === 'landed') this._disarm('landed');
+    else if (d.action === 'yield') this._disarm('activity-alert');
     else if (d.action === 'skip') this._enqueueSkip(d);
   },
 
@@ -314,6 +320,10 @@ BoardNoteSkip.prototype = {
         // 送鍵之前排進來的舊動畫幀還會 settle：不算回應，等 fullRepaint 的整幀。
         if (next.action === 'skip' && next.shape !== 'movie') return { again: next };
         return false;
+      },
+      // 使用限制整頁：馬上收手，不等逾時送 \f 探路（\f 會把它按掉）。
+      bail: function(snapshot, facts) {
+        return boardNoteDecision(facts).action === 'yield' ? { yield: true } : null;
       },
       onDone: function(result) {
         if (!self.busy) return;

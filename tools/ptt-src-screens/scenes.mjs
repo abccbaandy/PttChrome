@@ -252,6 +252,26 @@ export const SCENES = [
     ],
   },
   {
+    // 限速通知（upstream f369626a）：activity.svc 說帳號限速中時，進板／開文／#AID 在延遲前先畫
+    // activity_alert(理由, " 限速中 ") 整頁（row 0「使用限制 … 限速中」＋理由＋pressanykey），按鍵後照常
+    // 繼續：進板到列表、開文到文章、#AID 跳到那一篇。driver 依 env 只通知指定的種類、各一次（見 driver.c）。
+    // 進板那張在 entry 的 enter_board 裡就畫了 ⇒ 第一幀就是它。
+    file: 'activity_slow',
+    entry: 'read:Gossip',
+    rows: 24,
+    env: { PTT_SRC_ACTIVITY_SLOW: 'board,read,aid' },
+    steps: [
+      { name: 'board-slow' },
+      { keys: ' ', name: 'list' },
+      { keys: '\r', name: 'read-slow' },
+      { keys: ' ', name: 'article' },
+      { keys: 'q', name: 'back' },
+      { keys: '#' },
+      { keys: '1AAAAAAA\r', name: 'aid-slow' },
+      { keys: ' ', name: 'aid-after' },
+    ],
+  },
+  {
     // 文章列表的搜尋 prompt（read.c#ask_filter_predicate、bbs.c#do_select）：每種開一次，
     // 空白 ⏎ 取消回列表再開下一種；最後 s 選看板停在兩段式 prompt。
     file: 'search_prompts',

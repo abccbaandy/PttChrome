@@ -74,7 +74,12 @@ import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
 import { isMailboxOverLimitNotice, MAILBOX_OVER_LIMIT_HINT } from './mail_list';
 import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
-import { parseActivityDenied, activityDeniedHint } from './activity_alert';
+import {
+  parseActivityAlert,
+  activityAlertHint,
+  activityAlertTitle,
+  isActivityAlertHint
+} from './activity_alert';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -123,6 +128,13 @@ export function postInfoAnswer(rowTexts, rows) {
 
 export function isMainMenuRow(rowText) {
   return rowHasTitle(rowText, MAIN_MENU);
+}
+
+// 任何一張「使用限制」整頁（被拒或限速中，activity_alert.js）⇒ CommandQueue 的 bail 值
+// { status, reason }；不是 ⇒ null。進板／#AID／開文的每一步都掛：它是 pressanykey，
+// 沒掛的話會被「進板畫面收掉」與 \f 探路按掉。
+function activityAlertBail(snapshot, facts) {
+  return facts ? parseActivityAlert(facts.rowTexts, facts.rows) : null;
 }
 
 // The board's 進板畫面 tail: mbbsd/bbs.c#Read → pressanykey(). Same literals
@@ -1491,10 +1503,15 @@ AidNavigation.prototype = {
       probeTimeoutMs: STEP_PROBE_WINDOW_MS,
       hardTimeoutMs: STEP_HARD_MS,
       expect: this._boardLandingExpect(run.boardLower),
+      bail: activityAlertBail,
       onDone: function(result) {
         self._onBoardLanding(run, result, round);
       },
-      onFail: function(reason) {
+      onFail: function(reason, facts, bailed) {
+        if (reason === 'bail') {
+          self._fail(activityAlertTitle(bailed), activityAlertHint(bailed));
+          return;
+        }
         self._fail('進入看板 ' + run.target.board + ' 失敗（' + reason + '）');
       }
     });
@@ -1506,6 +1523,9 @@ AidNavigation.prototype = {
   _boardLandingExpect: function(boardLower) {
     return function(snapshot, facts) {
       if (landedOnBoard(facts, boardLower)) return { landed: true };
+      // 「使用限制」整頁也是 pressanykey 結尾，但不是進板畫面：不認（expect 先於 bail 跑），
+      // 交給同一步的 bail（activityAlertBail）停手。
+      if (activityAlertBail(snapshot, facts)) return false;
       const lastRow = facts.rowTexts[facts.rows - 1] || '';
       if (PRESS_ANY_KEY_RE.test(lastRow)) return { dismiss: true };
       // We are between 主功能表 and the list here, so an article screen can only
@@ -1759,6 +1779,9 @@ AidNavigation.prototype = {
         : function(snapshot, facts) {
             return landedOnBoardList(facts, boardLower);
           },
+      // 進板前 PTT 可能先畫「使用限制 限速中」（upstream f369626a，board.c#enter_board）：
+      // 不准當成進板畫面按掉，停手交給使用者。
+      bail: activityAlertBail,
       onDone: function(result) {
         if (viaMenu) {
           self._onBoardLanding(run, result, 0);
@@ -1767,7 +1790,11 @@ AidNavigation.prototype = {
         run.onSubList = !!result.sub;
         self._enqueueMiddle(run);
       },
-      onFail: function(reason) {
+      onFail: function(reason, facts, bailed) {
+        if (reason === 'bail') {
+          self._fail(activityAlertTitle(bailed), activityAlertHint(bailed));
+          return;
+        }
         self._fail('切換看板 ' + board + ' 失敗（' + reason + '）');
       }
     });
@@ -1889,18 +1916,16 @@ AidNavigation.prototype = {
       expect: function(snapshot, facts) {
         return aidSearchLanded(facts);
       },
-      // PTT 的使用限制整頁（upstream 368f91f5，activity_alert.js）：馬上停手，不等逾時送 \f 探路
-      // （\f 會被 pressanykey 吃掉、提示消失，再被報成「找不到／可能已被刪除」）。
-      bail: function(snapshot, facts) {
-        const reason = facts ? parseActivityDenied(facts.rowTexts, facts.rows) : null;
-        return reason == null ? null : { reason: reason };
-      },
+      // PTT 的使用限制整頁（upstream 368f91f5 被拒、f369626a 限速中，activity_alert.js）：馬上停手，
+      // 不等逾時送 \f 探路（\f 會被 pressanykey 吃掉、提示消失，被拒時再被報成「找不到／可能已被刪除」；
+      // 限速中則是把站方要使用者看的通知替他按掉）。
+      bail: activityAlertBail,
       onDone: function() {
         self._enqueueOpen(run);
       },
       onFail: function(reason, facts, bailed) {
         if (reason === 'bail') {
-          self._fail('PTT 暫時限制搜尋', activityDeniedHint(bailed && bailed.reason));
+          self._fail(activityAlertTitle(bailed), activityAlertHint(bailed));
           return;
         }
         // Going back, a miss means the post is really gone (deleted) — a
@@ -2041,7 +2066,7 @@ AidNavigation.prototype = {
       },
       onFail: function(reason, facts, prompt) {
         if (reason === 'bail') {
-          self._fail('PTT 在問問題', openPromptHint(prompt));
+          self._fail(isActivityAlertHint(prompt) ? 'PTT 通知' : 'PTT 在問問題', openPromptHint(prompt));
           return;
         }
         self._fail('開啟文章失敗（' + reason + '）');

@@ -21,6 +21,7 @@
 // 頻率：pttbbs 開源碼查無「同文章讀取頻率」限制（讀碼見 docs），仍給一道可調的冷卻
 // （pref refreshMinIntervalSec，預設 5 秒），連按只會得到提示，不會連發。
 
+import { parseActivityAlert, activityAlertHint } from './activity_alert';
 import { atPagerStatusRow } from './long_push_gate';
 import { parsePagerFooterContext } from './string_util';
 import { boardListContextKind, classifyBoardListScreen } from './board_list_parse';
@@ -129,6 +130,11 @@ export function buildArticleListRefreshSteps(board, cb) {
       ...SLOW_STEP_BUDGET,
       expect: function(snapshot, facts) {
         return landedOnBoard(facts, boardLower);
+      },
+      // 進板前 PTT 可能先畫「使用限制 限速中」（upstream f369626a，activity_alert.js）：
+      // 馬上停手，不等逾時送 \f 探路把它按掉。
+      bail: function(snapshot, facts) {
+        return facts ? parseActivityAlert(facts.rowTexts, facts.rows) : null;
       },
       onDone: c.onDone,
       onFail: c.onFail
@@ -289,9 +295,10 @@ ScreenRefresh.prototype = {
     // （getkeep／ctx->curr），視野也要回到原處，而不是 PTT 的 20 列分頁。
     const rr = recordFor(core);
     const bm = rr.begin(target.kind === 'article-list' ? 'list-refresh' : 'board-list-refresh');
-    const fail = function() {
+    const fail = function(reason, facts, bailed) {
       rr.end(bm, 'fail');
-      self._hint('重新整理失敗（已停在原生畫面）', 0, HINT_ERROR);
+      if (reason === 'bail' && bailed) self._hint(activityAlertHint(bailed), 6000);
+      else self._hint('重新整理失敗（已停在原生畫面）', 0, HINT_ERROR);
     };
     const steps =
       target.kind === 'article-list'

@@ -14,13 +14,24 @@
 //
 // 兩要素：標題列（「使用限制」＋「未…」）＋底列 pressanykey；理由本文是私有服務給的，不認字樣。
 // 同型的「內容檢查 未送出」在 push_screen.parseContentDenied。
-const ACTIVITY_HDR_RE = /^\s*使用限制\s+未\S{1,4}\s*$/;
+//
+// 限速通知（upstream f369626a，contentcheck.c#activity_slow_alert）：服務說帳號「限速中」時，
+// 開文（bbs.c#read_post）、進板（board.c#enter_board）、#AID、標題／作者搜尋在**延遲之前**先畫同一張
+// alert_screen，狀態欄是 " 限速中 "；按任意鍵後照常繼續（開文、進板、跳到那篇），之後每一步都會被延遲。
+// 同一次限速只通知一次。這張是站方要**使用者本人看到**的通知（commit 說明：讓用終端機的人看清楚）
+// ⇒ 任何替使用者代按的流程（跳過進板畫面、AID 跳文收進板畫面、\f 探路）都不准把它按掉：認出來就停手、
+// 一個鍵都不送，畫面留給使用者。
+const ACTIVITY_HDR_RE = /^\s*使用限制\s+(\S{2,6})\s*$/;
+const DENIED_STATUS_RE = /^未/;
+export const SLOW_STATUS = '限速中';
 const PAUSE_TEXT = '請按任意鍵繼續';
 
-export function parseActivityDenied(rowTexts, rows) {
+// 任何一張「使用限制」整頁（被拒或限速中）：{ status, reason }；不是 ⇒ null。
+export function parseActivityAlert(rowTexts, rows) {
   const n = rows == null ? (rowTexts ? rowTexts.length : 0) : rows;
   if (!rowTexts || n < 3) return null;
-  if (!ACTIVITY_HDR_RE.test(String(rowTexts[0] || ''))) return null;
+  const m = ACTIVITY_HDR_RE.exec(String(rowTexts[0] || ''));
+  if (!m) return null;
   const last = String(rowTexts[n - 1] || '');
   if (last.indexOf(PAUSE_TEXT) < 0) return null;
   const reason = [];
@@ -29,7 +40,35 @@ export function parseActivityDenied(rowTexts, rows) {
     if (!t) break;
     reason.push(t);
   }
-  return reason.join(' ');
+  return { status: m[1], reason: reason.join(' ') };
+}
+
+// 被拒（「未搜尋」「未寄出」…）那一種：回理由字串；限速中或不是 ⇒ null。
+export function parseActivityDenied(rowTexts, rows) {
+  const a = parseActivityAlert(rowTexts, rows);
+  return a && DENIED_STATUS_RE.test(a.status) ? a.reason : null;
+}
+
+// 給使用者的提示（任一種）。
+export function activityAlertHint(alert) {
+  if (alert && alert.status === SLOW_STATUS) {
+    return (
+      'PTT 通知帳號限速中' +
+      (alert.reason ? '：' + alert.reason : '') +
+      '（說明在畫面上，按任意鍵繼續；之後操作會變慢）'
+    );
+  }
+  return activityDeniedHint(alert ? alert.reason : '');
+}
+
+// openPromptText 把整句提示當成「問題」傳出去，openPromptHint 認得就原樣轉出。
+export function isActivityAlertHint(text) {
+  return /^PTT (通知帳號限速中|暫時限制搜尋)/.test(String(text || ''));
+}
+
+// 失敗訊息的短標題。
+export function activityAlertTitle(alert) {
+  return alert && alert.status === SLOW_STATUS ? 'PTT 通知帳號限速中' : 'PTT 暫時限制搜尋';
 }
 
 // 給使用者的提示：PTT 自己的理由在畫面上，這裡只說「被限制了、別再試」。

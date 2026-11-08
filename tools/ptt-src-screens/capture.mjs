@@ -31,6 +31,8 @@ export function runScene(cmd, seed, scene, timing = {}) {
   const child = spawn(cmd[0], [...cmd.slice(1), home, seed, scene.entry, String(scene.rows)], {
     // fd 3：實況推文（driver.c 的 HAS_LIVE）。一直開著、只有 live 步驟才寫 ⇒ 平常永遠不可讀。
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
+    // scene.env：只給 driver 的假服務看（例：PTT_SRC_ACTIVITY_SLOW，見 driver.c）。
+    env: scene.env ? { ...process.env, ...scene.env } : process.env,
   });
   let pending = Buffer.alloc(0);
   // 'close' 在 stdout／stderr 都讀完之後才觸發（'exit' 可能比最後一批位元組早到）。

@@ -134,13 +134,15 @@ import { toolbarContextFromFacts } from "../../src/js/mobile_toolbar";
 import {
   refreshTargetFromFacts,
   buildBoardListRefreshSteps,
+  buildArticleListRefreshSteps,
   isBoardKeywordPromptFrame,
 } from "../../src/js/screen_refresh";
 import boardListRefreshFx from "./fixtures/ptt_src_screens/board_list_refresh.json";
 import aidMissFx from "./fixtures/ptt_src_screens/aid_miss.json";
 import { AID_NOT_FOUND_RE } from "../../src/js/aid_navigation";
 import activityDeniedFx from "./fixtures/ptt_src_screens/activity_denied.json";
-import { parseActivityDenied } from "../../src/js/activity_alert";
+import { parseActivityDenied, parseActivityAlert } from "../../src/js/activity_alert";
+import activitySlowFx from "./fixtures/ptt_src_screens/activity_slow.json";
 import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
 import searchRefineFx from "./fixtures/ptt_src_screens/search_refine.json";
 import menuSearchFx from "./fixtures/ptt_src_screens/menu_search.json";
@@ -1610,6 +1612,61 @@ describe("upstream pttbbs 產的使用限制整頁（upstream 368f91f5，content
     expect(parseContentDenied(denied.rowTexts, denied.rows)).toBe(null);
     const content = screenAt(pushContentDeniedFx, "denied", { perFrame: true }).facts;
     expect(parseActivityDenied(content.rowTexts, content.rows)).toBe(null);
+  });
+});
+
+describe("upstream pttbbs 產的限速通知（upstream f369626a，contentcheck.c#activity_slow_alert）", () => {
+  // 進板／開文／#AID 前 PTT 先畫「使用限制 限速中」＋理由＋pressanykey，按鍵後照常繼續。
+  // 這張是站方要使用者本人看的通知：任何替使用者代按的流程都不准把它按掉。
+  const at = (name) => screenAt(activitySlowFx, name, { perFrame: true });
+  const SLOW = ["board-slow", "read-slow", "aid-slow"];
+  const REASON = "placeholder slow reason from activity.svc";
+
+  test("三個入口的通知都認得是限速中，理由原文帶回；不是「被拒」", () => {
+    for (const name of SLOW) {
+      const { facts } = at(name);
+      expect(parseActivityAlert(facts.rowTexts, facts.rows), name).toEqual({ status: "限速中", reason: REASON });
+      expect(parseActivityDenied(facts.rowTexts, facts.rows), name).toBe(null);
+    }
+  });
+
+  test("按鍵之後照常繼續（列表／文章）⇒ 不再認成使用限制", () => {
+    for (const name of ["list", "article", "back"]) {
+      const { facts } = at(name);
+      expect(parseActivityAlert(facts.rowTexts, facts.rows), name).toBe(null);
+    }
+    expect(classifyListScreen(at("list").facts)).toEqual({ kind: "clean-list", boardName: "Gossip" });
+    expect(classifyListScreen(at("article").facts).kind).toBe("article");
+  });
+
+  test("跳過進板畫面：進板前的限速通知不當成進板畫面按掉（解除、不送鍵）", () => {
+    expect(boardNoteDecision(at("board-slow").facts)).toEqual({ action: "yield" });
+    // 對照：真正的進板畫面照舊跳過
+    expect(boardNoteDecision(screenAt(boardNoteFx, "note").facts).action).toBe("skip");
+  });
+
+  test("AID 跳文／deep link 的進板步驟：限速通知不當成進板畫面收掉，交給 bail 停手", () => {
+    const expectFn = AidNavigation.prototype._boardLandingExpect("gossip");
+    // 正式的 facts 帶 classifyListScreen 的 kind／boardName（list_session._collectFacts）。
+    const withKind = (f) => ({ ...f, ...classifyListScreen(f) });
+    expect(expectFn(null, withKind(at("board-slow").facts))).toBe(false);
+    expect(expectFn(null, withKind(at("list").facts))).toEqual({ landed: true });
+  });
+
+  test("重新整理（s 板名⏎）：進板前的限速通知 ⇒ bail，不等逾時送 \\f 探路", () => {
+    const [, submit] = buildArticleListRefreshSteps("Gossip", {});
+    const facts = at("board-slow").facts;
+    expect(submit.expect(null, facts)).toBe(false);
+    expect(submit.bail(null, facts)).toEqual({ status: "限速中", reason: REASON });
+    expect(submit.bail(null, at("list").facts)).toBe(null);
+  });
+
+  test("開文（列表好讀／AID 跳文的 ⏎）：開文前的限速通知 ⇒ 停手交給使用者，提示說限速中", () => {
+    const text = openPromptText(at("read-slow").buf);
+    expect(text).toMatch(/限速中/);
+    expect(text).toContain(REASON);
+    expect(openPromptHint(text)).toBe(text);
+    expect(openPromptText(at("article").buf)).toBe(null);
   });
 });
 
