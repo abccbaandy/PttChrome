@@ -308,9 +308,14 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
-      - name: Build debug APK
+      # 背景建：跟下面的 KVM／系統映像 cache 還原（~50s，網路 I/O）重疊，android job 是整輪 CI 的牆鐘。
+      # 背景進程跨 step 存活（runner 收尾時才清 orphan）；結果由「Wait for debug APK」收，
+      # 它在開模擬器之前、把 gradle 的 exit code 原樣傳出（守護 tests/unit/android_e2e.test.js）。
+      - name: Build debug APK (background)
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          mkdir -p "$RUNNER_TEMP/apk"
+          nohup sh -c './gradlew --no-daemon assembleDebug > "$RUNNER_TEMP/apk/build.log" 2>&1; echo $? > "$RUNNER_TEMP/apk/exit"' > /dev/null 2>&1 &
 
       # 沒有 KVM 的模擬器開機 13–20 分鐘、adb 動不動 offline；ubuntu runner 有 /dev/kvm 但要開權限。
       - name: Enable KVM
@@ -332,6 +337,14 @@ jobs:
         with:
           path: /usr/local/lib/android/sdk/system-images/android-34/google_apis/x86_64
           key: android-sysimg-34-google_apis-x86_64-v1
+
+      # 等背景的 debug APK 建完（模擬器開機吃 CPU，不跟 gradle 搶）；gradle 紅就照它的 exit code 紅。
+      - name: Wait for debug APK
+        timeout-minutes: 15
+        run: |
+          while [ ! -f "$RUNNER_TEMP/apk/exit" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/apk/build.log"
+          exit "$(cat "$RUNNER_TEMP/apk/exit")"
 
       # --no-boot：模擬器由 emulator-runner 開（序號 emulator-5554，pickEmulatorSerial 自己挑到）。
       - name: Android e2e (emulator)

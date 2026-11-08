@@ -387,4 +387,17 @@ describe("test.yml：test-e2e-android job", () => {
     expect(emu).toBeGreaterThan(build);
     expect(body).toMatch(/ANDROID_E2E_APK: .*app-debug\.apk/);
   });
+  // APK 在背景建（跟 cache 還原重疊）：開模擬器之前一定要等它建完，且 gradle 的 exit code 要原樣傳出，
+  // 不然 gradle 紅了會變成 apk.android.spec.js 的「找不到 debug APK」，或模擬器開機時跟 gradle 搶 CPU。
+  test("背景建的 APK 在開模擬器前等完，exit code 原樣傳出", () => {
+    const bg = body.indexOf('echo $? > "$RUNNER_TEMP/apk/exit"');
+    const wait = body.indexOf("name: Wait for debug APK");
+    const cache = body.indexOf("actions/cache@");
+    const emu = body.indexOf("android-emulator-runner@");
+    expect(bg).toBeGreaterThan(-1);
+    expect(cache).toBeGreaterThan(bg);
+    expect(wait).toBeGreaterThan(cache);
+    expect(emu).toBeGreaterThan(wait);
+    expect(body).toContain('exit "$(cat "$RUNNER_TEMP/apk/exit")"');
+  });
 });
