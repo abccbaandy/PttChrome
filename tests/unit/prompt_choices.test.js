@@ -22,6 +22,7 @@ import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
 import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
 import aidMissFx from "./fixtures/ptt_src_screens/aid_miss.json";
 import activitySlowFx from "./fixtures/ptt_src_screens/activity_slow.json";
+import boardNoteFx from "./fixtures/ptt_src_screens/board_note.json";
 
 beforeAll(() => loadBig5Tables());
 
@@ -212,14 +213,25 @@ describe("promptPanelFromBuf（P61＋P62＋P63）", () => {
   });
 
   test("請按任意鍵繼續（離站、AID 找不到、限速通知）⇒ 繼續＝空白、不補 ⏎", () => {
-    for (const [fx, name] of [[goodbyeFx, "pause"], [aidMissFx, "not-found"], [activitySlowFx, "read-slow"]]) {
-      expect(shape(promptPanelFromBuf(screenAt(fx, name), ALL))).toEqual({
+    for (const [fx, name, anchor] of [
+      [goodbyeFx, "pause", "bottom"],
+      [aidMissFx, "not-found", "bottom"],
+      [activitySlowFx, "read-slow", "top"],
+    ]) {
+      expect(shape(promptPanelFromBuf(screenAt(fx, name), ALL)), name).toEqual({
         kind: "anyKey",
-        anchor: "bottom",
+        anchor,
         title: "",
         items: [["promptChoices_continue", JSON.stringify(" "), false]],
       });
     }
+  });
+
+  test("整頁通知（字在最上面、下面空白）⇒「繼續」不讓位，標題與理由不被推進 App Bar 後面", () => {
+    for (const [fx, name] of [[activitySlowFx, "board-slow"], [activitySlowFx, "read-slow"], [boardNoteFx, "note"]])
+      expect(promptPanelFromBuf(screenAt(fx, name), ALL).anchor, name).toBe("top");
+    // 列表上的 vmsg：整頁都是字 ⇒ 照舊讓位（橫幅那列才看得到）
+    expect(promptPanelFromBuf(screenAt(aidMissFx, "not-found"), ALL).anchor).toBe("bottom");
   });
 
   test("一般列表沒有提問 ⇒ null", () => {
