@@ -12,14 +12,29 @@
 // 最後報成「開啟文章失敗」。認法刻意通用（不比字樣）：開文回應是任何輸入欄都是在問使用者，
 // 字樣只用來把提示寫清楚。
 
+import { parseActivityAlert, activityAlertHint, isActivityAlertHint } from './activity_alert';
+
 // 開文的回應是不是一個等使用者回答的 prompt；是 ⇒ 回提示字，否則 null。
 // 只認**底列**的輸入欄（vans／getdata(b_lines…)）：開文途中慢網路切出來的半幀，游標可能剛好停在
 // 檔頭反白標籤上，那不是問題（底列的 pmore 狀態列已由 isCursorOnInputField 排除）。
+//
+// 另一種只有使用者能處理的回應：PTT 的「使用限制」整頁（activity_alert.js；upstream f369626a 起
+// 開文前可能先畫「限速中」通知）。它是 pressanykey 不是輸入欄，但一樣要停手、不替使用者按掉
+// ⇒ 回 activityAlertHint 的整句（openPromptHint 原樣轉出）。
 export function openPromptText(buf) {
   if (!buf || typeof buf.isPromptPending !== 'function') return null;
+  const alert = activityAlertOn(buf);
+  if (alert) return activityAlertHint(alert);
   if (buf.cur_y !== buf.rows - 1 || !buf.isPromptPending()) return null;
   const text = typeof buf.inputPromptText === 'function' ? buf.inputPromptText() : '';
   return String(text || '').trim() || '?';
+}
+
+function activityAlertOn(buf) {
+  if (typeof buf.getRowText !== 'function' || !buf.rows) return null;
+  const rowTexts = [];
+  for (let y = 0; y < buf.rows; ++y) rowTexts.push(buf.getRowText(y, 0, buf.cols));
+  return parseActivityAlert(rowTexts, buf.rows);
 }
 
 // 底列是不是 live_check_repeat 那一題（「要直接進入實況模式看新推文嗎？ [Y/n]: 」）。
@@ -37,6 +52,7 @@ export const LIVE_REPEAT_DECLINE = 'n\r';
 
 // 給使用者看的提示。
 export function openPromptHint(text) {
+  if (isActivityAlertHint(text)) return text;
   if (/實況模式/.test(text)) return 'PTT 問你要不要直接進入實況模式（同一篇連開多次），請直接回答';
   return 'PTT 開文前在問：' + text + ' 請直接回答';
 }

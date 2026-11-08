@@ -261,10 +261,43 @@ int __wrap_content_filter(int kind, const char *userid, const char *ip, const ch
 // 搜尋，理由用佔位字串（解析端不准認理由本文）；其餘一律放行、不延遲（跟服務沒開一樣）。
 #if HAS_ACTIVITY_MSG
 #include "activity.h"
+#if HAS_ACTIVITY_SLOW
+// 限速通知（upstream f369626a）：服務回「slow <到何時> <理由>」時，read_post／enter_board／#AID／搜尋
+// 在延遲之前先 on_delay(理由) ⇒ contentcheck.c#activity_slow_alert 畫 activity_alert(理由, " 限速中 ")
+// 整頁＋pressanykey，按鍵後照常繼續（開文、進板、跳到那篇）。同一次限速只通知一次（common/bbs/activity.c
+// 的 act_pause 用 static told 記）。場景用環境變數 PTT_SRC_ACTIVITY_SLOW 指定哪幾種要通知（逗號分隔：
+// board／read／aid），每種只通知第一次；沒設＝跟服務沒開一樣，舊場景畫面不變。
+static int activity_slow_once(const char *kind, activity_delay_fn on_delay)
+{
+    static char told[64];
+    const char *want = getenv("PTT_SRC_ACTIVITY_SLOW");
+    if (!want || !on_delay || !strstr(want, kind) || strstr(told, kind)) return 0;
+    strlcat(told, kind, sizeof(told));
+    on_delay("placeholder slow reason from activity.svc");
+    return 1;
+}
+
+void __wrap_activity_read_post(const char *userid, time4_t firstlogin, uint32_t client_code,
+                               int is_exempt, int bid, const char *filename,
+                               activity_delay_fn on_delay)
+{
+    (void)userid; (void)firstlogin; (void)client_code; (void)is_exempt; (void)bid; (void)filename;
+    activity_slow_once("read", on_delay);
+}
+
+int __wrap_activity_nav_track(const char *userid, time4_t firstlogin, const char *hostip,
+                              uint32_t client_code, int is_exempt, int nav_type, int target_bid,
+                              int value, char *msg, size_t msgsz, activity_delay_fn on_delay)
+{
+    int *delay_ms = NULL;
+    if (nav_type == ACTIVITY_NAV_BOARD_SWITCH) activity_slow_once("board", on_delay);
+    else if (nav_type == ACTIVITY_NAV_SEARCH_AID) activity_slow_once("aid", on_delay);
+#else
 int __wrap_activity_nav_track(const char *userid, time4_t firstlogin, const char *hostip,
                               uint32_t client_code, int is_exempt, int nav_type, int target_bid,
                               int value, int *delay_ms, char *msg, size_t msgsz)
 {
+#endif
     (void)userid; (void)firstlogin; (void)hostip; (void)client_code; (void)is_exempt;
     (void)target_bid; (void)value;
     if (delay_ms) *delay_ms = 0;
