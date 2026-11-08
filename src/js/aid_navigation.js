@@ -132,7 +132,7 @@ export function isMainMenuRow(rowText) {
 
 // 任何一張「使用限制」整頁（被拒或限速中，activity_alert.js）⇒ CommandQueue 的 bail 值
 // { status, reason }；不是 ⇒ null。進板／#AID／開文的每一步都掛：它是 pressanykey，
-// 沒掛的話會被「進板畫面收掉」與 \f 探路按掉。
+// 沒掛的話進板步驟會把它當進板畫面送 ← 按掉，其餘步驟空等逾時再報成「找不到／失敗」。
 function activityAlertBail(snapshot, facts) {
   return facts ? parseActivityAlert(facts.rowTexts, facts.rows) : null;
 }
@@ -1917,8 +1917,8 @@ AidNavigation.prototype = {
         return aidSearchLanded(facts);
       },
       // PTT 的使用限制整頁（upstream 368f91f5 被拒、f369626a 限速中，activity_alert.js）：馬上停手，
-      // 不等逾時送 \f 探路（\f 會被 pressanykey 吃掉、提示消失，被拒時再被報成「找不到／可能已被刪除」；
-      // 限速中則是把站方要使用者看的通知替他按掉）。
+      // 不等逾時送 \f 探路（探回來還是這一頁 ⇒ miss，被拒時報成「找不到／可能已被刪除」，
+      // 限速中則報成跳文失敗；使用者看不到真正的原因）。
       bail: activityAlertBail,
       onDone: function() {
         self._enqueueOpen(run);

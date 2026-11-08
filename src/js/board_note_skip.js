@@ -321,7 +321,7 @@ BoardNoteSkip.prototype = {
         if (next.action === 'skip' && next.shape !== 'movie') return { again: next };
         return false;
       },
-      // 使用限制整頁：馬上收手，不等逾時送 \f 探路（\f 會把它按掉）。
+      // 使用限制整頁：馬上收手，不等逾時（逾時就是失敗，畫面留給使用者也一樣，只是晚一拍）。
       bail: function(snapshot, facts) {
         return boardNoteDecision(facts).action === 'yield' ? { yield: true } : null;
       },
