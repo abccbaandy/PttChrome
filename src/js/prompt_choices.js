@@ -224,10 +224,27 @@ export function promptPanelFromBuf(buf, prefs) {
     kind: 'anyKey',
     title: '',
     titleKey: 'promptChoices_anyKey',
-    // pressanykey／vmsg 一律畫在最後一列（vtuikit.c#vshowmsg 的 move(b_lines, 0)）⇒ 讓位。
-    anchor: 'bottom',
+    anchor: anyKeyAnchor(buf),
     items: [item(KEY_DISMISS, '', { key: '', labelKey: 'promptChoices_continue', isDefault: true, enter: false })]
   };
+}
+
+// 「繼續」面板讓不讓位。pressanykey／vmsg 一律畫在最後一列（vtuikit.c#vshowmsg 的 move(b_lines, 0)），
+// 但手機上終端機放不下「面板＋整個畫面」：讓位＝整個往上排，最上面約 ANY_KEY_SHIFT_ROWS 列躲進 App Bar
+// 後面；不讓位＝面板蓋住底部那幾列（含按任意鍵那列，面板本身就是它）。
+// 整頁通知（限速中／未搜尋的 activity_alert、一頁的進板畫面）字在最上面、下面空白 ⇒ 不讓位，
+// 否則通知的標題與理由正好被推到 App Bar 後面；其他（列表上的 vmsg 等）照舊讓位。
+const ANY_KEY_SHIFT_ROWS = 6;
+function anyKeyAnchor(buf) {
+  const rows = buf.rows;
+  const hasText = (from, to) => {
+    for (let y = Math.max(0, from); y < Math.min(rows - 1, to); ++y)
+      if (buf.getRowText(y, 0, buf.cols).trim()) return true;
+    return false;
+  };
+  const top = hasText(0, ANY_KEY_SHIFT_ROWS);
+  const bottom = hasText(rows - 1 - ANY_KEY_SHIFT_ROWS, rows - 1);
+  return top && !bottom ? 'top' : 'bottom';
 }
 
 function typeInputPanel(facts) {

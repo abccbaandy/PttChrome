@@ -115,6 +115,29 @@ test.describe('手機開鍵盤輸入／繼續（離線）', () => {
     expect(await takeCapture(page)).toBe(' ');
   });
 
+  test('整頁通知（限速中）：「繼續」不讓位，通知的標題與理由不被推進 App Bar 後面', async ({ page }) => {
+    test.setTimeout(60000);
+    await bootOffline(page, ptt);
+    await feedUntil(page, fx('activity_slow'), 'read-slow');
+    const panel = page.locator('#mobilePromptChoices');
+    await expect(panel.locator('[data-choice="Space"]')).toBeVisible();
+    await waitRectStable(page, '#mobilePromptChoices');
+    await waitRectStable(page, '#mainContainer [data-row="0"]');
+    const r = await page.evaluate(() => {
+      const top = (y) => document.querySelector(`#mainContainer [data-row="${y}"]`).getBoundingClientRect();
+      return {
+        row0: top(0).top,
+        row1Bottom: top(1).bottom,
+        barBottom: document.getElementById('mobileAppBar').getBoundingClientRect().bottom,
+        panelTop: document.getElementById('mobilePromptChoices').getBoundingClientRect().top,
+        text: window.__app.buf.getRowText(0, 0, 80),
+      };
+    });
+    expect(r.text).toContain('限速中');
+    expect(r.row0).toBeGreaterThanOrEqual(r.barBottom - 0.5);
+    expect(r.row1Bottom).toBeLessThanOrEqual(r.panelTop + 0.5);
+  });
+
   test('開關關掉不出現', async ({ page }) => {
     test.setTimeout(60000);
     await bootOffline(page, ptt);
