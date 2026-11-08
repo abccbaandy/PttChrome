@@ -242,9 +242,11 @@ jobs:
 
       # E2E_WORKERS 見上面 matrix 註解；其餘 offline job 用預設值（tests/e2e/workers_policy.js）。
       # --shard 由 run-adverse-e2e.mjs 原封透傳給 playwright。
+      # E2E_SERVER=bundle：同 offline shard，runner 起的共用 server 改成打包版（run-adverse-e2e.mjs#serverCommand）。
       - name: Adverse-image offline E2E (${{ matrix.bucket }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
         env:
           E2E_WORKERS: ${{ matrix.workers }}
+          E2E_SERVER: bundle
         run: |
           yarn install --immutable
           yarn test:e2e:offline:adverse --only=${{ matrix.bucket }} --shard=${{ matrix.shard }}/${{ matrix.shards }}

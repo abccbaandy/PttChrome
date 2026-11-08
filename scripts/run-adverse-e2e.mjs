@@ -134,6 +134,16 @@ export async function waitForDevServer({ child, probe, timeoutMs, output = () =>
   }
 }
 
+// 共用 server 的啟動指令。E2E_SERVER=bundle（CI 的 adverse job 設，同 offline shard）⇒ 打包版
+// （scripts/serve-e2e-bundle.mjs：PTTCHROME_E2E_BUNDLE build＋vite preview），每條開站不用再逐一載入
+// dev server 的未打包模組；其餘照舊 vite dev server（本機預設）。playwright.config.js 的 webServer
+// 用同一個環境變數選同一支，reuseExistingServer 附上來的就是這裡起的那份。
+export function serverCommand(env = process.env) {
+  return env.E2E_SERVER === "bundle"
+    ? [path.join("scripts", "serve-e2e-bundle.mjs")]
+    : [path.join("node_modules", "vite", "bin", "vite.js")];
+}
+
 // ---- 以下有副作用 ----
 
 function readConfigSource() {
@@ -163,7 +173,7 @@ async function serverUp(timeoutMs = 1500) {
 // 起一次 vite 給所有批次共用。playwright.config.js 的 reuseExistingServer:true 會讓
 // 每個批次直接附上去，不會反覆啟停。
 async function startDevServer() {
-  const child = spawn(process.execPath, [path.join("node_modules", "vite", "bin", "vite.js")], {
+  const child = spawn(process.execPath, serverCommand(), {
     cwd: ROOT,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -283,7 +293,8 @@ async function main() {
   if (await serverUp()) {
     console.log(`dev server 已在 :${PORT}，直接沿用。`);
   } else {
-    console.log(`啟動 dev server（:${PORT}，${batches.length} 個批次共用）…`);
+    const kind = process.env.E2E_SERVER === "bundle" ? "打包版" : "dev server";
+    console.log(`啟動 ${kind}（:${PORT}，${batches.length} 個批次共用）…`);
     devServer = await startDevServer();
   }
 
