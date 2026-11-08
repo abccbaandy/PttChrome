@@ -139,6 +139,20 @@ PTT 問「選一個」時，底部導覽上方浮出可點選項（`MobileToolba
 - 守護：`tests/unit/prompt_choices.test.js`（upstream 產的四種畫面＋字樣突變）、`mobile_toolbar.test.jsx`、
   `tests/e2e/offline/mobile_prompt_choices.offline.spec.js`（提問列不被蓋、真 tap 送出的 byte）。
 
+### 同一個面板的另外兩種（`promptPanelFromBuf`，各自 pref、預設開）
+
+優先序固定「P61 認得的選擇題 > P62 打字欄 > P63 按任意鍵」：游標在不在輸入欄是確定的事實，底列字樣只是字樣
+（`screen_dismiss.resolveDismiss` 也是輸入欄優先）。
+
+- **P62 開鍵盤輸入**（pref `mobilePromptKeyboard`，`kind: 'typeInput'`）：游標在輸入欄、又不是 P61 的題目（標題、搜尋、
+  選看板、跳到第幾篇、推文內容…；打了一半也還在）。主鈕**一個 byte 都不送**，只 `toggleSoftKeyboard()`（已開就不切）；
+  鍵盤開著面板收起。「取消」只在 `emptyAnswerCommits` 為 false 的提問才放（空答案＝不做 ⇒ 送 ^C 安全，同點空白處關框；
+  pmore 的「[搜尋]關鍵字」空答案會沿用上次關鍵字 ⇒ 不放）。^C 走 Alt remap（`Alt+c`，同 `TOOLBAR_KEYS.post`）。
+- **P63 繼續**（pref `mobileAnyKeyContinue`，`kind: 'anyKey'`）：游標不在輸入欄、底列是 pressanykey／vmsg 橫幅
+  （`resolveDismiss` 回 `DISMISS_ANY_KEY`）⇒ 一顆「繼續」送**空白、不補 ⏎**（⏎ 會變成下一個畫面的指令）。
+  一律畫在最後一列 ⇒ `anchor: 'bottom'` 讓位。限速通知這類「我們不替使用者按」的畫面也會出現：按的是使用者自己。
+- 兩者都照 P61 送前用本幀再認一次（sig 含 `action` 與送不送 ⏎）。
+
 ## 浮動工具「⋯」（`render/merge_buttons.js#createFloatingTools`，桌機＋手機共用）
 
 圖文並排／AI 校正／開燈（文章頁）與 debug 錄製鈕（debug 模式下任何畫面）收在一顆圓鈕裡（攤開的一疊在 reflow 版面會蓋住文章字；

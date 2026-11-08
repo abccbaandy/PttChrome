@@ -378,6 +378,16 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobilePromptChoices",
     },
     {
+      key: "mobilePromptKeyboard",
+      titleKey: "options_mobilePromptKeyboard",
+      tooltipKey: "tooltip_mobilePromptKeyboard",
+    },
+    {
+      key: "mobileAnyKeyContinue",
+      titleKey: "options_mobileAnyKeyContinue",
+      tooltipKey: "tooltip_mobileAnyKeyContinue",
+    },
+    {
       key: "mobileModernCommentCards",
       titleKey: "options_mobileModernCommentCards",
       tooltipKey: "tooltip_mobileModernCommentCards",

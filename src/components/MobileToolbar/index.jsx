@@ -29,7 +29,10 @@ import {
   IconChevronsLeft,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
-import { readValuesWithDefault } from "../../js/pref_storage";
+import {
+  readValuesWithDefault,
+  readEffectivePrefs,
+} from "../../js/pref_storage";
 import {
   normalizeQuickSearchQuery,
   visibleQuickSearchItems,
@@ -51,7 +54,7 @@ import {
   toolbarSlots,
 } from "../../js/mobile_toolbar";
 import {
-  promptChoicesFromBuf,
+  promptPanelFromBuf,
   promptChoicesSig,
 } from "../../js/prompt_choices";
 import {
@@ -116,6 +119,14 @@ export const COOLDOWN_TICK_MS = 250;
 
 const ICON_PROPS = { size: 22, stroke: 1.75, "aria-hidden": true };
 
+// 選項按鈕的 data-choice（測試／除錯用的名字）：空白、控制碼給可讀的名字。
+function choiceName(it) {
+  if (it.action) return it.action;
+  if (it.send === " ") return "Space";
+  if (it.send === "\x03") return "Ctrl-C";
+  return it.send || "Enter";
+}
+
 export const MobileToolbar = ({
   pttchrome,
   hidden,
@@ -173,7 +184,13 @@ export const MobileToolbar = ({
 
   // 按鍵面板（或提問選項）蓋住的高度回報給 App（終端機排在它上面，見 setMobileKeysPanelInset）。
   const visible = mobile && !hidden;
-  const choices = panel === null ? context.choices : null;
+  // P62 的「開鍵盤輸入」：鍵盤已經叫出來就沒用了，收起來（鍵盤收掉又會回來）。
+  const choices =
+    panel === null &&
+    context.choices &&
+    !(keyboard && context.choices.kind === "typeInput")
+      ? context.choices
+      : null;
   const choicesSig = promptChoicesSig(choices);
   useLayoutEffect(() => {
     if (typeof pttchrome.setMobileKeysPanelInset !== "function")
@@ -189,7 +206,7 @@ export const MobileToolbar = ({
     pttchrome.setMobileKeysPanelInset(visible && el ? el.offsetHeight : 0);
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pttchrome, visible, panel, choicesSig]);
+  }, [pttchrome, visible, panel, choicesSig, keyboard]);
   useEffect(
     () => () => {
       if (typeof pttchrome.setMobileKeysPanelInset === "function")
@@ -210,13 +227,24 @@ export const MobileToolbar = ({
   );
 
   // 點提問選項：先用**本幀**畫面再認一次（工具列的 context 是上次 settle 算的），同一組選項
-  // 還在才送「字＋⏎」；不一樣就不送（context 下一次 settle 會跟上）。
+  // 還在才送「字＋⏎」（it.enter false ＝只送字：P63 的空白、P62 的 ^C）；不一樣就不送（context
+  // 下一次 settle 會跟上）。P62「開鍵盤輸入」（action keyboard）一個 byte 都不送，只叫鍵盤。
   const sendChoice = useCallback(
     (it) => {
-      const now = promptChoicesFromBuf(pttchrome.buf);
+      const now = promptPanelFromBuf(pttchrome.buf, readEffectivePrefs());
       if (!now || promptChoicesSig(now) !== choicesSig) return;
-      for (const ch of it.send) sendKey(ch);
-      sendKey("Enter");
+      if (it.action === "keyboard") {
+        if (!pttchrome.softKeyboard) setKeyboard(pttchrome.toggleSoftKeyboard());
+        return;
+      }
+      for (const ch of it.send) {
+        const code = ch.charCodeAt(0);
+        // 控制碼（^C）走 Alt remap（同 TOOLBAR_KEYS.post）：Alt+字母的 byte 與 Ctrl 相同。
+        if (code > 0 && code < 0x1b)
+          sendKey(String.fromCharCode(code + 0x60), { altKey: true });
+        else sendKey(ch);
+      }
+      if (it.enter) sendKey("Enter");
     },
     [pttchrome, sendKey, choicesSig],
   );
@@ -626,13 +654,13 @@ export const MobileToolbar = ({
         <div className="mobilePromptChoicesRow">
           {choices.items.map((it) => (
             <button
-              key={it.send || "__enter"}
+              key={it.action || it.send || "__enter"}
               type="button"
               className={
                 "nomouse_command mobilePromptChoice pttRipple" +
                 (it.isDefault ? " isDefault" : "")
               }
-              data-choice={it.send || "Enter"}
+              data-choice={choiceName(it)}
               onClick={() => {
                 haptic();
                 sendChoice(it);

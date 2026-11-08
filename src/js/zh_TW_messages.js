@@ -1993,6 +1993,33 @@
   "tooltip_mobilePromptChoices": {
     "message": "發文種類、回文對象、編輯器的存檔選單、是非題（Y/N）出現時，底部導覽上方列出選項，點一下就是替你打那個字再按 Enter。只認得 PTT 固定的提問字樣，認不出就不出現。"
   },
+  "options_mobilePromptKeyboard": {
+    "message": "手機上 PTT 要你打字時浮出「開鍵盤輸入」"
+  },
+  "tooltip_mobilePromptKeyboard": {
+    "message": "發文標題、搜尋、選看板、跳到第幾篇這類輸入欄出現時，底部導覽上方一顆大按鈕直接叫出鍵盤，不用先按「按鍵」再按鍵盤。按下去不會送出任何東西；能安全放棄的提問旁邊多一顆「取消」。"
+  },
+  "options_mobileAnyKeyContinue": {
+    "message": "手機上「請按任意鍵繼續」浮出「繼續」"
+  },
+  "tooltip_mobileAnyKeyContinue": {
+    "message": "PTT 停在「請按任意鍵繼續」或底列的提示訊息時，底部導覽上方一顆「繼續」，點一下就是替你按空白鍵。"
+  },
+  "promptChoices_typeInput": {
+    "message": "請輸入"
+  },
+  "promptChoices_keyboard": {
+    "message": "開鍵盤輸入"
+  },
+  "promptChoices_cancel": {
+    "message": "取消"
+  },
+  "promptChoices_anyKey": {
+    "message": "請按任意鍵繼續"
+  },
+  "promptChoices_continue": {
+    "message": "繼續"
+  },
   "promptChoices_postType": {
     "message": "選擇文章種類"
   },

@@ -12,7 +12,7 @@ import { MobileToolbar, HAPTIC_MS } from "../../src/components/MobileToolbar";
 import { MOBILE_TOOLBAR_PX } from "../../src/js/mobile_layout";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { readValuesWithDefault, writeValues } from "../../src/js/pref_storage";
-import { promptChoicesFromBuf } from "../../src/js/prompt_choices";
+import { promptChoicesFromBuf, promptPanelFromBuf } from "../../src/js/prompt_choices";
 import toolbarCss from "../../src/components/MobileToolbar/MobileToolbar.css?raw";
 
 beforeAll(() => {
@@ -489,6 +489,71 @@ describe("提問選項（P61）", () => {
     act(() => core.setContext({ push: false, search: [], choices: null }));
     expect(document.getElementById("mobilePromptChoices")).toBeNull();
     expect(last()).toBe(0);
+  });
+});
+
+describe("開鍵盤輸入（P62）／繼續（P63）", () => {
+  const ALL = { mobilePromptChoices: true, mobilePromptKeyboard: true, mobileAnyKeyContinue: true };
+  const fieldBuf = (promptText, fieldText = "") => ({
+    cols: 80,
+    rows: 24,
+    cur_y: 23,
+    inputFieldText: () => fieldText,
+    inputPromptText: () => promptText,
+    getRowText: () => "",
+  });
+  const pauseBuf = () => ({
+    cols: 80,
+    rows: 24,
+    cur_y: 23,
+    inputFieldText: () => null,
+    inputPromptText: () => "",
+    getRowText: (row) => (row === 23 ? "                         ▄▄▄▄ 請按任意鍵繼續 ▄▄▄▄" : ""),
+  });
+  const mount = (buf) => {
+    const core = makeCore({ context: { push: false, search: [], choices: promptPanelFromBuf(buf, ALL) } });
+    core.buf = buf;
+    renderBar(core);
+    return core;
+  };
+
+  test("輸入欄：點「開鍵盤輸入」只叫鍵盤、一個 byte 都不送；鍵盤開著面板收起，收掉又回來", () => {
+    const core = mount(fieldBuf("搜尋標題:"));
+    expect(document.querySelector(".mobilePromptChoicesTitle").textContent).toBe("搜尋標題:");
+    fireEvent.click(document.querySelector('[data-choice="keyboard"]'));
+    expect(core.toggleSoftKeyboard).toHaveBeenCalledTimes(1);
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+    expect(document.getElementById("mobilePromptChoices")).toBeNull();
+    act(() => core.emit(true, false));
+    expect(document.getElementById("mobilePromptChoices")).not.toBeNull();
+  });
+
+  test("鍵盤已經開著（App 自己開的）⇒ 不再切一次（不會反而關掉）", () => {
+    const core = mount(fieldBuf("搜尋標題:"));
+    core.softKeyboard = true;
+    fireEvent.click(document.querySelector('[data-choice="keyboard"]'));
+    expect(core.toggleSoftKeyboard).not.toHaveBeenCalled();
+  });
+
+  test("取消送 ^C（Alt remap，同 TOOLBAR_KEYS.post）、不補 Enter", () => {
+    const core = mount(fieldBuf("搜尋標題:"));
+    fireEvent.click(document.querySelector('[data-choice="Ctrl-C"]'));
+    expect(core.view.sendKeyAsUser.mock.calls).toEqual([["c", { altKey: true }]]);
+  });
+
+  test("請按任意鍵繼續：點「繼續」送空白、不補 Enter；面板讓位（回報高度）", () => {
+    const core = mount(pauseBuf());
+    expect(document.querySelector(".mobilePromptChoicesTitle").textContent).toBe(i18n("promptChoices_anyKey"));
+    expect(core.setMobileKeysPanelInset.mock.calls.at(-1)[0]).toBeGreaterThan(0);
+    fireEvent.click(document.querySelector('[data-choice="Space"]'));
+    expect(core.view.sendKeyAsUser.mock.calls.map((c) => c[0])).toEqual([" "]);
+  });
+
+  test("點下去時 pressanykey 已經被按掉（畫面換了）⇒ 不送", () => {
+    const core = mount(pauseBuf());
+    core.buf = { ...pauseBuf(), getRowText: () => "" };
+    fireEvent.click(document.querySelector('[data-choice="Space"]'));
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
   });
 });
 

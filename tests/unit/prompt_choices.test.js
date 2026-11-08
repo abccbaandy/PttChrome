@@ -7,6 +7,7 @@ import {
   promptChoices,
   promptChoicesFromBuf,
   promptChoicesSig,
+  promptPanelFromBuf,
   parsePostTypes,
 } from "../../src/js/prompt_choices";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
@@ -15,6 +16,12 @@ import replyPromptFx from "./fixtures/ptt_src_screens/reply_prompt.json";
 import editorFx from "./fixtures/ptt_src_screens/editor.json";
 import goodbyeFx from "./fixtures/ptt_src_screens/goodbye.json";
 import editorPromptFx from "./fixtures/ptt_src_screens/editor_prompt.json";
+import searchPromptsFx from "./fixtures/ptt_src_screens/search_prompts.json";
+import boardCompleteFx from "./fixtures/ptt_src_screens/board_complete.json";
+import articlePromptsFx from "./fixtures/ptt_src_screens/article_prompts.json";
+import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
+import aidMissFx from "./fixtures/ptt_src_screens/aid_miss.json";
+import activitySlowFx from "./fixtures/ptt_src_screens/activity_slow.json";
 
 beforeAll(() => loadBig5Tables());
 
@@ -159,5 +166,80 @@ describe("字樣比對：認不出就不出現", () => {
     expect(promptChoicesSig(a)).toBe(promptChoicesSig(b));
     expect(promptChoicesSig(a)).not.toBe(promptChoicesSig(c));
     expect(promptChoicesSig(null)).toBe("");
+  });
+});
+
+// P62（開鍵盤輸入）／P63（繼續）：同一個面板的另外兩種內容。
+describe("promptPanelFromBuf（P61＋P62＋P63）", () => {
+  const ALL = { mobilePromptChoices: true, mobilePromptKeyboard: true, mobileAnyKeyContinue: true };
+  const shape = (c) =>
+    c && {
+      kind: c.kind,
+      anchor: c.anchor,
+      title: c.title,
+      items: c.items.map((i) => [i.labelKey || i.label, i.action || JSON.stringify(i.send), i.enter]),
+    };
+
+  test("P61 認得的選擇題優先；P61 關掉才退成「開鍵盤輸入」", () => {
+    const buf = screenAt(goodbyeFx, "confirm");
+    expect(promptPanelFromBuf(buf, ALL).kind).toBe("yesNo");
+    const p = promptPanelFromBuf(buf, { ...ALL, mobilePromptChoices: false });
+    expect(p.kind).toBe("typeInput");
+    // 預設 [N]：空答案＝不做（screen_dismiss.emptyAnswerCommits false）⇒ ^C 取消安全，放取消。
+    expect(p.items.map((i) => i.labelKey)).toEqual(["promptChoices_keyboard", "promptChoices_cancel"]);
+  });
+
+  test("搜尋標題：開鍵盤（不送 byte）＋取消（^C、不補 ⏎），標題是提問本身", () => {
+    expect(shape(promptPanelFromBuf(screenAt(searchPromptsFx, "title"), ALL))).toEqual({
+      kind: "typeInput",
+      anchor: "bottom",
+      title: "搜尋標題:",
+      items: [
+        ["promptChoices_keyboard", "keyboard", true],
+        ["promptChoices_cancel", JSON.stringify("\x03"), false],
+      ],
+    });
+  });
+
+  test("選看板（提問在上半部）⇒ anchor top；打了字也還在（只是開鍵盤，不替人加字）", () => {
+    expect(promptPanelFromBuf(screenAt(boardCompleteFx, "board"), ALL).anchor).toBe("top");
+    expect(promptPanelFromBuf(screenAt(boardCompleteFx, "typed"), ALL).kind).toBe("typeInput");
+  });
+
+  test("空答案也會做事的提問（pmore 搜尋沿用上次關鍵字）⇒ 只有開鍵盤，不放取消", () => {
+    const p = promptPanelFromBuf(screenAt(articlePromptsFx, "search"), ALL);
+    expect(p.items.map((i) => i.labelKey)).toEqual(["promptChoices_keyboard"]);
+  });
+
+  test("請按任意鍵繼續（離站、AID 找不到、限速通知）⇒ 繼續＝空白、不補 ⏎", () => {
+    for (const [fx, name] of [[goodbyeFx, "pause"], [aidMissFx, "not-found"], [activitySlowFx, "read-slow"]]) {
+      expect(shape(promptPanelFromBuf(screenAt(fx, name), ALL))).toEqual({
+        kind: "anyKey",
+        anchor: "bottom",
+        title: "",
+        items: [["promptChoices_continue", JSON.stringify(" "), false]],
+      });
+    }
+  });
+
+  test("一般列表沒有提問 ⇒ null", () => {
+    expect(promptPanelFromBuf(screenAt(articleListFx, "list"), ALL)).toBeNull();
+  });
+
+  test("各自的開關關掉就不出現", () => {
+    const none = { mobilePromptChoices: false, mobilePromptKeyboard: false, mobileAnyKeyContinue: false };
+    expect(promptPanelFromBuf(screenAt(searchPromptsFx, "title"), { ...ALL, mobilePromptKeyboard: false })).toBeNull();
+    expect(promptPanelFromBuf(screenAt(goodbyeFx, "pause"), { ...ALL, mobileAnyKeyContinue: false })).toBeNull();
+    expect(promptPanelFromBuf(screenAt(goodbyeFx, "confirm"), none)).toBeNull();
+    expect(promptPanelFromBuf(null, ALL)).toBeNull();
+  });
+
+  test("sig 分得出三種面板、也分得出送不送 ⏎", () => {
+    const a = promptPanelFromBuf(screenAt(searchPromptsFx, "title"), ALL);
+    const b = promptPanelFromBuf(screenAt(goodbyeFx, "pause"), ALL);
+    const c = promptPanelFromBuf(screenAt(goodbyeFx, "confirm"), ALL);
+    const sigs = new Set([a, b, c].map(promptChoicesSig));
+    expect(sigs.size).toBe(3);
+    expect(promptChoicesSig(a)).toBe(promptChoicesSig(promptPanelFromBuf(screenAt(searchPromptsFx, "title"), ALL)));
   });
 });
