@@ -74,6 +74,7 @@ import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
 import { isMailboxOverLimitNotice, MAILBOX_OVER_LIMIT_HINT } from './mail_list';
 import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
+import { BOARD_PROMPT_RE } from './board_note_skip';
 import {
   parseActivityAlert,
   activityAlertHint,
@@ -140,6 +141,10 @@ function activityAlertBail(snapshot, facts) {
 // The board's 進板畫面 tail: mbbsd/bbs.c#Read → pressanykey(). Same literals
 // term_buf.setPageState matches for pageState 5.
 const PRESS_ANY_KEY_RE = /請按任意鍵繼續|請按 空白鍵 繼續/;
+// vmsg 帶訊息的按任意鍵（vtuikit.c#vmsg：「 ◆ <訊息>」＋右靠「[按任意鍵繼續]」）＝ PTT 在跟
+// 使用者說「沒成功」（進板失敗的「您沒有進入此看板的權限！」、upstream 3febb9c 起別的閱讀器裡
+// s 的「這裡不能切換看板。」）。不是進板畫面：不收，留給使用者看（等到 probe → 明確失敗）。
+const VMSG_TAIL_RE = /\[按任意鍵繼續\]\s*$/;
 
 // Escape presses allowed before giving up. 站內信 needs 3 (信件內容 → 信件列表 →
 // 郵件選單 → 主功能表); the slack covers deeper nests. A cap is mandatory: with an
@@ -1527,6 +1532,13 @@ AidNavigation.prototype = {
       // 交給同一步的 bail（activityAlertBail）停手。
       if (activityAlertBail(snapshot, facts)) return false;
       const lastRow = facts.rowTexts[facts.rows - 1] || '';
+      // 選看板 prompt 還開著（CompleteBoard 畫在 row 0，板名回顯幀）：← 會打進 prompt。
+      if (
+        BOARD_PROMPT_RE.test(facts.rowTexts[0] || '') ||
+        BOARD_PROMPT_RE.test(facts.rowTexts[1] || '')
+      )
+        return false;
+      if (VMSG_TAIL_RE.test(lastRow)) return false;
       if (PRESS_ANY_KEY_RE.test(lastRow)) return { dismiss: true };
       // We are between 主功能表 and the list here, so an article screen can only
       // be the 進板畫面 pager — the target post is still two commands away.
@@ -1549,6 +1561,25 @@ AidNavigation.prototype = {
       )
         return { dismiss: true };
       return false;
+    };
+  },
+
+  // 換板那一步（_enqueueBoardJump）的 expect。
+  //   viaMenu：主功能表的 s（ReadSelect → Read()）＝ _boardLandingExpect。
+  //   文章內／列表上的 s：舊版 server（do_select）直接在原列表裡換板，落地可能是目標板的搜尋
+  //   結果（landedOnBoardList 的 sub）、沒有進板畫面；upstream adc87d0 起 s 只選板、關掉舊列表，
+  //   由 Read() 重新進板 ⇒ 換到「有進板畫面、又不是上一個看的板」時先畫進板畫面＋pressanykey，
+  //   跟主功能表那條一樣（bbs.c#Read 的迴圈）。兩代都吃：先認落地，再認進板畫面（回 dismiss，
+  //   交給 _onBoardLanding 收）。文章內的 s 不管換不換得成都先離開 pmore（RET_SELECTBRD），
+  //   所以這裡的文章畫面只會是多頁的進板畫面，不會是原本那篇。
+  _boardJumpExpect: function(boardLower, viaMenu) {
+    const landing = this._boardLandingExpect(boardLower);
+    if (viaMenu) return landing;
+    return function(snapshot, facts) {
+      const landed = landedOnBoardList(facts, boardLower);
+      if (landed) return landed;
+      const r = landing(snapshot, facts);
+      return r && r.dismiss ? r : false;
     };
   },
 
@@ -1741,9 +1772,10 @@ AidNavigation.prototype = {
   // Step 1: s <board> ⏎ — the board-search jump. Lands on the target board's
   // clean list; a candidate menu / typo never satisfies the expect and ends as a
   // visible miss on the probed full frame.
-  //   viaMenu=false: sent from INSIDE the article (pmore handles s directly,
-  //     more.c:177 → Select() only). No 進板畫面 is possible → the expect stays
-  //     exactly what it always was.
+  //   viaMenu=false: sent from INSIDE the article (pmore's s → the read_post
+  //     hook) or on the list. Old servers switch boards in place (do_select, no
+  //     進板畫面); upstream adc87d0 closes the list and Read() re-enters, so the
+  //     board's 進板畫面 may come first — see _boardJumpExpect.
   //   viaMenu=true:  sent at 主功能表 after the escape preamble (menu.c:498 →
   //     ReadSelect() → do_select() + Read()), so the landing may be preceded by
   //     the board's 進板畫面 + pressanykey — dismissed by _onBoardLanding.
@@ -1772,18 +1804,15 @@ AidNavigation.prototype = {
       timeoutMs: BOARD_PROBE_AFTER_MS,
       probeTimeoutMs: STEP_PROBE_WINDOW_MS,
       hardTimeoutMs: BOARD_HARD_MS,
-      // 文章內的 s 從搜尋結果出發時落在目標板的搜尋結果（landedOnBoardList）；主功能表的
-      // s 走 ReadSelect→Read()，新的 i_read 不繼承搜尋模式（read.c#i_read 開頭清 MODE_SELECT）。
-      expect: viaMenu
-        ? this._boardLandingExpect(boardLower)
-        : function(snapshot, facts) {
-            return landedOnBoardList(facts, boardLower);
-          },
+      // 舊版 server 文章內的 s 從搜尋結果出發時落在目標板的搜尋結果（landedOnBoardList）；
+      // 主功能表的 s（以及 adc87d0 起所有的 s）走 Read()，新的 i_read 不繼承搜尋模式
+      // （read.c#i_read 開頭清 MODE_SELECT），還可能先有進板畫面（_boardJumpExpect）。
+      expect: this._boardJumpExpect(boardLower, viaMenu),
       // 進板前 PTT 可能先畫「使用限制 限速中」（upstream f369626a，board.c#enter_board）：
       // 不准當成進板畫面按掉，停手交給使用者。
       bail: activityAlertBail,
       onDone: function(result) {
-        if (viaMenu) {
+        if (viaMenu || result.dismiss) {
           self._onBoardLanding(run, result, 0);
           return;
         }

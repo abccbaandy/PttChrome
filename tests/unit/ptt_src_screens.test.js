@@ -46,6 +46,7 @@ import articleLiveFx from "./fixtures/ptt_src_screens_legacy/article_live_3c7d9a
 import articleLiveNewFx from "./fixtures/ptt_src_screens/article_live.json";
 import helpMenuFx from "./fixtures/ptt_src_screens/help_menu.json";
 import boardNoteFx from "./fixtures/ptt_src_screens/board_note.json";
+import boardSwitchFx from "./fixtures/ptt_src_screens/board_switch.json";
 import boardListFx from "./fixtures/ptt_src_screens/board_list.json";
 import mainMenuFx from "./fixtures/ptt_src_screens/main_menu.json";
 import waterballDefaultFx from "./fixtures/ptt_src_screens/waterball_default.json";
@@ -1667,6 +1668,50 @@ describe("upstream pttbbs 產的限速通知（upstream f369626a，contentcheck.
     expect(text).toContain(REASON);
     expect(openPromptHint(text)).toBe(text);
     expect(openPromptText(at("article").buf)).toBe(null);
+  });
+});
+
+describe("upstream pttbbs 產的換板（adc87d0：s 只選板，換板後由 Read() 重新進板）", () => {
+  const withKind = (f) => ({ ...f, ...classifyListScreen(f) });
+  const at = (name) => withKind(screenAt(boardSwitchFx, name).facts);
+  const inArticle = (board) => AidNavigation.prototype._boardJumpExpect(board, false);
+  const viaMenu = (board) => AidNavigation.prototype._boardJumpExpect(board, true);
+
+  test("文章內 s 換到有進板畫面的板：先畫進板畫面＋請按任意鍵繼續", () => {
+    const { rowTexts } = screenAt(boardSwitchFx, "note");
+    expect(rowTexts[0]).toContain("歡迎來到 Notes 板");
+    expect(rowTexts[23]).toContain("請按任意鍵繼續");
+  });
+
+  test("AID 跳文的文章內換板：進板畫面認得、交給收進板畫面那一步，不空等逾時", () => {
+    expect(inArticle("notes")(null, at("note"))).toEqual({ dismiss: true });
+    expect(inArticle("notes")(null, at("notes-list"))).toEqual({ sub: false });
+    // 沒有進板畫面的板（舊版 server 一律如此）照舊直接落地
+    expect(inArticle("test")(null, at("test-list"))).toEqual({ sub: false });
+    // 從列表換回已經看過進板畫面以外的板：一樣先畫進板畫面
+    expect(inArticle("notes")(null, at("note-again"))).toEqual({ dismiss: true });
+  });
+
+  test("進不去的板名：落回原板列表（不是目標板、不是進板畫面）⇒ 不送鍵", () => {
+    const f = at("rejected");
+    expect(f).toMatchObject({ kind: "clean-list", boardName: "Test" });
+    expect(inArticle("zzz")(null, f)).toBe(false);
+  });
+
+  test("選看板 prompt 還開著的那一幀不當成進板畫面（← 會打進 prompt）", () => {
+    const f = at("prompt");
+    expect(f.rowTexts[0]).toMatch(/選擇看板/);
+    expect(inArticle("notes")(null, f)).toBe(false);
+    expect(viaMenu("notes")(null, f)).toBe(false);
+  });
+
+  test("vmsg（「這裡不能切換看板。」這類帶訊息的按任意鍵）不當成進板畫面收掉", () => {
+    const f = at("article");
+    const rowTexts = f.rowTexts.slice();
+    rowTexts[23] = " ◆ 這裡不能切換看板。                                       [按任意鍵繼續] ";
+    const vmsg = { ...f, rowTexts, kind: "prompt" };
+    expect(inArticle("notes")(null, vmsg)).toBe(false);
+    expect(viaMenu("notes")(null, vmsg)).toBe(false);
   });
 });
 
