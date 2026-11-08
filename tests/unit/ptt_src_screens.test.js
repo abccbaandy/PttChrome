@@ -1653,7 +1653,7 @@ describe("upstream pttbbs 產的限速通知（upstream f369626a，contentcheck.
     expect(expectFn(null, withKind(at("list").facts))).toEqual({ landed: true });
   });
 
-  test("重新整理（s 板名⏎）：進板前的限速通知 ⇒ bail，不等逾時送 \\f 探路", () => {
+  test("重新整理（s 板名⏎）：進板前的限速通知 ⇒ bail，不空等逾時再報失敗", () => {
     const [, submit] = buildArticleListRefreshSteps("Gossip", {});
     const facts = at("board-slow").facts;
     expect(submit.expect(null, facts)).toBe(false);

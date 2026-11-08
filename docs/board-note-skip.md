@@ -19,7 +19,7 @@ unit `tests/unit/board_note_skip.test.js`，offline e2e `tests/e2e/offline/board
 |---|---|
 | 末列含「動畫播放中」「暫停播放動畫」 | 送 `q`（唯一不可遮罩的鍵；暫停畫面的任意鍵＝繼續播） |
 | clean-list／row 0 是 主選單・看板列表・我的最愛・分類看板・精華文章 標題 | landed ⇒ 解除。**不可用 kind 'menu'**：它也吃「底列是主選單 footer」，而 do_select 只清 row 0/1 ⇒ 板名回顯幀會被誤判落地（live 實錄） |
-| row 0「使用限制 …」＋末列 pressanykey（PTT 的限速通知，upstream f369626a：enter_board 在進板前先畫） | yield ⇒ 解除、**不送鍵**（站方要使用者本人看的通知，`activity_alert.parseActivityAlert`）；送鍵中的那一步 bail，不等逾時送 `\f` |
+| row 0「使用限制 …」＋末列 pressanykey（PTT 的限速通知，upstream f369626a：enter_board 在進板前先畫） | yield ⇒ 解除、**不送鍵**（站方要使用者本人看的通知，`activity_alert.parseActivityAlert`）；送鍵中的那一步也 bail |
 | 末列「請按任意鍵繼續」（不含 vmsg 的「[按任意鍵繼續]」） | 送空白 |
 | kind article（pmore footer） | 送 ← |
 | kind prompt ∧ 末列空白 ∧ row0 無《板名》（PMORE_AUTO_EXIT 多頁） | 送 ← |

@@ -132,7 +132,7 @@ export function buildArticleListRefreshSteps(board, cb) {
         return landedOnBoard(facts, boardLower);
       },
       // 進板前 PTT 可能先畫「使用限制 限速中」（upstream f369626a，activity_alert.js）：
-      // 馬上停手，不等逾時送 \f 探路把它按掉。
+      // 馬上停手、說明限速中，不空等逾時再報成「重新整理失敗」。
       bail: function(snapshot, facts) {
         return facts ? parseActivityAlert(facts.rowTexts, facts.rows) : null;
       },
