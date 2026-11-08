@@ -15,6 +15,7 @@ import {
   splitPassthrough,
   devServerProbeUrls,
   waitForDevServer,
+  serverCommand,
 } from "../../scripts/run-adverse-e2e.mjs";
 
 const ROOT = path.join(__dirname, "..", "..");
@@ -221,4 +222,20 @@ test("探測位址同時涵蓋 localhost／IPv4／IPv6（vite 綁哪一個依平
     "http://127.0.0.1:8080/",
     "http://[::1]:8080/",
   ]);
+});
+
+describe("serverCommand", () => {
+  // runner 起的共用 server 必須跟 playwright.config.js 的 webServer 選同一支，否則
+  // reuseExistingServer 附上去的跟 offline shard 測的不是同一種開站。
+  test("E2E_SERVER=bundle ⇒ 打包版（同 playwright.config.js 的 webServer）", () => {
+    const cmd = serverCommand({ E2E_SERVER: "bundle" });
+    expect(cmd.join("/").replace(/\\/g, "/")).toBe("scripts/serve-e2e-bundle.mjs");
+    expect(configSource).toMatch(/E2E_SERVER === 'bundle' \? 'node scripts\/serve-e2e-bundle\.mjs'/);
+  });
+
+  test("沒設或其他值 ⇒ vite dev server（本機預設）", () => {
+    for (const env of [{}, { E2E_SERVER: "dev" }, { E2E_SERVER: "" }]) {
+      expect(serverCommand(env).join("/").replace(/\\/g, "/")).toBe("node_modules/vite/bin/vite.js");
+    }
+  });
 });
