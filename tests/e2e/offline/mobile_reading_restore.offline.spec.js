@@ -113,6 +113,55 @@ for (const frac of [0.25, 0.5, 0.8]) {
     const after = await topOfView(page);
     expect(after.text).toBe(before.text);
     expect(after.li).toBeCloseTo(before.li, 2);
-    expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(2);
+    expect(Math.abs(after.top - expectedTop(before))).toBeLessThanOrEqual(2);
   });
 }
+
+// 閱讀紀錄的列內比例恆 ≥ 0（term_view.currentLineIndex）：視窗頂端落在兩列之間的空隙
+// （推文間距 .commentSpacing 的 margin-top）時，記下的是「下一列的列頂」，空隙那幾 px
+// 不在紀錄裡 ⇒ 還原後那一列貼齊視窗頂端（top 0），而不是原本的正數。
+// 依比例捲動時是否剛好落進空隙看當輪版面，所以這個分支另有下面那條決定性的 case 守。
+const expectedTop = (before) => Math.min(before.top, 0);
+
+test('重讀後還原：視窗頂端落在兩列之間的空隙 ⇒ 回來時那一列貼齊視窗頂端', async ({ page }) => {
+  test.setTimeout(180000);
+  await openAndRead(page, null);
+  // 捲到推文區、等預覽載完，在視窗內找一段列與列之間的空隙，把視窗頂端放在空隙的上緣
+  // 附近（離下一列列頂最遠 ⇒ 舊斷言「還原前後 top 差 ≤ 2」必紅）。只在視窗內找：捲動距離
+  // 不到一屏，不會再觸發新的預覽載入把空隙推走。
+  await page.evaluate(() => {
+    const d = window.__app.view.mainDisplay;
+    d.scrollTop = Math.round((d.scrollHeight - d.clientHeight) * 0.8);
+  });
+  await waitPreviewsSettled(page);
+  const gap = await page.evaluate(() => {
+    const d = window.__app.view.mainDisplay;
+    const dTop = d.getBoundingClientRect().top;
+    const rows = Array.from(document.querySelectorAll('#mainContainer [type="bbsrow"]'))
+      .filter((el) => el.offsetParent !== null)
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { srow: Number(el.getAttribute('srow')), top: r.top - dTop + d.scrollTop, bottom: r.bottom - dTop + d.scrollTop };
+      })
+      .filter((r) => r.top > d.scrollTop && r.bottom < d.scrollTop + d.clientHeight)
+      .sort((a, b) => a.top - b.top);
+    for (let i = 1; i < rows.length; ++i) {
+      if (rows[i].srow === rows[i - 1].srow + 1 && rows[i].top - rows[i - 1].bottom >= 3)
+        return { srow: rows[i].srow, y: rows[i - 1].bottom + 0.5 };
+    }
+    return null;
+  });
+  expect(gap).not.toBeNull();
+  await page.evaluate((y) => { window.__app.view.mainDisplay.scrollTop = y; }, gap.y);
+  await waitPreviewsSettled(page);
+  const before = await topOfView(page);
+  // 前提：視窗頂端確實在空隙裡（下一列的列頂在視窗頂端之下），紀錄是那一列、比例 0。
+  expect(before.li).toBe(gap.srow);
+  expect(before.top).toBeGreaterThan(0);
+
+  await openAndRead(page, before.li);
+  const after = await topOfView(page);
+  expect(after.text).toBe(before.text);
+  expect(after.li).toBeCloseTo(before.li, 2);
+  expect(Math.abs(after.top - expectedTop(before))).toBeLessThanOrEqual(2);
+});
