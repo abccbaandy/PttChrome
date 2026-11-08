@@ -1994,6 +1994,33 @@ export const en_US = {
   "tooltip_mobilePromptChoices": {
     "message": "For the post category, reply target, the editor's save menu and yes/no questions, the choices appear above the bottom bar; tapping one types that key and Enter for you. Only PTT's fixed prompt wording is recognized; anything else shows nothing."
   },
+  "options_mobilePromptKeyboard": {
+    "message": "\"Type with keyboard\" button when PTT asks you to type (mobile)"
+  },
+  "tooltip_mobilePromptKeyboard": {
+    "message": "When an input field shows up (post title, search, board name, jump to article…), a big button above the bottom bar opens the keyboard directly. It sends nothing; prompts that are safe to abandon also get a \"Cancel\"."
+  },
+  "options_mobileAnyKeyContinue": {
+    "message": "\"Continue\" button for \"press any key\" (mobile)"
+  },
+  "tooltip_mobileAnyKeyContinue": {
+    "message": "When PTT waits on \"press any key to continue\" or a bottom-row notice, a \"Continue\" button above the bottom bar presses Space for you."
+  },
+  "promptChoices_typeInput": {
+    "message": "Input"
+  },
+  "promptChoices_keyboard": {
+    "message": "Type with keyboard"
+  },
+  "promptChoices_cancel": {
+    "message": "Cancel"
+  },
+  "promptChoices_anyKey": {
+    "message": "Press any key to continue"
+  },
+  "promptChoices_continue": {
+    "message": "Continue"
+  },
   "promptChoices_postType": {
     "message": "Post category"
   },

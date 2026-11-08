@@ -27,6 +27,8 @@
 // 而且欄位還是空的——使用者自己打了一半，就不替他加字。
 // vgets 一律要 ⏎ 才收（vtuikit.c#vgetstring），所以送「字＋⏎」。
 
+import { resolveDismiss, emptyAnswerCommits, DISMISS_ANY_KEY, KEY_DISMISS, KEY_ABORT } from './screen_dismiss';
+
 const REPLY_PROMPTS = Object.freeze([
   {
     text: '▲ 回應至 (F)看板 (M)作者信箱 (B)二者皆是 (Q)取消？[F]',
@@ -51,11 +53,15 @@ function item(send, label, opts) {
   const o = opts || {};
   return {
     send: send,
-    // 按鈕上顯示的鍵（大寫字母、數字；空字串＝只按 ⏎）
-    key: send ? send.toUpperCase() : '',
+    // 按鈕上顯示的鍵（大寫字母、數字；空字串＝只按 ⏎）。o.key 給 '' ＝不顯示（空白、^C 這種）。
+    key: 'key' in o ? o.key : send ? send.toUpperCase() : '',
     label: label || '',
     labelKey: o.labelKey || '',
-    isDefault: !!o.isDefault
+    isDefault: !!o.isDefault,
+    // false ＝只送 send、不補 ⏎（pressanykey 的空白、輸入欄的 ^C）。
+    enter: o.enter !== false,
+    // 'keyboard' ＝不送任何 byte，只叫出系統鍵盤（P62）。
+    action: o.action || ''
   };
 }
 
@@ -182,9 +188,67 @@ export function promptChoicesFromBuf(buf) {
   return promptChoices(promptChoiceFacts(buf));
 }
 
+// ---- P62／P63：同一個面板的另外兩種內容（各自有 pref，預設開） ----
+//
+// typeInput（P62，pref mobilePromptKeyboard）：游標在 PTT 的輸入欄、又不是上面認得的選擇題（發文標題、
+//   搜尋標題／作者、選看板、跳到第幾篇、登入代號…）。手機上點畫面刻意不叫鍵盤，要「按鍵」→鍵盤鈕兩下
+//   ⇒ 面板一顆「開鍵盤輸入」（**不送任何 byte**，只叫系統鍵盤），旁邊「取消」只在空答案＝不做的提問才放
+//   （screen_dismiss.emptyAnswerCommits：送 ^C，vgetstring 清空並 abort，同點空白處關框的那一鍵）。
+//   鍵盤已經叫出來就不出現（components/MobileToolbar）。
+// anyKey（P63，pref mobileAnyKeyContinue）：PTT 停在「請按任意鍵繼續」（pressanykey）或 vmsg 的
+//   〔按任意鍵繼續〕橫幅 ⇒ 一顆「繼續」，送空白（不補 ⏎：⏎ 會變成下一個畫面的指令）。判準＝
+//   screen_dismiss.resolveDismiss 的 DISMISS_ANY_KEY，跟點空白處關框同一套、同一個鍵。
+//
+// 一律「認得的選擇題 > 打字欄 > 按任意鍵」：輸入欄開著時底列的字可能剛好像 pressanykey，游標在不在
+// 欄位裡才是確定的（resolveDismiss 也是輸入欄優先）。
+
+// prefs：{ mobilePromptChoices, mobilePromptKeyboard, mobileAnyKeyContinue }。
+export function promptPanelFromBuf(buf, prefs) {
+  const p = prefs || {};
+  if (!buf || typeof buf.inputFieldText !== 'function') return null;
+  const facts = promptChoiceFacts(buf);
+  if (facts) {
+    if (p.mobilePromptChoices) {
+      const c = promptChoices(facts);
+      if (c) return c;
+    }
+    return p.mobilePromptKeyboard ? typeInputPanel(facts) : null;
+  }
+  if (!p.mobileAnyKeyContinue || typeof buf.getRowText !== 'function') return null;
+  const d = resolveDismiss({
+    cursorOnInputField: false,
+    lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols)
+  });
+  if (!d || d.kind !== DISMISS_ANY_KEY) return null;
+  return {
+    kind: 'anyKey',
+    title: '',
+    titleKey: 'promptChoices_anyKey',
+    // pressanykey／vmsg 一律畫在最後一列（vtuikit.c#vshowmsg 的 move(b_lines, 0)）⇒ 讓位。
+    anchor: 'bottom',
+    items: [item(KEY_DISMISS, '', { key: '', labelKey: 'promptChoices_continue', isDefault: true, enter: false })]
+  };
+}
+
+function typeInputPanel(facts) {
+  const prompt = norm(facts.promptText);
+  const rows = facts.rows > 0 ? facts.rows : 24;
+  const items = [item('', '', { key: '', labelKey: 'promptChoices_keyboard', isDefault: true, action: 'keyboard' })];
+  if (!emptyAnswerCommits(facts.promptText))
+    items.push(item(KEY_ABORT, '', { key: '', labelKey: 'promptChoices_cancel', enter: false }));
+  return {
+    kind: 'typeInput',
+    title: prompt,
+    titleKey: prompt ? '' : 'promptChoices_typeInput',
+    anchor: facts.cursorRow < rows / 2 ? 'top' : 'bottom',
+    items: items
+  };
+}
+
 // 兩次結果是不是同一組選項（工具列 context 比對、點下去前再驗一次都用它）。
 export function promptChoicesSig(c) {
   if (!c) return '';
   return c.kind + '|' + c.anchor + '|' + c.title + '|' + c.titleKey + '|' +
-    c.items.map((i) => i.send + ':' + i.label + ':' + i.labelKey + (i.isDefault ? '*' : '')).join(',');
+    c.items.map((i) => i.send + ':' + i.label + ':' + i.labelKey + ':' + i.action + (i.enter ? '' : '!') +
+      (i.isDefault ? '*' : '')).join(',');
 }

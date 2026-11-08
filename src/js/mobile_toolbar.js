@@ -38,6 +38,8 @@
 //            游標在輸入欄時不給（同 post）。
 //   choices：P61（pref mobilePromptChoices）。PTT 正在問「選一個」（發文種類、回文對象、編輯器檔案處理、
 //            是非題）⇒ 底部導覽上方浮出可點選項（prompt_choices.js：只認固定字樣、欄位要是空的）。
+//            同一個位置還有 P62（pref mobilePromptKeyboard）其他輸入欄的「開鍵盤輸入」、P63（pref
+//            mobileAnyKeyContinue）「請按任意鍵繼續」的「繼續」（prompt_choices.js#promptPanelFromBuf）。
 // 判準刻意不看 enableLongPush：推鈕送的是 X，長推文關掉時就是 PTT 原生推文。
 
 import { parsePagerFooterContext } from './string_util';
@@ -50,7 +52,7 @@ import { appBarFromFacts, sameAppBar, EMPTY_APP_BAR } from './mobile_app_bar';
 import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
 import { isEditorFooter } from './screen_captions';
 import { readEffectivePrefs } from './pref_storage';
-import { promptChoicesFromBuf, promptChoicesSig } from './prompt_choices';
+import { promptPanelFromBuf, promptChoicesSig } from './prompt_choices';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
@@ -183,7 +185,7 @@ export function mobileToolbarContext(core) {
     listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor()),
     home: homeDashboardShown(core),
     editorSave: editorSave,
-    choices: readEffectivePrefs().mobilePromptChoices && core && core.buf ? promptChoicesFromBuf(core.buf) : null
+    choices: core && core.buf ? promptPanelFromBuf(core.buf, readEffectivePrefs()) : null
   });
 }
 

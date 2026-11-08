@@ -1596,6 +1596,26 @@ export const PrefModal = ({
                       {i18n("tooltip_mobilePromptChoices")}
                     </Text>
                     <PrefCheckbox
+                      name="mobilePromptKeyboard"
+                      checked={values.mobilePromptKeyboard}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobilePromptKeyboard")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobilePromptKeyboard")}
+                    </Text>
+                    <PrefCheckbox
+                      name="mobileAnyKeyContinue"
+                      checked={values.mobileAnyKeyContinue}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobileAnyKeyContinue")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobileAnyKeyContinue")}
+                    </Text>
+                    <PrefCheckbox
                       name="mobileModernCommentCards"
                       checked={values.mobileModernCommentCards}
                       onChange={onCheckboxChange}

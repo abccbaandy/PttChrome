@@ -67,8 +67,62 @@ test.describe('手機提問選項（離線）', () => {
     await feedUntil(page, fx('reply_prompt'), 'article');
     await expect(page.locator('#mobileToolbar')).toBeVisible();
     await expect(page.locator('#mobilePromptChoices')).toHaveCount(0);
-    await ptt.applyPrefs(page, { mobilePromptChoices: false });
+    // P61 關掉時這題退成 P62 的「開鍵盤輸入」，三個都關才完全不出現。
+    await ptt.applyPrefs(page, { mobilePromptChoices: false, mobilePromptKeyboard: false });
     await feedUntil(page, fx('goodbye'), 'confirm');
+    await expect(page.locator('#mobilePromptChoices')).toHaveCount(0);
+  });
+});
+
+// P62／P63：同一個面板（prompt_choices.js#promptPanelFromBuf）。
+test.describe('手機開鍵盤輸入／繼續（離線）', () => {
+  test('打字欄（搜尋標題）：「開鍵盤輸入」只叫鍵盤、一個 byte 都不送，鍵盤開著面板收起；「取消」送 ^C', async ({ page }) => {
+    test.setTimeout(60000);
+    await bootOffline(page, ptt);
+    await feedUntil(page, fx('search_prompts'), 'title');
+    const panel = page.locator('#mobilePromptChoices');
+    await expect(panel.locator('.mobilePromptChoicesTitle')).toHaveText('搜尋標題:');
+    await expectPromptRowVisible(page);
+
+    await startCapture(page);
+    await panel.locator('[data-choice="keyboard"]').tap();
+    await expect.poll(() => page.evaluate(() => !!window.__app.softKeyboard)).toBe(true);
+    await expect(panel).toHaveCount(0);
+    expect(await takeCapture(page)).toBe('');
+
+    // 收起鍵盤（按鍵面板裡的鍵盤鈕，再收起按鍵面板）⇒ 面板回來；取消送 ^C、不補 Enter。
+    await page.locator('[data-key="__keys"]').tap();
+    await page.locator('[data-key="__keyboard"]').tap();
+    await expect.poll(() => page.evaluate(() => !!window.__app.softKeyboard)).toBe(false);
+    await page.locator('[data-key="__keys"]').tap();
+    await expect(panel).toBeVisible();
+    await startCapture(page);
+    await panel.locator('[data-choice="Ctrl-C"]').tap();
+    await expect.poll(() => peekCapture(page)).toBe('\x03');
+    expect(await takeCapture(page)).toBe('\x03');
+  });
+
+  test('請按任意鍵繼續：「繼續」浮在工具列上方、不蓋橫幅；tap 送空白、不補 Enter', async ({ page }) => {
+    test.setTimeout(60000);
+    await bootOffline(page, ptt);
+    await feedUntil(page, fx('aid_miss'), 'not-found');
+    const panel = page.locator('#mobilePromptChoices');
+    await expect(panel.locator('.mobilePromptChoicesTitle')).toHaveText('請按任意鍵繼續');
+    await expectPromptRowVisible(page);
+    await startCapture(page);
+    await panel.locator('[data-choice="Space"]').tap();
+    await expect.poll(() => peekCapture(page)).toBe(' ');
+    expect(await takeCapture(page)).toBe(' ');
+  });
+
+  test('開關關掉不出現', async ({ page }) => {
+    test.setTimeout(60000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { mobilePromptKeyboard: false, mobileAnyKeyContinue: false });
+    await feedUntil(page, fx('search_prompts'), 'title');
+    await expect(page.locator('#mobileToolbar')).toBeVisible();
+    await expect(page.locator('#mobilePromptChoices')).toHaveCount(0);
+    await feedUntil(page, fx('aid_miss'), 'not-found');
     await expect(page.locator('#mobilePromptChoices')).toHaveCount(0);
   });
 });

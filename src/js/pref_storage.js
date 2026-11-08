@@ -327,6 +327,11 @@ export const DEFAULT_PREFS = {
   // PTT 原生指令 ⇒ 不在安全模式清單（同 mobileEditorSave）。
   mobileMailListTools: true,
   mobilePromptChoices: true,
+  // 手機上 PTT 的其他輸入欄（P62，prompt_choices.typeInputPanel）浮出「開鍵盤輸入」：本身不送 byte，
+  // 「取消」是使用者自己按的 ^C ⇒ 不在安全模式清單（同 mobilePromptChoices）。
+  mobilePromptKeyboard: true,
+  // 「請按任意鍵繼續」浮出「繼續」（P63）：使用者自己按、送空白 ⇒ 不在安全模式清單。
+  mobileAnyKeyContinue: true,
   // 手機好讀文章的新格式推文（「id: 內容 … [N]」與更早的「[N] id … creation」）也排成推文卡片
   // （P60，render/comment_card.buildModernCommentCard）。只改畫法、不送鍵 ⇒ 不在安全模式清單。
   mobileModernCommentCards: true,
