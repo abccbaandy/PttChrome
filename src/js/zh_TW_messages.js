@@ -2476,6 +2476,12 @@
   "inputHelperTitle": {
     "message": "輸入小幫手"
   },
+  "inputHelper_colorNotEditing": {
+    "message": "色彩只能在編輯文章時插入"
+  },
+  "inputHelper_textNotTyping": {
+    "message": "符號只能在編輯文章或輸入文字時插入"
+  },
   "colorTitle": {
     "message": "上色"
   },

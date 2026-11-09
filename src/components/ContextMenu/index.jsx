@@ -82,6 +82,11 @@ import { pushMaxBytes } from "../../js/long_push";
 import { longPushAvailable } from "../../js/long_push_gate";
 import { clearDraft, writeDraft } from "../../js/long_push_draft";
 import {
+  inputHelperSendAllowed,
+  INPUT_HELPER_COLOR,
+  INPUT_HELPER_TEXT,
+} from "../../js/input_helper_gate";
+import {
   nativeReadLaterTargetAt,
   readLaterNative,
 } from "../../js/native_read_later";
@@ -1413,11 +1418,30 @@ export const ContextMenu = ({ pttchrome }) => {
     () => update({ showsInputHelper: false }),
     [update],
   );
+  // 不在編輯器（色彩）／不在編輯器或輸入欄（符號）⇒ 一個 byte 都不送、閃提示
+  // （js/input_helper_gate.js：^U 在編輯器外是「線上使用者」）。
+  const inputHelperBlocked = useCallback(
+    (kind) => {
+      if (inputHelperSendAllowed(kind, pttchrome.buf)) return false;
+      pttchrome.view?.flashListHint?.(
+        i18n(
+          kind === INPUT_HELPER_COLOR
+            ? "inputHelper_colorNotEditing"
+            : "inputHelper_textNotTyping",
+        ),
+        3000,
+      );
+      return true;
+    },
+    [pttchrome],
+  );
   const onInputHelperReset = useCallback(() => {
+    if (inputHelperBlocked(INPUT_HELPER_COLOR)) return;
     pttchrome.conn.send("\x15[m");
-  }, [pttchrome]);
+  }, [pttchrome, inputHelperBlocked]);
   const onInputHelperCmdSend = useCallback(
     (cmd) => {
+      if (inputHelperBlocked(INPUT_HELPER_COLOR)) return;
       if (!window.getSelection().isCollapsed && pttchrome.buf.pageState == 6) {
         // something selected
         var sel = pttchrome.view.getSelectionColRow();
@@ -1455,13 +1479,14 @@ export const ContextMenu = ({ pttchrome }) => {
       }
       pttchrome.conn.send(cmd);
     },
-    [pttchrome],
+    [pttchrome, inputHelperBlocked],
   );
   const onInputHelperConvSend = useCallback(
     (value) => {
+      if (inputHelperBlocked(INPUT_HELPER_TEXT)) return;
       pttchrome.conn.convSend(value);
     },
-    [pttchrome],
+    [pttchrome, inputHelperBlocked],
   );
 
   const onLiveHelperHide = useCallback(() => {

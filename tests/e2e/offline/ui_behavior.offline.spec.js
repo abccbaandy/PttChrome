@@ -335,6 +335,53 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
     ).toBeVisible();
   });
 
+  // 回歸：不在編輯器時點顏色「送出」會送 ^U[…m ⇒ PTT 的全域 ^U 打開「線上使用者」，後面的字落進
+  // 名單當指令；點符號送的 Big5 第二位元組（「，」＝A1 41）在列表上是 `A`。不在編輯器／輸入欄
+  // 時一個 byte 都不送、閃提示（js/input_helper_gate.js）。
+  test('InputHelper：不在編輯器時點顏色、符號 ⇒ 不送任何 byte、閃提示', async ({ page }) => {
+    await installReplay(page);
+    await page.goto('/');
+    await waitConnected(page);
+    await openInputHelper(page);
+    await page.evaluate(() => {
+      window.__sent = [];
+      window.__stubWSSent = (d) => window.__sent.push(d);
+    });
+    const dialog = page.locator('.InputHelperModal__Dialog');
+    await dialog.getByText(await label(page, 'colorHelperSend'), { exact: true }).click();
+    expect(await page.evaluate(() => window.__sent)).toEqual([]);
+    await expect(page.locator('.ListHint')).toContainText(await label(page, 'inputHelper_colorNotEditing'));
+    await dialog.getByRole('button', { name: await label(page, 'symTitle') }).click();
+    await page.getByRole('menuitem', { name: await label(page, 'symTitle_general') }).click();
+    await dialog.getByText('，', { exact: true }).first().click();
+    await expect(page.locator('.ListHint')).toContainText(await label(page, 'inputHelper_textNotTyping'));
+    expect(await page.evaluate(() => window.__sent)).toEqual([]);
+  });
+
+  // 對照組：編輯器裡（upstream pttbbs 產的 editor.json）照樣送 ^U[…m。
+  test('InputHelper：編輯器裡點顏色「送出」⇒ 送 ^U 色碼', async ({ page }) => {
+    const screens = require('../../unit/fixtures/ptt_src_screens/editor.json');
+    const frames = screens.frames.slice(0, screens.frames.findIndex((f) => f.name === 'edit') + 1);
+    await installReplay(page);
+    await page.goto('/');
+    await waitConnected(page);
+    await ptt.applyPrefs(page, { enableInputHelper: true });
+    for (const f of frames) await feedRaw(page, f.bytes);
+    await waitScreenSettled(page);
+    await expect.poll(() => page.evaluate(() => window.__app.buf.isEditorTypingNow())).toBe(true);
+    await page.locator('#BBSWindow').click({ button: 'right', position: { x: 40, y: 20 } });
+    await page.locator('.DropdownMenu').first()
+      .getByText(await label(page, 'cmenu_showInputHelper'), { exact: true }).click();
+    await expect(page.locator('.InputHelperModal__ColorList')).toBeVisible();
+    await page.evaluate(() => {
+      window.__sent = [];
+      window.__stubWSSent = (d) => window.__sent.push(d);
+    });
+    await page.locator('.InputHelperModal__Dialog')
+      .getByText(await label(page, 'colorHelperSend'), { exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__sent.join(''))).toContain('\x15[');
+  });
+
   // ===== 基本 UI 不變式：換任何 UI 庫／CSS 都該維持，故以行為斷言守門 =====
 
   // 開啟設定（PrefModal），回傳左欄 nav locator。
