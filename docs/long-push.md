@@ -379,7 +379,7 @@ term.ptt.cc 送來的實錄（`\e[1m` 已開著所以選單上
 15. **型別每次開框都重設為「推」**。以前刻意不重置，於是上次選的噓會沿用到下一次開框；
     按 X 的預期一律是推，而噓錯了收不回來（PTT 沒有撤回 API）。禁噓板那條 effect
     （`booAllowed` false 且 type==='boo' → 推）照舊並存。
-16. **序列進行中不可以有第三者往線路送 byte**：`serializedOpHint` 管四條使用者入口。
+16. **序列進行中不可以有第三者往線路送 byte**：`serializedOpHint` 管四條使用者入口＋滑鼠（`App._mouseSendBlocked`）。
     anti-idle **不需要**守門：已改送 `IAC DO TIMING-MARK`，server 在 telnet 層就吃掉
     （`common/sys/telnet.c` IAC_WAIT_OPT default 分支），不進 vkey（見 `docs/pttbbs-screen-protocol.md` §1.3）。
 17. **序列的每一步送完都要讓 server 的 vtkbd 回到 `VK_NORMAL`**。這是「機器送出一律

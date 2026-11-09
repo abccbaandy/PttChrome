@@ -880,7 +880,7 @@ API**，唯一入口就是原生選單 ⇒ 依 CLAUDE.md「系統／瀏覽器的
 順序固定（漏一步都會壞）：
 
 1. `modalShown` → return（元素層 listener 早跑，`mouse_click` 攔不到，見上方優先權表）
-2. `serializedOpHint`（AID 跳文／長推文在途）→ 提示後 return。條件與提示文字是**四條送字入口共用**的述詞（`serialized_op_gate.js`：另三條是 `term_view.onKeyDown`／`onTextInput`、`App.onPasteDone`）
+2. `serializedOpHint`（AID 跳文／長推文在途）→ 提示後 return。條件與提示文字是**送字入口共用**的述詞（`serialized_op_gate.js`：另三條是 `term_view.onKeyDown`／`onTextInput`、`App.onPasteDone`；滑鼠的左鍵動作（`onMouse_click`）、滾輪翻頁、中鍵 ←、回報給 server 也過同一道，`App._mouseSendBlocked`，守護 `tests/unit/mouse_serialized_gate.test.js`）
 3. `listSession.onFunctionKey(bytes)` 回 true → 它接手了（v5 封閉互動，見下）
 4. `functionKeyClickPlan` → 文章好讀時**先** `_enterFunctionMode()` 再送 byte
 5. `commandQueue.inFlightKind` → 提示後 return

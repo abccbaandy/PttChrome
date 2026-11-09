@@ -1835,6 +1835,18 @@ App.prototype._serverMouseReportable = function() {
   return true;
 };
 
+// 滑鼠送鍵前的序列閘門：鍵盤、輸入法、貼上、功能鍵四條入口共用的 serializedOpHint，
+// 滑鼠（左鍵動作、滾輪翻頁、中鍵 ←、回報給 server）也要過。回 true ＝擋下（已閃提示）。
+// AID 跳文另有自己更早的那道（含提示字），這裡一併涵蓋其餘的序列化操作。
+App.prototype._mouseSendBlocked = function() {
+  var busy = serializedOpHint(this);
+  if (!busy)
+    return false;
+  if (this.view && this.view.flashListHint)
+    this.view.flashListHint(busy);
+  return true;
+};
+
 App.prototype.mouseGates = function() {
   return resolveMouseGates({
     useMouseBrowsing: this.buf.useMouseBrowsing,
@@ -1882,6 +1894,11 @@ App.prototype.onMouse_click = function (e) {
   if (this.aidNavigation.active) {
     e.preventDefault();
     this.view.flashListHint('AID 跳文中，請稍候…');
+    return;
+  }
+  // 其他序列化操作在線上（搜尋兩步、找未讀、設為已讀、長推文…）：同鍵盤四條入口，不送。
+  if (this._mouseSendBlocked()) {
+    e.preventDefault();
     return;
   }
 
@@ -2770,6 +2787,10 @@ App.prototype.mouse_click = function(e) {
       // 到得了這裡就一定是 listRenderMode === 'native'（buffer/frozen 上面已 return）
       // ⇒ 座標與 server 的真實 24 列對得起來。
       if (this.mouseGates().serverReport && this._serverMouseReportable()) {
+        if (this._mouseSendBlocked()) {
+          e.preventDefault();
+          return;
+        }
         var mpos = this.clientToPos(e.clientX, e.clientY);
         this.view._send(encodeClick({
           button: 0, // click 事件只對主鍵發（非主鍵走 auxclick）
@@ -2831,6 +2852,8 @@ App.prototype.middleMouse_down = function(e) {
       return false;
     } else if (middle === 2) {
       // 底列 prompt（輸入欄、推文型別選單）開著：← 會被型別選單當成「推」⇒ 不送（同滾輪）。
+      if (this._mouseSendBlocked())
+        return false;
       if (!(this.buf.isPromptPending && this.buf.isPromptPending()))
         this.view._send('\x1b[D');
       return false;
@@ -2996,6 +3019,10 @@ App.prototype.mouse_scroll = function(e) {
   // 放在後面會被上面那行 early return 吃掉。
   // 水平滾輪不回報（上面已 return）：xterm 的 66/67 我們不實作。
   if (gates.serverReport && this._serverMouseReportable()) {
+    if (this._mouseSendBlocked()) {
+      e.preventDefault();
+      return;
+    }
     var wpos = this.clientToPos(e.clientX, e.clientY);
     this.view._send(encodeWheel({
       wheel: (e.deltaY < 0 || e.wheelDelta > 0) ? 'up' : 'down',
@@ -3044,6 +3071,9 @@ App.prototype.mouse_scroll = function(e) {
 
   e.stopPropagation();
   e.preventDefault();
+  // 序列化操作在線上：翻頁鍵會插進序列中間（同鍵盤四條入口）。
+  if (this._mouseSendBlocked())
+    return;
   // PTT 正等著底列的 prompt（輸入欄、推文型別選單）：PgUp／PgDn 會被型別選單的 vkey 當成
   // 「推」前進到內容列（輸入欄則什麼都不做）。上方是殘影，翻頁沒有意義 ⇒ 不送（同滑鼠點列）。
   if (!(this.buf.isPromptPending && this.buf.isPromptPending()))

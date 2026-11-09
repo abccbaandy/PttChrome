@@ -1,4 +1,6 @@
-// 「線路上正在跑一段序列化操作嗎？」——送 bytes 給 PTT 的四條使用者入口共用的述詞。
+// 「線路上正在跑一段序列化操作嗎？」——送 bytes 給 PTT 的使用者入口共用的述詞：鍵盤、輸入法、
+// 貼上、功能鍵四條，加上滑鼠（左鍵動作、滾輪翻頁、中鍵 ←、回報給 server；App._mouseSendBlocked，
+// 守護 tests/unit/mouse_serialized_gate.test.js）。
 //
 // AID 跳文與長推文都是**程式化按鍵的序列**（前者 s → 板名 → # → AID → Enter，後者
 // X → 型別 → 內容 → y）。中間插進任何一個使用者 byte 都會與它競態：pttbbs 的
