@@ -2477,6 +2477,12 @@ export const en_US = {
   "inputHelperTitle": {
     "message": "Input helper"
   },
+  "inputHelper_colorNotEditing": {
+    "message": "Colors can only be inserted while editing a post"
+  },
+  "inputHelper_textNotTyping": {
+    "message": "Symbols can only be inserted while editing or typing"
+  },
   "colorTitle": {
     "message": "Color"
   },
