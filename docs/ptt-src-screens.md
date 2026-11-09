@@ -143,7 +143,7 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   **沒連上時改成有逾時的等待**（每 2～3 秒醒來 `ipc_check_reconnect`），`WAIT_MARK` 永遠不出現 ⇒ 每個場景第 0 步
   逾時。driver 在 `init_io()` 後把一個永遠不可讀的 pipe 掛成 IPC fd（`vkey_attach_ipc`）⇒ 回到無限期等待。
   舊 upstream 沒有這個函式：`generate.sh` 看 `proto.h` 決定 `-DHAS_IPC_FD`。
-- **實況推文**（3c7d9af，`-DHAS_LIVE`：`proto.h` 有 `pmore_feed_comment`，c6d35a8 起改認 `more.c` 有 `live_run`）：IPC fd 改用 capture.mjs 開著的 fd 3
+- **實況推文**（3c7d9af，`-DHAS_LIVE`：`proto.h` 有 `pmore_feed_comment`，c6d35a8 起改認 `more.c` 有 `live_run`，10db344b 搬到 `livepost.c` 也認；**偵測不到時不會編譯錯**，而是 `ipc_is_connected` 沒被 wrap ⇒ 水球 ^R 變「系統連線服務異常」、`live_short` 卡住）：IPC fd 改用 capture.mjs 開著的 fd 3
   （平常不寫＝永遠不可讀）。場景步驟寫 `{ live: '<ASCII 內容>' }` ⇒ capture 往 fd 3 寫一列，driver 以 --wrap 接住
   `ipc_read_packet`，用 upstream 的 `FormatCommentString`（bbs.c#recommend 的參數，推／bob）排成推文列、包成
   `IPC_TYPE_LIVE_COMMENT` 交回 `wmsg_ipc_handler`，之後是 upstream 自己的 pmore 實況路徑。`ipc_sub` 只在

@@ -67,6 +67,7 @@ import { pushMaxBytes } from "../../src/js/long_push";
 import { navKeyBlockReason } from "../../src/js/nav_key_gate";
 import { App } from "../../src/js/pttchrome";
 import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
+import articleHelpLegacyFx from "./fixtures/ptt_src_screens_legacy/article_help_01b5517.json";
 import liveShortFx from "./fixtures/ptt_src_screens_legacy/live_short_3c7d9af.json";
 import liveLongFx from "./fixtures/ptt_src_screens_legacy/live_long_3c7d9af.json";
 import liveShortNewFx from "./fixtures/ptt_src_screens/live_short.json";
@@ -105,6 +106,7 @@ import {
 import digestFx from "./fixtures/ptt_src_screens/digest.json";
 import digestAidFx from "./fixtures/ptt_src_screens/digest_aid.json";
 import essenceFx from "./fixtures/ptt_src_screens/essence.json";
+import essenceLegacyFx from "./fixtures/ptt_src_screens_legacy/essence_01b5517.json";
 import { aidToFn, toPostAid } from "../../src/js/aid_codec";
 import { parsePagerFooterContext } from "../../src/js/string_util";
 import { isSubListFooter } from "../../src/js/screen_captions";
@@ -699,12 +701,13 @@ describe("upstream pttbbs 產的說明選單（文章列表的 h）", () => {
 describe("upstream pttbbs 產的說明選單（文章裡的 h）", () => {
   const at = (name) => screenAt(articleHelpFx, name);
 
-  test("同一套 psb 說明選單：caption「文章閱讀」、3 頁，第 1 頁游標在第一項", () => {
+  // 頁數隨 upstream 增減指令變（e7acb746 把讀者專屬鍵搬進 more_ex 的 layers：3 頁 → 2 頁），只鎖 ≥2 頁。
+  test("同一套 psb 說明選單：caption「文章閱讀」、多頁，第 1 頁游標在第一項", () => {
     const menu = parseHelpMenuScreen(at("help").rowTexts);
     expect(menu).not.toBeNull();
     expect(menu.caption).toBe("文章閱讀");
     expect(menu.page).toBe(1);
-    expect(menu.totalPages).toBe(3);
+    expect(menu.totalPages).toBeGreaterThanOrEqual(2);
     expect(menu.cursorIndex).toBe(0);
   });
 
@@ -717,12 +720,25 @@ describe("upstream pttbbs 產的說明選單（文章裡的 h）", () => {
 
   // 最後一頁不滿：項目數隨 upstream 加指令變（3c7d9af 加了 v「切換實況」⇒ 1 項變 2 項），
   // 只鎖「不滿一頁也解析得出來」。
-  test("空白翻到第 2、3 頁（最後一頁不滿一頁）", () => {
-    expect(parseHelpMenuScreen(at("help-2").rowTexts)).toMatchObject({ page: 2, totalPages: 3 });
-    const last = parseHelpMenuScreen(at("help-3").rowTexts);
+  test("空白翻到第 2 頁；在最後一頁再按空白只把游標移到最後一項、頁不變", () => {
+    const total = parseHelpMenuScreen(at("help").rowTexts).totalPages;
+    expect(parseHelpMenuScreen(at("help-2").rowTexts)).toMatchObject({ page: 2, totalPages: total });
+    if (total === 2) {
+      const last = parseHelpMenuScreen(at("help-3").rowTexts);
+      expect(last).toMatchObject({ page: 2, totalPages: 2 });
+      expect(last.cursorIndex).toBe(last.items.length - 1);
+    }
+  });
+
+  // 01b5517（e7acb746 之前）產的：3 頁、最後一頁不滿一頁。PTT 實跑私有 commit，舊版照認。
+  test("舊版（3 頁）：空白翻到第 2、3 頁，最後一頁不滿一頁也解析得出來", () => {
+    const old = (name) => screenAt(articleHelpLegacyFx, name).rowTexts;
+    expect(parseHelpMenuScreen(old("help"))).toMatchObject({ caption: "文章閱讀", page: 1, totalPages: 3 });
+    expect(parseHelpMenuScreen(old("help-2"))).toMatchObject({ page: 2, totalPages: 3 });
+    const last = parseHelpMenuScreen(old("help-3"));
     expect(last).toMatchObject({ page: 3, totalPages: 3 });
     expect(last.items.length).toBeGreaterThanOrEqual(1);
-    expect(last.items.length).toBeLessThan(at("help-3").rowTexts.length - 3);
+    expect(last.items.length).toBeLessThan(old("help-3").length - 3);
   });
 
   test("說明選單不是文章：沒有 pmore 狀態列、不判成 article；q 回到文章", () => {
@@ -1202,14 +1218,19 @@ describe("upstream pttbbs 產的看板精華區（z，bbs.c#b_man → announce.c
     expect(refreshTargetFromFacts(searchGateFacts({ buf }), buf.pageState, {})).toBeNull();
   });
 
-  // b_man 不 setutmpmode（只有主功能表的 Announce() 設 ANNOUNCE）⇒ currstat 還是 READING，
-  // more.c#common_pmore_footer_handler 照樣疊 pager_reading_cmds，footer 跟看板文章一字不差。
-  // 但這時 pager 回傳的 s／#／Q／X／y 都只會讓 announce_cmd_select 的迴圈 break 回精華區選單，
-  // 後面送的字全打進選單 ⇒ 只看 footer 會認錯。
-  test("從精華區開的文章：footer 跟 READING 一字不差，但不得當成看板文章", () => {
-    const { buf, rowTexts, facts } = screenAt(essenceFx, "article", { perFrame: true });
+  // 舊版（01b5517 以前）：b_man 不 setutmpmode（只有主功能表的 Announce() 設 ANNOUNCE）⇒ currstat
+  // 還是 READING，more.c#common_pmore_footer_handler 照樣疊 pager_reading_cmds，footer 跟看板文章
+  // 一字不差。但這時 pager 回傳的 s／#／Q／X／y 都只會讓 announce_cmd_select 的迴圈 break 回精華區
+  // 選單，後面送的字全打進選單 ⇒ 只看 footer 會認錯。
+  // 新版（e7acb746）：精華區自己給 more_ex 的 layers，footer 變成「(f)下篇文章 … (←)離開」，
+  // 不再像看板文章；但 PTT 實跑私有 commit ⇒ 兩代都要回 'essence'、都不得當成看板文章。
+  test.each([
+    ["新版", essenceFx, "unknown"],
+    ["舊版 01b5517", essenceLegacyFx, "reading"],
+  ])("從精華區開的文章（%s）：不管 footer 像不像 READING，都不得當成看板文章", (_, fx, footer) => {
+    const { buf, rowTexts, facts } = screenAt(fx, "article", { perFrame: true });
     expect(buf.pageState).toBe(3);
-    expect(parsePagerFooterContext(rowTexts[facts.rows - 1])).toBe("reading");
+    expect(parsePagerFooterContext(rowTexts[facts.rows - 1])).toBe(footer);
 
     const gate = searchGateFacts({ buf });
     expect(

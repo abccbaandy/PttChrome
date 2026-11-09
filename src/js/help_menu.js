@@ -19,6 +19,9 @@
 // 3. 按鍵：↑/k/p/^P、↓/j/n/^N、PgUp/^B/P、PgDn/^F/N/空白（curr ± rows，夾在 [0,count-1]）、
 //    Home/'0'（curr=0）、End/'$'、Enter/→ ＝回傳 items[curr].keys[0]（呼叫端 bbs_cmd_help 把它
 //    當成使用者按的鍵重新派送）、h/H ＝小天使、q/Q/← ＝離開（回 0）。其餘鍵忽略。
+//    upstream 7c105fff 起：k/p/j/n/P/N/0/$ 拿掉，**其餘任何鍵都離開**（像舊版說明畫面），h 後面還有
+//    typeahead 就不叫小天使（貼網址的 http）。⇒ 補頁／執行一律只送方向鍵／Home／PgDn／Enter
+//    （兩代都綁著），小天使的 h 單獨送；不要改送字母鍵。
 //    ⇒ 執行第 t 項＝Home → PgDn×⌊t/rows⌋ → ↓×(t mod rows) → Enter，與當下游標在哪無關。
 // 4. 同一個畫面在看板列表、文章列表、主功能表、閱讀文章（more.c）、編輯器（edit.c）都有，
 //    caption 依呼叫端（「我的最愛」「文章閱讀」…）。

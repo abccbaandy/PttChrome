@@ -70,7 +70,8 @@ if grep -Eq '^[[:space:]]*user_t[[:space:]]+moderators\[' ../include/pttstruct.h
 if grep -q 'vkey_attach_ipc' ../include/proto.h; then HAS_IPC_FD=1; else HAS_IPC_FD=0; fi
 # 實況模式（upstream 3c7d9af）：有 pmore_feed_comment 才接 fd 3 的實況推文、--wrap 訂閱（見 driver.c 的 HAS_LIVE）。
 # upstream c6d35a8 把實況搬進 more.c（pmore_feed_comment 拿掉）⇒ 改認 more.c 的 live_run，舊的照認。
-if grep -q 'pmore_feed_comment' ../include/proto.h || grep -q '^live_run(' more.c; then HAS_LIVE=1; LIVE_WRAP=,--wrap=ipc_is_connected,--wrap=ipc_sub,--wrap=ipc_unsub,--wrap=ipc_read_packet; else HAS_LIVE=0; LIVE_WRAP=; fi
+# upstream 10db344b 再把它從 more.c 搬到 livepost.c（read_post 呼叫）⇒ 兩個檔都認。
+if grep -q 'pmore_feed_comment' ../include/proto.h || grep -qs '^live_run(' more.c livepost.c; then HAS_LIVE=1; LIVE_WRAP=,--wrap=ipc_is_connected,--wrap=ipc_sub,--wrap=ipc_unsub,--wrap=ipc_read_packet; else HAS_LIVE=0; LIVE_WRAP=; fi
 # upstream f5bb8f5 起每次等鍵前 vkey_sync_ipc 都從 libcmbbs 的 ipc_get_fd 重抓 IPC fd（蓋掉 vkey_attach_ipc 掛的），
 # IPC handler 也從 wmsg_ipc_handler 改名 mbbsd_ipc_handler ⇒ --wrap=ipc_get_fd 交回 driver 掛的 fd（見 driver.c）。
 if grep -q 'vkey_sync_ipc' ../include/proto.h; then HAS_IPC_SYNC=1; LIVE_WRAP=$LIVE_WRAP,--wrap=ipc_get_fd; else HAS_IPC_SYNC=0; fi

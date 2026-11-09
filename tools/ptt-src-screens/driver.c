@@ -28,6 +28,18 @@
 #include <unistd.h>
 #include <utime.h>
 
+// upstream c4a7085f 把水球開關從 pager 改名成 wmsg（PAGER_* → WMSG_*、UF_PAGER_OFO → UF_WMSG_OFO、
+// userinfo_t.pager → .wmsg）。新舊兩代都要編得過：看巨集在不在選名字。
+#ifdef UF_WMSG_OFO
+#define DRV_WMSG_ON WMSG_ON
+#define DRV_UF_WMSG_OFO UF_WMSG_OFO
+#define DRV_WMSG_FIELD wmsg
+#else
+#define DRV_WMSG_ON PAGER_ON
+#define DRV_UF_WMSG_OFO UF_PAGER_OFO
+#define DRV_WMSG_FIELD pager
+#endif
+
 int ptt_main(int argc, char *argv[], char *envp[]);
 
 static void die(const char *m) { fprintf(stderr, "driver: %s\n", m); exit(2); }
@@ -334,7 +346,7 @@ static void inject_waterballs(void)
             userinfo_t *u = &SHM->uinfo[slot];
             STRLCPY(u->userid, wb_from[i]);
             u->pid = 10000 + slot;
-            u->pager = PAGER_ON;
+            u->DRV_WMSG_FIELD = DRV_WMSG_ON;
         }
         msgque_t *m = &currutmp->msgs[i];
         m->pid = SHM->uinfo[slot].pid;
@@ -626,10 +638,10 @@ int main(int argc, char *argv[])
         main_menu();
     } else if (strncmp(entry, "wmsg:", 5) == 0) {
         if (strcmp(entry + 5, "ofo") == 0)
-            pwcuser.uflag |= UF_PAGER_OFO;
+            pwcuser.uflag |= DRV_UF_WMSG_OFO;
         else if (strcmp(entry + 5, "default") != 0)
             die("wmsg mode");
-        currutmp->pager = PAGER_ON;
+        currutmp->DRV_WMSG_FIELD = DRV_WMSG_ON;
         inject_waterballs();
         write_request(0);
         main_menu();
