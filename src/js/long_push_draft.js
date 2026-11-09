@@ -21,6 +21,8 @@ const DRAFT_KEY = 'pttchrome.longPush.draft.v1';
 // 但完全相同的值重複寫沒有意義 ⇒ 擋掉。
 // 刻意**不用 debounce**：那會生出「關分頁那一刻還有一筆沒 flush」的新 race，
 // 而這個功能存在的理由正是「關掉也不能丟」。
+// 這顆快取只屬於本分頁，localStorage 卻是同源分頁共用：別的分頁整段送完會把草稿清掉
+// ⇒ 略過之前還要確認儲存裡真的還是這個值（getItem 跟 setItem 一樣便宜）。
 let lastWritten = null;
 
 // 讀不到／被關掉／存到壞東西一律回空字串：這是附屬功能，絕不可以炸掉輸入框。
@@ -36,7 +38,7 @@ export function readDraft() {
 
 export function writeDraft(text) {
   const next = typeof text === 'string' ? text : '';
-  if (next === lastWritten) return;
+  if (next === lastWritten && readDraft() === next) return;
   lastWritten = next;
   try {
     if (next) localStorage.setItem(DRAFT_KEY, next);

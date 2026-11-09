@@ -147,4 +147,21 @@ describe("重複寫同一個值只寫一次", () => {
     expect(writes).toBe(2);
     spy.mockRestore();
   });
+
+  // 去重的快取是這個分頁自己的，localStorage 卻是同源分頁共用：另一個分頁整段送完
+  // 把草稿清掉之後，這個分頁再打出「跟自己上次寫的一樣」的字，不可以被當成重複而略過
+  // （略過 ⇒ 關掉分頁這段就丟了，正是這個功能要防的事）。
+  test("別的分頁清掉草稿後，再打一樣的字照樣存得進去", () => {
+    writeDraft("安安");
+    localStorage.removeItem("pttchrome.longPush.draft.v1"); // 另一個分頁 clearDraft()
+    writeDraft("安安");
+    expect(readDraft()).toBe("安安");
+  });
+
+  test("別的分頁改寫了草稿，再打回自己上次的字照樣蓋回去", () => {
+    writeDraft("安安");
+    localStorage.setItem("pttchrome.longPush.draft.v1", "別的分頁打的");
+    writeDraft("安安");
+    expect(readDraft()).toBe("安安");
+  });
 });
