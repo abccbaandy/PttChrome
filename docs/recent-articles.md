@@ -8,7 +8,7 @@ pref `enableRecentArticles`，預設開。
 
 - **最近讀過**：讀過的文章自動記下（最多 `RECENT_ARTICLES_LIMIT`＝30 篇，新的在前）。
 - **稍後再讀**：文章裡右鍵／長按 →「稍後再讀」（游標下是別篇的文章連結時，收的是那一篇）；已經收了就改給「從稍後再讀移除」。最多 `READ_LATER_LIMIT`＝50 篇。
-- **文章列表上的稍後再讀**（P53）：列表好讀裡右鍵／長按一列 →「稍後再讀」。見下面「列表的稍後再讀」。
+- **文章列表上的稍後再讀**（P53）：列表好讀裡右鍵／長按一列 →「稍後再讀」。原生列表（列表好讀關掉、或暫時切到原生鏡像）也有同一項。見下面「列表的稍後再讀」與「原生列表的稍後再讀」。
 - 首頁儀表板多兩區「稍後再讀」「最近讀過」（各列 `HOME_ARTICLE_LIMIT`＝8 篇，稍後再讀每列有 ✕）；指令面板（F4）空白時列 5 篇（稍後再讀在前），打字比對標題或板名。點了就開回那篇。
 
 ## 規則
@@ -23,18 +23,35 @@ pref `enableRecentArticles`，預設開。
 
 ## 列表的稍後再讀（`list_session.readLaterAt`）
 
-列表的列沒有 AID（AID 來自檔名，列表不顯示）⇒ **這是唯一會送鍵的入口**：替使用者在那一列按 `Q`
+列表的列沒有 AID（AID 來自檔名，列表不顯示）⇒ **這是會送鍵的入口**（原生列表那一份見下一節）：替使用者在那一列按 `Q`
 （bbs.c#view_postinfo 資訊框）讀 AID，再送空白關框。依 upstream：框是 pressanykey、之後 `return FULLUPDATE`，
 **在列表裡只是重畫列表、游標不動**（文章裡按 Q 才會離開文章，那是 `deep_link_controller` 的「複製本篇連結」）。
 
 - 出現條件：`enableRecentArticles` 開、列表好讀接手（active＋buffer）、那一列有編號（置底文、header、空白列不給）、
-  `enableListNativeAutoResume` 開（關掉時那條路游標同步失敗會照送，Q 落在別列就收錯篇）。原生列表沒有這一項。
+  `enableListNativeAutoResume` 開（關掉時那條路游標同步失敗會照送，Q 落在別列就收錯篇）。
 - 凍結交易（跟「前已讀後未讀」同一條 `_beginLandingTransaction`）：必要時先跳號同步真游標 → `Q`（**不尾附 \f**，
   會被 pressanykey 當成關框）→ 認出資訊框（`aid_navigation.postInfoAnswer`）才送空白 → 關框落地＝乾淨的列表就回好讀。
   框沒出現 ⇒ 逾時切原生、**不送空白**（列表上的空白是翻頁）。框裡沒有 AID ⇒ 照樣關框、提示沒收。
 - 只收不移（開選單時還不知道是哪一篇）：已經在清單裡 ⇒ 提示「已經在稍後再讀裡」。標題取列表那一列（`data-list-title`）。
 - 閱讀紀錄 `read-later-list`：一律回原處。
-- 會送鍵 ⇒ 安全模式下列表好讀本身不接手，這一項自然不出現。
+- 會送鍵 ⇒ 安全模式下列表好讀本身不接手，這一項自然不出現（改由下面的原生那一份接）。
+
+## 原生列表的稍後再讀（`native_read_later.js`）
+
+列表好讀沒在畫列表（`App.activeListSession()` 是 null：列表好讀關掉、安全模式、暫時切原生鏡像）時，
+同一個選單項改走這裡。原生格線沒有列表好讀那套游標同步 ⇒ 自己走同一組 PTT 協定：
+
+- 出現條件：`enableRecentArticles` 開、文章列表（`refreshTargetOf` 的 `article-list`；搜尋結果、文摘不給）、
+  那一列是文章列且不是刪除文／鎖文／被黑名單擋掉的列（`list_row_filter.isHiddenListText`：使用者看到的是提示列）。
+  **置底文**沒有編號、跳不過去 ⇒ 只在它剛好是游標列時給。
+- 序列（`submitSerializedSteps`，在途旗標 `nativeReadLaterInFlight` 進序列閘門）：
+  1. 不是游標列 ⇒ `<編號>⏎`（「跳至第幾項」，同一頁、不捲）；落地要游標列＝那個編號**而且**標題跟右鍵時一樣
+     （編號當身分不夠：選單開著時畫面換了，同一個編號可能是另一篇）。
+  2. `Q`（不尾附 \f）→ 認出資訊框才算數；框沒出現 ⇒ 不送空白、提示沒收。
+  3. 空白關框 → 回到乾淨的列表（框不在了）才把答案交出去、收進稍後再讀。
+- 送之前再驗一次那一列的字（含游標標記）跟右鍵時一模一樣、游標列目標的游標沒移走；不一樣 ⇒ 一個 byte 都不送。
+- 結束後 PTT 游標停在右鍵的那一列（同一頁、畫面不捲），跟點了那一列一樣。閱讀紀錄 `read-later-list`。
+- 使用者自己按的 ⇒ 不在安全模式名單內（同「設為全部已讀」）。
 
 ## 接著上次讀到的地方
 
@@ -47,10 +64,10 @@ pref `resumeRecentArticles`（設定 → 一般，在「最近讀過／稍後再
 
 ## 還沒做
 
-- 原生列表（列表好讀關掉）與置底文上的「稍後再讀」。
+- 不在游標列上的置底文的「稍後再讀」（沒有編號，要 End＋方向鍵才到得了）。
 - 「之後新推文 +N」：要重開那篇才數得到，儀表板不顯示；開回去時由 `new_comments` 標出新推文。
 - 被刪的文章：AID 跳文會提示找不到，清單不會自動移除（稍後再讀可以按 ✕）。
 
 ## 測試
 
-unit：`recent_articles.test.jsx`（清單規則、只在讀得到網址列時記、同一篇只記一次、pref 關、稍後再讀切換與補標題、開回去走 deep link、指令面板排序與比對、右鍵目標與選單項目、列表的列問到 AID 才收／只收不移、儀表板兩區、接著上次讀到的地方的記與不記／落地決策／回到開頭）。offline e2e：`recent_articles.offline.spec.js`（stock-huang 讀完記下、真右鍵稍後再讀零送鍵、列表 F4 點文章走 AID 跳文、scn-deep-link 真往返開回讀到一半的那篇並捲到上次那一列、真滾輪記回位置）；`list_read_later.offline.spec.js`（upstream 產的 post_info 畫面，真右鍵：只送 Q 與空白、收進那一篇、全程不切原生）。unit `list_read_later.test.js`（序列、框沒出現不送空白、背景補頁在線上一律先同步）。
+unit：`recent_articles.test.jsx`（清單規則、只在讀得到網址列時記、同一篇只記一次、pref 關、稍後再讀切換與補標題、開回去走 deep link、指令面板排序與比對、右鍵目標與選單項目、列表的列問到 AID 才收／只收不移、儀表板兩區、接著上次讀到的地方的記與不記／落地決策／回到開頭）。offline e2e：`recent_articles.offline.spec.js`（stock-huang 讀完記下、真右鍵稍後再讀零送鍵、列表 F4 點文章走 AID 跳文、scn-deep-link 真往返開回讀到一半的那篇並捲到上次那一列、真滾輪記回位置）；`list_read_later.offline.spec.js`（upstream 產的 post_info 畫面，真右鍵：只送 Q 與空白、收進那一篇、全程不切原生）。unit `list_read_later.test.js`（序列、框沒出現不送空白、背景補頁在線上一律先同步）；`native_read_later.test.js`（哪些列給、跳號落地要編號＋標題、空白只在認出框之後、畫面換了不送）。offline e2e `list_read_later.offline.spec.js` 第二條：原生列表真右鍵游標列 ⇒ 只送 Q 與空白。
