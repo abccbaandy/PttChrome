@@ -81,6 +81,10 @@ import { isNativeMenuTarget } from "../../js/preview_targets";
 import { pushMaxBytes } from "../../js/long_push";
 import { longPushAvailable } from "../../js/long_push_gate";
 import { clearDraft, writeDraft } from "../../js/long_push_draft";
+import {
+  nativeReadLaterTargetAt,
+  readLaterNative,
+} from "../../js/native_read_later";
 import { quickPushPlan } from "../../js/comment_bar";
 import { serializedOpHint } from "../../js/serialized_op_gate";
 import {
@@ -217,6 +221,7 @@ const menuHandlerByEventKey = {
   clearCommentFilter: (pttchrome) => pttchrome.view.clearCommentFilter(),
   // 稍後再讀（P34）：收進／移出清單（recent_articles.js），一個 byte 都不送。
   readLater: (pttchrome, { readLaterTarget: t }) => {
+    if (t && t.native) return readLaterFromNative(pttchrome, t);
     if (t && t.listNum != null) return readLaterFromList(pttchrome, t);
     if (t && pttchrome.recentArticles?.toggleLater(t) === true)
       pttchrome.view?.flashListHint?.(i18n("recent_added"), 2000);
@@ -256,6 +261,30 @@ export function readLaterFromList(pttchrome, t) {
   return taken;
 }
 
+// 原生列表的「稍後再讀」：跳號（不是游標列時）→ Q → 空白關框（js/native_read_later.js）。
+export function readLaterFromNative(pttchrome, t) {
+  const view = pttchrome.view;
+  const hint = (msg, ms, level) => view?.flashListHint?.(msg, ms, level);
+  const answered = (info) => {
+    const r =
+      info && info.board
+        ? pttchrome.recentArticles?.addLater({
+            board: info.board,
+            aid: info.aid,
+            title: t.title || "",
+          })
+        : null;
+    if (r === "added") hint(i18n("recent_added"), 2000);
+    else if (r === "exists") hint(i18n("recent_already_later"), 2000);
+    else hint(i18n("recent_list_no_aid"), 3000, HINT_ERROR);
+  };
+  const taken = readLaterNative(pttchrome, t.native, answered, () =>
+    hint(i18n("recent_list_no_aid"), 3000, HINT_ERROR),
+  );
+  if (!taken) hint(i18n("recent_list_busy"), 3000, HINT_ERROR);
+  return taken;
+}
+
 // 稍後再讀（P34）的選單目標：游標下的文章連結優先，否則「本篇」（findLocalPostAid），
 // 再來是列表好讀裡右鍵／長按的那一列（listRow：{ num, title }，P53；saved 一律 false，
 // AID 要按 Q 才知道）。saved＝已經在稍後再讀裡（選單改給「從稍後再讀移除」）。
@@ -269,6 +298,13 @@ export function readLaterTargetOf(
 ) {
   const ra = pttchrome.recentArticles;
   if (!prefs.enableRecentArticles || !ra) return null;
+  if (!contextArticle && !currentArticle && listRow && listRow.native)
+    return {
+      listNum: listRow.num,
+      native: listRow.native,
+      title: listRow.title || "",
+      saved: false,
+    };
   if (!contextArticle && !currentArticle && listRow && listRow.num != null)
     return { listNum: listRow.num, title: listRow.title || "", saved: false };
   const a = contextArticle
@@ -727,13 +763,24 @@ export const ContextMenu = ({ pttchrome }) => {
         normalEnabled && pttchrome.listSession?.readLaterTargetAtRow
           ? pttchrome.listSession.readLaterTargetAtRow(pos.row)
           : null;
+      // 原生列表（列表好讀沒在畫）：同一個選單項，改走跳號＋Q（js/native_read_later.js）。
+      const readLaterNativeRow =
+        !readLaterRowNum && normalEnabled
+          ? nativeReadLaterTargetAt(pttchrome, pos.row)
+          : null;
       const readLaterListRow = readLaterRowNum
         ? {
             num: readLaterRowNum.num,
             title:
               (rowElement && rowElement.getAttribute("data-list-title")) || "",
           }
-        : null;
+        : readLaterNativeRow
+          ? {
+              num: readLaterNativeRow.num,
+              title: readLaterNativeRow.title,
+              native: readLaterNativeRow,
+            }
+          : null;
 
       update({
         open: true,

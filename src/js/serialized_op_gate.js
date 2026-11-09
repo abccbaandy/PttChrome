@@ -35,6 +35,8 @@ export function serializedOpHint(core) {
   if (core.unreadJumpInFlight) return '正在找第一篇未讀，請稍候…';
   // 設為已讀：文章列表 v → v⏎（mark_all_read.js）／看板列表 跳號 → v（board_mark_read.js）。
   if (core.markAllReadInFlight) return '設定已讀中，請稍候…';
+  // 原生列表的稍後再讀（跳號 → Q → 空白），見 native_read_later.js。
+  if (core.nativeReadLaterInFlight) return '讀取文章代碼中，請稍候…';
   // 首頁儀表板抓我的最愛（Ctrl+Z f → 讀頁 → q），見 home_dashboard.js。
   if (core.homeFavFetchInFlight) return '正在更新我的最愛，請稍候…';
   return null;

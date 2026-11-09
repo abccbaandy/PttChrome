@@ -119,3 +119,57 @@ test('列表右鍵「稍後再讀」⇒ 只送 Q 與空白、收進那一篇、�
   // 落地後選取仍在原本那一篇。
   expect(await page.evaluate(() => window.__app.listSession._selectedNum)).toBe(target.num);
 });
+
+// 原生列表（列表好讀關掉）：同一個選單項改走 js/native_read_later.js。右鍵的是游標列 ⇒ 不跳號，
+// 直接 Q → 空白（跳號那一步與「不是游標列」的分支由 unit native_read_later 守：假 PTT 答不了跳號）。
+test('原生列表右鍵「稍後再讀」（游標列）⇒ 只送 Q 與空白、收進那一篇', async ({ page }) => {
+  test.setTimeout(90000);
+  await bootOffline(page, ptt);
+  await ptt.applyPrefs(page, { enableEasyReadingList: false, enableRecentArticles: true });
+  await replayListCassette(page, cassette);
+  await page.waitForFunction(() => window.__app.buf.pageState === 2);
+  await expect.poll(() => page.evaluate(() => window.__app.activeListSession())).toBe(null);
+
+  const target = await page.evaluate(() => {
+    const app = window.__app;
+    const y = app.buf.cur_y;
+    const el = document.querySelector('#mainContainer [data-type="bbsline"][data-row="' + y + '"]');
+    if (!el) return null;
+    el.setAttribute('data-e2e-target', '1');
+    return { row: y, text: app.buf.getRowText(y) };
+  });
+  expect(target).not.toBeNull();
+
+  await page.evaluate(
+    ({ info, dismissed }) => {
+      const app = window.__app;
+      const prev = window.__stubWSSent;
+      window.__sent = [];
+      window.__stubWSSent = (d) => {
+        if (prev) prev(d);
+        window.__sent.push(d);
+        if (d === 'Q') setTimeout(() => app.onData(info), 0);
+        if (d === ' ' || d === ' \f') setTimeout(() => app.onData(dismissed), 0);
+      };
+    },
+    { info: frame('info'), dismissed: frame('dismissed') }
+  );
+
+  await rightClickElement(page, '[data-e2e-target]');
+  const label = await page.evaluate(() => window.__i18n('cmenu_readLater'));
+  await page.locator('.DropdownMenu').first().getByRole('menuitem').filter({ hasText: label }).click();
+
+  await expect
+    .poll(async () =>
+      page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{"later":[]}').later, KEY)
+    )
+    .toEqual([expect.objectContaining({ board: 'Test', aid: expect.stringMatching(/^[0-9A-Za-z_-]{8}$/) })]);
+  await expect(page.locator('.ListHint')).toContainText(await page.evaluate(() => window.__i18n('recent_added')));
+  const sent = await page.evaluate(() => window.__sent);
+  // 單獨的 \f 是指令佇列逾時的探針（同上一條的說明），不是按鍵。
+  const keys = sent.filter((d) => d !== '\f').map((d) => d.replace(/\f$/, ''));
+  expect(keys).toEqual(['Q', ' ']);
+  // 收的那一篇的標題取自右鍵那一列。
+  const saved = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).later[0].title, KEY);
+  expect(target.text).toContain(saved);
+});
