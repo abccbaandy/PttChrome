@@ -100,6 +100,9 @@ export function acceptsKeyEvent(e, isComposition) {
 // 活 buffer，參考一路不變但內容每幀都在變，套快取會一直畫出上一幀的內容。
 // 凍結成模組常數（而不是每次 new 一個 literal）純粹是省一次配置。
 const STABLE_ROWS = Object.freeze({ stableRows: true });
+// 唯讀閱讀頁（showStaticArticle）：存檔＝好讀累積頁的快照 ⇒ 列參考穩定、當文章（pageState 3）
+// 標註（樓層、推文合併、推文卡片），好讀開著。凍結常數：annotationsKey 的 refs 比對靠引用相同。
+const STATIC_ARTICLE_OVERRIDES = Object.freeze({ stableRows: true, pageState: 3, easyReading: true });
 
 // 「這一幀沒有任何列要上游標底色」。共用同一個凍結物件 → Screen 的 useState 以
 // Object.is 比較，連續的「不上色」不會白白觸發 render。
@@ -786,7 +789,33 @@ TermView.prototype = {
     this._articleByline = null;
   },
 
+  // 存到本機的唯讀閱讀頁（docs/saved-articles.md「唯讀頁」）：這一頁不連線，畫面只有存檔的
+  // 那一篇。rows＝saved_article_codec.decodeRows 的結果（與 buf.pageLines 同形），走跟好讀
+  // 累積頁同一個 _renderScreenLines（同一個 #mainContainer、同一份 enhance），只是資料來源
+  // 換成存檔、pageState／easyReading 由 override 給（活 buffer 是空的）。之後任何 redraw
+  // （視窗大小改變、設定改變）都畫同一份，不會掉回空白的活畫面。
+  showStaticArticle: function(rows) {
+    this._staticRows = rows;
+    var texts = rows.map(function(r) { return rowToText(r); });
+    var ctx = articleContextFromScreen(texts[0] || '', texts[1] || '', null);
+    if (ctx) {
+      this._setArticleContext(ctx);
+      this._articleByline = articleBylineFromScreen(texts[0] || '', texts[2] || '');
+    }
+    this.redraw(true);
+  },
+
+  _redrawStatic: function() {
+    this._gridRender = false;
+    this._renderScreenLines(this._staticRows, /* dropHidden */ true, /* inlinePreview */ true,
+      /* hoverPreview */ false, STATIC_ARTICLE_OVERRIDES);
+  },
+
   redraw: function(force) {
+    if (this._staticRows) {
+      this._redrawStatic();
+      return;
+    }
 
     //var start = new Date().getTime();
     var rows = this.buf.rows;

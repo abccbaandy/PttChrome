@@ -2676,6 +2676,36 @@ export const en_US = {
   },
   "tooltip_fontFace": {
     "message": "Separate each font with a comma, start with the desired font and end with a generic font."
+  },
+  "saved_done": {
+    "message": "Saved on this device (readable offline)"
+  },
+  "saved_updated": {
+    "message": "Saved copy updated"
+  },
+  "saved_failed_notArticle": {
+    "message": "Cannot save: open the article in easy reading mode and read to its URL line"
+  },
+  "saved_failed_invalid": {
+    "message": "Cannot save: the article content could not be read"
+  },
+  "saved_failed_tooLarge": {
+    "message": "Cannot save: the article is too long"
+  },
+  "saved_failed_full": {
+    "message": "Cannot save: saved articles are full (200); delete some first"
+  },
+  "saved_failed_quota": {
+    "message": "Cannot save: not enough browser storage"
+  },
+  "saved_failed_error": {
+    "message": "Cannot save: this browser cannot store data (private window or site data blocked)"
+  },
+  "saved_missing": {
+    "message": "Saved article not found (deleted, or saved in another browser)"
+  },
+  "saved_readerTitle": {
+    "message": "Saved articles"
   }
 
 };

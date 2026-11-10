@@ -2675,6 +2675,36 @@
   },
   "tooltip_fontFace": {
     "message": "以逗號隔開，由欲套用的字型開始至較通用的字型。"
+  },
+  "saved_done": {
+    "message": "已存到本機（不用連線也能讀）"
+  },
+  "saved_updated": {
+    "message": "已更新本機存檔"
+  },
+  "saved_failed_notArticle": {
+    "message": "存不了：要在好讀模式的文章裡，而且要讀到文末的文章網址"
+  },
+  "saved_failed_invalid": {
+    "message": "存不了：這篇的內容讀不出來"
+  },
+  "saved_failed_tooLarge": {
+    "message": "存不了：文章太長"
+  },
+  "saved_failed_full": {
+    "message": "存不了：本機收藏已滿（200 篇），先刪掉幾篇"
+  },
+  "saved_failed_quota": {
+    "message": "存不了：瀏覽器的儲存空間不夠"
+  },
+  "saved_failed_error": {
+    "message": "存不了：這個瀏覽器不能存（私密視窗或封鎖了網站資料）"
+  },
+  "saved_missing": {
+    "message": "找不到這篇本機存檔（可能已刪除，或存在別的瀏覽器）"
+  },
+  "saved_readerTitle": {
+    "message": "本機收藏"
   }
 
 };
