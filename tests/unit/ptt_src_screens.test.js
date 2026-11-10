@@ -67,6 +67,7 @@ import { pushMaxBytes } from "../../src/js/long_push";
 import { navKeyBlockReason } from "../../src/js/nav_key_gate";
 import { App } from "../../src/js/pttchrome";
 import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
+import articleHelpLegacyFx from "./fixtures/ptt_src_screens_legacy/article_help_01b5517.json";
 import liveShortFx from "./fixtures/ptt_src_screens_legacy/live_short_3c7d9af.json";
 import liveLongFx from "./fixtures/ptt_src_screens_legacy/live_long_3c7d9af.json";
 import liveShortNewFx from "./fixtures/ptt_src_screens/live_short.json";
@@ -105,6 +106,7 @@ import {
 import digestFx from "./fixtures/ptt_src_screens/digest.json";
 import digestAidFx from "./fixtures/ptt_src_screens/digest_aid.json";
 import essenceFx from "./fixtures/ptt_src_screens/essence.json";
+import essenceLegacyFx from "./fixtures/ptt_src_screens_legacy/essence_01b5517.json";
 import { aidToFn, toPostAid } from "../../src/js/aid_codec";
 import { parsePagerFooterContext } from "../../src/js/string_util";
 import { isSubListFooter } from "../../src/js/screen_captions";
@@ -730,6 +732,17 @@ describe("upstream pttbbs 產的說明選單（文章裡的 h）", () => {
     expect(last.items.length).toBeLessThanOrEqual(at("help-3").rowTexts.length - 3);
   });
 
+  // 01b5517（e7acb746 之前）產的：3 頁、最後一頁不滿一頁。PTT 實跑私有 commit ⇒ 舊版照認。
+  test("舊版（3 頁）：空白翻到第 2、3 頁，最後一頁不滿一頁也解析得出來", () => {
+    const old = (name) => screenAt(articleHelpLegacyFx, name).rowTexts;
+    expect(parseHelpMenuScreen(old("help"))).toMatchObject({ caption: "文章閱讀", page: 1, totalPages: 3 });
+    expect(parseHelpMenuScreen(old("help-2"))).toMatchObject({ page: 2, totalPages: 3 });
+    const last = parseHelpMenuScreen(old("help-3"));
+    expect(last).toMatchObject({ page: 3, totalPages: 3 });
+    expect(last.items.length).toBeGreaterThanOrEqual(1);
+    expect(last.items.length).toBeLessThan(old("help-3").length - 3);
+  });
+
   test("說明選單不是文章：沒有 pmore 狀態列、不判成 article；q 回到文章", () => {
     const { rowTexts, facts } = at("help");
     expect(parseStatusRow(rowTexts[facts.rows - 1])).toBeNull();
@@ -1213,10 +1226,14 @@ describe("upstream pttbbs 產的看板精華區（z，bbs.c#b_man → announce.c
   // 後面送的字全打進選單 ⇒ 只看 footer 會認錯。
   // 新版（e7acb746）：鍵表改由讀者（bbs／mail）經 more_ex() 提供，精華區用共用鍵表 ⇒ footer 沒有
   // 「回應」（parsePagerFooterContext 回 unknown）。新舊都要認成精華區、都不給看板文章的功能。
-  test("從精華區開的文章：footer 是 READING（舊）或沒有回應（新），都不得當成看板文章", () => {
-    const { buf, rowTexts, facts } = screenAt(essenceFx, "article", { perFrame: true });
+  // 兩代各用自己產的畫面鎖死：新版 fixture 跟著 upstream 重產，舊版留著守（PTT 實跑私有 commit）。
+  test.each([
+    ["新版", essenceFx, "unknown"],
+    ["舊版 01b5517", essenceLegacyFx, "reading"],
+  ])("從精華區開的文章（%s）：不管 footer 像不像 READING，都不得當成看板文章", (_, fx, footer) => {
+    const { buf, rowTexts, facts } = screenAt(fx, "article", { perFrame: true });
     expect(buf.pageState).toBe(3);
-    expect(["reading", "unknown"]).toContain(parsePagerFooterContext(rowTexts[facts.rows - 1]));
+    expect(parsePagerFooterContext(rowTexts[facts.rows - 1])).toBe(footer);
 
     const gate = searchGateFacts({ buf });
     expect(
