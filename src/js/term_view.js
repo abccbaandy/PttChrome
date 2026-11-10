@@ -8,6 +8,8 @@ import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { edgeBandRect, exitBandRect } from './mouse_geometry';
 import { calcTermSize, termLayoutOffsets, listViewportCut } from './term_size';
 import { renderOverlayRow, renderScreen } from './term_ui';
+import { footerLeftSpan, footerProgressCells, footerProgressTexts, scrollPercent } from './reading_footer';
+import { trailingPx } from './reading_record';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
 import { textCellWidth, parseStatusRow, statusSignature, normalizePasteText, parseStatusUserid } from './string_util';
@@ -3640,6 +3642,11 @@ TermView.prototype = {
       var el = document.createElement('span');
       el.style = "background-color:black;";
       var statusChars = this.buf.lines[this.buf.rows-1];
+      // P65：左半換成讀者自己的位置（右半功能鍵照舊）。換不了 ⇒ 原樣鏡像。
+      var progressChars = this._readingFooterChars(statusText, statusChars);
+      this._footerProgressOn = !!progressChars;
+      if (progressChars) statusChars = progressChars;
+      this._watchFooterScroll();
       // 功能鍵按鈕：這條路不經 computeAnnotations（見 term_ui.renderOverlayRow），
       // 故在這裡自己解析。gate 與 _renderScreenLines 那邊一致。
       var fnKeys = null;
@@ -3669,6 +3676,77 @@ TermView.prototype = {
     }
     // 手機換行版面不顯示這條 80 欄狀態列（被裁掉一半、按鍵已在底部導覽）。
     this.lastRowDiv.style.display = this.reflow ? 'none' : 'block';
+  },
+
+  // P65 好讀底列顯示「你讀到哪」：只在好讀（不是 functionMode）、pref 開著、狀態列是有行號的那一種時。
+  _readingFooterChars: function(statusText, statusChars) {
+    if (!readEffectivePrefs().easyReadingFooterProgress) return null;
+    var er = this.bbscore && this.bbscore.easyReading;
+    if (!er || !er._enabled || er._functionMode) return null;
+    var span = footerLeftSpan(statusText, textCellWidth);
+    if (!span) return null;
+    var progress = this._readingProgress(er);
+    return footerProgressCells(statusChars, span, footerProgressTexts(progress));
+  },
+
+  // 視窗頂端／底端是累積頁的第幾列（1 起算）＋總列數＋百分比；量不到 null。
+  _readingProgress: function(er) {
+    var disp = this.mainDisplay;
+    var total = this.buf.pageLines ? this.buf.pageLines.length : 0;
+    if (!disp || !total || this.reflow) return null;
+    var top = this._lineIndexAt(disp.scrollTop);
+    var bottom = this._lineIndexAt(disp.scrollTop + disp.clientHeight - trailingPx(this) - 1);
+    if (top == null) return null;
+    if (bottom == null || bottom < top) bottom = total - 1;
+    var complete = !!er.easyReadingReachedPageEnd && !this._reverse;
+    return {
+      first: Math.min(total, top + 1),
+      last: Math.min(total, bottom + 1),
+      total: total,
+      complete: complete,
+      percent: complete ? scrollPercent({
+        scrollTop: disp.scrollTop, clientHeight: disp.clientHeight,
+        scrollHeight: disp.scrollHeight, trailing: trailingPx(this)
+      }) : null
+    };
+  },
+
+  // 捲動容器裡 y（scrollTop 座標）落在累積頁哪一列（0 起算；反向讀取時換算成文章列號，同
+  // currentLineIndex）。y 在最後一列之下 ⇒ 最後一列。量不到 null。
+  _lineIndexAt: function(y) {
+    var disp = this.mainDisplay, mc = this.mainContainer;
+    if (!disp || !mc || typeof mc.querySelectorAll !== 'function') return null;
+    if (this.componentScreen && this.componentScreen.syncRowIndex) this.componentScreen.syncRowIndex();
+    var rows = rowsFromScrollTop(mc, disp, Math.max(0, y));
+    var hit = null;
+    for (var i = 0; i < rows.length; ++i) {
+      var t = offsetTopWithin(rows[i], disp);
+      if (t > y) break;
+      hit = rows[i];
+      if (t + rows[i].offsetHeight > y) break;
+    }
+    if (!hit) return null;
+    var srow = Number(hit.getAttribute('srow')) || 0;
+    var rv = this._reverse;
+    if (rv && rv.tailStartLine != null && srow >= rv.junction)
+      srow = rv.tailStartLine - 1 + (srow - rv.junction);
+    return srow;
+  },
+
+  // 捲動時重畫底列（rAF 合併）；只在上一次真的換成「讀到哪」時才做事。控制器跟 view 同壽。
+  _watchFooterScroll: function() {
+    var disp = this.mainDisplay;
+    if (this._footerScrollWatching || !disp || typeof disp.addEventListener !== 'function') return;
+    this._footerScrollWatching = true;
+    var self = this;
+    disp.addEventListener('scroll', function() {
+      if (!self._footerProgressOn || self._footerRaf || typeof requestAnimationFrame !== 'function') return;
+      self._footerRaf = requestAnimationFrame(function() {
+        self._footerRaf = 0;
+        if (self._footerProgressOn && self.lastRowDiv && self.lastRowDiv.style.display === 'block')
+          self._mirrorStatusRowToFooter();
+      });
+    }, { passive: true });
   },
 
   // Toggle whole-row highlight for all comments by `userid` (click handler).

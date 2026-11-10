@@ -1601,6 +1601,12 @@ export const en_US = {
   "tooltip_enableArticleNav": {
     "message": "A thin rail on the right edge of easy-reading articles marks where comments start (click it to jump), new comments, comments mentioning you, images and where you are; click or drag to scroll. Only the part already loaded is shown."
   },
+  "options_easyReadingFooterProgress": {
+    "message": "Show reading position in the easy-reading footer"
+  },
+  "tooltip_easyReadingFooterProgress": {
+    "message": "On desktop, the left half of the easy-reading footer shows where you are (percent, lines shown / total) and follows your scrolling; the function keys on the right stay the same. Off shows PTT's page numbers."
+  },
   "articleNav_label": {
     "message": "Article navigation"
   },

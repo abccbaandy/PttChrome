@@ -1600,6 +1600,12 @@
   "tooltip_enableArticleNav": {
     "message": "好讀文章右緣一條細軸，標出推文從哪開始（點「推」直接跳過去）、新推文、提到你的推文、圖片的位置和目前看到哪；點或拖就捲過去。只標已經讀進來的部分。"
   },
+  "options_easyReadingFooterProgress": {
+    "message": "好讀底列顯示讀到哪"
+  },
+  "tooltip_easyReadingFooterProgress": {
+    "message": "電腦版好讀文章的底列左半改成你現在讀到的位置（百分比、第幾列／共幾列），跟著捲動更新；右邊的功能鍵照舊。關掉就照 PTT 的頁數顯示。"
+  },
   "articleNav_label": {
     "message": "文章導覽軸"
   },
