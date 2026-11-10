@@ -45,6 +45,11 @@ const KIND_PLACEHOLDER_KEY = {
   push: "searchModal_placeholderPush",
   board: "searchModal_placeholderBoard",
 };
+// 手機版面（螢幕鍵盤）用另一組字串：分頁不寫只對實體鍵盤有用的快捷鍵 (/ a Z s)、
+// 提示不寫「↑ 叫回」（螢幕鍵盤沒有 ↑，手機叫回走下方「最近」）。只換字，送鍵與判定不變。
+export function searchKindTextKey(map, kind, mobile) {
+  return map[kind] + (mobile ? "Mobile" : "");
+}
 // 直接列出來可點的筆數（其餘仍可用 ↑ 叫回）。
 export const SEARCH_RECENT_SHOWN = 6;
 
@@ -255,7 +260,7 @@ export const SearchModal = ({
           onChange={onKindChange}
           data={shownKinds.map((k) => ({
             value: k,
-            label: i18n(KIND_LABEL_KEY[k]),
+            label: i18n(searchKindTextKey(KIND_LABEL_KEY, k, mobile)),
           }))}
         />
       )}
@@ -264,9 +269,13 @@ export const SearchModal = ({
         ref={inputRef}
         name="searchKeyword"
         label={
-          shownKinds.length > 1 ? undefined : i18n(KIND_LABEL_KEY[currentKind])
+          shownKinds.length > 1
+            ? undefined
+            : i18n(searchKindTextKey(KIND_LABEL_KEY, currentKind, mobile))
         }
-        placeholder={i18n(KIND_PLACEHOLDER_KEY[currentKind])}
+        placeholder={i18n(
+          searchKindTextKey(KIND_PLACEHOLDER_KEY, currentKind, mobile),
+        )}
         inputMode={currentKind === "push" ? "numeric" : undefined}
         autoComplete="off"
         value={value}

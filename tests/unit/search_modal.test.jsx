@@ -9,6 +9,8 @@ import SearchModal from "../../src/components/ContextMenu/SearchModal";
 // 標籤一律經 i18n 取：CI 是英文語系，寫死中文字面在那裡找不到。
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { rememberSearch, readSearchHistory } from "../../src/js/search_history";
+import { zh_TW as zh } from "../../src/js/zh_TW_messages";
+import { en_US as en } from "../../src/js/en_US_messages";
 
 beforeAll(() => {
   setupI18n();
@@ -338,4 +340,43 @@ test("看板：查詢在飛時先顯示上一份清單篩過的結果（不先�
   });
   expect(shown()).toEqual(["Golf", "Golfer", "Golfing"]);
   expect(document.querySelector("[data-board-interim]")).toBeNull();
+});
+
+// 手機的螢幕鍵盤沒有 ↑、也不會按 / a Z s：分頁不寫快捷鍵、提示不寫「↑ 叫回」（叫回走「最近」）。
+// 電腦版照舊。兩語系都檢查（CI 是英文）。
+const SHORTCUT_RE = /\((\/|a|Z|s)\)/;
+for (const mobile of [false, true]) {
+  test(`分頁與提示的快捷鍵字樣：${mobile ? "手機不寫" : "桌機照寫"}`, () => {
+    const { input } = renderModal({ mobile });
+    const labels = [
+      ...document.querySelectorAll(".mantine-SegmentedControl-label"),
+    ].map((n) => n.textContent);
+    expect(labels).toHaveLength(4);
+    for (const l of labels) expect(SHORTCUT_RE.test(l)).toBe(!mobile);
+    expect(input.placeholder.length).toBeGreaterThan(0);
+    expect(input.placeholder.includes("↑")).toBe(!mobile);
+  });
+}
+
+test("手機字串兩語系都有，且不含快捷鍵或 ↑", () => {
+  for (const table of [zh, en])
+    for (const k of Object.keys(table).filter((k) =>
+      /^searchModal_(kind|placeholder)\w+Mobile$/.test(k),
+    ))
+      expect(
+        SHORTCUT_RE.test(table[k].message) || table[k].message.includes("↑"),
+      ).toBe(false);
+  for (const base of [
+    "kindTitle",
+    "kindAuthor",
+    "kindPush",
+    "kindBoard",
+    "placeholderTitle",
+    "placeholderAuthor",
+    "placeholderPush",
+    "placeholderBoard",
+  ]) {
+    expect(zh["searchModal_" + base + "Mobile"]).toBeTruthy();
+    expect(en["searchModal_" + base + "Mobile"]).toBeTruthy();
+  }
 });

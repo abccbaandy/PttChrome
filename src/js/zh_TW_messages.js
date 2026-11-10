@@ -484,6 +484,30 @@
   "searchModal_placeholderBoard": {
     "message": "看板名稱，空白鍵自動完成，↑ 叫回之前的"
   },
+  "searchModal_kindTitleMobile": {
+    "message": "標題"
+  },
+  "searchModal_kindAuthorMobile": {
+    "message": "作者"
+  },
+  "searchModal_kindPushMobile": {
+    "message": "推文數"
+  },
+  "searchModal_kindBoardMobile": {
+    "message": "看板"
+  },
+  "searchModal_placeholderTitleMobile": {
+    "message": "標題關鍵字"
+  },
+  "searchModal_placeholderAuthorMobile": {
+    "message": "作者帳號"
+  },
+  "searchModal_placeholderPushMobile": {
+    "message": "推文數高於多少（負數＝噓文數）"
+  },
+  "searchModal_placeholderBoardMobile": {
+    "message": "看板名稱，空白鍵自動完成"
+  },
   "searchModal_boardOpening": {
     "message": "正在向 PTT 查詢看板…"
   },
