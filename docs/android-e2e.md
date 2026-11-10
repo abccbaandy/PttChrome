@@ -32,7 +32,7 @@
 | `tests/e2e/android/*.android.spec.js` | spec（project `android`，`playwright.config.js`） |
 | `scripts/run-android-e2e.mjs` | `yarn test:e2e:android`：找／建 AVD、開機、跑、分類 exit 0/1/2、自己開的自己關 |
 | `scripts/android-e2e-needed.mjs` | `--if-changed[=base]` 的檔案名單（預設 base `origin/dev`） |
-| `.github/workflows/test.yml` job `test-e2e-android-shard`（兩片）＋收斂 job `test-e2e-android` | CI：每次都跑，emulator-runner 開機＋`--no-boot --shard=N/2` |
+| `.github/workflows/test.yml` job `test-e2e-android-shard`（三片）＋收斂 job `test-e2e-android` | CI：每次都跑，emulator-runner 開機＋`--no-boot --shard=N/3` |
 | 守護 | `tests/unit/android_e2e.test.js`、`tests/unit/e2e_offline_no_network.test.js`「android e2e：OS 層斷網」 |
 
 ## 跑法
@@ -105,7 +105,7 @@ API 35 google_apis（Chrome 124，GPU 不當）試過、**棄用**：
 
 ## CI（`test.yml` job `test-e2e-android-shard`）
 
-拆兩片、各開一台模擬器（`--shard=N/2`，android project 不是 fullyParallel ⇒ 依檔案分片）。單片時整個 job ~6.3 分、是整輪 CI 的牆鐘：
+拆三片、各開一台模擬器（`--shard=N/3`；兩片時重的那片 4.6 分仍是牆鐘，android project 不是 fullyParallel ⇒ 依檔案分片）。單片時整個 job ~6.3 分、是整輪 CI 的牆鐘：
 測試本身 ~3 分，開機前後（SDK 安裝 ~20s、開機 ~40s、keyevent／關動畫＋等系統穩定 ~50s、cache 與 APK）固定 ~3 分。
 required check 綁的是收斂 job `test-e2e-android`（always()，同 `test-e2e-offline`）。flaky-hunt 的 android-repeat 仍是單片。
 
