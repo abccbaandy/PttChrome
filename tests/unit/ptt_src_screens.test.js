@@ -699,12 +699,14 @@ describe("upstream pttbbs 產的說明選單（文章列表的 h）", () => {
 describe("upstream pttbbs 產的說明選單（文章裡的 h）", () => {
   const at = (name) => screenAt(articleHelpFx, name);
 
-  test("同一套 psb 說明選單：caption「文章閱讀」、3 頁，第 1 頁游標在第一項", () => {
+  // 頁數隨 upstream 的 pager 鍵表變：e7acb746 把 bbs 專屬的鍵移出 more.c 的共用鍵表（3 頁 → 2 頁），
+  // 只鎖「多頁」。
+  test("同一套 psb 說明選單：caption「文章閱讀」、多頁，第 1 頁游標在第一項", () => {
     const menu = parseHelpMenuScreen(at("help").rowTexts);
     expect(menu).not.toBeNull();
     expect(menu.caption).toBe("文章閱讀");
     expect(menu.page).toBe(1);
-    expect(menu.totalPages).toBe(3);
+    expect(menu.totalPages).toBeGreaterThanOrEqual(2);
     expect(menu.cursorIndex).toBe(0);
   });
 
@@ -716,13 +718,16 @@ describe("upstream pttbbs 產的說明選單（文章裡的 h）", () => {
   });
 
   // 最後一頁不滿：項目數隨 upstream 加指令變（3c7d9af 加了 v「切換實況」⇒ 1 項變 2 項），
-  // 只鎖「不滿一頁也解析得出來」。
-  test("空白翻到第 2、3 頁（最後一頁不滿一頁）", () => {
-    expect(parseHelpMenuScreen(at("help-2").rowTexts)).toMatchObject({ page: 2, totalPages: 3 });
+  // 只鎖「最後一頁（可能不滿）也解析得出來」：7c105fff 時剛好 2 頁全滿。空白在最後一頁不翻頁
+  // （psb.c：curr 夾在 count-1，游標移到最後一項）⇒ 第二下空白之後一定停在最後一頁，不論共幾頁。
+  test("空白翻到第 2 頁、再按停在最後一頁", () => {
+    const { totalPages } = parseHelpMenuScreen(at("help").rowTexts);
+    expect(parseHelpMenuScreen(at("help-2").rowTexts)).toMatchObject({ page: 2, totalPages });
     const last = parseHelpMenuScreen(at("help-3").rowTexts);
-    expect(last).toMatchObject({ page: 3, totalPages: 3 });
+    expect(last).toMatchObject({ page: Math.min(3, totalPages), totalPages });
+    expect(last.page).toBe(last.totalPages);
     expect(last.items.length).toBeGreaterThanOrEqual(1);
-    expect(last.items.length).toBeLessThan(at("help-3").rowTexts.length - 3);
+    expect(last.items.length).toBeLessThanOrEqual(at("help-3").rowTexts.length - 3);
   });
 
   test("說明選單不是文章：沒有 pmore 狀態列、不判成 article；q 回到文章", () => {
@@ -1202,14 +1207,16 @@ describe("upstream pttbbs 產的看板精華區（z，bbs.c#b_man → announce.c
     expect(refreshTargetFromFacts(searchGateFacts({ buf }), buf.pageState, {})).toBeNull();
   });
 
-  // b_man 不 setutmpmode（只有主功能表的 Announce() 設 ANNOUNCE）⇒ currstat 還是 READING，
+  // 舊版：b_man 不 setutmpmode（只有主功能表的 Announce() 設 ANNOUNCE）⇒ currstat 還是 READING，
   // more.c#common_pmore_footer_handler 照樣疊 pager_reading_cmds，footer 跟看板文章一字不差。
   // 但這時 pager 回傳的 s／#／Q／X／y 都只會讓 announce_cmd_select 的迴圈 break 回精華區選單，
   // 後面送的字全打進選單 ⇒ 只看 footer 會認錯。
-  test("從精華區開的文章：footer 跟 READING 一字不差，但不得當成看板文章", () => {
+  // 新版（e7acb746）：鍵表改由讀者（bbs／mail）經 more_ex() 提供，精華區用共用鍵表 ⇒ footer 沒有
+  // 「回應」（parsePagerFooterContext 回 unknown）。新舊都要認成精華區、都不給看板文章的功能。
+  test("從精華區開的文章：footer 是 READING（舊）或沒有回應（新），都不得當成看板文章", () => {
     const { buf, rowTexts, facts } = screenAt(essenceFx, "article", { perFrame: true });
     expect(buf.pageState).toBe(3);
-    expect(parsePagerFooterContext(rowTexts[facts.rows - 1])).toBe("reading");
+    expect(["reading", "unknown"]).toContain(parsePagerFooterContext(rowTexts[facts.rows - 1]));
 
     const gate = searchGateFacts({ buf });
     expect(

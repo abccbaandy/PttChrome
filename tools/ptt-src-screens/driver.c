@@ -10,7 +10,7 @@
 //   menu         主功能表（main_menu()）
 //   menu:newmail 同上，但有新信（ALERT_NEW_MAIL）
 //   wmsg:<模式>  先收下 seed 的 W 列水球（write_request），再進主功能表；模式 default＝一般
-//                水球、ofo＝一對一（UF_PAGER_OFO）。之後送 ^R 就是 upstream 的回水球畫面。
+//                水球、ofo＝一對一（UF_WMSG_OFO_FLAG）。之後送 ^R 就是 upstream 的回水球畫面。
 // seed 檔（Big5，tab 分隔）：
 //   B <brdname> <class> <desc> <BM> [flags] [parent]      開一個看板（之後的 A／N 屬於它）；
 //                                                         flags G＝群組，parent＝所屬群組板名
@@ -27,6 +27,18 @@
 #include <sys/select.h>
 #include <unistd.h>
 #include <utime.h>
+
+// 水球呼叫器：upstream c4a7085f 把 PAGER_* 改名成 WMSG_*（userinfo_t.pager→wmsg、UF_PAGER_OFO→UF_WMSG_OFO，
+// 畫面不變）。同一個 commit 改的 ⇒ 看 WMSG_ON 這個 macro 在不在就知道欄位叫什麼，新舊 header 都編得過。
+#ifdef WMSG_ON
+#define UT_WMSG wmsg
+#define UT_WMSG_ON WMSG_ON
+#define UF_WMSG_OFO_FLAG UF_WMSG_OFO
+#else
+#define UT_WMSG pager
+#define UT_WMSG_ON PAGER_ON
+#define UF_WMSG_OFO_FLAG UF_PAGER_OFO
+#endif
 
 int ptt_main(int argc, char *argv[], char *envp[]);
 
@@ -334,7 +346,7 @@ static void inject_waterballs(void)
             userinfo_t *u = &SHM->uinfo[slot];
             STRLCPY(u->userid, wb_from[i]);
             u->pid = 10000 + slot;
-            u->pager = PAGER_ON;
+            u->UT_WMSG = UT_WMSG_ON;
         }
         msgque_t *m = &currutmp->msgs[i];
         m->pid = SHM->uinfo[slot].pid;
@@ -626,10 +638,10 @@ int main(int argc, char *argv[])
         main_menu();
     } else if (strncmp(entry, "wmsg:", 5) == 0) {
         if (strcmp(entry + 5, "ofo") == 0)
-            pwcuser.uflag |= UF_PAGER_OFO;
+            pwcuser.uflag |= UF_WMSG_OFO_FLAG;
         else if (strcmp(entry + 5, "default") != 0)
             die("wmsg mode");
-        currutmp->pager = PAGER_ON;
+        currutmp->UT_WMSG = UT_WMSG_ON;
         inject_waterballs();
         write_request(0);
         main_menu();
