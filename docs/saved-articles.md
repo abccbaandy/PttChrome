@@ -24,6 +24,7 @@
 1. **唯讀閱讀器**（`lines`＝`decodeRows(rec.body, Object.getPrototypeOf(buf.attr))`）。兩條路，11/11 讀碼後的判斷：
    - **A（建議）：同一條寫入路徑換資料來源**。`term_view.redraw` 已經有「畫 `buf.pageLines`＋`_pageRenderOverrides()`（`stableRows`）」的好讀分支（`term_view.js` 約 1019 行）；閱讀器開著時讓那條分支畫存檔的列（新的 override，例如 `savedRows`），其餘照舊：同一個 `ScreenController`、同一個 `#mainContainer`、`fixedResize` 的縮放與手機 reflow、推文合併／樓層／推文卡片都免費。PTT 送來的畫面照收進 `buf`（不送鍵就不會變），關閉時 `redraw(true)` 畫回活畫面。要處理：開著時鍵盤／滑鼠／觸控一律不送 PTT（新的具名 modal 來源或 `nav_key_gate` 一條）、捲動照好讀的 `.main` 原生捲動、頂端一條「本機收藏・唯讀｜關閉」；標註層用到 `buf.pageState` 的地方要給 3。
    - B：自己的全螢幕容器＋自己的 `ScreenController`。不碰 `#mainContainer`，但 `main.css` 有 50 多條選擇器掛在 `#mainContainer` 底下、`.main` 的字級／縮放由 `term_view.fixedResize` 算 ⇒ 要嘛複製一份 CSS、要嘛全改成 class，代價大且兩份會漂移。
+   - C（值得先評估）：**另開一頁唯讀開機**（例如 `?saved=<key>`，開新分頁）。那一頁不 `connect()`（`view.conn` 恆 `undefined` ⇒ `_send` 天生送不出去），開機後把 `decodeRows` 的結果當 `buf.pageLines`、pageState 3、好讀開著畫出來 ⇒ 渲染鏈、CSS、手機 reflow、文章工具／導覽軸全部原樣可用，也不會跟活連線搶畫面（A 的最大風險：推文列、下一篇卡片、讀到哪底列等一堆浮層都看 pageState 3＋好讀狀態，活畫面是列表時會互相打架）。要處理：送鍵類浮層（推文列、長推文、下一篇）在唯讀頁關掉；`redraw` 的好讀分支條件（settledPageState、`easyReading._enabled`）要能被唯讀開機滿足；deep link／自動登入在這頁不跑。
    關閉時（任一條）延遲載入盒由 `render/screen.js#disposeNode` 收。
 2. **入口**：好讀文章「更多」面板（手機）／右鍵選單（桌機）「存到本機」；首頁儀表板「本機收藏」區、指令面板（F4）搜尋已存文章；可刪除。pref `enableSavedArticles`（預設開）＋設定頁開關；README 功能列表一條。
 3. 匯出成檔案（JSON），之後再看要不要存圖片本體。
