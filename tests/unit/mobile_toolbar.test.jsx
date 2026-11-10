@@ -592,6 +592,53 @@ describe("更多（bottom sheet）", () => {
     expect(byKey("__help")).toBeNull();
   });
 
+  test("這個看板（P66）：context.boardTools 才出現在最上面，按下送那個鍵（sendKeyAsUser）並收起", async () => {
+    const core = makeCore({ context: { push: false, search: [], markAllRead: true, contentTools: true, boardTools: true } });
+    renderBar(core);
+    await openMore();
+    const row = document.querySelector("[data-board-tools]");
+    expect(row).not.toBeNull();
+    expect([...row.querySelectorAll("button")].map((b) => b.dataset.key)).toEqual([
+      "__boardNotes", "__boardMan", "__boardDigest", "__boardInfo",
+    ]);
+    expect(byKey("__boardMan").textContent).toBe(i18n("mobileBoardShort_man"));
+    expect(byKey("__boardMan").getAttribute("aria-label")).toBe(i18n("mobileBoard_man"));
+    // 在原本的圖示格上面
+    const grid = document.querySelector("[data-more-grid]");
+    expect(row.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(byKey("__boardDigest"));
+    expect(core.view.sendKeyAsUser).toHaveBeenCalledWith("Tab");
+    expect(core.view.sendKeyAsUser).toHaveBeenCalledTimes(1);
+    await sheetClosed();
+  });
+
+  // sheet 開著期間畫面換了（水球、被踢回主選單）：按下時用本幀再算一次，不是文章列表就不送。
+  test("這個看板：按下時本幀已經不是文章列表 ⇒ 一個鍵都不送", async () => {
+    const core = makeCore({ context: { push: false, search: [], boardTools: true } });
+    const rows = Array.from({ length: 24 }, () => "");
+    rows[0] = "【主功能表】    批踢踢實業坊";
+    core.buf = {
+      rows: 24,
+      cols: 80,
+      pageState: 1,
+      cur_x: 0,
+      cur_y: 5,
+      getRowText: (r) => rows[r] || "",
+      isCursorOnInputField: () => false,
+    };
+    renderBar(core);
+    await openMore();
+    fireEvent.click(byKey("__boardMan"));
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+    await sheetClosed();
+  });
+
+  test("這個看板：沒有 context.boardTools 就沒有", async () => {
+    renderBar(makeCore({ context: { push: false, search: [], markAllRead: true } }));
+    await openMore();
+    expect(document.querySelector("[data-board-tools]")).toBeNull();
+  });
+
   test("設為全部已讀：不是文章列表就沒有", async () => {
     renderBar(makeCore());
     await openMore();

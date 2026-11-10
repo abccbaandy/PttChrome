@@ -1988,6 +1988,42 @@ export const en_US = {
   "mobileToolbar_mailCompose": {
     "message": "Write"
   },
+  "options_mobileBoardTools": {
+    "message": "\"This board\" row in the mobile article list's More sheet"
+  },
+  "tooltip_mobileBoardTools": {
+    "message": "Top row of More on the article list: board notes, archive, digest and board info. Each sends PTT's own key (b, z, Tab, i) and shows PTT's own screen. Not shown in search results."
+  },
+  "mobileMore_sectionBoard": {
+    "message": "This board"
+  },
+  "mobileMore_sectionList": {
+    "message": "List"
+  },
+  "mobileBoard_notes": {
+    "message": "Board notes (b)"
+  },
+  "mobileBoardShort_notes": {
+    "message": "Notes"
+  },
+  "mobileBoard_man": {
+    "message": "Archive (z)"
+  },
+  "mobileBoardShort_man": {
+    "message": "Archive"
+  },
+  "mobileBoard_digest": {
+    "message": "Digest (Tab)"
+  },
+  "mobileBoardShort_digest": {
+    "message": "Digest"
+  },
+  "mobileBoard_info": {
+    "message": "Board info (i)"
+  },
+  "mobileBoardShort_info": {
+    "message": "Info"
+  },
   "options_mobileMailListTools": {
     "message": "Add \"Search\" and \"Write\" to the mobile mail list"
   },

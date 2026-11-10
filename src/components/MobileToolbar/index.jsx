@@ -27,6 +27,10 @@ import {
   IconDeviceFloppy,
   IconChevronRight,
   IconChevronsLeft,
+  IconBook,
+  IconArchive,
+  IconBookmark,
+  IconInfoCircle,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import {
@@ -51,7 +55,9 @@ import {
   EMPTY_TOOLBAR_CONTEXT,
   TOOLBAR_KEYS,
   THREAD_NAV_GROUPS,
+  BOARD_TOOL_KEYS,
   toolbarSlots,
+  mobileToolbarContext,
 } from "../../js/mobile_toolbar";
 import {
   promptPanelFromBuf,
@@ -69,6 +75,14 @@ const NAV_DIR_ICONS = {
   first: IconChevronsLeft,
   prev: IconChevronLeft,
   next: IconChevronRight,
+};
+
+// P66「這個看板」的圖示（BOARD_TOOL_KEYS 的 id）。
+const BOARD_TOOL_ICONS = {
+  __boardNotes: IconBook,
+  __boardMan: IconArchive,
+  __boardDigest: IconBookmark,
+  __boardInfo: IconInfoCircle,
 };
 
 // 手機底部導覽（docs/mobile.md「底部導覽」）。只在 pttchrome.mobile 時渲染。
@@ -392,6 +406,22 @@ export const MobileToolbar = ({
     setPanel(null);
     sendKey(TOOLBAR_KEYS.help.key);
   }, [sendKey]);
+
+  // P66「這個看板」：送那一個原生單鍵（sendKeyAsUser ＝鍵盤同一條分派，序列閘門照擋）。
+  // sheet 開著的期間畫面可能換了（水球、斷線重連）⇒ 按下時用**本幀**再算一次，不是乾淨的
+  // 文章列表就不送（下一次 settle 會把這一列收掉）。
+  const onBoardTool = useCallback(
+    (key) => {
+      setPanel(null);
+      const now =
+        pttchrome.buf && typeof pttchrome.buf.getRowText === "function"
+          ? mobileToolbarContext(pttchrome)
+          : null;
+      if (now && !now.boardTools) return;
+      sendKey(key);
+    },
+    [pttchrome, sendKey],
+  );
 
   // 全選／圖片上傳：與桌機右鍵選單同一組 App 入口（ContextMenu 的 menuHandlerByEventKey）。
   const onSelectAll = useCallback(() => {
@@ -878,6 +908,44 @@ export const MobileToolbar = ({
         ))}
         {quickSearch.items.length ? (
           <div className="mobileSheetDivider" role="separator" />
+        ) : null}
+        {context.boardTools ? (
+          <>
+            <div className="mobileSheetSectionLabel">
+              {i18n("mobileMore_sectionBoard")}
+            </div>
+            <div
+              className="mobileSheetQuickRow mobileSheetQuickGrid"
+              role="group"
+              aria-label={i18n("mobileMore_sectionBoard")}
+              data-board-tools=""
+            >
+              {BOARD_TOOL_KEYS.map((b) => {
+                const Icon = BOARD_TOOL_ICONS[b.id];
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className="nomouse_command mobileSheetQuickItem pttRipple"
+                    data-key={b.id}
+                    aria-label={i18n(b.label)}
+                    title={i18n(b.label)}
+                    onClick={() => onBoardTool(b.key)}
+                  >
+                    <Icon size={22} stroke={1.75} aria-hidden="true" />
+                    <span className="mobileSheetQuickLabel">
+                      {i18n(b.short)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {moreGrid.length ? (
+              <div className="mobileSheetSectionLabel">
+                {i18n("mobileMore_sectionList")}
+              </div>
+            ) : null}
+          </>
         ) : null}
         {moreGrid.length ? (
           <div
