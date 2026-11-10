@@ -351,12 +351,12 @@ describe("android spec：不准用 device.wait", () => {
 
 // CI job：exit code 必須直接決定紅綠。spike 用的 continue-on-error＋把 exit 寫檔分類那套
 // 一旦被抄進來，job 永遠綠、斷言紅也被吞掉；沒開 KVM 則開機 13–20 分鐘、adb 常 offline。
-describe("test.yml：test-e2e-android job", () => {
+describe("test.yml：test-e2e-android-shard job", () => {
   const yaml = fs.readFileSync(path.join(ROOT, ".github/workflows/test.yml"), "utf8");
-  const m = /\n {2}test-e2e-android:\n([\s\S]*?)(?=\n {2}[A-Za-z][\w-]*:\n)/.exec(yaml);
+  const m = /\n {2}test-e2e-android-shard:\n([\s\S]*?)(?=\n {2}[A-Za-z][\w-]*:\n)/.exec(yaml);
   const body = m ? m[1] : "";
   test("存在，script 直接跑 run-android-e2e --no-boot，不吞 exit code", () => {
-    expect(body).toMatch(/script: node scripts\/run-android-e2e\.mjs --no-boot\s*$/m);
+    expect(body).toMatch(/script: node scripts\/run-android-e2e\.mjs --no-boot --shard=\$\{\{ matrix\.shard \}\}\/(\d+)\s*$/m);
     expect(body).not.toMatch(/continue-on-error/);
     expect(body).not.toMatch(/e2e\.exit|\|\| true/);
   });
@@ -378,6 +378,14 @@ describe("test.yml：test-e2e-android job", () => {
     const arch = /arch: (\S+)/.exec(body)[1];
     expect(body).toContain(`system-images/android-${api}/${target}/${arch}`);
     expect(body).toMatch(new RegExp(`key: android-sysimg-${api}-${target}-${arch}-`));
+  });
+  // 漏一片＝那片的測試靜默不跑、CI 照樣全綠。
+  test("分片：matrix 恰好是 1..N 各一格，--shard 的分母就是 N，失敗產物名帶片號", () => {
+    const n = Number(/--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/.exec(body)[1]);
+    const shards = /shard: \[([\d, ]+)\]/.exec(body)[1].split(",").map((x) => Number(x.trim()));
+    expect(shards).toEqual(Array.from({ length: n }, (_, i) => i + 1));
+    expect(body).toMatch(/fail-fast: false/);
+    expect(body).toMatch(/name: e2e-android-shard-\$\{\{ matrix\.shard \}\}-attempt-/);
   });
   // 少了這步，apk.android.spec.js 在 CI 會以「找不到 debug APK」整輪 exit 2。
   test("開模擬器前先建 debug APK，並把路徑交給 e2e", () => {

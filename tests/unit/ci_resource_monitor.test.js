@@ -102,7 +102,7 @@ describe("test.yml：e2e job 都有資源取樣，且綠的 run 也印報告", (
     const next = yaml.slice(start + 1).search(/\n {2}[a-z0-9-]+:\n/);
     return yaml.slice(start, next < 0 ? undefined : start + 1 + next);
   };
-  test.each(["test-e2e-offline-shard", "test-e2e-offline-adverse-bucket", "test-e2e-android"])("%s", (name) => {
+  test.each(["test-e2e-offline-shard", "test-e2e-offline-adverse-bucket", "test-e2e-android-shard"])("%s", (name) => {
     const body = job(name);
     expect(body).toContain("node scripts/ci-resource-monitor.mjs start");
     // report 要 if: always()：綠的 run 才有基準可比，紅的 run 才印得出來。

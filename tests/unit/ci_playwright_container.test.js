@@ -140,6 +140,7 @@ describe("test.yml：e2e job 跑在 Playwright 官方 image", () => {
   test.each([
     ["test-e2e-offline", "test-e2e-offline-shard"],
     ["test-e2e-offline-adverse", "test-e2e-offline-adverse-bucket"],
+    ["test-e2e-android", "test-e2e-android-shard"],
   ])("收斂 job %s：always() 且斷言 %s 的 result", (gate, upstream) => {
     const job = jobs().find((j) => j.name === gate);
     expect(job, `${gate} 不見了 ⇒ 分支保護的 required check 永遠 pending`).toBeDefined();
