@@ -109,6 +109,12 @@
   align-items: center;
   gap: 6px;
 }
+/* P66：「更多」裡分區的小標（「這個看板」「列表」）。 */
+.mobileSheetSectionLabel {
+  padding: 4px 16px 0;
+  font-size: 0.8em;
+  color: #9a9aa2;
+}
 .mobileToolbarNavLabel {
   flex: none;
   width: 3.6em;

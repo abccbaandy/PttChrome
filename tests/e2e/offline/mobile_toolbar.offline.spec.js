@@ -121,6 +121,41 @@ test.describe('手機底部工具列（離線重放）', () => {
     expect(await focusedIsT(page)).toBe(true);
   });
 
+  // P66：更多最上面的「這個看板」，每顆只送那一個原生鍵（bbs.c read_comms：z 精華區、Tab 文摘）。
+  test('文章列表：更多的「這個看板」點精華區送 z、文摘送 Tab，各只送一個鍵', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
+    await drawArticleList(page);
+    await byKey(page, '__more').tap();
+    await waitDialogSettled(page, '[data-key="__boardMan"]');
+    for (const k of ['__boardNotes', '__boardMan', '__boardDigest', '__boardInfo'])
+      await expect(byKey(page, k)).toBeVisible();
+    await collectSent(page);
+    await byKey(page, '__boardMan').tap();
+    await expect.poll(() => sentText(page)).toBe('z');
+    await expect(byKey(page, '__boardMan')).toHaveCount(0);
+    await drawArticleList(page);
+    await byKey(page, '__more').tap();
+    await waitDialogSettled(page, '[data-key="__boardDigest"]');
+    await byKey(page, '__boardDigest').tap();
+    await expect.poll(() => sentText(page)).toBe('z\t');
+  });
+
+  test('「這個看板」只在文章列表：主功能表的更多裡沒有；設定關掉也沒有', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await byKey(page, '__more').tap();
+    await waitDialogSettled(page, '[data-key="__select"]');
+    await expect(byKey(page, '__boardMan')).toHaveCount(0);
+    await page.touchscreen.tap(8, 8);
+    await expect(byKey(page, '__select')).toHaveCount(0);
+    await ptt.applyPrefs(page, { enableEasyReadingList: false, mobileBoardTools: false });
+    await drawArticleList(page);
+    await byKey(page, '__more').tap();
+    await waitDialogSettled(page, '[data-key="__select"]');
+    await expect(byKey(page, '__markAllRead')).toBeVisible();
+    await expect(byKey(page, '__boardMan')).toHaveCount(0);
+  });
+
   // 等待進度條（mobile_busy.js）：真 tap → 真的送出 byte → 300ms 後亮；離線重放的 stub
   // 不回應這個鍵 ⇒ 等不到 settle，BUSY_TIMEOUT_MS 後自己收。
   test('App Bar 等待進度條：送出後沒有回應就亮，逾時自己收', async ({ page }) => {

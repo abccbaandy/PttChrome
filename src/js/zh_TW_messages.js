@@ -1987,6 +1987,42 @@
   "mobileToolbar_mailCompose": {
     "message": "寫信"
   },
+  "options_mobileBoardTools": {
+    "message": "手機文章列表的「更多」加「這個看板」"
+  },
+  "tooltip_mobileBoardTools": {
+    "message": "文章列表的「更多」最上面一列：進板畫面、精華區、文摘、看板資訊，點了就送 PTT 自己的按鍵（b、z、Tab、i），畫面照 PTT 原生。搜尋結果裡不出現。"
+  },
+  "mobileMore_sectionBoard": {
+    "message": "這個看板"
+  },
+  "mobileMore_sectionList": {
+    "message": "列表"
+  },
+  "mobileBoard_notes": {
+    "message": "進板畫面（b）"
+  },
+  "mobileBoardShort_notes": {
+    "message": "進板畫面"
+  },
+  "mobileBoard_man": {
+    "message": "精華區（z）"
+  },
+  "mobileBoardShort_man": {
+    "message": "精華區"
+  },
+  "mobileBoard_digest": {
+    "message": "文摘（Tab）"
+  },
+  "mobileBoardShort_digest": {
+    "message": "文摘"
+  },
+  "mobileBoard_info": {
+    "message": "看板資訊（i）"
+  },
+  "mobileBoardShort_info": {
+    "message": "看板資訊"
+  },
   "options_mobileMailListTools": {
     "message": "手機信件列表加「搜尋」「寫信」"
   },

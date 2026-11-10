@@ -327,6 +327,9 @@ export const DEFAULT_PREFS = {
   // 底部導覽第 1、2 格放「搜尋」（/、a）與「寫信」（^P）、「到底」（End）可按。都是使用者自己按的
   // PTT 原生指令 ⇒ 不在安全模式清單（同 mobileEditorSave）。
   mobileMailListTools: true,
+  // 手機文章列表「更多」的「這個看板」（P66，mobile_toolbar.boardTools）：進板畫面 b／精華區 z／文摘 Tab／
+  // 看板資訊 i，每顆是使用者自己按的單一原生鍵 ⇒ 不在安全模式清單（同 mobileMailListTools）。
+  mobileBoardTools: true,
   mobilePromptChoices: true,
   // 手機上 PTT 的其他輸入欄（P62，prompt_choices.typeInputPanel）浮出「開鍵盤輸入」：本身不送 byte，
   // 「取消」是使用者自己按的 ^C ⇒ 不在安全模式清單（同 mobilePromptChoices）。

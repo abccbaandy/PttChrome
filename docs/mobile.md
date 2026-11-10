@@ -86,6 +86,12 @@
     **開著時不重新分組**（`stableMoreSplit`）：畫面 context 在 sheet 開著時變了（例：開機還沒第一次
     screenSettled 就開了「更多」，`contentTools` 從預設 false 變 true、圖示格湊滿 3 格），已經畫出來的項目
     留在原本那一區 —— 搬家＝按鈕節點換掉，手指按下到放開之間被換掉 Chromium 就不發 click（同 #152）。收起重開才重新分組。
+    **「這個看板」（P66，pref `mobileBoardTools`，預設開）**：文章列表的「更多」最上面多一列小標「這個看板」＋四格
+    （進板畫面 `b`／精華區 `z`／文摘 `Tab`／看板資訊 `i`，鍵依 upstream `bbs.c` 的 read_comms 表，`BOARD_TOOL_KEYS`），
+    原本的圖示格上面加小標「列表」。每顆只送那一個原生單鍵（`sendKeyAsUser`），畫面照 PTT 原生，不做多步流程。
+    判準 `mobile_toolbar.boardTools`：同 `post`（乾淨的文章列表、游標不在輸入欄）且不是搜尋結果
+    （`search_status.searchListMode` 為 'select' 不給；文摘列表照給，Tab 就是離開文摘）。sheet 開著期間畫面可能換了
+    （水球、被踢回主選單）⇒ 按下時用本幀再算一次 `mobileToolbarContext`，不是就不送。序列閘門照常由鍵盤那道擋。
     觸覺回饋 `navigator.vibrate(HAPTIC_MS)`（APK 無 VIBRATE 權限＝no-op）。
   - 送鍵只走 `view.sendKeyAsUser(keyName, mods?)`，並先 `App.noteUserAction()`（等待進度條）。不可 `view._send`（列表好讀＝在序列化交易
     中途插隊）、不可 `App.onFunctionKey`（文章好讀會先進 functionMode ⇒ PgDn 不捲動）。

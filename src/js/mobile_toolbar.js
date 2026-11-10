@@ -17,6 +17,10 @@
 //            （mbbsd/bbs.c 的 bbs_cmd_new_post）。游標在輸入欄（prompt 開著）時不給。
 //   unreadJump：文章列表（同 post 的判準），「更多」裡的「跳到第一篇未讀」（unread_jump.js）。
 //   markAllRead：文章列表（同 post 的判準），「更多」裡的「設為全部已讀」（mark_all_read.js）。
+//   boardTools：P66（pref mobileBoardTools）。文章列表（同 post 的判準），且不是搜尋結果
+//            （search_status.searchListMode 'select'）⇒「更多」最上面一列「這個看板」：進板畫面 b、
+//            精華區 z、文摘 Tab、看板資訊 i（bbs.c 的 bbs_cmd_notes／man／board_digest／config），
+//            每顆只送那一個原生單鍵（BOARD_TOOL_KEYS），畫面照 PTT 原生。
 //   help   ：底列寫著 `(h)說明`／`(h)按鍵說明`（看板列表／文章列表／主功能表 footer、
 //            pager 狀態列；vs_footer 與 pmore.c 的提示都在 b_lines），「更多」裡的「操作說明」送 h
 //            ⇒ 新版說明選單（好讀開著時是 help_menu.js 的 bottom sheet）。手機上這些畫面的底列
@@ -53,10 +57,11 @@ import { MOBILE_KEYPAD_PUSH_KEY } from './mobile_layout';
 import { isEditorFooter } from './screen_captions';
 import { readEffectivePrefs } from './pref_storage';
 import { promptPanelFromBuf, promptChoicesSig } from './prompt_choices';
+import { searchListMode } from './search_status';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
-  unreadJump: false, markAllRead: false, help: false, contentTools: false, refresh: false, end: false,
+  unreadJump: false, markAllRead: false, boardTools: false, help: false, contentTools: false, refresh: false, end: false,
   editor: false, editorSave: false, mailList: false, search: [], appBar: EMPTY_APP_BAR, choices: null
 });
 
@@ -118,6 +123,15 @@ export const THREAD_NAV_GROUPS = Object.freeze([
     ])
   })
 ]);
+// P66「這個看板」：key 是 sendKeyAsUser 的 keyName，label／short 是 i18n key（完整名稱給 aria-label）。
+// 鍵對應 upstream mbbsd/bbs.c 的 read_comms 表（'b' 進板、'z' 精華區、KEY_TAB 文摘、'i' 看板設定）。
+export const BOARD_TOOL_KEYS = Object.freeze([
+  Object.freeze({ id: '__boardNotes', key: 'b', label: 'mobileBoard_notes', short: 'mobileBoardShort_notes' }),
+  Object.freeze({ id: '__boardMan', key: 'z', label: 'mobileBoard_man', short: 'mobileBoardShort_man' }),
+  Object.freeze({ id: '__boardDigest', key: 'Tab', label: 'mobileBoard_digest', short: 'mobileBoardShort_digest' }),
+  Object.freeze({ id: '__boardInfo', key: 'i', label: 'mobileBoard_info', short: 'mobileBoardShort_info' })
+]);
+
 export const THREAD_NAV_KEYS = Object.freeze(
   THREAD_NAV_GROUPS.reduce((all, g) => all.concat(g.keys), [])
 );
@@ -152,6 +166,8 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
     post: !pager && isArticleList(facts),
     unreadJump: !pager && isArticleList(facts),
     markAllRead: !pager && isArticleList(facts),
+    boardTools: !!o.boardTools && !pager && isArticleList(facts) &&
+      searchListMode(facts.rowTexts) !== 'select',
     help: !facts.inputField && !menu && hasHelpHint(last),
     contentTools: !menu,
     refresh: !!o.connected && !!refreshTargetFromFacts(facts, pageState, {
@@ -185,12 +201,13 @@ export function mobileToolbarContext(core) {
     listOpened: !!(ls && ls.currentAnchor && ls.currentAnchor()),
     home: homeDashboardShown(core),
     editorSave: editorSave,
+    boardTools: !!readEffectivePrefs().mobileBoardTools,
     choices: core && core.buf ? promptPanelFromBuf(core.buf, readEffectivePrefs()) : null
   });
 }
 
 const FLAGS = [
-  'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'help', 'contentTools', 'refresh', 'end',
+  'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'boardTools', 'help', 'contentTools', 'refresh', 'end',
   'editor', 'editorSave', 'mailList'
 ];
 

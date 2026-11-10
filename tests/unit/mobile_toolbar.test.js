@@ -5,6 +5,7 @@ import {
   EMPTY_TOOLBAR_CONTEXT,
   TOOLBAR_KEYS,
   THREAD_NAV_KEYS,
+  BOARD_TOOL_KEYS,
   toolbarSlots,
   TOOLBAR_SLOT_COUNT,
   hasHelpHint,
@@ -96,6 +97,30 @@ describe("toolbarContextFromFacts", () => {
     expect(EMPTY_TOOLBAR_CONTEXT.help).toBe(false);
     expect(TOOLBAR_KEYS.help).toEqual({ key: "h" });
   });
+  test("這個看板（更多，P66）：pref 開著的文章列表才給；搜尋結果、prompt、文章、主功能表、pref 關不給", () => {
+    const on = { boardTools: true };
+    expect(toolbarContextFromFacts(frame(LIST), 2, on).boardTools).toBe(true);
+    expect(toolbarContextFromFacts(frame(LIST), 2).boardTools).toBe(false);
+    expect(toolbarContextFromFacts({ ...frame(LIST), inputField: true }, 2, on).boardTools).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3, on).boardTools).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 0: "【主功能表】    批踢踢實業坊" }), 1, on).boardTools).toBe(false);
+    // 搜尋結果（新版 caption「系列文章」／舊版標題列右段「系列《板》」）：b／z／Tab 在 MODE_SELECT 裡意義不同，不給
+    const SELECT_NEW = { 0: " 【板主:none】看板《Test》", 23: " 系列文章  (y)回應(X)推文(^X)轉錄 " };
+    const SELECT_OLD = { 0: " 【板主:none】看板《Test》            系列《Test》", 23: LIST[23] };
+    expect(toolbarContextFromFacts(frame(SELECT_NEW), 2, on).boardTools).toBe(false);
+    expect(toolbarContextFromFacts(frame(SELECT_OLD), 2, on).boardTools).toBe(false);
+    // 文摘列表照給（Tab 就是離開文摘）
+    const DIGEST = { 0: " 【板主:none】看板《Test》", 23: " 文摘列表  (y)回應(X)推文(^X)轉錄 " };
+    expect(toolbarContextFromFacts(frame(DIGEST), 2, on).boardTools).toBe(true);
+    expect(EMPTY_TOOLBAR_CONTEXT.boardTools).toBe(false);
+  });
+
+  test("這個看板的鍵：b／z／Tab／i 各一個，都是 KeyMap 認得的單鍵", () => {
+    expect(BOARD_TOOL_KEYS.map((b) => b.key)).toEqual(["b", "z", "Tab", "i"]);
+    expect(KeyMap.Tab).toBe("\t");
+    expect(new Set(BOARD_TOOL_KEYS.map((b) => b.id)).size).toBe(4);
+  });
+
   test("跳到第一篇未讀（更多）：只有文章列表；prompt 開著、文章、主功能表不給", () => {
     expect(toolbarContextFromFacts(frame(LIST), 2).unreadJump).toBe(true);
     expect(toolbarContextFromFacts({ ...frame(LIST), inputField: true }, 2).unreadJump).toBe(false);
