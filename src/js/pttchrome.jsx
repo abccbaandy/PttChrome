@@ -75,6 +75,7 @@ import { ImageUploadController, isUploadLayerTarget } from './image_upload_contr
 import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
 import { WhatsNew, isWhatsNewTarget } from './whats_new';
 import { RecentArticles, isRecentResumeTarget } from './recent_articles';
+import { SavedArticles } from './saved_articles';
 import { isCommentFilterBarTarget } from './comment_filter';
 import { MessageInbox, isMessageInboxTarget } from './message_inbox';
 import { NewComments } from './new_comments';
@@ -306,6 +307,8 @@ export const App = function() {
   this.whatsNew = new WhatsNew(this);
   // 最近讀過的文章＋稍後再讀（儀表板／指令面板／右鍵選單共用的清單，recent_articles.js）。
   this.recentArticles = new RecentArticles(this);
+  // 存到本機（P64，saved_articles.js）：存好讀累積頁到 IndexedDB、在唯讀頁打開。
+  this.savedArticles = new SavedArticles(this);
   // 寬螢幕雙欄閱讀（讀文章時左邊空白列出剛才的文章列表，split_reader.js）。
   this.splitReader = new SplitReader(this);
   // 文章工具側欄（好讀文章時右邊空白放 AID／推文統計／推文者／圖片牆，article_tools.js）。

@@ -11,6 +11,7 @@ import { installRipple } from './ripple';
 import { installFocusRing } from './focus_ring';
 import { parseDeepLink } from './deep_link';
 import { installAgentTools } from './agent_tools';
+import { savedReaderKeyFrom, bootSavedReader } from './saved_articles';
 import { renderInto, unmountFrom } from './react_root';
 import { MantineRoot } from '../components/MantineRoot';
 import { setBootStage, failBootLoading, finishBootLoading } from './boot_loading';
@@ -61,6 +62,20 @@ function startApp() {
   // dev build 刻意**不再**擋一層 Developer Mode modal：那個 modal 會把 connect()
   // 延後到使用者按掉為止，讓 dev 與正式版的 boot 時序不一致 —— deep link 這種
   // 「開站當下就要消費 URL」的功能在 dev 下量到的行為因此不可信。
+  // 存到本機的唯讀頁（?saved=<key>，docs/saved-articles.md）：**不連線**、不接 deep link／
+  // 返回鍵／雲端同步，只把存檔畫出來。要在 claimDeepLink 之前分流：唯讀頁不該搶走別的分頁的連結。
+  const savedKey = savedReaderKeyFrom(window.location.search);
+  if (savedKey) {
+    finishBootLoading();
+    // 同 bootstrap：存成變數再交給 onValuesPrefChange（它自己先過 effectivePrefs，見安全模式守護）。
+    const prefs = readValuesWithDefault();
+    app.onValuesPrefChange(prefs);
+    document.getElementById('BBSWindow').style.display = '';
+    app.onWindowResize({ immediate: true });
+    bootSavedReader(app, savedKey);
+    return;
+  }
+
   claimDeepLink().then(({ target, taken }) => {
     finishBootLoading();
     if (taken) return showHandoffTaken(target, bootstrap);

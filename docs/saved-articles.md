@@ -1,6 +1,6 @@
 # 存到本機（P64，`saved_article_codec.js`／`saved_articles_store.js`）
 
-動 `saved_article*.js` 前先讀。
+動 `saved_article*.js`、`saved_articles*.js`、`term_view.showStaticArticle` 前先讀。
 
 ## 是什麼
 
@@ -19,16 +19,25 @@
 | 不上雲 | 只在這個瀏覽器 | 內文大，Firestore 額度扛不住；提案原本說「雲端只同步清單」，第一版先不做 |
 | 失敗 | 每個操作 resolve `{ ok:false, reason }`（`invalid`／`tooLarge`／`full`／`quota`／`error`），不 reject | 私密視窗、封鎖網站資料時 IndexedDB 會 throw；呼叫端只要照結果提示 |
 
+## 唯讀頁（`?saved=<key>`，`saved_articles.js#bootSavedReader`）
+
+| 項目 | 規則 | 理由 |
+|---|---|---|
+| 打開方式 | 另開一頁（`SavedArticles.open` ⇒ 新分頁 `?saved=<key>`），`main.jsx` 在 `claimDeepLink` 之前分流 | 不跟活連線搶畫面、不佔 PTT 連線名額，也不會搶走別的分頁的 deep link |
+| 不連線 | 唯讀頁不 `connect()`、不接 deep link／返回鍵／雲端同步 ⇒ `view.conn` 恆 `undefined`，`_send` 天生送不出任何鍵 | 「一個 byte 都不送」由結構保證，不靠逐一攔截 |
+| 畫法 | `term_view.showStaticArticle(rows)`：之後每次 `redraw` 都畫存檔（`_redrawStatic`），走同一個 `_renderScreenLines`／`#mainContainer`，override `STATIC_ARTICLE_OVERRIDES`（`stableRows`、`pageState: 3`、`easyReading: true`） | 核心畫面只有一條寫入路徑（`CLAUDE.md`）；CSS、縮放、手機 reflow、推文合併／樓層／推文卡片原樣可用 |
+| 找不到／壞掉 | 一則錯誤提示（`saved_missing`），一樣不連線 | 存檔可能在別的瀏覽器、被刪、或格式不對（`decodeRows` 回 null） |
+
+另外比較過、沒採用的兩條（11/11）：A 在活連線的畫面上換資料來源（推文列、下一篇卡片、讀到哪底列等浮層都看 pageState 3＋好讀狀態，活畫面是列表時會互相打架）；B 自己的容器＋自己的 ScreenController（`main.css` 50 多條選擇器掛在 `#mainContainer` 底下、`.main` 的縮放由 `fixedResize` 算，要複製一份）。
+
 ## 還沒做（依序）
 
-1. **唯讀閱讀器**（`lines`＝`decodeRows(rec.body, Object.getPrototypeOf(buf.attr))`）。兩條路，11/11 讀碼後的判斷：
-   - **A（建議）：同一條寫入路徑換資料來源**。`term_view.redraw` 已經有「畫 `buf.pageLines`＋`_pageRenderOverrides()`（`stableRows`）」的好讀分支（`term_view.js` 約 1019 行）；閱讀器開著時讓那條分支畫存檔的列（新的 override，例如 `savedRows`），其餘照舊：同一個 `ScreenController`、同一個 `#mainContainer`、`fixedResize` 的縮放與手機 reflow、推文合併／樓層／推文卡片都免費。PTT 送來的畫面照收進 `buf`（不送鍵就不會變），關閉時 `redraw(true)` 畫回活畫面。要處理：開著時鍵盤／滑鼠／觸控一律不送 PTT（新的具名 modal 來源或 `nav_key_gate` 一條）、捲動照好讀的 `.main` 原生捲動、頂端一條「本機收藏・唯讀｜關閉」；標註層用到 `buf.pageState` 的地方要給 3。
-   - B：自己的全螢幕容器＋自己的 `ScreenController`。不碰 `#mainContainer`，但 `main.css` 有 50 多條選擇器掛在 `#mainContainer` 底下、`.main` 的字級／縮放由 `term_view.fixedResize` 算 ⇒ 要嘛複製一份 CSS、要嘛全改成 class，代價大且兩份會漂移。
-   - C（值得先評估）：**另開一頁唯讀開機**（例如 `?saved=<key>`，開新分頁）。那一頁不 `connect()`（`view.conn` 恆 `undefined` ⇒ `_send` 天生送不出去），開機後把 `decodeRows` 的結果當 `buf.pageLines`、pageState 3、好讀開著畫出來 ⇒ 渲染鏈、CSS、手機 reflow、文章工具／導覽軸全部原樣可用，也不會跟活連線搶畫面（A 的最大風險：推文列、下一篇卡片、讀到哪底列等一堆浮層都看 pageState 3＋好讀狀態，活畫面是列表時會互相打架）。要處理：送鍵類浮層（推文列、長推文、下一篇）在唯讀頁關掉；`redraw` 的好讀分支條件（settledPageState、`easyReading._enabled`）要能被唯讀開機滿足；deep link／自動登入在這頁不跑。
-   關閉時（任一條）延遲載入盒由 `render/screen.js#disposeNode` 收。
-2. **入口**：好讀文章「更多」面板（手機）／右鍵選單（桌機）「存到本機」；首頁儀表板「本機收藏」區、指令面板（F4）搜尋已存文章；可刪除。pref `enableSavedArticles`（預設開）＋設定頁開關；README 功能列表一條。
+1. **入口**：好讀文章「更多」面板（手機）／右鍵選單（桌機）「存到本機」（`savedArticles.canSave()` 決定出現、`saveCurrent()` 存）；首頁儀表板「本機收藏」區、指令面板（F4）列出已存文章（`list()`，點了 `open(key)`）；可刪除（`remove`）。pref `enableSavedArticles`（預設開）＋設定頁開關；README 功能列表一條。
+2. 唯讀頁的手機底部導覽：現在照常出現，「按鍵」「更多」裡送鍵的項目按了不會有反應（沒連線）。入口做好時一起收：唯讀頁只留捲動相關的鈕、App Bar 顯示文章標題。
 3. 匯出成檔案（JSON），之後再看要不要存圖片本體。
 
 ## 測試
+
+`tests/e2e/offline/saved_reader.offline.spec.js`：stock-huang 好讀讀完 → `saveCurrent()` 存進真 IndexedDB（再存＝覆蓋）→ 開 `?saved=` 唯讀頁：沒有任何 BBS WebSocket（對照組：一般開站數得到）、`view.conn` undefined、逐列文字＝存之前的累積頁；找不到的 key ⇒ 錯誤提示。
 
 `tests/unit/saved_articles.test.js`（browser）：真 TermBuf＋AnsiParser 寫一頁（顏色、全形字、網址、閃爍、底線），存回來 `buildRow` 逐列相同、prototype 相同；壞資料矩陣全回 null；真 IndexedDB 的存／列／讀／刪、覆蓋不佔名額、滿了拒絕、太長拒絕、IndexedDB 不可用不 throw。

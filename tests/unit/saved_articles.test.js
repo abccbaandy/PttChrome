@@ -21,6 +21,12 @@ import {
   savedArticleMeta,
 } from "../../src/js/saved_article_codec";
 import { SavedArticlesStore } from "../../src/js/saved_articles_store";
+import {
+  SavedArticles,
+  savableArticle,
+  savedReaderKeyFrom,
+  savedReaderUrl,
+} from "../../src/js/saved_articles";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 const ESC = "\x1b";
@@ -230,5 +236,68 @@ describe("SavedArticlesStore（真 IndexedDB）", () => {
     expect(await s.get("a/b")).toBeNull();
     expect(await s.put(rec("1aaaaaaa", 1))).toEqual({ ok: false, reason: "error" });
     expect(await s.remove("a/b")).toEqual({ ok: false, reason: "error" });
+  });
+});
+
+describe("唯讀頁網址／能不能存", () => {
+  test("網址只多一個 saved，原本的 query／hash 不帶過去；讀回來同一個 key", () => {
+    const url = savedReaderUrl("https://example.com/app/?site=x#Stock/1g8znzQ3", "stock/1g8znzQ3");
+    expect(url).toBe("https://example.com/app/?saved=stock%2F1g8znzQ3");
+    expect(savedReaderKeyFrom(new URL(url).search)).toBe("stock/1g8znzQ3");
+  });
+
+  test.each([
+    ["", null],
+    ["?site=x", null],
+    ["?saved=", null],
+    ["?saved=Stock/1g8znzQ3", null], // key 的看板一律小寫（savedArticleKey）
+    ["?saved=stock/1g8zn", null],
+    ["?saved=stock/1g8znzQ3x", null],
+    ["?saved=..%2F1g8znzQ3x", null],
+    ["?saved=stock%2F1g8znzQ3", "stock/1g8znzQ3"],
+  ])("savedReaderKeyFrom(%j) ⇒ %j", (search, want) => {
+    expect(savedReaderKeyFrom(search)).toBe(want);
+  });
+
+  function core(over) {
+    const o = Object.assign(
+      { ease: true, pageState: 3, enabled: true, fn: false, lines: 3, hit: { board: "Stock", aid: "1g8znzQ3" } },
+      over
+    );
+    return {
+      view: { useEasyReadingMode: o.ease },
+      buf: { pageState: o.pageState, easyReadingFunctionMode: o.fn, pageLines: new Array(o.lines).fill([]) },
+      easyReading: { _enabled: o.enabled },
+      aidNavigation: { findLocalPostAid: () => o.hit },
+    };
+  }
+
+  test("好讀文章＋累積頁非空＋讀得到網址列 ⇒ 可以存；任一不成立 ⇒ 不行", () => {
+    expect(savableArticle(core())).toEqual({ board: "Stock", aid: "1g8znzQ3" });
+    expect(savableArticle(core({ ease: false }))).toBeNull();
+    expect(savableArticle(core({ pageState: 2 }))).toBeNull();
+    expect(savableArticle(core({ enabled: false }))).toBeNull();
+    expect(savableArticle(core({ fn: true }))).toBeNull();
+    expect(savableArticle(core({ lines: 0 }))).toBeNull();
+    expect(savableArticle(core({ hit: null }))).toBeNull();
+    expect(savableArticle(null)).toBeNull();
+  });
+
+  test("不能存時 saveCurrent 不碰儲存、提示錯誤", async () => {
+    const put = vi.fn();
+    const hints = [];
+    const c = core({ hit: null });
+    c.view.flashListHint = (msg, ms, level) => hints.push(level);
+    const res = await new SavedArticles(c, { put }).saveCurrent();
+    expect(res).toEqual({ ok: false, reason: "notArticle" });
+    expect(put).not.toHaveBeenCalled();
+    expect(hints).toEqual(["error"]);
+  });
+
+  test("open 在新分頁開唯讀頁", () => {
+    const open = vi.fn();
+    const win = { open, location: { href: "https://example.com/?x=1" } };
+    expect(new SavedArticles(core(), {}).open("stock/1g8znzQ3", win)).toBe(true);
+    expect(open).toHaveBeenCalledWith("https://example.com/?saved=stock%2F1g8znzQ3", "_blank", "noopener");
   });
 });
