@@ -382,6 +382,7 @@ best-effort：逾時／miss／框裡沒 AID 一律降級續跳（錨點退回原
   - **我方落地會自己產生一次 `leaveCurrentPost`**（functionMode 退出走 'leave' 分支，且發生在 `onDone` 清掉 `active` 之後）→ `_ownedLeave` one-shot 吞掉它，否則每次跳完都會把剛 push 的那層抹掉。
 - **UI**：返回鈕（`term_view.showBackButton`／`hideBackButton` 只寫狀態 `view.aidBack`，`(active, stack)` 的投影；畫面是 React `components/AidBackButton` 訂閱 `view.onAidBackChange`，桌機手機同一顆，上緣置中、手機在 App Bar 下方——**不可放底部**：桌機疊在 PTT 狀態列上、手機被底部工具列蓋掉）＋快捷鍵 pref `aidNavBackKey`（預設 F9；F 鍵在 `term_keyboard.KeyMap` 沒有對應、送不到 PTT，而 F8 已被 `easyReadingEndSwitchKey` 佔用）。
 - **捲動還原**：錨點存的是**行索引**（srow＋列內比例，由 `term_view.currentLineIndex` 量節點；取自閱讀紀錄 `reading_record`，見 `docs/reading-record.md`），不是像素也不是 `_savedScrollTop`（那是 functionMode 單次進出的暫存，跨文章活不下來）。返回開文後交給 `easy_reading.requestScrollRestore`，由 `_onViewUpdated` 每次併頁時用 `nextScrollRestoreStep` 判斷高度夠不夠（好讀是逐頁累積，位置一開始不可達）；`reachedPageEnd` 仍不夠高就夾到底，使用者一按鍵立刻取消。
+  落地後還有一段**守位**（`_startScrollRestoreHold`，最多 10 秒）：落地時目標列的圖多半還是佔位盒，圖載完列撐高後 scroll anchoring 保住的是像素位移而不是列內比例；`pageRowTop` 強制渲染的鄰塊被收回時內容變短，scrollTop 也會被夾到前面好幾列。守位期間內容高度一變（mainContainer 的 ResizeObserver，挪到下一幀量）或又併進一頁就重量目標，偏了才拉回（`nextScrollRestoreHold`）；使用者任何鍵盤／滾輪／觸控／指標輸入立刻放手。決定性守護：`mobile_reading_restore.offline.spec.js`「落地時視窗頂端的圖還沒載完」。
 
 ## 切換：三個對稱入口（CONFIRMED 純邏輯/手動驗）
 

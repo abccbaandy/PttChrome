@@ -29,7 +29,7 @@
 
 `begin(feature, own?)` 回傳書籤，也就是當下紀錄的副本。畫面擁有者自己發起的交易，可以用 `own` 交出自己的量測（`{ list, listOwner }`）；文章端可以交 `{ view, buf }`。`end(bm, outcome, { only, article })` 依下表分派給畫面擁有者既有的還原器：
 
-- 文章：交給 `easy_reading.requestScrollRestore`／`requestScrollToBottom`，量節點並等累積到位才套用。原生 pmore 的文末改送原生 End；原列沒有入口，不還原。debug 錄製檔 `easyReading.scrollRestore`：`request`／`apply`（target、scrollTop）／`giveup`／`drop`（key、leave）／`settled`（套用 2 秒後實際的 `now` 列）。`readingRecord.begin` 與 `settled` 另帶 `topText`（頂端列前 20 字，`term_view.topRowSnippet`，**只給錄製檔對照、還原不讀**；鏡像快照時為 null）。定位順序：`begin.topText` 不是使用者當時看的那句＝採樣錯；`begin.lineIndex`≈`settled.now` 但 `topText` 不同＝同一索引在重讀後指向別行；apply 對而 `settled.now` 偏＝套用後被推走。
+- 文章：交給 `easy_reading.requestScrollRestore`／`requestScrollToBottom`，量節點並等累積到位才套用。原生 pmore 的文末改送原生 End；原列沒有入口，不還原。debug 錄製檔 `easyReading.scrollRestore`：`request`／`apply`（target、scrollTop）／`giveup`／`drop`（key、leave）／`reassert`（落地後守位把視窗拉回，from→scrollTop）／`release`（守位結束：input、timeout、leave…）／`settled`（套用 2 秒後實際的 `now` 列）。`readingRecord.begin` 與 `settled` 另帶 `topText`（頂端列前 20 字，`term_view.topRowSnippet`，**只給錄製檔對照、還原不讀**；鏡像快照時為 null）。定位順序：`begin.topText` 不是使用者當時看的那句＝採樣錯；`begin.lineIndex`≈`settled.now` 但 `topText` 不同＝同一索引在重讀後指向別行；apply 對而 `settled.now` 偏＝套用後被推走。
 - 列表：`list_session.requestViewportRestore`，存成待還原錨，見下節。
 - 看板列表：`board_list_session.requestViewportRestore`。
 - 首頁儀表板：`home_dashboard.requestViewportRestore`，存成待還原錨，面板下一次畫出來（或更新完重畫）時套用，那張卡片不在了就不動；收起面板（原生主選單、打字）作廢。
