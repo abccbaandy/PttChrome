@@ -72,6 +72,20 @@ test("fileheader_t 推文數欄位新舊 header 都編得過：driver.c 只經 F
   expect(gen.indexOf('"$SCORE_RE"')).toBeLessThan(gen.indexOf('"$RATING_RE"'));
 });
 
+test("upstream 改名的欄位新舊都編得過：呼叫器只經 UT_WMSG 寫（c4a7085f），實況兩個檔都認 live_run（10db344b）", () => {
+  const dir = path.join(__dirname, "../../tools/ptt-src-screens");
+  const c = fs.readFileSync(path.join(dir, "driver.c"), "utf8");
+  // 只准出現在 #ifdef WMSG_ON 的相容區塊裡
+  const compat = c.match(/#ifdef WMSG_ON\n([\s\S]*?)#endif/);
+  expect(compat).not.toBeNull();
+  expect(compat[1]).toMatch(/#define UT_WMSG wmsg[\s\S]*#else[\s\S]*#define UT_WMSG pager/);
+  const rest = c.replace(compat[0], "").replace(/\/\/.*$/gm, ""); // 註解不算
+  expect(rest).not.toMatch(/->(pager|wmsg)\b|\bPAGER_ON\b|\bWMSG_ON\b|\bUF_(PAGER|WMSG)_OFO\b/);
+  expect(rest).toContain("->UT_WMSG = UT_WMSG_ON");
+  const gen = fs.readFileSync(path.join(dir, "generate.sh"), "utf8");
+  expect(gen).toMatch(/grep -qs '\^live_run\(' more\.c livepost\.c/);
+});
+
 test("送鍵之後沒有任何輸出 ⇒ CaptureError（鍵在 upstream 失效，不存空幀）", async () => {
   await expect(runScene(FAKE, "seed", scene("mute", [{ name: "a" }, { keys: "h", name: "b" }]), TIMING)).rejects.toThrow(
     /第 1 步/,

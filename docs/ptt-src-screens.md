@@ -64,7 +64,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `article` | `read:Test`／24 | `1` `⏎` `⏎` | 跳號落點、pmore 狀態列 `parseStatusRow`、`classifyListScreen`→article、檔頭 `articleContextFromScreen` |
 | `article_prompts` | `read:Test`／24 | `1` `⏎` `⏎` `:` `2⏎` `/` `X` | pmore 的跳行／搜尋 prompt 畫在倒數第二列、狀態列照樣認得；游標在輸入欄、不在右下角；`shouldInterceptPushKey` 在 prompt 裡不攔 X |
 | `help_menu` | `read:Test`／24 | `h` | `parseHelpMenuScreen`（caption／頁數／游標／項目鍵）、⏎ 不 arm |
-| `article_help` | `read:Test`／24 | `1` `⏎` `⏎` `h` 空白 空白 `q` | 文章裡的 h 是同一套 psb 說明選單（caption「文章閱讀」、3 頁，有只有鍵沒名稱的項目）；不是文章、不 arm；q 回文章 |
+| `article_help` | `read:Test`／24 | `1` `⏎` `⏎` `h` 空白 空白 `q` | 文章裡的 h 是同一套 psb 說明選單（caption「文章閱讀」、多頁（e7acb746 前 3 頁、之後 2 頁），有只有鍵沒名稱的項目；空白在最後一頁不翻頁）；不是文章、不 arm；q 回文章 |
 | `article_pref` | `read:Test`／24 | `1` `⏎` `⏎` `o` `\` `q` `\` `1` | pmore 完整設定頁／快速設定頁都認得（`pmorePrefScreenSeen`）、只有快速設定算可直選、兩種選項列都讀得出選中的色彩模式（完整設定頁沒有數字熱鍵，曾經讀成 null ⇒ 開燈按鈕狀態錯） |
 | `post_info` | `read:Test`／24 | `Q` | 文章資訊框：`parsePostInfoAid` 讀出 AID＋看板、底列 pressanykey；列表列不誤認 |
 | `board_note` | `read:Notes`／24 | 空白 | `boardNoteDecision`：進板畫面→skip、文章列表→landed |
@@ -91,7 +91,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `editor_prompt` | `read:Mine`／24 | `E` `^S` `ab` `⏎` | 編輯器裡倒數第二列的 prompt（`[搜尋]關鍵字:`、`區分大小寫(Y/N/Q)?`）：底列「編輯文章」還在、pageState 6，但游標在輸入欄 ⇒ `isEditorTypingNow` false：編輯器輸入框不出現、上傳網址走剪貼簿 |
 | `board_complete` | `menu`／24 | `s` `M` 空白 `x` `o` 空白 | 選看板自動完成：`parseBoardPromptFrame` 讀輸入欄／候選（依板名排序）、被拒的字輸入欄不變（`boardQueryResult` rejected）、中間幀的舊清單、唯一補完 `resolvedBoardName` |
 | `digest_aid` | `read:Gossip`／24 | `1⏎` `#5giJk-0-⏎` `#1giJk-0-⏎` | 完整列表上 # 文摘的 G AID：新版 `read_cmd_aid` 丟掉 `select_by_aid` 設的 default_ch=Tab ⇒ 不切文摘、游標不動、沒有錯誤，`aidSearchLanded` 照樣過；換成原文的 M（`aid_codec.toPostAid`）才落在原文 |
-| `essence` | `read:Gossip`／24 | `z` `⏎` `←` `←` | 看板精華區：標題列【精華文章】、pageState 1；開的文章 footer 跟看板文章一字不差（`b_man` 不 `setutmpmode`，currstat 還是 READING）⇒ `TermBuf.pagerContext()` 回 `'essence'`，重新整理／推文攔截／手機工具列推回分享都不給；回文章列表後旗標清掉 |
+| `essence` | `read:Gossip`／24 | `z` `⏎` `←` `←` | 看板精華區：標題列【精華文章】、pageState 1；開的文章 footer 舊版跟看板文章一字不差、e7acb746 起是共用鍵表（沒有「回應」）（`b_man` 不 `setutmpmode`，currstat 還是 READING）⇒ `TermBuf.pagerContext()` 回 `'essence'`，重新整理／推文攔截／手機工具列推回分享都不給；回文章列表後旗標清掉 |
 | `digest` | `read:Gossip`／24 | `Tab` `Q` 空白 `⏎` `←` `←` | 文摘：標題列「文摘《板》」＋底列「文摘列表」⇒ 子列表（`listModeOf` select、重新整理不接手）、自己的編號空間；文摘裡 Q 的 AID 是 G 檔名（type 1）；文章是 READING；文章裡 ← 回文摘、文摘上 ← 是 `board_digest` 回完整列表不是離板（`landedOnBoardList` 的 sub；`_enqueueLeaveSubList` 的依據） |
 | `mark_read_prompt` | `read:Test`／24 | `v` | 文章列表 v 的「設定所有文章 …」prompt（`markReadPromptShown`）；是輸入欄 ⇒ 逃生送 ^C |
 | `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
@@ -143,7 +143,11 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   **沒連上時改成有逾時的等待**（每 2～3 秒醒來 `ipc_check_reconnect`），`WAIT_MARK` 永遠不出現 ⇒ 每個場景第 0 步
   逾時。driver 在 `init_io()` 後把一個永遠不可讀的 pipe 掛成 IPC fd（`vkey_attach_ipc`）⇒ 回到無限期等待。
   舊 upstream 沒有這個函式：`generate.sh` 看 `proto.h` 決定 `-DHAS_IPC_FD`。
-- **實況推文**（3c7d9af，`-DHAS_LIVE`：`proto.h` 有 `pmore_feed_comment`，c6d35a8 起改認 `more.c` 有 `live_run`）：IPC fd 改用 capture.mjs 開著的 fd 3
+- 呼叫器欄位改名：c4a7085f 把 `userinfo_t.pager`／`PAGER_ON`／`UF_PAGER_OFO` 改成 `wmsg`／`WMSG_ON`／
+  `UF_WMSG_OFO`（畫面不變）。同一個 commit 改的 ⇒ driver.c 看 `#ifdef WMSG_ON` 選 `UT_WMSG`／`UT_WMSG_ON`／
+  `UF_WMSG_OFO_FLAG`，不必經 generate.sh（守護 `ptt_src_screens_capture.test.js`）。
+- **實況推文**（3c7d9af，`-DHAS_LIVE`：`proto.h` 有 `pmore_feed_comment`，c6d35a8 起改認 `more.c` 有 `live_run`，
+  10db344b 起 `live_run` 搬到 `livepost.c` ⇒ 兩個檔都認；認不到時 HAS_LIVE=0，症狀是 `live_short` 第 4 步逾時）：IPC fd 改用 capture.mjs 開著的 fd 3
   （平常不寫＝永遠不可讀）。場景步驟寫 `{ live: '<ASCII 內容>' }` ⇒ capture 往 fd 3 寫一列，driver 以 --wrap 接住
   `ipc_read_packet`，用 upstream 的 `FormatCommentString`（bbs.c#recommend 的參數，推／bob）排成推文列、包成
   `IPC_TYPE_LIVE_COMMENT` 交回 `wmsg_ipc_handler`，之後是 upstream 自己的 pmore 實況路徑。`ipc_sub` 只在

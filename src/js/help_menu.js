@@ -19,6 +19,8 @@
 // 3. 按鍵：↑/k/p/^P、↓/j/n/^N、PgUp/^B/P、PgDn/^F/N/空白（curr ± rows，夾在 [0,count-1]）、
 //    Home/'0'（curr=0）、End/'$'、Enter/→ ＝回傳 items[curr].keys[0]（呼叫端 bbs_cmd_help 把它
 //    當成使用者按的鍵重新派送）、h/H ＝小天使、q/Q/← ＝離開（回 0）。其餘鍵忽略。
+//    upstream 7c105fff 起只剩 ↑/^P、↓/^N、PgUp/^B、PgDn/^F/空白、Home、End 是移動，**其他鍵都離開**
+//    （k/j/p/n/P/N/0/$ 也是）。這裡只送 Home／PgDn／↓／Enter／q ⇒ 新舊都照常。
 //    ⇒ 執行第 t 項＝Home → PgDn×⌊t/rows⌋ → ↓×(t mod rows) → Enter，與當下游標在哪無關。
 // 4. 同一個畫面在看板列表、文章列表、主功能表、閱讀文章（more.c）、編輯器（edit.c）都有，
 //    caption 依呼叫端（「我的最愛」「文章閱讀」…）。
