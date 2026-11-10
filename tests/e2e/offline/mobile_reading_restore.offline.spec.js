@@ -66,12 +66,14 @@ async function installSim(page, total) {
 }
 
 // 視窗頂端：閱讀紀錄記的列索引，以及那一列節點相對視窗頂端的位置（px）。
-const topOfView = (page) =>
-  page.evaluate(() => {
+// srow：改量指定那一列（還原後量「還原前的那一列」現在在哪；見 expectSamePlace）。
+const topOfView = (page, srow) =>
+  page.evaluate((srow) => {
     const v = window.__app.view;
     const d = v.mainDisplay;
     const li = v.currentLineIndex();
-    const el = document.querySelector('#mainContainer [type="bbsrow"][srow="' + Math.floor(li) + '"]');
+    const row = srow == null ? Math.floor(li) : srow;
+    const el = document.querySelector('#mainContainer [type="bbsrow"][srow="' + row + '"]');
     return {
       li,
       reflow: v.reflow,
@@ -79,11 +81,11 @@ const topOfView = (page) =>
       top: el ? Math.round(el.getBoundingClientRect().top - d.getBoundingClientRect().top) : null,
       text: el ? el.textContent.slice(0, 24) : null,
     };
-  });
+  }, srow);
 
 // 開機 → 進好讀 → 預讀到文末。restoreLi：進好讀的同一刻掛上還原請求（＝重讀）。
-async function openAndRead(page, restoreLi) {
-  await bootOffline(page, ptt);
+async function openAndRead(page, restoreLi, bootOpts) {
+  await bootOffline(page, ptt, bootOpts);
   await ptt.applyPrefs(page, { enableEasyReadingList: false, enableEasyReading: true });
   await installSim(page, TOTAL);
   await page.waitForFunction(() => window.__app.buf.pageState === 3);
@@ -110,10 +112,8 @@ for (const frac of [0.25, 0.5, 0.8]) {
     expect(before.li).toBeGreaterThan(0);
 
     await openAndRead(page, before.li);
-    const after = await topOfView(page);
-    expect(after.text).toBe(before.text);
-    expect(after.li).toBeCloseTo(before.li, 2);
-    expect(Math.abs(after.top - expectedTop(before))).toBeLessThanOrEqual(2);
+    const after = await topOfView(page, Math.floor(before.li));
+    expectSamePlace(before, after);
   });
 }
 
@@ -123,18 +123,30 @@ for (const frac of [0.25, 0.5, 0.8]) {
 // 依比例捲動時是否剛好落進空隙看當輪版面，所以這個分支另有下面那條決定性的 case 守。
 const expectedTop = (before) => Math.min(before.top, 0);
 
+// 同一列同一處：還原前視窗頂端的那一列（after 量的就是它），列頂相對視窗頂端的位置差
+// ≤ 2px。一律用 px 判，不比 currentLineIndex：
+//   - 列內比例＝px／列高，短列（兩行推文 39px）上 scroll anchoring 的 1px 取整就是 0.026，
+//     大於 toBeCloseTo(…, 2) 的容差。
+//   - 停在列與列的交界時，offsetTop／offsetHeight 各自取整讓相鄰兩列重疊 1px，「視窗頂端
+//     那一列」可能判成上一列的最後 1px（317 → 316.974），位置其實一樣。
+function expectSamePlace(before, after) {
+  expect(after.text).toBe(before.text);
+  expect(Math.abs(after.top - expectedTop(before))).toBeLessThanOrEqual(2);
+}
+
 test('重讀後還原：視窗頂端落在兩列之間的空隙 ⇒ 回來時那一列貼齊視窗頂端', async ({ page }) => {
   test.setTimeout(180000);
   await openAndRead(page, null);
   // 捲到推文區、等預覽載完，在視窗內找一段列與列之間的空隙，把視窗頂端放在空隙的上緣
   // 附近（離下一列列頂最遠 ⇒ 舊斷言「還原前後 top 差 ≤ 2」必紅）。只在視窗內找：捲動距離
-  // 不到一屏，不會再觸發新的預覽載入把空隙推走。
+  // 不到一屏，不會再觸發新的預覽載入把空隙推走。視窗只有約 290px，剛好被一張推文圖佔滿
+  // 時這一屏沒有空隙 ⇒ 往下挪半屏、等預覽載完再找（最多幾次）。
   await page.evaluate(() => {
     const d = window.__app.view.mainDisplay;
     d.scrollTop = Math.round((d.scrollHeight - d.clientHeight) * 0.8);
   });
   await waitPreviewsSettled(page);
-  const gap = await page.evaluate(() => {
+  const findGap = () => page.evaluate(() => {
     const d = window.__app.view.mainDisplay;
     const dTop = d.getBoundingClientRect().top;
     const rows = Array.from(document.querySelectorAll('#mainContainer [type="bbsrow"]'))
@@ -151,6 +163,15 @@ test('重讀後還原：視窗頂端落在兩列之間的空隙 ⇒ 回來時那
     }
     return null;
   });
+  let gap = await findGap();
+  for (let tries = 0; !gap && tries < 6; ++tries) {
+    await page.evaluate(() => {
+      const d = window.__app.view.mainDisplay;
+      d.scrollTop += Math.round(d.clientHeight / 2);
+    });
+    await waitPreviewsSettled(page);
+    gap = await findGap();
+  }
   expect(gap).not.toBeNull();
   await page.evaluate((y) => { window.__app.view.mainDisplay.scrollTop = y; }, gap.y);
   await waitPreviewsSettled(page);
@@ -160,8 +181,35 @@ test('重讀後還原：視窗頂端落在兩列之間的空隙 ⇒ 回來時那
   expect(before.top).toBeGreaterThan(0);
 
   await openAndRead(page, before.li);
-  const after = await topOfView(page);
-  expect(after.text).toBe(before.text);
-  expect(after.li).toBeCloseTo(before.li, 2);
-  expect(Math.abs(after.top - expectedTop(before))).toBeLessThanOrEqual(2);
+  const after = await topOfView(page, Math.floor(before.li));
+  expectSamePlace(before, after);
+});
+
+// 還原落地時視窗頂端那張圖還沒載完（佔位盒只有幾十 px）：列內比例是照「當下」列高換算的，
+// 圖載完列撐高，瀏覽器的 scroll anchoring 保住的是**像素**位移而不是比例 ⇒ 沒有落地後的
+// 守位，視窗頂端會往回縮到圖的上緣附近（依比例捲動的 case 在 CI 負載下偶發踩到）。
+// 重讀改用慢速圖片（5.2s），讓「落地時圖還沒到」變成決定性的。
+test('重讀後還原：落地時視窗頂端的圖還沒載完 ⇒ 載完後仍停在圖的同一處', async ({ page }) => {
+  test.setTimeout(180000);
+  await openAndRead(page, null);
+  const IMAGE_ROW = 101; // lineText(100)：每 30 行一張圖（srow ＝行號 + 1）
+  // 先捲到圖那一列、等圖載完（列高才是真的），再把視窗頂端放進那一列的 60% 處。
+  const scrollIntoRow = (frac) =>
+    page.evaluate(({ srow, frac }) => {
+      const d = window.__app.view.mainDisplay;
+      const el = document.querySelector('#mainContainer [type="bbsrow"][srow="' + srow + '"]');
+      d.scrollTop += el.getBoundingClientRect().top - d.getBoundingClientRect().top + Math.round(el.offsetHeight * frac);
+    }, { srow: IMAGE_ROW, frac });
+  await scrollIntoRow(0);
+  await waitPreviewsSettled(page);
+  await scrollIntoRow(0.6);
+  await waitPreviewsSettled(page);
+  const before = await topOfView(page);
+  // 前提：視窗頂端落在那張圖的中段（比例明顯 > 0，列高是載完的圖）。
+  expect(Math.floor(before.li)).toBe(IMAGE_ROW);
+  expect(before.li - IMAGE_ROW).toBeGreaterThan(0.3);
+
+  await openAndRead(page, before.li, { imageProfile: 'slow' });
+  const after = await topOfView(page, Math.floor(before.li));
+  expectSamePlace(before, after);
 });

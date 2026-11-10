@@ -500,6 +500,8 @@ export function EasyReading(core, view, termBuf) {
   // Deliberately NOT _savedScrollTop: that one is the functionMode round trip and
   // is cleared by every enter/leave, so it cannot survive across articles.
   this._pendingScrollRestore = null;
+  // 落地後守位（_startScrollRestoreHold）：{ lineIndex, ro, raf, timer, onInput } 或 null。
+  this._scrollRestoreHold = null;
   // One-shot retry for the external-landing enable (ensureEnabledOnArticle): the
   // navigation's onDone fires before the screen is necessarily complete, so it may
   // ask to be re-evaluated on the NEXT settle — once, then dropped.
@@ -1771,6 +1773,7 @@ EasyReading.prototype.leaveCurrentPost = function() {
   // never inherit someone else's reading position).
   if (this._pendingScrollRestore) this._diagScrollRestore('drop', { reason: 'leave' });
   this._pendingScrollRestore = null;
+  if (this._scrollRestoreHold) this._endScrollRestoreHold('leave');
   // Same reasoning for the external-landing one-shot: it was aimed at the post we
   // are leaving, so a later article must not inherit it.
   this._pendingEnableOnArticle = false;
@@ -2114,6 +2117,7 @@ EasyReading.prototype._onKeyDown = function(e) {
   // view out from under them a page later.
   if (this._pendingScrollRestore) this._diagScrollRestore('drop', { reason: 'key', key: e.key });
   this._pendingScrollRestore = null;
+  if (this._scrollRestoreHold) this._endScrollRestoreHold('key');
 
   // 官方推文實況但好讀沒接管（文章段對不上累積頁 ⇒ term_view 照原生鏡像）：按鍵一律原生，
   // 不可以拿看不見的累積頁去捲、捲不動又 leaveCurrentPost（PTT 還在實況）。
@@ -2218,6 +2222,7 @@ EasyReading.prototype.ensureEnabledOnArticle = function(allowRetry, reason) {
 // lineIndex 0 (or null) means "was at the top" — nothing to do.
 EasyReading.prototype.requestScrollRestore = function(lineIndex) {
   if (!lineIndex) return;
+  if (this._scrollRestoreHold) this._endScrollRestoreHold('request');
   this._pendingScrollRestore = { lineIndex: lineIndex, tries: 0 };
   this._diagScrollRestore('request', { lineIndex: lineIndex });
 };
@@ -2252,6 +2257,7 @@ EasyReading.prototype._diagScrollRestoreSettled = function(lineIndex) {
 // 與 requestScrollRestore 共用同一個 one-shot 欄位 ⇒ 離開文章／使用者按鍵接手的清除
 // 點一併適用，兩者也不會同時掛著。
 EasyReading.prototype.requestScrollToBottom = function() {
+  if (this._scrollRestoreHold) this._endScrollRestoreHold('request');
   this._pendingScrollRestore = { bottom: true, tries: 0 };
 };
 
@@ -2259,11 +2265,15 @@ EasyReading.prototype.requestScrollToBottom = function() {
 EasyReading.prototype.cancelScrollRestore = function(reason) {
   if (this._pendingScrollRestore) this._diagScrollRestore('drop', { reason: reason || 'cancel' });
   this._pendingScrollRestore = null;
+  if (this._scrollRestoreHold) this._endScrollRestoreHold(reason || 'cancel');
 };
 
 EasyReading.prototype._advanceScrollRestore = function() {
   const pending = this._pendingScrollRestore;
-  if (!pending) return;
+  if (!pending) {
+    this._reassertScrollRestore();
+    return;
+  }
   const disp = this._view.mainDisplay;
   if (!disp || !this._view.chh) {
     this._pendingScrollRestore = null;
@@ -2304,7 +2314,90 @@ EasyReading.prototype._advanceScrollRestore = function() {
     clientHeight: disp.clientHeight,
     reflow: !!this._view.reflow
   });
-  if (step.action === 'apply') this._diagScrollRestoreSettled(pending.lineIndex);
+  if (step.action === 'apply') {
+    this._diagScrollRestoreSettled(pending.lineIndex);
+    this._startScrollRestoreHold(pending.lineIndex);
+  }
+};
+
+// ---- 落地後守位（scroll restore hold）----
+// 一次性還原落地的那一刻，文章多半還在累積、行內預覽還是佔位盒，之後的版面變化會把
+// 讀者從那一列推走，瀏覽器的 scroll anchoring 收不掉其中兩種：
+//   1. 目標列本身是掛圖的那一列（列內比例 > 0）：比例是照「當下」列高換算的，圖載完
+//      列撐高，anchoring 保住的是**像素**位移 ⇒ 視窗頂端縮回圖的上緣附近。
+//   2. pageRowTop 為了量真位置把鄰塊強制渲染（renderChunksAround），文章「剛好夠長」
+//      可能只是那一刻撐出來的；塊的 observer 收回之後內容變短 ⇒ scrollTop 被夾到底，
+//      落在好幾列之前，內容長回來也不會自己回去。
+// 所以落地後守一段時間：內容高度變了（mainContainer 的 ResizeObserver）或又併進一頁
+// （_advanceScrollRestore）就重量一次目標位置，偏了才拉回（nextScrollRestoreHold）。
+// 使用者一有任何輸入（鍵盤／滾輪／觸控／指標）立刻放手 —— 守位只補償版面，絕不跟人搶。
+export const SCROLL_RESTORE_HOLD_MS = 10000;
+const SCROLL_RESTORE_HOLD_END_EVENTS = ['keydown', 'wheel', 'touchstart', 'pointerdown'];
+
+// 純函式：守位期間這一刻要不要把視窗拉回目標。targetTop ＝ pageRowTop 量到的目標位置
+// （null ＝那一列量不到 ⇒ 不動）。1px 內視為已在原位（非整數 DPR 的 scrollTop 是小數）。
+// 目標暫時捲不到（內容剛被收短）就先不動，等內容長回來的下一次通知再拉。
+export function nextScrollRestoreHold({ targetTop, scrollTop, scrollHeight, clientHeight }) {
+  if (targetTop == null) return { action: 'keep' };
+  if (Math.abs(scrollTop - targetTop) <= 1) return { action: 'keep' };
+  if (targetTop > Math.max(0, scrollHeight - clientHeight)) return { action: 'keep' };
+  return { action: 'apply', scrollTop: targetTop };
+}
+
+EasyReading.prototype._startScrollRestoreHold = function(lineIndex) {
+  this._endScrollRestoreHold('restart');
+  const view = this._view;
+  if (!view || !view.pageRowTop || typeof document === 'undefined') return;
+  const hold = { lineIndex: lineIndex, ro: null, raf: 0, timer: null, onInput: null };
+  hold.onInput = () => this._endScrollRestoreHold('input');
+  for (const t of SCROLL_RESTORE_HOLD_END_EVENTS)
+    document.addEventListener(t, hold.onInput, { capture: true, passive: true });
+  if (typeof ResizeObserver === 'function' && view.mainContainer) {
+    // 不在回呼裡直接量：pageRowTop 會強制渲染鄰塊（改內容高度）＝回呼裡改到自己觀察
+    // 的目標 ⇒ RO 迴圈（tests/e2e/helpers/resize_observer_guard.js）。挪到下一幀、合併成一次。
+    hold.ro = new ResizeObserver(() => {
+      if (hold.raf) return;
+      hold.raf = requestAnimationFrame(() => {
+        hold.raf = 0;
+        this._reassertScrollRestore();
+      });
+    });
+    hold.ro.observe(view.mainContainer);
+  }
+  hold.timer = setTimeout(() => this._endScrollRestoreHold('timeout'), SCROLL_RESTORE_HOLD_MS);
+  this._scrollRestoreHold = hold;
+};
+
+EasyReading.prototype._endScrollRestoreHold = function(reason) {
+  const hold = this._scrollRestoreHold;
+  if (!hold) return;
+  this._scrollRestoreHold = null;
+  for (const t of SCROLL_RESTORE_HOLD_END_EVENTS)
+    document.removeEventListener(t, hold.onInput, { capture: true });
+  if (hold.ro) hold.ro.disconnect();
+  if (hold.raf) cancelAnimationFrame(hold.raf);
+  clearTimeout(hold.timer);
+  if (reason !== 'restart') this._diagScrollRestore('release', { reason: reason });
+};
+
+EasyReading.prototype._reassertScrollRestore = function() {
+  const hold = this._scrollRestoreHold;
+  const disp = this._view && this._view.mainDisplay;
+  if (!hold || !disp) return;
+  const step = nextScrollRestoreHold({
+    targetTop: this._view.pageRowTop(hold.lineIndex),
+    scrollTop: disp.scrollTop,
+    scrollHeight: disp.scrollHeight,
+    clientHeight: disp.clientHeight
+  });
+  if (step.action !== 'apply') return;
+  const from = disp.scrollTop;
+  disp.scrollTop = step.scrollTop;
+  this._diagScrollRestore('reassert', {
+    lineIndex: hold.lineIndex,
+    from: Math.round(from),
+    scrollTop: Math.round(disp.scrollTop)
+  });
 };
 
 // 捲動一段列數；回傳「有沒有真的還捲得動」（false ⇒ 呼叫端當作到頂/到底處理）。
