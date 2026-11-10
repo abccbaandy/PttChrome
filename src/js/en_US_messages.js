@@ -484,6 +484,30 @@ export const en_US = {
   "searchModal_placeholderBoard": {
     "message": "Board name, Space to complete, ↑ to recall"
   },
+  "searchModal_kindTitleMobile": {
+    "message": "Title"
+  },
+  "searchModal_kindAuthorMobile": {
+    "message": "Author"
+  },
+  "searchModal_kindPushMobile": {
+    "message": "Push count"
+  },
+  "searchModal_kindBoardMobile": {
+    "message": "Board"
+  },
+  "searchModal_placeholderTitleMobile": {
+    "message": "Title keyword"
+  },
+  "searchModal_placeholderAuthorMobile": {
+    "message": "Author ID"
+  },
+  "searchModal_placeholderPushMobile": {
+    "message": "Pushes above N (negative = boos)"
+  },
+  "searchModal_placeholderBoardMobile": {
+    "message": "Board name, Space to complete"
+  },
   "searchModal_boardOpening": {
     "message": "Asking PTT for boards…"
   },
