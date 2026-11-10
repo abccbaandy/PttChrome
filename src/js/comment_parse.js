@@ -725,7 +725,8 @@ export function parseListArticleNum(text) {
 
 // A deleted-article row: pttbbs paints "-" in the author column for both
 // self-deleted 「(本文已被刪除) [author]」 and mod-deleted 「(已被xxx刪除)
-// <author>」 rows. parseListAuthor deliberately rejects it (USERID_RE), so slice
+// <author>」 rows（upstream cf19382f 起別人刪的改寫「(本文已被移除) <author>」／
+// 「(已被xxx移除) <author>」，作者欄仍是 "-"：只看作者欄，新舊標題都吃）。 parseListAuthor deliberately rejects it (USERID_RE), so slice
 // the same realigned column here. These rows cannot be opened (Enter never
 // yields an article → the serialized open would time out), so list hiding
 // treats them exactly like blacklisted rows.
