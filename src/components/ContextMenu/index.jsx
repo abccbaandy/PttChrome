@@ -234,6 +234,8 @@ const menuHandlerByEventKey = {
   removeReadLater: (pttchrome, { readLaterTarget: t }) => {
     if (t) pttchrome.recentArticles?.toggleLater(t);
   },
+  // 存到本機（P64，js/saved_articles.js）：只讀好讀累積頁，一個 byte 都不送。
+  saveLocal: (pttchrome) => pttchrome.savedArticles?.saveCurrent?.(),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   // 圖片上傳（urusai）：開檔案選擇器／開上傳紀錄面板。實作在
   // js/image_upload_controller.js，App 在建構時掛成 pttchrome.imageUpload。
@@ -372,6 +374,8 @@ const initialState = {
   followAuthorExists: false,
   // 稍後再讀（P34，readLaterTargetOf）：{ board, aid, title, saved } | null。
   readLaterTarget: null,
+  // 存到本機（P64）：這一刻 savedArticles.canSave()。
+  saveLocalEnabled: false,
   blacklistTitleTarget: null,
   // 長按／右鍵的推文是誰推的（「回覆這則」；推文列沒出現或開關關掉 ⇒ null）。
   replyCommentTarget: null,
@@ -820,6 +824,8 @@ export const ContextMenu = ({ pttchrome }) => {
           currentArticle,
           readLaterListRow,
         ),
+        saveLocalEnabled:
+          !!normalEnabled && !!pttchrome.savedArticles?.canSave?.(),
         markReadTarget,
         boardMarkReadTarget:
           (normalEnabled &&
@@ -1609,6 +1615,7 @@ export const ContextMenu = ({ pttchrome }) => {
     replyCommentTarget,
     commentFilterTarget,
     readLaterTarget,
+    saveLocalEnabled,
     articleLinkEnabled,
     contextArticle,
     previews,
@@ -1667,6 +1674,7 @@ export const ContextMenu = ({ pttchrome }) => {
         replyCommentTarget={replyCommentTarget}
         commentFilterTarget={commentFilterTarget}
         readLaterTarget={readLaterTarget}
+        saveLocalEnabled={saveLocalEnabled}
         markReadTarget={markReadTarget}
         markAllReadEnabled={markAllReadEnabled}
         boardMarkReadTarget={boardMarkReadTarget}

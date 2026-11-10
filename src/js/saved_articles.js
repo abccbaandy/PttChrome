@@ -12,6 +12,7 @@ import { buildSavedArticle, decodeRows } from './saved_article_codec';
 import { SavedArticlesStore } from './saved_articles_store';
 import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
+import { readEffectivePrefs } from './pref_storage';
 
 export const SAVED_QUERY_KEY = 'saved';
 const HINT_MS = 2500;
@@ -55,11 +56,35 @@ export function savableArticle(core) {
 export function SavedArticles(core, store) {
   this._core = core;
   this._store = store || new SavedArticlesStore();
+  // 清單摘要（首頁「本機收藏」畫這份）。null＝還沒讀過；refresh() 讀 IndexedDB 後通知。
+  this.state = null;
+  this._listeners = [];
 }
 
 SavedArticles.prototype = {
+  // pref enableSavedArticles（預設開）。關掉＝入口全部不出現；已存的不刪，打開唯讀頁照常。
+  enabled: function () {
+    return readEffectivePrefs().enableSavedArticles !== false;
+  },
+
   canSave: function () {
-    return !!savableArticle(this._core);
+    return this.enabled() && !!savableArticle(this._core);
+  },
+
+  onChange: function (fn) {
+    this._listeners.push(fn);
+    const self = this;
+    return function () {
+      self._listeners = self._listeners.filter((l) => l !== fn);
+    };
+  },
+
+  // 重讀清單並通知（首頁打開時、存／刪之後）。別的分頁存的，下次 refresh 就看得到。
+  refresh: async function () {
+    const list = await this._store.list();
+    this.state = list;
+    this._listeners.forEach((fn) => fn(list));
+    return list;
   },
 
   // 存目前這一篇。回傳 store.put 的結果（{ ok, replaced } 或 { ok:false, reason }），並提示。
@@ -80,6 +105,7 @@ SavedArticles.prototype = {
       cols: buf.cols,
     });
     const res = rec ? await this._store.put(rec) : { ok: false, reason: 'invalid' };
+    if (res.ok) this.refresh();
     return this._hint(res);
   },
 
@@ -96,8 +122,10 @@ SavedArticles.prototype = {
     return this._store.list();
   },
 
-  remove: function (key) {
-    return this._store.remove(key);
+  remove: async function (key) {
+    const res = await this._store.remove(key);
+    this.refresh();
+    return res;
   },
 
   // 在新分頁打開唯讀頁。

@@ -2705,6 +2705,21 @@
   },
   "saved_readerTitle": {
     "message": "本機收藏"
+  },
+  "options_enableSavedArticles": {
+    "message": "存到本機"
+  },
+  "tooltip_enableSavedArticles": {
+    "message": "好讀文章的「更多」（桌機右鍵）多一個「存到本機」：把讀到的整篇（內文、推文、顏色）存在這個瀏覽器，首頁「本機收藏」點了在新分頁打開，不用連線、不送任何鍵給 PTT。最多 200 篇，不上雲。"
+  },
+  "saved_action": {
+    "message": "存到本機"
+  },
+  "saved_section": {
+    "message": "本機收藏"
+  },
+  "saved_remove": {
+    "message": "刪除本機存檔"
   }
 
 };

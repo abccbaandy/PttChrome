@@ -250,3 +250,55 @@ test("閱讀紀錄：那張卡片不在了 ⇒ 不動（認不出就不還原）
   expect(el.scrollTop).toBe(0);
   expect(homeAnchorOf(el)).toEqual({ kind: "home", key: null, offset: 0, scrollTop: 0 });
 });
+
+describe("本機收藏（P64）", () => {
+  function fakeSaved(list, enabled = true) {
+    const listeners = new Set();
+    const saved = {
+      state: null,
+      enabled: () => enabled,
+      onChange(fn) {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      refresh: vi.fn(async () => {
+        saved.state = list;
+        listeners.forEach((fn) => fn(list));
+        return list;
+      }),
+      open: vi.fn(),
+      remove: vi.fn(),
+    };
+    return saved;
+  }
+  const LIST = [
+    { key: "stock/1g8znzQ3", board: "Stock", aid: "1g8znzQ3", title: "[新聞] 測試" },
+    { key: "test/1aaaaaaa", board: "Test", aid: "1aaaaaaa", title: "" },
+  ];
+
+  test("面板出現就重讀清單並列出；點一列 → open(key)，✕ → remove(key)", async () => {
+    const saved = fakeSaved(LIST);
+    render(<HomeDashboard pttchrome={{ homeDashboard: fakeHome(), savedArticles: saved }} />);
+    expect(saved.refresh).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(q('[data-home-articles="saved"]')).not.toBeNull());
+    const rows = document.querySelectorAll("[data-home-saved]");
+    expect([...rows].map((r) => r.textContent)).toEqual(["[新聞] 測試Stock", "#1aaaaaaaTest"]);
+    expect(q('[data-home-articles="saved"]').closest("section").textContent).toContain(i18n("saved_section"));
+    fireEvent.click(rows[0]);
+    expect(saved.open).toHaveBeenCalledWith("stock/1g8znzQ3");
+    fireEvent.click(q('[data-home-saved-remove="test/1aaaaaaa"]'));
+    expect(saved.remove).toHaveBeenCalledWith("test/1aaaaaaa");
+  });
+
+  test("沒有存檔、或 pref 關 ⇒ 不出現（關掉時也不去讀 IndexedDB）", async () => {
+    const empty = fakeSaved([]);
+    const { unmount } = render(<HomeDashboard pttchrome={{ homeDashboard: fakeHome(), savedArticles: empty }} />);
+    await vi.waitFor(() => expect(empty.refresh).toHaveBeenCalled());
+    expect(q('[data-home-articles="saved"]')).toBeNull();
+    unmount();
+    const off = fakeSaved(LIST, false);
+    render(<HomeDashboard pttchrome={{ homeDashboard: fakeHome(), savedArticles: off }} />);
+    expect(off.refresh).not.toHaveBeenCalled();
+    expect(q('[data-home-articles="saved"]')).toBeNull();
+  });
+});

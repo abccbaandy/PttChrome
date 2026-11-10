@@ -2706,6 +2706,21 @@ export const en_US = {
   },
   "saved_readerTitle": {
     "message": "Saved articles"
+  },
+  "options_enableSavedArticles": {
+    "message": "Save on this device"
+  },
+  "tooltip_enableSavedArticles": {
+    "message": "Adds \"Save on this device\" to an easy-reading article's More menu (right-click on desktop): the whole article as read (text, comments, colors) is stored in this browser; open it from \"Saved on this device\" on the home screen in a new tab, offline and without sending any key to PTT. Up to 200 articles, never uploaded."
+  },
+  "saved_action": {
+    "message": "Save on this device"
+  },
+  "saved_section": {
+    "message": "Saved on this device"
+  },
+  "saved_remove": {
+    "message": "Delete saved copy"
   }
 
 };

@@ -586,6 +586,24 @@ describe("更多（bottom sheet）", () => {
     await sheetClosed();
   });
 
+  test("存到本機（P64）：savedArticles.canSave() 才出現，按下走 saveCurrent 並收起", async () => {
+    const core = makeCore();
+    core.savedArticles = { canSave: () => true, saveCurrent: vi.fn() };
+    renderBar(core);
+    await openMore();
+    fireEvent.click(byKey("__saveLocal"));
+    expect(core.savedArticles.saveCurrent).toHaveBeenCalledTimes(1);
+    await sheetClosed();
+  });
+
+  test("存到本機：不能存（不在好讀文章、pref 關）就沒有", async () => {
+    const core = makeCore();
+    core.savedArticles = { canSave: () => false, saveCurrent: vi.fn() };
+    renderBar(core);
+    await openMore();
+    expect(byKey("__saveLocal")).toBeNull();
+  });
+
   test("操作說明：沒有 (h)說明 的畫面就沒有", async () => {
     renderBar(makeCore());
     await openMore();
