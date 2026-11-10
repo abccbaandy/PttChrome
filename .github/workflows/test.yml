@@ -279,9 +279,17 @@ jobs:
   #（失敗全帶 [android-env]）—— 2 也是紅，判讀見 docs/ci-troubleshooting.md。
   # 不重試：斷言紅一次都不能吞；環境類的已知源（ANR／GPU 當機對話框）fixture 已處理。
   # 實測（spike 20 輪）開機 81–128s、整個 job 約 3 分，與其他 job 平行，牆鐘時間不變。
-  test-e2e-android:
+  # 拆兩片（各開一台模擬器）：android 是整輪 CI 的牆鐘（單片 ~6.3 分，其中測試 ~3 分、開機前後固定
+  # ~3 分），其他 job 約 3 分收工。Playwright 的 android project 不是 fullyParallel ⇒ 依檔案分片，
+  # 每片各自建 APK（背景，跟 cache 還原重疊，不加牆鐘）。
+  test-e2e-android-shard:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      # 同 offline shard：一片紅不砍另一片。
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v7
 
@@ -358,7 +366,7 @@ jobs:
           profile: pixel_6
           avd-name: pttchrome_e2e
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: node scripts/run-android-e2e.mjs --no-boot
+          script: node scripts/run-android-e2e.mjs --no-boot --shard=${{ matrix.shard }}/2
 
       - name: Runner resources report
         if: always()
@@ -376,11 +384,20 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-android-attempt-${{ github.run_attempt }}
+          name: e2e-android-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           path: |
             test-results/
             ci-diagnostics/
           retention-days: 14
+
+  # required check 綁的是 `test / test-e2e-android`：同 test-e2e-offline 的收斂 job（always()，
+  # 上游紅或被取消時這裡要紅，skipped 對 required check 等於通過）。
+  test-e2e-android:
+    needs: test-e2e-android-shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test-e2e-android-shard.result }}" = success
 
   # proxy/imgur-worker 是獨立的 npm 子專案（Cloudflare Worker 代理，非 yarn workspace），
   # 上面四個 job 一條都掃不到它 —— 它們跑的是 yarn 的 test:unit / test:integration /

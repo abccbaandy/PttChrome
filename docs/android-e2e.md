@@ -32,7 +32,7 @@
 | `tests/e2e/android/*.android.spec.js` | spec（project `android`，`playwright.config.js`） |
 | `scripts/run-android-e2e.mjs` | `yarn test:e2e:android`：找／建 AVD、開機、跑、分類 exit 0/1/2、自己開的自己關 |
 | `scripts/android-e2e-needed.mjs` | `--if-changed[=base]` 的檔案名單（預設 base `origin/dev`） |
-| `.github/workflows/test.yml` job `test-e2e-android` | CI：每次都跑，emulator-runner 開機＋`--no-boot` |
+| `.github/workflows/test.yml` job `test-e2e-android-shard`（兩片）＋收斂 job `test-e2e-android` | CI：每次都跑，emulator-runner 開機＋`--no-boot --shard=N/2` |
 | 守護 | `tests/unit/android_e2e.test.js`、`tests/unit/e2e_offline_no_network.test.js`「android e2e：OS 層斷網」 |
 
 ## 跑法
@@ -103,7 +103,11 @@ API 35 google_apis（Chrome 124，GPU 不當）試過、**棄用**：
   不需要「一屏 24 列」；曾用 `-skin 1080x1366` 湊 24 列，比例失真，已棄用。
 - 預設 `screenshot` 只拍網頁；系統／Chrome UI 看 `device-screen.png`（失敗時自動存）。
 
-## CI（`test.yml` job `test-e2e-android`）
+## CI（`test.yml` job `test-e2e-android-shard`）
+
+拆兩片、各開一台模擬器（`--shard=N/2`，android project 不是 fullyParallel ⇒ 依檔案分片）。單片時整個 job ~6.3 分、是整輪 CI 的牆鐘：
+測試本身 ~3 分，開機前後（SDK 安裝 ~20s、開機 ~40s、keyevent／關動畫＋等系統穩定 ~50s、cache 與 APK）固定 ~3 分。
+required check 綁的是收斂 job `test-e2e-android`（always()，同 `test-e2e-offline`）。flaky-hunt 的 android-repeat 仍是單片。
 
 ubuntu-latest＋KVM、`ReactiveCircus/android-emulator-runner`（API 34 google_apis x86_64、`pixel_6`、`-gpu swiftshader_indirect`）。
 開機前先 `./gradlew assembleDebug`（setup-java 21＋setup-gradle 快取），路徑經 env `ANDROID_E2E_APK` 交給 fixture。

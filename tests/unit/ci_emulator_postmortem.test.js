@@ -47,7 +47,7 @@ describe("Android e2e job 失敗時收模擬器現場、且在上傳之前", () 
     return yaml.slice(start, next < 0 ? undefined : start + 1 + next);
   };
   test.each([
-    ["test.yml", "test-e2e-android"],
+    ["test.yml", "test-e2e-android-shard"],
     ["flaky-hunt.yml", "android-repeat"],
   ])("%s %s", (file, name) => {
     const body = jobBody(file, name);
