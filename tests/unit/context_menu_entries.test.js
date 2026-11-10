@@ -83,6 +83,22 @@ test("回覆這則：有目標才出現（推文段最前面），標題帶帳�
   expect(keys(BASE)).not.toContain("replyComment");
 });
 
+test("存到本機（P64）：saveLocalEnabled 才有，桌機與手機長按都在，點下去走 onMenuSelect('saveLocal')", () => {
+  expect(keys(BASE)).not.toContain("saveLocal");
+  for (const mobile of [false, true]) {
+    const calls = [];
+    const item = buildContextMenuEntries({
+      ...BASE,
+      mobile,
+      saveLocalEnabled: true,
+      onMenuSelect: (k) => calls.push(k),
+    }).find((e) => e.key === "saveLocal");
+    expect(item).toBeDefined();
+    item.onClick({});
+    expect(calls).toEqual(["saveLocal"]);
+  }
+});
+
 test("沒有連續的分隔線（手機工具段搬空時）", () => {
   for (const p of [BASE, { ...BASE, mobile: true }]) {
     const types = buildContextMenuEntries(p).map((e) => e.type);

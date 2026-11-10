@@ -362,6 +362,13 @@ export const MobileToolbar = ({
       dl.shareCurrentPostLink(context.appBar ? context.appBar.title : "");
   }, [pttchrome, context]);
 
+  // 存到本機（P64，js/saved_articles.js）：只讀好讀累積頁，一個 byte 都不送。
+  const onSaveLocal = useCallback(() => {
+    setPanel(null);
+    const sa = pttchrome.savedArticles;
+    if (sa && typeof sa.saveCurrent === "function") sa.saveCurrent();
+  }, [pttchrome]);
+
   // 跳到第一篇未讀：與桌機快捷鍵（預設 F7）同一個入口（unread_jump.js）。
   const onUnreadJump = useCallback(() => {
     setPanel(null);
@@ -779,6 +786,11 @@ export const MobileToolbar = ({
       label: i18n("mobileToolbar_share"),
       Icon: IconShare,
       onClick: onShare,
+    },
+    // 好讀文章＋讀得到文末網址列才出現（savedArticles.canSave，開「更多」那一刻算）。
+    __saveLocal: !!pttchrome.savedArticles?.canSave?.() && {
+      label: i18n("saved_action"),
+      onClick: onSaveLocal,
     },
     __threadNav: !!context.threadNav,
     __select: {

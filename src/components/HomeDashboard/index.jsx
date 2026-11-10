@@ -97,6 +97,42 @@ function ArticleSection({ titleKey, list, source, recent, onFail }) {
   );
 }
 
+// 存到本機（P64，js/saved_articles.js）的一區。點一列＝新分頁打開唯讀頁（不連線）；✕＝刪掉本機存檔。
+function SavedSection({ list, saved }) {
+  if (!list || !list.length) return null;
+  return (
+    <section className="homeSection">
+      <div className="homeSectionHead">
+        <h3>{i18n("saved_section")}</h3>
+      </div>
+      <div className="homeArticles" data-home-articles="saved">
+        {list.slice(0, HOME_ARTICLE_LIMIT).map((e) => (
+          <div key={e.key} className="homeArticleRow">
+            <Button
+              className="homeArticle"
+              data-home-saved={e.key}
+              title={e.title || "#" + e.aid}
+              onClick={() => saved.open(e.key)}
+            >
+              <span className="homeArticleTitle">{e.title || "#" + e.aid}</span>
+              <span className="homeArticleBoard">{e.board}</span>
+            </Button>
+            <Button
+              className="homeArticleRemove"
+              data-home-saved-remove={e.key}
+              aria-label={i18n("saved_remove")}
+              title={i18n("saved_remove")}
+              onClick={() => saved.remove(e.key)}
+            >
+              ✕
+            </Button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export const HomeDashboard = ({ pttchrome }) => {
   const home = pttchrome && pttchrome.homeDashboard;
   const [state, setState] = useState(() => (home ? home.state : null));
@@ -105,6 +141,8 @@ export const HomeDashboard = ({ pttchrome }) => {
   const [articles, setArticles] = useState(() =>
     recent ? recent.state : null,
   );
+  const saved = pttchrome && pttchrome.savedArticles;
+  const [savedList, setSavedList] = useState(() => (saved ? saved.state : null));
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -115,6 +153,14 @@ export const HomeDashboard = ({ pttchrome }) => {
     if (!recent || typeof recent.onChange !== "function") return undefined;
     return recent.onChange((s) => setArticles(s));
   }, [recent]);
+  // 本機收藏：面板出現時重讀一次（IndexedDB 是非同步的，別的分頁存的也跟得上）。
+  const visible = !!(state && state.visible);
+  useEffect(() => {
+    if (!saved || typeof saved.onChange !== "function") return undefined;
+    const off = saved.onChange((l) => setSavedList(l));
+    if (visible && saved.enabled()) saved.refresh();
+    return off;
+  }, [saved, visible]);
   useEffect(() => {
     if (!pttchrome || typeof pttchrome.onMobileChange !== "function")
       return undefined;
@@ -253,6 +299,9 @@ export const HomeDashboard = ({ pttchrome }) => {
             recent={recent}
             onFail={onArticleFail}
           />
+        )}
+        {saved && saved.enabled() && (
+          <SavedSection list={savedList} saved={saved} />
         )}
         {showArticles && (
           <ArticleSection

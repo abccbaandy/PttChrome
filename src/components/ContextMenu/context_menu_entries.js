@@ -195,6 +195,8 @@ export function buildContextMenuEntries(p) {
       p.onMenuSelect(key, e),
     );
   }
+  if (p.saveLocalEnabled)
+    item("saveLocal", i18n("saved_action"), (e) => p.onMenuSelect("saveLocal", e));
   divider("d-main");
   if (p.normalEnabled) {
     // 全選、圖片上傳兩項：手機搬到工具列「更多」（p.mobile ＝ ContextSheet 畫的）。
