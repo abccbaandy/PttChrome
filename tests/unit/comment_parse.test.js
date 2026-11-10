@@ -497,6 +497,17 @@ describe("isDeletedListRow", () => {
       isDeletedListRow("    343     7/04 -            □ (本文已被刪除) [sogou]")
     ).toBe(true);
   });
+  test("板主／站方移除列（upstream cf19382f 起標題改「移除」，作者欄仍是 -）→ true", () => {
+    expect(
+      isDeletedListRow(" 203600     7/05 -            □ (本文已被移除) <someone>")
+    ).toBe(true);
+    expect(
+      isDeletedListRow(" 203601     7/05 -            □ (已被bm移除) <someone>")
+    ).toBe(true);
+    expect(
+      isDeletedListRow(">203601     7/05 -            □ (已被bm移除) <someone>")
+    ).toBe(true);
+  });
   test("游標壓在刪除列（● 蓋頭）仍 → true", () => {
     expect(
       isDeletedListRow("●03599     7/04 -            □ (本文已被刪除) <wh40917>")
