@@ -1181,6 +1181,8 @@ export const ContextMenu = ({ pttchrome }) => {
     const prefs = readValuesWithDefault();
     if (!prefs.enableCommandPalette) return false;
     const busy = !!serializedOpHint(pttchrome);
+    const saved = pttchrome.savedArticles;
+    const savedOn = !!saved?.enabled?.();
     update({
       ...initialState,
       showsPalette: true,
@@ -1202,8 +1204,21 @@ export const ContextMenu = ({ pttchrome }) => {
         recentArticles: prefs.enableRecentArticles
           ? pttchrome.recentArticles?.state || null
           : null,
+        savedArticles: savedOn ? saved.state || null : null,
+        saveArticle: !!saved?.canSave?.(),
       },
     });
+    // 本機收藏的清單在 IndexedDB（非同步）：開面板時重讀，讀到了而面板還開著就補上。
+    if (savedOn)
+      saved.refresh().then(
+        (list) =>
+          setState((s) =>
+            s.showsPalette && s.paletteCtx
+              ? { ...s, paletteCtx: { ...s.paletteCtx, savedArticles: list } }
+              : s,
+          ),
+        () => {},
+      );
     return true;
   }, [pttchrome, update]);
   useEffect(() => {
@@ -1314,6 +1329,12 @@ export const ContextMenu = ({ pttchrome }) => {
         pttchrome.noteUserAction();
       switch (item.kind) {
         case "article": {
+          // 本機收藏：另開唯讀頁（不送鍵、不連線），跟首頁「本機收藏」同一條。
+          if (item.source === "saved") {
+            if (!pttchrome.savedArticles?.open?.(item.key))
+              hint(i18n("palette_failed"), HINT_ERROR);
+            return;
+          }
           // 最近讀過／稍後再讀的項目走 recentArticles.open（跟首頁儀表板同一條：接著上次讀到的
           // 地方、落地不閃「已跳至」）；貼網址的照舊直接 deep link。
           const recent = item.source ? pttchrome.recentArticles : null;
@@ -1361,6 +1382,9 @@ export const ContextMenu = ({ pttchrome }) => {
           return;
         case "saveDebugRecord":
           pttchrome.saveBackgroundRecording?.();
+          return;
+        case "saveArticle":
+          pttchrome.savedArticles?.saveCurrent?.();
           return;
         default:
           return;

@@ -5,6 +5,7 @@ import {
   PALETTE_SETTING_LIMIT,
   PALETTE_QUICK_BOARD_LIMIT,
   PALETTE_QUICK_MATCH_LIMIT,
+  PALETTE_SAVED_ARTICLE_LIMIT,
   buildPaletteItems,
   movePaletteIndex,
   parseArticleTarget,
@@ -198,6 +199,55 @@ describe("最近去過／我的最愛的看板", () => {
     expect(quickIds(buildPaletteItems("", { ...LIST, quickBoards: many }))).toHaveLength(PALETTE_QUICK_BOARD_LIMIT);
     expect(quickIds(buildPaletteItems("board", { ...LIST, quickBoards: many }))).toHaveLength(PALETTE_QUICK_MATCH_LIMIT);
     expect(quickIds(buildPaletteItems("", { ...LIST, quickBoards: many }))).not.toContain("bad name");
+  });
+});
+
+// 本機收藏（P64）：清單是 savedArticles.state，執行＝另開唯讀頁（source 'saved'，不走 deep link）。
+describe("本機收藏", () => {
+  const entry = (i, extra) => ({
+    key: "gossiping/" + AID.slice(0, 7) + i,
+    board: "Gossiping",
+    aid: AID.slice(0, 7) + i,
+    title: "[問卦] 第" + i + "篇",
+    author: "someone",
+    savedAt: 100 - i,
+    ...extra,
+  });
+
+  test("空白時列出最多 PALETTE_SAVED_ARTICLE_LIMIT 篇，帶 key 與 source 'saved'", () => {
+    const list = [0, 1, 2, 3, 4, 5, 6].map((i) => entry(i));
+    const got = buildPaletteItems("", { savedArticles: list }).filter((it) => it.source === "saved");
+    expect(got).toHaveLength(PALETTE_SAVED_ARTICLE_LIMIT);
+    expect(got[0]).toMatchObject({
+      id: "saved:" + list[0].key,
+      kind: "article",
+      key: list[0].key,
+      target: { board: "Gossiping", aid: list[0].aid },
+      title: list[0].title,
+    });
+  });
+
+  test("打字比對標題／看板／作者（不分大小寫），對不上的不列", () => {
+    const list = [entry(1), entry(2, { board: "Stock", title: "[標的] 台積電", author: "Bull" })];
+    const pick = (q) => ids(buildPaletteItems(q, { savedArticles: list }).filter((it) => it.source === "saved"));
+    expect(pick("台積")).toEqual(["saved:" + list[1].key]);
+    expect(pick("stock")).toEqual(["saved:" + list[1].key]);
+    expect(pick("bull")).toEqual(["saved:" + list[1].key]);
+    expect(pick("問卦")).toEqual(["saved:" + list[0].key]);
+    expect(pick("沒有這篇")).toEqual([]);
+  });
+
+  test("沒給清單（pref 關或還沒讀到）⇒ 不列；貼網址時不列", () => {
+    expect(buildPaletteItems("", {}).some((it) => it.source === "saved")).toBe(false);
+    const items = buildPaletteItems(`https://www.ptt.cc/bbs/Gossiping/${FN}.html`, { savedArticles: [entry(1)] });
+    expect(items.some((it) => it.source === "saved")).toBe(false);
+  });
+
+  test("「存到本機」只在 ctx.saveArticle 時列，打「收藏」「save」找得到", () => {
+    expect(ids(buildPaletteItems("", {}))).not.toContain("action:saveArticle");
+    expect(ids(buildPaletteItems("", { saveArticle: true }))).toContain("action:saveArticle");
+    expect(ids(buildPaletteItems("收藏", { saveArticle: true }))[0]).toBe("action:saveArticle");
+    expect(ids(buildPaletteItems("save", { saveArticle: true }))[0]).toBe("action:saveArticle");
   });
 });
 

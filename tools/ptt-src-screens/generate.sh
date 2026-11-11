@@ -41,6 +41,9 @@ else HAS_ACTIVITY_SLOW=0; fi
 # 在 clang 16 起是預設 error、不吃 -Wno-error ⇒ 單獨降回警告（PTT 自己用的編譯器不一定擋）。
 X='EXT_CFLAGS=-finput-charset=big5 -fexec-charset=big5 -Wno-error -Wno-error=implicit-function-declaration'
 make -s -C "$P" clean >/dev/null 2>&1
+# include/var.h 是 common/bbs 的 `all` 跟 .o 並列的前置（pttbbs.mk：perl … > var.h），-j8 下
+# time.c 可能讀到寫到一半（空的）var.h ⇒「use of undeclared identifier 'now'」。先單獨產好。
+make -s -C "$P/common/bbs" "$X" ../../include/var.h >"$OUT/build.log" 2>&1 || { tail -60 "$OUT/build.log"; exit 2; }
 make -j8 -C "$P/common" "$X" >"$OUT/build.log" 2>&1 || { tail -60 "$OUT/build.log"; exit 2; }
 make -j8 -C "$P/mbbsd" "$X" >>"$OUT/build.log" 2>&1 || { tail -60 "$OUT/build.log"; exit 2; }
 

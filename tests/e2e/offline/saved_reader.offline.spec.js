@@ -69,6 +69,42 @@ test.describe('存到本機', () => {
     expect(await page.evaluate(() => window.__app.view.conn)).toBeUndefined();
   });
 
+  // 指令面板（F4）：好讀文章裡有「存到本機」；存了之後清單（IndexedDB，非同步）補進面板，
+  // 點一下在新分頁開唯讀頁。
+  test('指令面板：存到本機 → 列出存檔 → 點一下開唯讀頁', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await waitPreviewsSettled(page);
+    const palette = page.locator('[data-command-palette]');
+    const input = page.locator('input[name="commandPaletteQuery"]');
+    await page.keyboard.press('F4');
+    await expect(input).toBeFocused();
+    await input.fill('存到本機');
+    await expect(palette.locator('[data-palette-item]').first()).toHaveAttribute(
+      'data-palette-item',
+      'action:saveArticle'
+    );
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => page.evaluate(() => window.__app.savedArticles.list().then((l) => l.map((m) => m.key))))
+      .toEqual([KEY]);
+
+    await page.keyboard.press('F4');
+    await expect(input).toBeFocused();
+    const item = palette.locator(`[data-palette-item="saved:${KEY}"]`);
+    await expect(item).toBeVisible();
+    await expect(item).toContainText('本機收藏');
+    const popup = page.context().waitForEvent('page');
+    await item.click();
+    const reader = await popup;
+    await expect(reader).toHaveURL(new RegExp('[?&]saved=' + encodeURIComponent(KEY)));
+    await expect
+      .poll(() => reader.evaluate(() => !!(window.__app && window.__app.view._staticRows)))
+      .toBe(true);
+  });
+
   test('找不到的存檔 ⇒ 錯誤提示、不連線', async ({ page }) => {
     await bootOffline(page, ptt);
     await watchSockets(page);
