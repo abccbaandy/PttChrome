@@ -83,7 +83,7 @@
 
 | 項目 | 規則 | 理由 |
 |---|---|---|
-| 出現 | `searchListMode`＝'select'：底列 caption「系列文章」；舊版 caption「文章選讀」靠標題列右段「系列《板》」（只能證明「是」）。文摘、完整列表、認不出、文章裡（pageState 3）都不出現 | 認不出 ⇒ 不顯示 |
+| 出現 | `searchListMode`＝'select'：底列 caption「系列文章」；舊版 caption「文章選讀」靠標題列右段「系列《板》」（只能證明「是」）。文摘、完整列表、認不出、文章裡（pageState 3）都不出現；列表上開著 prompt（^X 轉錄從第 1 列起畫，表頭被蓋掉或游標在表頭以上，`listChromeIntact`）也不出現 | 認不出 ⇒ 不顯示 |
 | 條件 | 只記搜尋彈窗送出、PTT 收下（第二步 onDone）的：送出前那一幀是完整列表＝新的一串，是搜尋結果＝增加條件（`rememberSubmitted`）。看到完整列表就忘（剛記下的那一刻不算，見 `nextSearchMemory` 的 fresh）；原生搜尋 prompt 出現且不是彈窗送的（`searchInFlight` 沒握著）⇒ 只顯示「搜尋結果」 | PTT 畫面上沒有搜尋條件；顯示不完整的條件比不顯示更誤導 |
 | 換板 | 從搜尋結果 `s` 換板仍在搜尋模式、條件照舊（新版 read_ctx 帶著走）⇒ 不比對板名 | 同 `aid_navigation.landedOnBoardList` |
 | ✕ | `view.sendKeyAsUser('ArrowLeft')`：列表上 ← 是 read_cmd_quit，只離開子模式 | 走鍵盤同一條分派（列表好讀、閘門照舊） |

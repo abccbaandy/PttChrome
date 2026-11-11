@@ -7,8 +7,18 @@ import { generateUsableKey } from "./node_helpers/ssh_test_server";
 
 const { utils } = ssh2;
 
+// 測試自己的「好」鑰匙也要驗過：它同樣是 generateKeyPairSync 產的，一樣有 ~0.4% 會壞（壞了
+// generateUsableKey 會拒收它再要第三把 ⇒ mock 回 undefined，整條 TypeError；CI 曾因此紅）。
+function parsableKey() {
+  for (let i = 0; i < 20; i++) {
+    const kp = utils.generateKeyPairSync("ed25519");
+    if (!(utils.parseKey(kp.private) instanceof Error)) return kp;
+  }
+  throw new Error("no parsable ed25519 key after 20 tries");
+}
+
 test("a malformed generated key is regenerated, never handed to the server", () => {
-  const good = utils.generateKeyPairSync("ed25519");
+  const good = parsableKey();
   const bad = { ...good, private: good.private.replace(/[A-Za-z0-9+/]{20}(?=\n-----END)/, "A".repeat(20)) };
   expect(utils.parseKey(bad.private)).toBeInstanceOf(Error);
   const gen = vi.fn().mockReturnValueOnce(bad).mockReturnValueOnce(good);

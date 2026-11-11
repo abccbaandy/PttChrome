@@ -139,6 +139,27 @@ describe("SearchStatus 控制器", () => {
     expect(ctl.state).toMatchObject({ visible: true, board: "Test", conds: null, right: 100, top: 0 });
   });
 
+  // 列表上按 ^X：bbs.c#cross_post 從第 1 列起畫「轉錄本文章於看板：」，標題列與底列 caption
+  // 原封不動。狀態列的 ✕／＋條件 會把 ← 與 / 打進那個輸入框（手機版還疊在第 1 列附近）。
+  test("搜尋結果上出現轉錄 prompt（表頭被蓋掉、游標在第 1 列）⇒ 收起；回到列表再出現", () => {
+    const { ctl, show } = makeCore(screen());
+    show(screen(SELECT), 3);
+    expect(ctl.state.visible).toBe(true);
+    const ask = screen(SELECT);
+    ask[1] = "轉錄本文章於看板：";
+    ask[2] = "請注意: 1.在不同看板多次重覆發表或轉錄相似內容之文章，屬 Cross-post(CP)違規";
+    show(ask, 1);
+    expect(ctl.state.visible).toBe(false);
+    const confirm = screen(SELECT);
+    confirm[1] = "轉錄本文章於看板：test";
+    confirm[2] = "原標題: Fw: [問題] 標題";
+    confirm[3] = "採用原標題[Y/n]?";
+    show(confirm, 3);
+    expect(ctl.state.visible).toBe(false);
+    show(screen(SELECT), 3);
+    expect(ctl.state.visible).toBe(true);
+  });
+
   test("彈窗送出、PTT 收下 ⇒ 顯示條件；加條件累加；回到完整列表就忘", () => {
     const { ctl, show } = makeCore(screen());
     show(screen());
