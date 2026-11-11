@@ -1,7 +1,7 @@
 // 選單畫面判定（menu_items.js）：上半的 ANSI 圖／心情點播不可以被當成選單項
 // （回歸：滑鼠移到 art 上會上底色、點下去送 ↑↓＋Enter 到別的項）；子選單（個人設定區…）
 // 的標題列舉不完，靠狀態列（menu.c#show_status_bar，指紋＝string_util.parseListRow）認。
-import { parseMenuItemRow, isMenuScreen } from "../../src/js/menu_items";
+import { parseMenuItemRow, isMenuScreen, menuLabelParts } from "../../src/js/menu_items";
 import {
   MAIN_MENU_ROWS,
   MAIN_MENU_ITEM_ROWS,
@@ -98,5 +98,32 @@ describe("isMenuScreen", () => {
 
   test("pageState 不是 1 ⇒ 不是", () => {
     expect(isMenuScreen(2, MAIN_MENU_ROWS[0], MAIN_MENU_STATUS)).toBe(false);
+  });
+});
+
+// P68 手機主功能表卡片：選單項拆成中文名稱／英文名稱。寫法取自 mbbsd/menu.c 各選單表。
+describe("menuLabelParts", () => {
+  const split = (s) => menuLabelParts(s[0], s.slice(1));
+  test.each([
+    ["Announce     【 精華公佈欄 】", "精華公佈欄", "Announce"],
+    ["Favorite     【 我 的 最愛 】", "我的最愛", "Favorite"],
+    ["Goodbye         離開，再見… ", "離開，再見…", "Goodbye"],
+    ["Users List     列出註冊名單", "列出註冊名單", "Users List"],
+    ["Leave message 留言給小主人", "留言給小主人", "Leave message"],
+    ["ILicense       GNU 使用執照", "GNU 使用執照", "ILicense"],
+    ["My Files      【個人檔案】 (名片,簽名檔...)", "個人檔案 (名片,簽名檔...)", "My Files"],
+    ["Week          《本週五十大熱門話題》", "《本週五十大熱門話題》", "Week"],
+    ["2FA           設定兩階段認證", "設定兩階段認證", "2FA"],
+    ["1CChessFight    象棋邀局 ", "象棋邀局", "1CChessFight"],
+    ["0Give        給其他人Ptt幣", "給其他人Ptt幣", "0Give"],
+  ])("%s", (raw, name, en) => {
+    expect(split(raw)).toEqual({ name, en });
+  });
+
+  test("拆不出中文 ⇒ null（卡片照原樣）", () => {
+    expect(split("Quit Game")).toBe(null);
+    expect(split("Xyz           ")).toBe(null);
+    expect(split("Xyz        【  】")).toBe(null);
+    expect(menuLabelParts("A", undefined)).toBe(null);
   });
 });

@@ -7,6 +7,9 @@
 // 保留縮小在上方）。按鈕高 MENU_CARD_PX（CSS `.menuCard` 同值，unit 守），字級固定
 // MOBILE_ROW_FONT_PX —— 不跟著 .main 的 font-size（＝塞滿寬的 chh，約 10px）走。
 //
+// 版面（P68）：左邊大字中文名稱、右邊小字灰色英文名稱（含快捷鍵字母），拿掉【】；
+// 拆不出中文的項目照原樣畫「(X)desc」。送的鍵不變（點擊取列，見下）。
+//
 // 文字刻意**不走 LinkSegmentBuilder**：它的全形字盒（`.wpadding`）寬度被
 // term_view.fixedResize 直接改成 chh px，放進 16px 的按鈕會疊字。選單項只有
 // `(X)desc` 一種內容，沒有連結可言。
@@ -18,20 +21,22 @@
 import cx from "classnames";
 import { el } from "./dom";
 import { rowToText } from "../js/comment_parse";
-import { parseMenuItemRow } from "../js/menu_items";
+import { menuLabelParts, parseMenuItemRow } from "../js/menu_items";
 import { buildCollapsedRow } from "./collapsed_row";
 
 export const MENU_CARD_PX = 44;
 
-// 選單項 → { key, desc }；不是選單項回 null。desc ＝ `(X)` 之後的整段（保留中間的
-// 對齊空白，按鈕用 white-space: pre，各項 (X) 起點一致 ⇒ 中文名稱仍對齊）。
+// 選單項 → { key, desc, label }；不是選單項回 null。desc ＝ `(X)` 之後的整段（保留中間的
+// 對齊空白：拆不出中文時按鈕照原樣畫，white-space: pre，各項 (X) 起點一致）。
+// label ＝ menu_items.menuLabelParts（{ name: 中文名稱, en: 英文名稱 }，拆不出回 null）。
 // row（列號）有給時，動態看板區的列一律不是（見 menu_items.MENU_BANNER_LAST_ROW）。
 export function menuCardParts(chars, row) {
   const text = rowToText(chars).replace(/\s+$/, "");
   const item = parseMenuItemRow(text, row);
   if (!item) return null;
   const open = text.indexOf("(" + item.key + ")");
-  return { key: item.key, desc: text.slice(open + 3) };
+  const desc = text.slice(open + 3);
+  return { key: item.key, desc, label: menuLabelParts(item.key, desc) };
 }
 
 // 這一列是不是整列空白（menuCards 模式下收起來，讓出高度給按鈕）。
@@ -58,10 +63,15 @@ export function buildMenuCard({ chars, row, highlightClass }) {
           "data-type": "bbsline",
           "data-row": row,
         },
-        [
-          el("span", { class: "menuCardKey" }, "(" + parts.key + ")"),
-          el("span", { class: "menuCardDesc" }, parts.desc),
-        ],
+        parts.label
+          ? [
+              el("span", { class: "menuCardName" }, parts.label.name),
+              el("span", { class: "menuCardEn" }, parts.label.en),
+            ]
+          : [
+              el("span", { class: "menuCardKey" }, "(" + parts.key + ")"),
+              el("span", { class: "menuCardDesc" }, parts.desc),
+            ],
       ),
     ),
   };

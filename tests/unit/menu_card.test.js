@@ -78,14 +78,41 @@ describe("render：menuCards", () => {
     for (let r = 0; r <= 12; ++r) expect(rowNode(s, r).classList.contains("menuCard")).toBe(false);
   });
 
-  test("按鈕內容：(X) 與描述；游標記號不進按鈕", () => {
+  // P68：中文名稱為主、英文名稱（含快捷鍵字母）小字放右邊，拿掉【】與對齊空白。
+  test("按鈕內容：中文名稱＋英文名稱；游標記號不進按鈕", () => {
     const s = render(true);
     const card = rowNode(s, MAIN_MENU_CURSOR_ROW);
-    expect(card.querySelector(".menuCardKey").textContent).toBe("(F)");
-    expect(card.querySelector(".menuCardDesc").textContent).toBe(
-      "avorite     【 我 的 最愛 】",
-    );
+    expect(card.querySelector(".menuCardName").textContent).toBe("我的最愛");
+    expect(card.querySelector(".menuCardEn").textContent).toBe("Favorite");
+    expect(card.querySelector(".menuCardKey")).toBe(null);
     expect(card.textContent).not.toContain(">");
+    expect(card.textContent).not.toContain("【");
+  });
+
+  test("主選單每一顆的中文名稱", () => {
+    const s = render(true);
+    const names = Array.from(s.container.querySelectorAll(".menuCardName")).map(
+      (n) => n.textContent,
+    );
+    expect(names).toEqual([
+      "精華公佈欄",
+      "我的最愛",
+      "分組討論區",
+      "私人信件區",
+      "休閒聊天區",
+      "個人設定區",
+      "系統資訊區",
+      "娛樂與休閒",
+      "編特別名單",
+      "離開，再見…",
+    ]);
+  });
+
+  test("拆不出中文的項目照原樣畫 (X)desc", () => {
+    const card = buildMenuCard({ chars: line("                      (Q)uit Game"), row: 14 }).node;
+    expect(card.querySelector(".menuCardKey").textContent).toBe("(Q)");
+    expect(card.querySelector(".menuCardDesc").textContent).toBe("uit Game");
+    expect(card.querySelector(".menuCardName")).toBe(null);
   });
 
   test("DOM 契約：bbsrow/srow ＋ bbsline/data-row", () => {
@@ -134,7 +161,11 @@ describe("render：menuCards", () => {
     expect(cards.map((n) => Number(n.getAttribute("data-menu-row")))).toEqual(
       SUBMENU_ITEM_ROWS,
     );
-    expect(cards[6].querySelector(".menuCardKey").textContent).toBe("(2)");
+    expect(cards[6].querySelector(".menuCardEn").textContent).toBe("2FA");
+    expect(cards[6].querySelector(".menuCardName").textContent).toBe("設定兩階段認證");
+    expect(cards[3].querySelector(".menuCardName").textContent).toBe(
+      "個人檔案 (名片,簽名檔...)",
+    );
     // 狀態列（「回到上層」那一列）收起；標題列同樣
     expect(rowNode(s, 23).classList.contains("mobileCollapsedRow")).toBe(true);
     expect(rowNode(s, 0).classList.contains("mobileCollapsedRow")).toBe(true);
@@ -149,7 +180,11 @@ describe("render：menuCards", () => {
 
 test("menuCardParts：不是選單項回 null", () => {
   expect(menuCardParts(LINES[3])).toBe(null);
-  expect(menuCardParts(LINES[22])).toEqual({ key: "G", desc: "oodbye         離開，再見…" });
+  expect(menuCardParts(LINES[22])).toEqual({
+    key: "G",
+    desc: "oodbye         離開，再見…",
+    label: { name: "離開，再見…", en: "Goodbye" },
+  });
 });
 
 test("動態看板區（row 1～11）以 (X) 開頭的行不變成按鈕（menu.c#adbanner）", () => {
@@ -169,7 +204,8 @@ test("CSS 高度／字級與常數一致", () => {
 test("menuCardTargetRow：按鈕內任何子元素都取得到列，按鈕外 -1", () => {
   const card = buildMenuCard({ chars: LINES[15], row: 15 }).node;
   document.body.appendChild(card);
-  expect(menuCardTargetRow(card.querySelector(".menuCardKey"))).toBe(15);
+  expect(menuCardTargetRow(card.querySelector(".menuCardEn"))).toBe(15);
+  expect(menuCardTargetRow(card.querySelector(".menuCardName"))).toBe(15);
   expect(menuCardTargetRow(card)).toBe(15);
   expect(menuCardTargetRow(document.body)).toBe(-1);
   expect(menuCardTargetRow(null)).toBe(-1);
@@ -256,7 +292,7 @@ describe("App.mouse_click：手機主選單按鈕", () => {
     const app = makeApp();
     const card = buildMenuCard({ chars: LINES[16], row: 16 }).node;
     document.body.appendChild(card);
-    app.mouse_click(click(card.querySelector(".menuCardDesc")));
+    app.mouse_click(click(card.querySelector(".menuCardName")));
     expect(app.view._send).toHaveBeenCalledWith("\x1b[B\x1b[B\r");
     expect(app.onMouse_click).not.toHaveBeenCalled();
     card.remove();

@@ -551,6 +551,22 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   color: #00ffff;
   font-weight: bold;
 }
+/* P68：中文名稱為主（大字），英文名稱小字灰色靠右。 */
+.menuCard .menuCardName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 18px;
+  font-weight: 600;
+  color: #e8eaf0;
+}
+.menuCard .menuCardEn {
+  flex: none;
+  margin-left: 12px;
+  font-size: 13px;
+  color: #8a8f9c;
+}
 /* 信件列表卡片（P31，render/mail_card.js）：同一套大按鈕版面，兩行（標題／寄件人・日期）。
    高度＝MAIL_CARD_PX（守護 tests/unit/mail_card.test.js）。 */
 .main.mobileMenu #mainContainer > span.menuCard.mailCard {

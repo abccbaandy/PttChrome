@@ -58,3 +58,28 @@ export function isMenuScreen(pageState, row0Text, lastRowText) {
   if (rowHasAnyTitle(row0, BOARD_LIST_TITLES)) return false;
   return rowHasTitle(row0, MAIN_MENU) || parseListRow(lastRowText);
 }
+
+// 英文名稱：ASCII 字詞、詞間單一空白（`Users List`、`Leave message`）。遇到兩個以上空白
+// （menu.c 各選單表的對齊欄，`ILicense       GNU 使用執照` 的 GNU 屬於中文那半）或
+// 非 ASCII 字就停。
+var MENU_LABEL_RE = /^([\x21-\x7e]+(?: [\x21-\x7e]+)*)\s*([\s\S]*)$/;
+var NON_ASCII = /[^\x00-\x7f]/;
+
+// 選單項文字拆成「中文名稱」與「英文名稱」（手機主功能表卡片用，render/menu_card.js）。
+// key ＝ `(X)` 的快捷鍵、desc ＝ `(X)` 之後的整段（menuCardParts）。各選單表的寫法
+// （mbbsd/menu.c）：`Announce     【 精華公佈欄 】`、`Goodbye         離開，再見… `、
+// `My Files      【個人檔案】 (名片,簽名檔...)`、`Week          《本週五十大熱門話題》`。
+// 中文名稱拿掉【】、中文字之間為了對齊塞的空白（`我 的 最愛`）；《》保留。
+// 拆不出中文（右半沒有非 ASCII 字）回 null ⇒ 卡片照原樣畫。
+export function menuLabelParts(key, desc) {
+  if (typeof key !== 'string' || typeof desc !== 'string') return null;
+  var m = MENU_LABEL_RE.exec(key + desc.replace(/\s+$/, ''));
+  if (!m || !NON_ASCII.test(m[2])) return null;
+  var name = m[2]
+    .replace(/[【】]/g, ' ')
+    .replace(/([^\x00-\x7f])\s+(?=[^\x00-\x7f])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!name) return null;
+  return { name: name, en: m[1] };
+}
