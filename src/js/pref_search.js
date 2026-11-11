@@ -155,6 +155,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_enableSavedArticles",
     },
     {
+      key: "enableShareTarget",
+      titleKey: "options_enableShareTarget",
+      tooltipKey: "tooltip_enableShareTarget",
+    },
+    {
       key: "enableBoardTabs",
       titleKey: "options_enableBoardTabs",
       tooltipKey: "tooltip_enableBoardTabs",

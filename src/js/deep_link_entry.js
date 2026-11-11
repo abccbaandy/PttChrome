@@ -9,7 +9,10 @@
 //      把連結交給既有視窗，**不重載頁面** ⇒ 第 1 條根本不會再跑，少了這條就
 //      整個安裝情境失效）
 
-import { parseDeepLink, stripDeepLink } from './deep_link';
+import { hasShareParams, parseDeepLink, stripDeepLink } from './deep_link';
+import { readEffectivePrefs } from './pref_storage';
+import { i18n } from './i18n';
+import { HINT_ERROR } from './status_hint';
 import { isSelfNavigating } from './self_navigation';
 import { createChannel, claimHandoff, serveHandoff } from './deep_link_channel';
 
@@ -17,9 +20,14 @@ import { createChannel, claimHandoff, serveHandoff } from './deep_link_channel';
 //   target 為 null ⇒ 這次開站根本沒帶 deep link，什麼都沒問（也就沒有延遲）。
 //   taken 為 true  ⇒ 別的分頁接下了，這一頁不要連線，顯示提示就好。
 // 刻意在 connect() 之前做：接手成功卻已經連上 PTT 的話，等於白佔一個連線名額。
+// 分享選單（P69）開不開：pref enableShareTarget（預設開；只有明確 false 才關）。
+function parseOpts() {
+  return { share: readEffectivePrefs().enableShareTarget !== false };
+}
+
 export function claimDeepLink(win) {
   const w = win || window;
-  const target = parseDeepLink(w.location.href);
+  const target = parseDeepLink(w.location.href, parseOpts());
   if (!target) return Promise.resolve({ target: null, taken: false });
   const channel = createChannel(w);
   return claimHandoff(channel, target).then(taken => {
@@ -48,9 +56,12 @@ export function installDeepLink(app, win) {
     const st = w.history && w.history.state;
     if (st && st.pttchromeBackGuard) return null;
     const href = w.location.href;
-    const target = parseDeepLink(href);
-    if (!target) return null;
-    app.deepLinkController.request(target);
+    const opts = parseOpts();
+    const target = parseDeepLink(href, opts);
+    const shared = hasShareParams(href);
+    if (!target && !shared) return null;
+    if (target) app.deepLinkController.request(target);
+    else if (opts.share) noArticleHint();
     if (w.history && w.history.replaceState) {
       try {
         w.history.replaceState(null, '', stripDeepLink(href));
@@ -59,6 +70,12 @@ export function installDeepLink(app, win) {
       }
     }
     return target;
+  };
+
+  // 分享選單丟來的東西裡沒有文章（開關關著就不吭聲：照常開站）。不送任何鍵。
+  const noArticleHint = () => {
+    const view = app.view;
+    if (view && typeof view.flashListHint === 'function') view.flashListHint(i18n('share_no_article'), 4000, HINT_ERROR);
   };
 
   w.addEventListener('hashchange', consume);
@@ -78,8 +95,10 @@ export function installDeepLink(app, win) {
     w.launchQueue.setConsumer(params => {
       const urls = (params && params.targetURL) ? [params.targetURL] : [];
       for (let i = 0; i < urls.length; ++i) {
-        const target = parseDeepLink(urls[i]);
+        const opts = parseOpts();
+        const target = parseDeepLink(urls[i], opts);
         if (target) app.deepLinkController.request(target);
+        else if (opts.share && hasShareParams(urls[i])) noArticleHint();
       }
     });
   }

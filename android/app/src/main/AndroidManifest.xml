@@ -59,6 +59,13 @@
                 <data android:pathPattern="/bbs/.*/M\\..*" />
                 <data android:pathPattern="/bbs/.*/G\\..*" />
             </intent-filter>
+            <!-- 分享選單（P69）：別的 App「分享」文字／連結給 PttChrome，裡面有 PTT 文章連結就直接開文
+                 （MainActivity.handleShareIntent → DeepLink.fromSharedText）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- App 設定（dev server 模式等）。入口：網頁 bridge、動態捷徑、載入失敗頁，都是本 App 自己開。 -->

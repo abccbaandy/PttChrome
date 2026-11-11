@@ -30,6 +30,24 @@ const PATH_FORM_RE = /^\/?([^/]+)\/([^/]+)\/?$/;
 
 const QUERY_KEYS = ["board", "aid"];
 
+// 分享選單（P69）：別的 App 把文字分享給 PttChrome。兩個入口、同一份解析（這裡）：
+//   - 安裝成 App 的網頁版：manifest.webmanifest 的 share_target，瀏覽器以 GET 開
+//     ./?share_url=…&share_text=…&share_title=…
+//   - APK：ACTION_SEND 由原生原樣包成 fragment #share_text=…（DeepLink.shareFragment，原生不解析）
+// 內容是任意文字（「標題＋換行＋網址」、整段訊息），找第一個接得住的文章：ptt.cc 文章網址、
+// 本站同一頁的 deep link、PTT 畫面上的「#AID (看板)」寫法。開關＝pref enableShareTarget
+// （呼叫端以 opts.share 傳進來；本檔不讀 pref）。
+const SHARE_KEYS = ["share_url", "share_text", "share_title"];
+// 網址候選只取 ASCII：LINE 會把網址跟中文、全形標點黏在一起。
+const SHARED_URL_RE = /https?:\/\/[\x21-\x7e]+/g;
+// 句尾標點不是網址的一部分（文章網址恆以 .html 或 fragment 結尾）。
+const TRAILING_PUNCT_RE = /[)\]}>,.;:!?'"]+$/;
+const PTT_ARTICLE_PATH_RE = /^\/bbs\/([^/]+)\/([^/]+)$/;
+// ptt.cc 網址的檔名一定有 .html、hex 大寫（與 APK 的 FILENAME 一致；fnToAid 本身較寬）。
+const PTT_FILENAME_RE = /^[MG]\.\d+\.A(?:\.[0-9A-F]{3})?\.html$/;
+// PTT 文章資訊框（Q）與推文裡的「#1gIeu-3A (Gossiping)」：括號全半形都吃（同指令面板 parseArticleTarget）。
+const SHARED_AID_RE = /#([0-9A-Za-z_-]{8})\s*[(（]\s*([0-9A-Za-z][0-9A-Za-z_.-]{1,31})\s*[)）]/g;
+
 // 型別檢查不可省：RegExp#test 會先把參數轉成字串，BOARD_RE.test(null) 拿到的是
 // "null" ⇒ 通過，於是 buildDeepLink(base, null, aid) 會產出 "#null/<aid>"。
 // （isAidc 自己已含型別檢查。）
@@ -70,9 +88,81 @@ function parseHash(hash) {
   return m ? fromPair(m[1], m[2]) : null;
 }
 
-// href → { board, aid } | null。hash 先於 query（正規形式優先），兩者都不合法
-// 就回 null＝這不是一個 deep link，照常開站。
-export function parseDeepLink(href) {
+// 一個分享來的網址 → { board, aid } | null。ptt.cc 文章網址，或本站（同一個頁面）的 deep link。
+function fromSharedUrl(raw, page) {
+  let u;
+  try {
+    u = new URL(raw.replace(TRAILING_PUNCT_RE, ""));
+  } catch (e) {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  if (u.hostname === "www.ptt.cc") {
+    const m = PTT_ARTICLE_PATH_RE.exec(u.pathname);
+    return m && PTT_FILENAME_RE.test(m[2]) ? fromPair(m[1], m[2]) : null;
+  }
+  // GitHub Pages 會把 /PttChrome 轉址成 /PttChrome/，index.html 也是同一頁。
+  const samePage = (p) => p.replace(/\/?(index\.html)?$/, "");
+  if (u.origin !== page.origin || samePage(u.pathname) !== samePage(page.pathname)) return null;
+  return parseHash(u.hash) || fromPair(u.searchParams.get("board"), u.searchParams.get("aid"));
+}
+
+// 分享文字 → 第一個接得住的文章：網址優先（比較明確），沒有才找「#AID (看板)」。
+export function parseSharedText(text, pageHref) {
+  if (typeof text !== "string" || !text) return null;
+  let page;
+  try {
+    page = new URL(pageHref);
+  } catch (e) {
+    return null;
+  }
+  const urls = text.match(SHARED_URL_RE) || [];
+  for (let i = 0; i < urls.length; ++i) {
+    const t = fromSharedUrl(urls[i], page);
+    if (t) return t;
+  }
+  for (const m of text.matchAll(SHARED_AID_RE)) {
+    const t = fromPair(m[2], m[1]);
+    if (t) return t;
+  }
+  return null;
+}
+
+// 分享參數的值（share_url 先、再 share_text、share_title；query 與 hash 的 key=value 都看）。
+function shareTexts(url) {
+  const raw = url.hash.charAt(0) === "#" ? url.hash.slice(1) : url.hash;
+  const sources = [url.searchParams];
+  if (raw.indexOf("=") >= 0) sources.push(new URLSearchParams(raw));
+  const out = [];
+  for (let i = 0; i < SHARE_KEYS.length; ++i)
+    for (let j = 0; j < sources.length; ++j) {
+      const v = sources[j].get(SHARE_KEYS[i]);
+      if (v) out.push(v);
+    }
+  return out;
+}
+
+// 這個網址是不是分享選單開的（不管找不找得到文章）：找不到時呼叫端要提示一聲。
+export function hasShareParams(href) {
+  try {
+    return shareTexts(new URL(href)).length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+function fromShareParams(url) {
+  const texts = shareTexts(url);
+  for (let i = 0; i < texts.length; ++i) {
+    const t = parseSharedText(texts[i], url.href);
+    if (t) return t;
+  }
+  return null;
+}
+
+// href → { board, aid } | null。hash 先於 query（正規形式優先），再來是分享選單的參數
+// （opts.share === false ⇒ 不看，＝使用者關掉分享選單）；都不合法就回 null＝照常開站。
+export function parseDeepLink(href, opts) {
   let url;
   try {
     url = new URL(href);
@@ -81,7 +171,9 @@ export function parseDeepLink(href) {
   }
   const fromHash = parseHash(url.hash);
   if (fromHash) return fromHash;
-  return fromPair(url.searchParams.get("board"), url.searchParams.get("aid"));
+  const fromQuery = fromPair(url.searchParams.get("board"), url.searchParams.get("aid"));
+  if (fromQuery) return fromQuery;
+  return opts && opts.share === false ? null : fromShareParams(url);
 }
 
 // 分享用連結。刻意只保留 origin + pathname：目前的 query 可能帶著這台機器才有
@@ -117,6 +209,13 @@ export function stripDeepLink(href) {
   if (fromPair(url.searchParams.get("board"), url.searchParams.get("aid"))) {
     for (let i = 0; i < QUERY_KEYS.length; ++i)
       url.searchParams.delete(QUERY_KEYS[i]);
+  }
+  // 分享選單的參數只有開站那一次有意義（找不到文章也一樣），一律拆掉，F5 不會再跑一次。
+  for (let i = 0; i < SHARE_KEYS.length; ++i) url.searchParams.delete(SHARE_KEYS[i]);
+  const rawHash = url.hash.slice(1);
+  if (rawHash.indexOf("=") >= 0) {
+    const hp = new URLSearchParams(rawHash);
+    if (SHARE_KEYS.some((k) => hp.has(k))) url.hash = "";
   }
   // URL#toString 對「有 search 但清空了」會留下一個裸 '?'，補掉它。
   return url.toString().replace(/\?(?=#|$)/, "");

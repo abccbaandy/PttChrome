@@ -2712,6 +2712,15 @@
   "tooltip_enableSavedArticles": {
     "message": "好讀文章的「更多」（桌機右鍵）多一個「存到本機」：把讀到的整篇（內文、推文、顏色）存在這個瀏覽器，首頁「本機收藏」點了在新分頁打開，不用連線、不送任何鍵給 PTT。最多 200 篇，不上雲。"
   },
+  "options_enableShareTarget": {
+    "message": "分享到 PttChrome"
+  },
+  "tooltip_enableShareTarget": {
+    "message": "在 Android 的分享選單選 PttChrome（App 版，或安裝成 App 的網頁版），分享內容裡有 PTT 文章連結或「#AID (看板)」就直接打開那篇；還沒登入會等登入後再跳。"
+  },
+  "share_no_article": {
+    "message": "分享的內容裡沒有 PTT 文章連結"
+  },
   "saved_action": {
     "message": "存到本機"
   },

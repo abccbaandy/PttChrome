@@ -82,6 +82,20 @@ class DeepLinkTest {
         assertEquals("\"#aid=1gIeu-3A&board=%E5%85%AB\"", DeepLink.jsString("#aid=1gIeu-3A&board=%E5%85%AB"))
     }
 
+    // P69 分享選單：原生只把分享文字包成 fragment，解析與開關在網頁（tests/unit/deep_link.test.js「分享選單」）。
+    @Test fun sharedTextBecomesShareFragment() {
+        assertEquals(
+            "share_text=%5B%E5%95%8F%E5%8D%A6%5D+x%0Ahttps%3A%2F%2Fwww.ptt.cc%2Fbbs%2FGossiping%2FM.1786265274.A.5E3.html",
+            DeepLink.shareFragment("[問卦] x\nhttps://www.ptt.cc/bbs/Gossiping/M.1786265274.A.5E3.html"),
+        )
+        assertEquals(null, DeepLink.shareFragment(null))
+        assertEquals(null, DeepLink.shareFragment("  "))
+        // 編碼後沒有任何會跳出 JS 字串或換行的字元（交給 hashNavigationJs）
+        val f = DeepLink.shareFragment("a\"b</script>\u2028c")!!
+        assertEquals(true, f.matches(Regex("""[A-Za-z0-9_=%+.*-]+""")))
+        assertEquals(4000 + "share_text=".length, DeepLink.shareFragment("a".repeat(5000))!!.length)
+    }
+
     @Test fun nonWebSchemesAreNotOurs() {
         assertEquals(NotOurs, c("intent://www.ptt.cc/bbs/Gossiping/M.1786265274.A.5E3.html#Intent;end"))
         assertEquals(NotOurs, c("javascript:alert(1)"))

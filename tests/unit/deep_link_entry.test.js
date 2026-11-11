@@ -2,6 +2,11 @@
 // （開站網址 / hashchange / PWA launchQueue）都要餵到 controller，而且用過的
 // 網址參數必須清掉。假的 window 物件即可 —— 這層只碰 location/history。
 
+const prefOverride = vi.hoisted(() => ({}));
+vi.mock("../../src/js/pref_storage", async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), ...prefOverride }) };
+});
 import { installDeepLink } from "../../src/js/deep_link_entry";
 
 const BASE = "https://example.github.io/pttchrome/";
@@ -139,4 +144,54 @@ test("launchQueue 拿到不是 deep link 的網址 → 忽略", () => {
   consumer({ targetURL: BASE });
   consumer({});
   expect(requests).toEqual([]);
+});
+
+// P69 分享選單：找到文章 ⇒ 跳；找不到 ⇒ 提示一聲（不送鍵）並清掉分享參數；開關關掉 ⇒ 不跳也不提示。
+describe("分享選單（share_target／APK #share_text）", () => {
+  const PTT = "https://www.ptt.cc/bbs/Gossiping/M.1783270974.A.0CA.html";
+  afterEach(() => {
+    delete prefOverride.enableShareTarget;
+  });
+  function withView(app) {
+    const hints = [];
+    app.view = { flashListHint: (msg, ms, level) => hints.push({ msg, level }) };
+    return hints;
+  }
+
+  test("分享文字裡有文章連結 ⇒ 送進 controller、清掉參數", () => {
+    const { app, requests } = setup(BASE + "?share_text=" + encodeURIComponent("標題\n" + PTT));
+    const hints = withView(app);
+    installDeepLink(app, win);
+    expect(requests).toEqual([{ board: "Gossiping", aid: AID }]);
+    expect(hints).toEqual([]);
+    expect(win.location.href).toBe(BASE);
+  });
+
+  test("沒有文章 ⇒ 不跳、提示「沒有 PTT 文章連結」，參數照樣清掉", () => {
+    const { app, requests } = setup(BASE + "#share_text=" + encodeURIComponent("沒有連結"));
+    const hints = withView(app);
+    installDeepLink(app, win);
+    expect(requests).toEqual([]);
+    expect(hints).toHaveLength(1);
+    expect(hints[0].level).toBe("error");
+    expect(win.location.href).toBe(BASE);
+  });
+
+  test("開關關掉 ⇒ 不跳、不提示", () => {
+    prefOverride.enableShareTarget = false;
+    const { app, requests } = setup(BASE + "?share_url=" + encodeURIComponent(PTT));
+    const hints = withView(app);
+    installDeepLink(app, win);
+    expect(requests).toEqual([]);
+    expect(hints).toEqual([]);
+  });
+
+  test("App 已開著（hashchange 送來 #share_text）一樣接得到", () => {
+    const { app, requests } = setup(BASE);
+    withView(app);
+    installDeepLink(app, win);
+    win.location.href = BASE + "#share_text=" + encodeURIComponent(PTT);
+    win.fire("hashchange");
+    expect(requests).toEqual([{ board: "Gossiping", aid: AID }]);
+  });
 });

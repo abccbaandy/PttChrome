@@ -2,6 +2,7 @@ package io.github.abccbaandy.pttchrome
 
 import java.net.URI
 import java.net.URISyntaxException
+import java.net.URLEncoder
 
 /**
  * 外部 App（LINE／Telegram…）點連結帶進來的網址 → 交給網頁的 deep link fragment（docs/deep-link.md「Android APK」）。
@@ -47,6 +48,20 @@ object DeepLink {
             isOwnSite(uri, scheme, host, pageUrl) -> fromOwnSite(uri)
             else -> Result.NotOurs
         }
+    }
+
+    /** 分享文字的上限：EXTRA_TEXT 可以是整段訊息，文章連結不會在幾千字之後。 */
+    private const val SHARE_TEXT_MAX = 4000
+
+    /**
+     * 別的 App 分享過來的文字（ACTION_SEND 的 EXTRA_TEXT，P69）→ 交給網頁的 fragment `share_text=<編碼>`。
+     * **原生不解析**：找文章連結、設定開關（enableShareTarget）、找不到時的提示都在網頁
+     * （deep_link.parseDeepLink，與安裝成 App 的網頁版 share_target 同一份）。空的 ⇒ null（什麼都不做）。
+     */
+    fun shareFragment(text: String?): String? {
+        if (text.isNullOrBlank()) return null
+        val t = if (text.length > SHARE_TEXT_MAX) text.substring(0, SHARE_TEXT_MAX) else text
+        return "share_text=" + URLEncoder.encode(t, "UTF-8")
     }
 
     private fun fromPtt(uri: URI): Result {

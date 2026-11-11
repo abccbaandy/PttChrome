@@ -1070,6 +1070,16 @@ export const PrefModal = ({
                   {i18n("tooltip_enableSavedArticles")}
                 </Text>
                 <PrefCheckbox
+                  name="enableShareTarget"
+                  checked={values.enableShareTarget}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_enableShareTarget")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_enableShareTarget")}
+                </Text>
+                <PrefCheckbox
                   name="enableBoardTabs"
                   checked={values.enableBoardTabs}
                   disabled={values.nativeSafeMode}

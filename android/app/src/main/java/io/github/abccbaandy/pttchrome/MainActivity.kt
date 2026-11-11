@@ -404,6 +404,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleViewIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND) {
+            handleShareIntent(intent)
+            return
+        }
         if (intent?.action != Intent.ACTION_VIEW) return
         val url = intent.dataString ?: return
         when (val r = DeepLink.classify(url)) {
@@ -411,6 +415,14 @@ class MainActivity : ComponentActivity() {
             DeepLink.Result.OpenApp -> {}
             DeepLink.Result.NotOurs -> openInBrowserOnly(url.toUri())
         }
+    }
+
+    /**
+     * 分享選單選了 PttChrome（P69）：分享文字原樣包成 fragment 交給網頁（同一條 deep link 入口），
+     * 找連結、開關、找不到的提示都由網頁決定。不轉手交給瀏覽器（使用者是主動分享給本 App）。
+     */
+    private fun handleShareIntent(intent: Intent) {
+        DeepLink.shareFragment(intent.getStringExtra(Intent.EXTRA_TEXT))?.let { deliverDeepLink(it) }
     }
 
     private fun deliverDeepLink(fragment: String) {
