@@ -144,6 +144,67 @@ test("最近讀過的文章 + Enter ⇒ recentArticles.open，不直接 deep lin
   expect(pttchrome.deepLinkController.request).not.toHaveBeenCalled();
 });
 
+// 本機收藏（P64）：清單在 IndexedDB ⇒ 開面板時 refresh，讀到了補進清單；Enter ＝ savedArticles.open
+// 另開唯讀頁，不 deep link、不送鍵。「存到本機」動作接 saveCurrent。
+test("本機收藏：開面板時重讀清單、Enter ⇒ savedArticles.open，不 deep link", async () => {
+  const pttchrome = makePttchrome();
+  const rec = { key: "gossiping/" + AID, board: "Gossiping", aid: AID, title: "[問卦] 存下來的", savedAt: 1 };
+  pttchrome.savedArticles = {
+    state: null,
+    enabled: () => true,
+    canSave: () => false,
+    refresh: vi.fn(() => Promise.resolve([rec])),
+    open: vi.fn(() => true),
+    saveCurrent: vi.fn(),
+  };
+  mount(pttchrome);
+  openPalette(pttchrome);
+  await waitFor(() => expect(input()).not.toBeNull());
+  expect(pttchrome.savedArticles.refresh).toHaveBeenCalled();
+  await waitFor(() => expect(itemIds()).toContain("saved:" + rec.key));
+  expect(itemIds()).not.toContain("action:saveArticle");
+  type("存下來");
+  expect(itemIds()[0]).toBe("saved:" + rec.key);
+  key("Enter");
+  expect(pttchrome.savedArticles.open).toHaveBeenCalledWith(rec.key);
+  expect(pttchrome.deepLinkController.request).not.toHaveBeenCalled();
+});
+
+test("本機收藏 pref 關（enabled false）⇒ 不讀清單、不列", async () => {
+  const pttchrome = makePttchrome();
+  pttchrome.savedArticles = {
+    state: [{ key: "gossiping/" + AID, board: "Gossiping", aid: AID, title: "x", savedAt: 1 }],
+    enabled: () => false,
+    canSave: () => false,
+    refresh: vi.fn(() => Promise.resolve([])),
+    open: vi.fn(),
+  };
+  mount(pttchrome);
+  openPalette(pttchrome);
+  await waitFor(() => expect(input()).not.toBeNull());
+  expect(pttchrome.savedArticles.refresh).not.toHaveBeenCalled();
+  expect(itemIds().some((id) => id.startsWith("saved:"))).toBe(false);
+});
+
+test("好讀文章裡（canSave）⇒ 「存到本機」動作接 saveCurrent", async () => {
+  const pttchrome = makePttchrome();
+  pttchrome.savedArticles = {
+    state: [],
+    enabled: () => true,
+    canSave: () => true,
+    refresh: vi.fn(() => Promise.resolve([])),
+    open: vi.fn(),
+    saveCurrent: vi.fn(),
+  };
+  mount(pttchrome);
+  openPalette(pttchrome);
+  await waitFor(() => expect(input()).not.toBeNull());
+  type("存到本機");
+  expect(itemIds()[0]).toBe("action:saveArticle");
+  key("Enter");
+  expect(pttchrome.savedArticles.saveCurrent).toHaveBeenCalled();
+});
+
 test("↓ 移到下一項再 Enter；點一下也能執行", async () => {
   const pttchrome = makePttchrome();
   mount(pttchrome);

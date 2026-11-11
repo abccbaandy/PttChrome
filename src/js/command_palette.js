@@ -24,6 +24,31 @@ export const PALETTE_QUICK_MATCH_LIMIT = 5;
 // 最近讀過／稍後再讀（pref enableRecentArticles）：空白時最多列幾篇、打字時最多幾篇。
 export const PALETTE_RECENT_ARTICLE_LIMIT = 5;
 
+// 本機收藏（P64，pref enableSavedArticles）：空白時最多列幾篇、打字時最多幾篇。
+export const PALETTE_SAVED_ARTICLE_LIMIT = 5;
+
+// 本機收藏 → 「開啟文章」項目（kind 'article'、source 'saved'，執行＝savedArticles.open 另開唯讀頁，
+// 不送任何鍵）。list 是 savedArticles.state（新存的在前）；比對標題／看板／作者，不分大小寫。
+export function savedArticleItems(q, list, limit) {
+  const query = String(q || "").trim().toLowerCase();
+  const out = [];
+  for (const e of list || []) {
+    if (out.length >= limit) break;
+    if (!e || !e.key) continue;
+    const hay = [e.title, e.board, e.author].join(" ").toLowerCase();
+    if (query && hay.indexOf(query) < 0) continue;
+    out.push({
+      id: "saved:" + e.key,
+      kind: "article",
+      source: "saved",
+      key: e.key,
+      target: { board: e.board, aid: e.aid },
+      title: e.title,
+    });
+  }
+  return out;
+}
+
 // 最近讀過／稍後再讀 → 「開啟文章」項目（kind 'article'，執行跟貼文章網址同一條 deep link）。
 // 資料是 recent_articles 現成的清單，面板一個 byte 都不多送。
 export function recentArticleItems(q, data, limit) {
@@ -69,6 +94,7 @@ export const PALETTE_ACTIONS = [
   { id: "settings", titleKey: "palette_settings", when: null, keywords: ["設定", "偏好", "settings", "preferences", "options"] },
   { id: "safeModeOn", titleKey: "palette_safeModeOn", when: "safeModeOff", keywords: ["安全模式", "全部用原生", "原生", "safe mode", "native"] },
   { id: "safeModeOff", titleKey: "palette_safeModeOff", when: "safeModeOn", keywords: ["安全模式", "關閉安全模式", "safe mode", "native"] },
+  { id: "saveArticle", titleKey: "saved_action", when: "saveArticle", keywords: ["存到本機", "本機收藏", "收藏", "離線", "save", "offline", "bookmark"] },
   { id: "saveDebugRecord", titleKey: "palette_saveDebugRecord", when: "saveDebugRecord", keywords: ["存下最近 3 分鐘", "錄製", "錄製檔", "除錯", "回報", "bug", "debug", "record", "save recording"] },
 ];
 
@@ -113,6 +139,8 @@ function actionMatch(action, q, title) {
  *   lang: 設定搜尋用的語系（可省）
  *   quickBoards: { recent: string[], favorites: {name, desc}[] } | null（可省）
  *   recentArticles: { recent, later }（recent_articles 的 state）| null（可省）
+ *   savedArticles: savedArticles.state（本機收藏清單）| null（可省）
+ *   saveArticle: boolean（savedArticles.canSave）
  * @returns {Array<{id, kind, ...}>} 依顯示順序。kind ∈ article｜board｜search｜action｜setting
  */
 export function buildPaletteItems(query, ctx) {
@@ -139,6 +167,8 @@ export function buildPaletteItems(query, ctx) {
   // 稍後再讀／最近讀過的文章：排在看板後面、動作前面（空白時看板優先，理由同上）。
   if (!target && c.recentArticles)
     out.push(...recentArticleItems(q, c.recentArticles, PALETTE_RECENT_ARTICLE_LIMIT));
+  if (!target && c.savedArticles)
+    out.push(...savedArticleItems(q, c.savedArticles, PALETTE_SAVED_ARTICLE_LIMIT));
 
   const flags = {
     refresh: !!c.refresh,
@@ -150,6 +180,8 @@ export function buildPaletteItems(query, ctx) {
     safeModeOff: !c.safeMode,
     // 背景錄製開著、不是手動錄製中（App.canSaveBackgroundRecording）。
     saveDebugRecord: !!c.saveDebugRecord,
+    // 好讀文章裡、讀得到文末網址列（savedArticles.canSave）。
+    saveArticle: !!c.saveArticle,
   };
   const title = typeof c.title === "function" ? c.title : () => "";
   const strong = [];
