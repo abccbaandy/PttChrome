@@ -24,6 +24,16 @@ export function isSearchStatusTarget(el) {
   return !!(el && typeof el.closest === 'function' && el.closest('#' + SEARCH_STATUS_ID));
 }
 
+// 列表的表頭還在、游標在文章列上（curY 有給才判）。列表上的 prompt（^X 轉錄：bbs.c#cross_post
+// 從第 1 列起畫「轉錄本文章於看板：」與注意事項）只改寫上面幾列，標題列與底列 caption 原封不動
+// ⇒ 只看頭尾兩列會把它當成列表，浮在列表上的東西（看板分頁、搜尋狀態列）會蓋住或打進輸入框。
+// 表頭「編號」同 list_session.classifyListScreen。
+export function listChromeIntact(rowTexts, curY) {
+  const t = rowTexts || [];
+  if ((t[2] || '').indexOf('編號') < 0) return false;
+  return !(typeof curY === 'number' && curY < 3);
+}
+
 // 一幀文章列表的子模式：'select' 搜尋結果、'digest' 文摘、'plain' 完整列表；
 // 不是文章列表（或判不出來）⇒ null。
 export function searchListMode(rowTexts) {
@@ -151,7 +161,13 @@ SearchStatus.prototype = {
       (isSearchPromptFrame('title', facts) || isSearchPromptFrame('author', facts) || isSearchPromptFrame('push', facts));
     this._memory = nextSearchMemory(this._memory, { mode: mode, nativePrompt: nativePrompt });
     const buf = core.buf;
-    if (!enabled() || mode !== 'select' || (buf && buf.pageState === 3)) return this._set({ visible: false });
+    if (
+      !enabled() ||
+      mode !== 'select' ||
+      (buf && buf.pageState === 3) ||
+      !listChromeIntact(facts.rowTexts, facts.curY)
+    )
+      return this._set({ visible: false });
     const g = this._geometry();
     if (!g) return this._set({ visible: false });
     const m = this._memory;
