@@ -1403,6 +1403,11 @@ span {
 #mainContainer .listNewPush {
   cursor: pointer;
 }
+/* 手機卡片：行內 span 的高度是字型的 ascent＋descent（跟著字型變，可能比列高矮，上下留一條
+   點不到的縫）⇒ inline-block 讓它的高度＝繼承來的 line-height（＝.listCardLine 的列高）。 */
+#mainContainer .listCard .listNewPush {
+  display: inline-block;
+}
 #mainContainer span[data-type="bbsline"] > .listNewPush {
   position: absolute;
   transform: translateX(calc(-100% - 0.5em));
