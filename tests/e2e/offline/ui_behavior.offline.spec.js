@@ -156,7 +156,11 @@ test.describe('UI 行為（offline，跨 bootstrap 版本守門）', () => {
 
     // → about（含 PttChrome 版本字樣）
     await nav.getByText(await label(page, 'options_about'), { exact: true }).click();
-    await expect(page.locator('.PrefModal').getByText('PttChrome').first()).toBeVisible();
+    // 只看看得到的：其他分頁（keepMounted、隱藏）也有含 PttChrome 的字（一般分頁「分享到 PttChrome」），
+    // .first() 會先撈到那個隱藏的而永遠不 visible。
+    await expect(
+      page.locator('.PrefModal').getByText('PttChrome').filter({ visible: true }).first(),
+    ).toBeVisible();
     await expect(autoLoginUser).toBeHidden();
 
     // → 回 general
