@@ -47,6 +47,25 @@ describe("articleListBoardOf", () => {
     t[0] = "【板主:someone】";
     expect(articleListBoardOf(t)).toBeNull();
   });
+  // 列表上按 ^X：PTT 只改寫第 1 列起的幾列，標題列與底列 caption 原封不動。
+  test("轉錄 prompt 畫在第 1 列（標題列、底列仍是文章列表）⇒ null", () => {
+    const ask = listScreen("PttAntiBot", " 文章列表  (^P)發表 (y)回應 (X)推文");
+    ask[1] = "轉錄本文章於看板：";
+    ask[2] = "請注意: 1.在不同看板多次重覆發表或轉錄相似內容之文章，屬 Cross-post(CP)違規";
+    expect(articleListBoardOf(ask, 1)).toBeNull();
+    expect(articleListBoardOf(ask)).toBeNull();
+    const confirm = listScreen("PttAntiBot", " 文章列表  (^P)發表 (y)回應 (X)推文");
+    confirm[1] = "轉錄本文章於看板：test";
+    confirm[2] = "原標題: Fw: [問題] 標題";
+    confirm[3] = "採用原標題[Y/n]?";
+    expect(articleListBoardOf(confirm, 3)).toBeNull();
+  });
+  test("游標停在表頭以上（第 1 列有輸入框，表頭還在）⇒ null；停在文章列 ⇒ 板名", () => {
+    const t = listScreen("C_Chat");
+    t[1] = "某個畫在第 1 列的 prompt：";
+    expect(articleListBoardOf(t, 1)).toBeNull();
+    expect(articleListBoardOf(listScreen("C_Chat"), 13)).toBe("C_Chat");
+  });
 });
 
 describe("分頁清單", () => {
@@ -98,8 +117,9 @@ function makeCore(storage) {
   return {
     tabs,
     hints,
-    show: (screen) => {
+    show: (screen, curY) => {
       t = screen;
+      core.buf.cur_y = curY;
       listeners.screenSettled();
     },
   };
@@ -188,6 +208,18 @@ describe("BoardTabs 控制器", () => {
     expect(JSON.parse(storage.map.get(BOARD_TABS_KEY)).map((x) => x.name)).toEqual(["C_Chat"]);
   });
 
+  test("列表上按 ^X 出現轉錄 prompt ⇒ 分頁收起，不蓋住第 1 列的輸入框；回到列表再出現", () => {
+    const c = makeCore(memoryStorage([{ name: "Stock", at: 1 }]));
+    c.show(listScreen("C_Chat", " 文章列表  (y)回應"), 13);
+    expect(c.tabs.state.visible).toBe(true);
+    const ask = listScreen("C_Chat", " 文章列表  (y)回應");
+    ask[1] = "轉錄本文章於看板：";
+    ask[2] = "請注意: 1.在不同看板多次重覆發表或轉錄相似內容之文章，屬 Cross-post(CP)違規";
+    c.show(ask, 1);
+    expect(c.tabs.state.visible).toBe(false);
+    c.show(listScreen("C_Chat", " 文章列表  (y)回應"), 13);
+    expect(c.tabs.state.visible).toBe(true);
+  });
   test("pref 關 ⇒ 不顯示", () => {
     const { tabs, show } = makeCore(memoryStorage([{ name: "Stock", at: 1 }]));
     prefOverride.enableBoardTabs = false;

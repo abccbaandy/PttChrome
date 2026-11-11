@@ -29,9 +29,15 @@ export function isBoardTabsTarget(el) {
 }
 
 // 這一幀是哪個板的文章列表；不是（或看不出板名）⇒ null。
-export function articleListBoardOf(rowTexts) {
+// 標題列＋底列 caption 還不夠：列表上的 prompt（^X 轉錄：bbs.c#cross_post 從第 1 列起畫
+// 「轉錄本文章於看板：」與注意事項）只改寫上面幾列，標題列與底列原封不動 ⇒ 分頁會蓋住輸入框。
+// 所以再要求第 2 列的表頭（「編號」，同 list_session.classifyListScreen）還在，而且游標
+// 不在表頭以上（curY 有給才判；列表上游標恆在文章列）。
+export function articleListBoardOf(rowTexts, curY) {
   const t = rowTexts || [];
   if (!isArticleListFooter(t[t.length - 1] || '')) return null;
+  if ((t[2] || '').indexOf('編號') < 0) return null;
+  if (typeof curY === 'number' && curY < 3) return null;
   return parseBoardName(t[0] || '');
 }
 
@@ -163,7 +169,7 @@ BoardTabs.prototype = {
   refresh: function() {
     const core = this._core;
     const rows = this._rowTexts();
-    const board = rows ? articleListBoardOf(rows) : null;
+    const board = rows ? articleListBoardOf(rows, core.buf.cur_y) : null;
     if (!readEffectivePrefs().enableBoardTabs || !board) {
       if (this._state.visible) this._set(HIDDEN_PATCH);
       return;
