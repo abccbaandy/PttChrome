@@ -780,6 +780,23 @@ describe("更多（bottom sheet）", () => {
     });
   });
 
+  // 存到本機的唯讀頁（mobile_toolbar.staticReaderContext 給 readOnly）：沒有連線 ⇒ 上傳圖片、登出不列。
+  test("唯讀頁（readOnly）⇒「更多」沒有上傳圖片、登出；設定照常", async () => {
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({ values: { enableImageUpload: true } }),
+    );
+    const core = makeCore();
+    core.imageUpload = { setInsertTarget: vi.fn(), clearInsertTarget: vi.fn() };
+    renderBar(core);
+    act(() => core.setContext({ contentTools: true, end: true, readOnly: true, search: [] }));
+    await openMore();
+    expect(byKey("__logout")).toBeNull();
+    expect(byKey("__uploadImage")).toBeNull();
+    expect(byKey("__settings")).not.toBeNull();
+    window.localStorage.clear();
+  });
+
   test("設定：交給 onOpenSettings", async () => {
     const onOpenSettings = vi.fn();
     renderBar(makeCore(), { onOpenSettings });

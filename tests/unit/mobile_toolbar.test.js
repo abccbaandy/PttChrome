@@ -9,6 +9,8 @@ import {
   toolbarSlots,
   TOOLBAR_SLOT_COUNT,
   hasHelpHint,
+  staticReaderContext,
+  mobileToolbarContext,
 } from "../../src/js/mobile_toolbar";
 import { KeyMap } from "../../src/js/term_keyboard";
 import { promptChoices } from "../../src/js/prompt_choices";
@@ -25,6 +27,36 @@ const READ_ROW =
 const MAIL_ROW =
   "  瀏覽 第 1/1 頁 (100%)  目前顯示: 第 01~18 行  (y)回信 (h)說明 (←/q)離開 ";
 const LIST = { 0: " 【板主:none】看板《Test》", 23: " 文章選讀  (y)回應(X)推文(^X)轉錄 " };
+
+// 存到本機的唯讀頁（view._staticRows）：沒有連線 ⇒ 只留到底與閱讀工具，App Bar 是那篇的標題。
+describe("唯讀頁（staticReaderContext）", () => {
+  const view = { _staticRows: [[]], _articleTitle: "[新聞] 標題", _articleBoard: "Stock", _articleByline: null };
+  test("只有到底、閱讀工具；推／回文／重整／搜尋都沒有；readOnly", () => {
+    const c = staticReaderContext(view);
+    expect(c).toMatchObject({
+      end: true,
+      contentTools: true,
+      readOnly: true,
+      push: false,
+      reply: false,
+      share: false,
+      threadNav: false,
+      refresh: false,
+      help: false,
+      search: [],
+    });
+    expect(c.appBar).toMatchObject({ kind: "article", title: "[新聞] 標題", subtitle: "Stock" });
+    expect(toolbarSlots(c).slice(0, 2)).toEqual([null, null]);
+  });
+
+  test("mobileToolbarContext 在唯讀頁不看活 buffer（空的），直接給唯讀版", () => {
+    expect(mobileToolbarContext({ view })).toEqual(staticReaderContext(view));
+  });
+
+  test("readOnly 變了算不同（工具列要重畫）", () => {
+    expect(sameToolbarContext({ ...EMPTY_TOOLBAR_CONTEXT, readOnly: true }, EMPTY_TOOLBAR_CONTEXT)).toBe(false);
+  });
+});
 
 describe("toolbarContextFromFacts", () => {
   test("文章（pager 狀態列）⇒ 推，沒有搜尋", () => {
