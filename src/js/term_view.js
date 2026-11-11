@@ -42,6 +42,7 @@ import icon128 from '../icon/icon_128.png';
 import { MOUSE_CURSOR_URLS } from './mouse_cursors';
 import { isAndroidApp, androidNotify } from './android_bridge';
 import { justPushedMinutes, JUST_PUSHED_MS } from './just_pushed';
+import { staticReaderKey } from './saved_articles';
 
 const DEFINE_INPUT_BUFFER_SIZE = 12;
 
@@ -1791,6 +1792,21 @@ TermView.prototype = {
   },
 
   onKeyDown: function(e) {
+    // 存到本機的唯讀頁（showStaticArticle）：沒有連線 ⇒ 鍵盤只拿來捲動（saved_articles.staticReaderKey）。
+    if (this._staticRows) {
+      var disp = this.mainDisplay;
+      var act = disp ? staticReaderKey(e, {
+        scrollTop: disp.scrollTop,
+        scrollHeight: disp.scrollHeight,
+        clientHeight: disp.clientHeight,
+        lineHeight: this.chh
+      }) : null;
+      if (act) {
+        e.preventDefault();
+        if (act.top != null) disp.scrollTop = act.top;
+      }
+      return;
+    }
     // 序列化操作（AID 跳文／長推文）在途：程式化的鍵序列擁有這條線路，使用者的鍵
     // 會與它競態（typeahead，協定 §2）。吞掉並給提示——條件與提示文字四條入口共用，
     // 見 serialized_op_gate.js。

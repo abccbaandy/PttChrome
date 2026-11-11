@@ -67,6 +67,18 @@ test.describe('存到本機', () => {
     expect(await page.evaluate(() => document.title)).toContain('本機收藏');
     expect(await page.evaluate(() => window.__wsOpened)).toBe(0);
     expect(await page.evaluate(() => window.__app.view.conn)).toBeUndefined();
+
+    // 鍵盤只拿來捲動（staticReaderKey）：End 到底、Home 回頂。
+    const scroll = () =>
+      page.evaluate(() => {
+        const d = window.__app.view.mainDisplay;
+        return { top: d.scrollTop, max: d.scrollHeight - d.clientHeight };
+      });
+    expect((await scroll()).max).toBeGreaterThan(0);
+    await page.keyboard.press('End');
+    await expect.poll(async () => { const s = await scroll(); return s.top >= s.max - 1; }).toBe(true);
+    await page.keyboard.press('Home');
+    await expect.poll(async () => (await scroll()).top).toBe(0);
   });
 
   // 指令面板（F4）：好讀文章裡有「存到本機」；存了之後清單（IndexedDB，非同步）補進面板，

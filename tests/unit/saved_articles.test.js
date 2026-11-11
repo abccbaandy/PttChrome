@@ -26,6 +26,7 @@ import {
   savableArticle,
   savedReaderKeyFrom,
   savedReaderUrl,
+  staticReaderKey,
 } from "../../src/js/saved_articles";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
@@ -299,5 +300,32 @@ describe("唯讀頁網址／能不能存", () => {
     const win = { open, location: { href: "https://example.com/?x=1" } };
     expect(new SavedArticles(core(), {}).open("stock/1g8znzQ3", win)).toBe(true);
     expect(open).toHaveBeenCalledWith("https://example.com/?saved=stock%2F1g8znzQ3", "_blank", "noopener");
+  });
+});
+
+// 唯讀頁沒有連線：鍵盤只拿來捲動（term_view.onKeyDown 的唯讀分支），鍵位照 pmore。
+describe("staticReaderKey", () => {
+  const M = { scrollTop: 500, scrollHeight: 3000, clientHeight: 1000, lineHeight: 20 };
+  const k = (key, mods) => staticReaderKey({ key, ...(mods || {}) }, M);
+  test.each([
+    ["Home", 0], ["g", 0], ["0", 0],
+    ["End", 2000], ["G", 2000], ["$", 2000],
+    [" ", 1400], ["PageDown", 1400], ["f", 1400],
+    ["PageUp", 0], ["b", 0],
+    ["ArrowDown", 520], ["j", 520], ["Enter", 520],
+    ["ArrowUp", 480], ["k", 480],
+  ])("%s ⇒ 捲到 %d（夾在 0～底之間）", (key, top) => {
+    expect(k(key)).toEqual({ top });
+  });
+
+  test("其他鍵吞掉（不捲、也不能當打字）", () => {
+    expect(k("x")).toEqual({ top: null });
+    expect(k("ArrowLeft")).toEqual({ top: null });
+  });
+
+  test("Ctrl／Alt／Meta 組合鍵不管（Ctrl+F、複製留給瀏覽器）", () => {
+    expect(k("f", { ctrlKey: true })).toBeNull();
+    expect(k("c", { metaKey: true })).toBeNull();
+    expect(k("End", { altKey: true })).toBeNull();
   });
 });

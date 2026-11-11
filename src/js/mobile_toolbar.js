@@ -62,7 +62,7 @@ import { searchListMode } from './search_status';
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
   unreadJump: false, markAllRead: false, boardTools: false, help: false, contentTools: false, refresh: false, end: false,
-  editor: false, editorSave: false, mailList: false, search: [], appBar: EMPTY_APP_BAR, choices: null
+  editor: false, editorSave: false, mailList: false, readOnly: false, search: [], appBar: EMPTY_APP_BAR, choices: null
 });
 
 // 送鍵表：key 是 term_view.sendKeyAsUser 的 keyName（單字元或 KeyMap 裡的具名鍵），
@@ -185,7 +185,28 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
   };
 }
 
+// 存到本機的唯讀頁（view._staticRows，docs/saved-articles.md）：沒有連線、送不出任何鍵 ⇒
+// 推／回文／重整都不能用（格位照留、反灰），只留「到底」與「更多」裡的閱讀工具（字級、預覽…）；
+// 「按鍵」面板照常（term_view 在唯讀頁把鍵盤改成捲動）。readOnly ⇒「更多」不列上傳圖片、登出。
+// App Bar 是那篇的標題與看板。
+export function staticReaderContext(view) {
+  const v = view || {};
+  return {
+    ...EMPTY_TOOLBAR_CONTEXT,
+    end: true,
+    contentTools: true,
+    readOnly: true,
+    appBar: appBarFromFacts({ rowTexts: [] }, {
+      pageState: 3,
+      articleTitle: v._articleTitle,
+      articleBoard: v._articleBoard,
+      articleByline: v._articleByline
+    })
+  };
+}
+
 export function mobileToolbarContext(core) {
+  if (core && core.view && core.view._staticRows) return staticReaderContext(core.view);
   const facts = searchGateFacts(core);
   const view = (core && core.view) || {};
   const prev = core && core._screenContext && core._screenContext.appBar;
@@ -208,7 +229,7 @@ export function mobileToolbarContext(core) {
 
 const FLAGS = [
   'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'boardTools', 'help', 'contentTools', 'refresh', 'end',
-  'editor', 'editorSave', 'mailList'
+  'editor', 'editorSave', 'mailList', 'readOnly'
 ];
 
 export function sameToolbarContext(a, b) {

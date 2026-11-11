@@ -137,6 +137,45 @@ SavedArticles.prototype = {
   },
 };
 
+// 唯讀頁的按鍵：這一頁沒有連線，任何鍵都送不到 PTT ⇒ 只拿來捲動（鍵位照 pmore：
+// 空白／PgDn／f 下一頁、PgUp／b 上一頁、↓／j／Enter 下一列、↑／k 上一列、Home／g／0 頂、
+// End／G／$ 底）。回傳：{ top } 捲到哪；{ top: null } 吞掉（不是捲動鍵，免得被當成打字）；
+// null 不管（Ctrl／Alt／Meta 組合鍵留給瀏覽器：Ctrl+F、複製…）。
+// m：{ scrollTop, scrollHeight, clientHeight, lineHeight }。
+export function staticReaderKey(e, m) {
+  if (!e || e.ctrlKey || e.altKey || e.metaKey) return null;
+  const max = Math.max(0, (m.scrollHeight | 0) - (m.clientHeight | 0));
+  const page = Math.max(1, Math.round((m.clientHeight | 0) * 0.9));
+  const line = Math.max(1, m.lineHeight | 0);
+  const at = (t) => ({ top: Math.min(max, Math.max(0, Math.round(t))) });
+  switch (e.key) {
+    case 'Home':
+    case 'g':
+    case '0':
+      return at(0);
+    case 'End':
+    case 'G':
+    case '$':
+      return at(max);
+    case ' ':
+    case 'PageDown':
+    case 'f':
+      return at(m.scrollTop + page);
+    case 'PageUp':
+    case 'b':
+      return at(m.scrollTop - page);
+    case 'ArrowDown':
+    case 'j':
+    case 'Enter':
+      return at(m.scrollTop + line);
+    case 'ArrowUp':
+    case 'k':
+      return at(m.scrollTop - line);
+    default:
+      return { top: null };
+  }
+}
+
 // 唯讀頁開機：讀存檔 → 還原 → 畫。找不到／壞掉 ⇒ 畫一行說明（不連線、不 throw）。
 // 回傳 'shown' | 'missing'。
 export async function bootSavedReader(core, key, store) {
@@ -153,5 +192,8 @@ export async function bootSavedReader(core, key, store) {
     return 'missing';
   }
   core.view.showStaticArticle(rows);
+  // 手機底部導覽／App Bar 換成唯讀頁的版本（mobile_toolbar.staticReaderContext）：這一頁不會有
+  // screenSettled，自己通知一次。
+  if (typeof core._refreshScreenContext === 'function') core._refreshScreenContext();
   return 'shown';
 }

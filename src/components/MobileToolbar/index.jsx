@@ -804,19 +804,22 @@ export const MobileToolbar = ({
       Icon: IconSelectAll,
       onClick: onSelectAll,
     },
+    // 唯讀頁（存到本機）沒有連線：上傳圖片要插進編輯器、登出要送鍵 ⇒ 都不列。
     __uploadImage: context.contentTools &&
+      !context.readOnly &&
       imageUploadEnabled && {
         label: i18n("cmenu_uploadImage"),
         Icon: IconPhotoUp,
         onClick: onUploadImage,
       },
     __uploadHistory: context.contentTools &&
+      !context.readOnly &&
       imageUploadEnabled && {
         label: i18n("cmenu_uploadHistory"),
         onClick: onUploadHistory,
       },
     __settings: { label: i18n("mobileToolbar_settings"), onClick: onSettings },
-    __logout: true,
+    __logout: !context.readOnly,
   };
   // 開著時沿用上一次的分組（stableMoreSplit：項目不在圖示格與清單之間搬家）；收起就重來。
   const moreVisible = Object.keys(moreItems).filter((k) => moreItems[k]);
