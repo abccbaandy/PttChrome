@@ -117,6 +117,31 @@ test.describe('存到本機', () => {
       .toBe(true);
   });
 
+  // 設定 → 設定備份「本機收藏」：匯出的檔案（真下載）刪光後再匯入，同一篇回來。
+  test('匯出本機收藏 → 刪掉 → 匯入檔案 ⇒ 同一篇回來', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await waitPreviewsSettled(page);
+    await page.evaluate(() => window.__app.savedArticles.saveCurrent());
+    await page.keyboard.press('F4');
+    await page.locator('input[name="commandPaletteQuery"]').fill('設定');
+    await page.locator('[data-palette-item="action:settings"]').click();
+    await page.getByRole('tab', { name: '設定備份' }).click();
+    const download = page.waitForEvent('download');
+    await page.locator('[data-saved-export]').click();
+    const file = await (await download).path();
+    await expect(page.locator('[data-saved-backup-result]')).toHaveText('已匯出 1 篇。');
+
+    await page.evaluate((key) => window.__app.savedArticles.remove(key), KEY);
+    expect(await page.evaluate(() => window.__app.savedArticles.list())).toEqual([]);
+    await page.locator('input[name="savedImportFile"]').setInputFiles(file);
+    await expect(page.locator('[data-saved-backup-result]')).toHaveText('已匯入：新增 1 篇、更新 0 篇。');
+    const list = await page.evaluate(() => window.__app.savedArticles.list());
+    expect(list.map((m) => m.key)).toEqual([KEY]);
+  });
+
   test('找不到的存檔 ⇒ 錯誤提示、不連線', async ({ page }) => {
     await bootOffline(page, ptt);
     await watchSockets(page);

@@ -14,6 +14,7 @@ import { setupI18n, i18n } from "../../src/js/i18n";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import { downloadAsFile } from "../../src/js/util";
 import * as prefSync from "../../src/js/pref_sync";
+import { exportSavedArticles } from "../../src/js/saved_articles";
 
 // 雲端同步不是本測試的標的，且會拉 Firebase SDK。
 vi.mock("../../src/js/pref_sync", () => ({
@@ -34,6 +35,13 @@ vi.mock("../../src/js/prompt_api", () => ({
 vi.mock("../../src/js/util", async (importOriginal) => ({
   ...(await importOriginal()),
   downloadAsFile: vi.fn(),
+}));
+
+// 本機收藏的匯出讀的是瀏覽器裡共用的那個 IndexedDB：換成可控的假的（真 IndexedDB 的匯出／匯入
+// 在 tests/unit/saved_articles.test.js 用各自的 DB 名守）。匯入照原樣（壞檔在碰 DB 之前就擋下）。
+vi.mock("../../src/js/saved_articles", async (importOriginal) => ({
+  ...(await importOriginal()),
+  exportSavedArticles: vi.fn(),
 }));
 
 const PREF_KEY = "pttchrome.pref.v1";
@@ -295,5 +303,44 @@ describe("設定備份分頁：登入結果", () => {
     expect(
       await screen.findByText(i18n("options_syncStatusError")),
     ).toBeInTheDocument();
+  });
+});
+
+// 本機收藏（P64）的匯出／匯入：接的是 saved_articles.exportSavedArticles／importSavedArticles
+// （真 IndexedDB 的邏輯在 tests/unit/saved_articles.test.js），這裡守 UI 這條路接上了、
+// 結果有說出來、壞檔不寫入。
+describe("本機收藏匯出／匯入", () => {
+  test("匯出接 exportSavedArticles（帶 downloadAsFile），說出匯出幾篇；0 篇說沒有可匯出的", async () => {
+    exportSavedArticles.mockReset();
+    exportSavedArticles.mockResolvedValueOnce({ count: 3 });
+    openBackupTab();
+    fireEvent.click(document.querySelector("[data-saved-export]"));
+    await waitFor(() =>
+      expect(screen.getByText(i18n("options_savedExported").replace("{count}", "3"))).toBeTruthy(),
+    );
+    expect(exportSavedArticles).toHaveBeenCalledWith(downloadAsFile);
+    exportSavedArticles.mockResolvedValueOnce({ count: 0 });
+    fireEvent.click(document.querySelector("[data-saved-export]"));
+    await waitFor(() =>
+      expect(screen.getByText(i18n("options_savedExportEmpty"))).toBeTruthy(),
+    );
+  });
+
+  test("匯入設定備份檔（不是本機收藏）⇒ 格式錯誤，設定不變", async () => {
+    openBackupTab();
+    const before = storedValues();
+    const input = document.querySelector('input[name="savedImportFile"]');
+    const file = new File(
+      [JSON.stringify({ app: "pttchrome", kind: "prefs", schemaVersion: 1, prefs: {} })],
+      "backup.json",
+      { type: "application/json" },
+    );
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(
+      () => expect(screen.getByText(i18n("options_savedErrorBadFormat"))).toBeTruthy(),
+      { timeout: 4000 },
+    );
+    expect(storedValues()).toEqual(before);
+    expect(onReset).not.toHaveBeenCalled();
   });
 });

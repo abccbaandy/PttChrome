@@ -36,6 +36,10 @@ import {
   destroyPromptApi,
 } from "../../js/prompt_api";
 import { deepEqual } from "../../js/pref_sync_logic";
+import {
+  exportSavedArticles,
+  importSavedArticles,
+} from "../../js/saved_articles";
 import { isSignInCancelled } from "../../js/google_sign_in";
 import { ensureNotifyPermission } from "../../js/notification_gate";
 import {
@@ -346,6 +350,9 @@ export const PrefModal = ({
   const [aiProgress, setAiProgress] = useState(null);
   // 設定備份分頁的最後一次結果訊息：null | "imported" | "badJson" | "badFormat"
   const [backupResult, setBackupResult] = useState(null);
+  // 本機收藏匯出／匯入的最後一次結果（已組好的字串）；null＝還沒做過。
+  const [savedBackupMsg, setSavedBackupMsg] = useState(null);
+  const savedImportInputRef = useRef(null);
   // 設定搜尋跳轉：pendingJump 是「要跳去哪」的指令，flashKey 是「現在哪一項在
   // 閃」。分成兩個 state 是因為跳轉要等一個 frame（見下面的 effect），而高亮的
   // 生命週期比跳轉長。
@@ -628,6 +635,52 @@ export const PrefModal = ({
       "application/json",
     );
   }, [values]);
+
+  // 本機收藏（P64，js/saved_articles.js）：整篇存在 IndexedDB，匯出檔就是那些紀錄原樣。
+  const fillMsg = (key, vars) =>
+    String(i18n(key) || "").replace(/\{(\w+)\}/g, (m, k) =>
+      vars && vars[k] != null ? String(vars[k]) : m,
+    );
+  const onSavedExportClick = useCallback(async () => {
+    const res = await exportSavedArticles(downloadAsFile);
+    setSavedBackupMsg(
+      res.count
+        ? fillMsg("options_savedExported", res)
+        : i18n("options_savedExportEmpty"),
+    );
+  }, []);
+  const onSavedImportFile = useCallback(async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    let text = "";
+    try {
+      text = await file.text();
+    } catch (err) {
+      setSavedBackupMsg(i18n("options_backupErrorBadJson"));
+      return;
+    }
+    const res = await importSavedArticles(text);
+    if (!res.ok) {
+      setSavedBackupMsg(
+        i18n(
+          res.reason === "badJson"
+            ? "options_backupErrorBadJson"
+            : "options_savedErrorBadFormat",
+        ),
+      );
+      return;
+    }
+    setSavedBackupMsg(
+      [
+        fillMsg("options_savedImported", res),
+        res.skipped ? fillMsg("options_savedImportSkipped", res) : "",
+        res.full ? fillMsg("options_savedImportFull", res) : "",
+      ]
+        .filter(Boolean)
+        .join(""),
+    );
+  }, []);
 
   // 匯入＝立即寫入 + 立即套用（走既有的 reset 路徑，見 ContextMenu/index.jsx
   // #onPrefReset：redraw(true) + onPrefSaveImpl → onValuesPrefChange 全量重套）。
@@ -2736,6 +2789,43 @@ export const PrefModal = ({
                           ? "options_backupErrorBadJson"
                           : "options_backupErrorBadFormat",
                     )}
+                  </Text>
+                )}
+              </PrefSection>
+              <PrefSection legendKey="options_savedBackup">
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_savedBackup")}
+                </Text>
+                <input
+                  ref={savedImportInputRef}
+                  type="file"
+                  name="savedImportFile"
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={onSavedImportFile}
+                />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <Button
+                    variant="default"
+                    data-saved-export
+                    onClick={onSavedExportClick}
+                  >
+                    {i18n("options_savedExportBtn")}
+                  </Button>
+                  <Button
+                    variant="default"
+                    data-saved-import
+                    onClick={() =>
+                      savedImportInputRef.current &&
+                      savedImportInputRef.current.click()
+                    }
+                  >
+                    {i18n("options_savedImportBtn")}
+                  </Button>
+                </div>
+                {savedBackupMsg && (
+                  <Text size="sm" mt={6} data-saved-backup-result>
+                    {savedBackupMsg}
                   </Text>
                 )}
               </PrefSection>

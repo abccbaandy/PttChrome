@@ -2720,6 +2720,36 @@
   },
   "saved_remove": {
     "message": "刪除本機存檔"
+  },
+  "options_savedBackup": {
+    "message": "本機收藏"
+  },
+  "tooltip_savedBackup": {
+    "message": "把「存到本機」的文章匯出成一個檔案，換瀏覽器或裝置時再匯入。同一篇會覆蓋成檔案裡的版本，最多 200 篇。"
+  },
+  "options_savedExportBtn": {
+    "message": "匯出本機收藏"
+  },
+  "options_savedImportBtn": {
+    "message": "匯入本機收藏"
+  },
+  "options_savedExportEmpty": {
+    "message": "目前沒有本機收藏可以匯出。"
+  },
+  "options_savedExported": {
+    "message": "已匯出 {count} 篇。"
+  },
+  "options_savedImported": {
+    "message": "已匯入：新增 {added} 篇、更新 {replaced} 篇。"
+  },
+  "options_savedImportSkipped": {
+    "message": "有 {skipped} 篇讀不出來，略過。"
+  },
+  "options_savedImportFull": {
+    "message": "有 {full} 篇放不下（已滿 200 篇），先刪掉幾篇再匯入。"
+  },
+  "options_savedErrorBadFormat": {
+    "message": "匯入失敗：這不是 pttchrome 的本機收藏匯出檔。"
   }
 
 };
