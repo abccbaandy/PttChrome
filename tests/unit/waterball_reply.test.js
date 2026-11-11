@@ -42,6 +42,16 @@ describe("classifyReplyScreen", () => {
     });
   });
 
+  // 面板只畫到分隔線（wmsg_render_history_section），下面是回覆前的原畫面：文章裡「>id 」開頭的
+  // 引文列不可以算成第二個選中（否則認不出 ⇒ 換不到人、逾時收手）。
+  test("面板下面原畫面的「>xxx 」引文列不算", () => {
+    const rows = [...panel(0, ["bbb", "aaa"]), ">someone 說的話", ">another 引文"];
+    expect(classifyReplyScreen(rows)).toEqual({ mode: "default", selected: "bbb", panel: true });
+    // 中間夾「To id: …」（自己上一次丟的）也一樣到分隔線為止。
+    const withLast = [...panel(1, ["bbb", "aaa"]).slice(0, -1), "To ccc: 上一則", PANEL_TITLE.replace(/./g, "─"), ">x y"];
+    expect(classifyReplyScreen(withLast)).toEqual({ mode: "default", selected: "aaa", panel: true });
+  });
+
   test.each([
     ["文章內文剛好有「丟xxx:」但沒有反擊對象名單", ["丟aaa: 這是內文", "作者 someone"]],
     ["一般畫面", ["【主功能表】", "", ""]],

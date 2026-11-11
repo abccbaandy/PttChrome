@@ -25,6 +25,8 @@ const OFO_LIST_MARK = '↑反擊對象↓';
 // wmsg_show_panel_new 的 row 1；新舊字樣都只認這段（MSG_SEPARATOR 夾字的部分）。
 const PANEL_MARK = '訊─息─回─顧';
 const PANEL_FIRST_ROW = 3;
+// 面板最後一列 MSG_SEPARATOR（common.h，一整列「─」）。
+const PANEL_END_RE = /^─{8,}\s*$/;
 // 一般模式第一下的 outmsg（底列）：「★%s %s」，對象 id 緊接在 ★ 後。
 const FIRST_TARGET_RE = /^★(\S+)/;
 // 一對一模式名單最多 5 人、一般模式回顧最多 7 則；多給一輪就收手。
@@ -48,6 +50,9 @@ export function classifyReplyScreen(rows) {
   }
   let selected = null;
   for (let i = PANEL_FIRST_ROW; i < rows.length; i++) {
+    // 面板到 MSG_SEPARATOR 那一列為止（wmsg_render_history_section：水球列、「To id: …」、分隔線），
+    // 再下面是回覆前的原畫面（文章內文可能有「>id 」開頭的引文列），不算面板。
+    if (PANEL_END_RE.test(rows[i] || '')) break;
     const m = /^>(\S+) /.exec(rows[i] || '');
     if (m) {
       if (selected) return null; // 兩列都像選中 ⇒ 不是我們認得的面板
