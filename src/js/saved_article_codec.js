@@ -130,6 +130,56 @@ export function buildSavedArticle({ rows, rowTexts, board, aid, url, cols, saved
   };
 }
 
+// 匯出檔（設定 → 備份「本機收藏」）：整篇紀錄原樣放進 articles，換瀏覽器時匯入。
+export const SAVED_EXPORT_KIND = 'savedArticles';
+export const SAVED_EXPORT_VERSION = 1;
+
+export function buildSavedExport(records, now) {
+  return {
+    app: 'pttchrome',
+    kind: SAVED_EXPORT_KIND,
+    schemaVersion: SAVED_EXPORT_VERSION,
+    exportedAt: (now || new Date()).toISOString(),
+    articles: (records || []).filter((r) => !!savedArticleMeta(r)),
+  };
+}
+
+export function savedExportFileName(now) {
+  const d = now || new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return 'pttchrome-saved-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '.json';
+}
+
+// 匯入：檔案是使用者給的、不可信。整份不是 JSON ⇒ badJson；不是我們的匯出檔 ⇒ badFormat；
+// 個別文章對不上（版本、身分、內文形狀、列數）就跳過那一篇（skipped），其餘照收。
+// 內文每一格的細節在打開時由 decodeRows 再驗一次（壞掉＝那篇打不開，不畫半份）。
+export function parseSavedExport(text) {
+  let obj;
+  try {
+    obj = JSON.parse(text);
+  } catch (e) {
+    return { ok: false, reason: 'badJson' };
+  }
+  if (!obj || obj.app !== 'pttchrome' || obj.kind !== SAVED_EXPORT_KIND || !Array.isArray(obj.articles))
+    return { ok: false, reason: 'badFormat' };
+  const records = [];
+  let skipped = 0;
+  for (const r of obj.articles) {
+    const meta = savedArticleMeta(r);
+    const body = r && r.body;
+    if (
+      meta &&
+      meta.key === savedArticleKey(meta.board, meta.aid) &&
+      /^[0-9A-Za-z_-]{8}$/.test(meta.aid) &&
+      body && Array.isArray(body.attrs) && Array.isArray(body.rows) &&
+      body.rows.length > 0 && body.rows.length === meta.lineCount
+    )
+      records.push(r);
+    else skipped++;
+  }
+  return { ok: true, records, skipped };
+}
+
 // 清單用的摘要（不含內文）。存檔紀錄缺欄位或版本不對 ⇒ null。
 export function savedArticleMeta(rec) {
   if (!rec || rec.v !== SAVED_ARTICLE_VERSION || typeof rec.key !== 'string') return null;

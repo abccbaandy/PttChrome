@@ -85,6 +85,18 @@ SavedArticlesStore.prototype = {
     }
   },
 
+  // 全部整篇紀錄（匯出用，新存的在前）。失敗回 []。
+  all: async function () {
+    try {
+      const db = await this._open();
+      const tx = db.transaction('body', 'readonly');
+      const all = await req2promise(tx.objectStore('body').getAll());
+      return all.filter((r) => !!savedArticleMeta(r)).sort((a, b) => b.savedAt - a.savedAt);
+    } catch (e) {
+      return [];
+    }
+  },
+
   has: async function (key) {
     try {
       const db = await this._open();

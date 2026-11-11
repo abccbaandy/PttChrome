@@ -2721,6 +2721,36 @@ export const en_US = {
   },
   "saved_remove": {
     "message": "Delete saved copy"
+  },
+  "options_savedBackup": {
+    "message": "Saved articles"
+  },
+  "tooltip_savedBackup": {
+    "message": "Export the articles you saved on this device to a file, and import it in another browser or device. Importing replaces the same article with the file’s copy; up to 200 articles."
+  },
+  "options_savedExportBtn": {
+    "message": "Export saved articles"
+  },
+  "options_savedImportBtn": {
+    "message": "Import saved articles"
+  },
+  "options_savedExportEmpty": {
+    "message": "There are no saved articles to export."
+  },
+  "options_savedExported": {
+    "message": "Exported {count} articles."
+  },
+  "options_savedImported": {
+    "message": "Imported: {added} added, {replaced} updated."
+  },
+  "options_savedImportSkipped": {
+    "message": "{skipped} could not be read and were skipped."
+  },
+  "options_savedImportFull": {
+    "message": "{full} did not fit (200 articles max); delete some and import again."
+  },
+  "options_savedErrorBadFormat": {
+    "message": "Import failed: this is not a pttchrome saved-articles export."
   }
 
 };

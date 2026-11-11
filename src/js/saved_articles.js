@@ -8,7 +8,13 @@
 //      送不出任何鍵），畫面走 term_view.showStaticArticle（同一個 #mainContainer、同一條
 //      _renderScreenLines），不會跟活連線搶畫面、也不佔 PTT 連線名額。
 //   3. 只存在這個瀏覽器（IndexedDB，saved_articles_store.js），不上雲。
-import { buildSavedArticle, decodeRows } from './saved_article_codec';
+import {
+  buildSavedArticle,
+  decodeRows,
+  buildSavedExport,
+  parseSavedExport,
+  savedExportFileName,
+} from './saved_article_codec';
 import { SavedArticlesStore } from './saved_articles_store';
 import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
@@ -136,6 +142,33 @@ SavedArticles.prototype = {
     return true;
   },
 };
+
+// 匯出／匯入（設定 → 備份「本機收藏」）。設定頁拿不到 App，直接開同一個 IndexedDB；首頁的清單
+// 下次出現時自己重讀。回傳 { count } 匯出了幾篇（0 篇不下載）。
+export async function exportSavedArticles(download, store, now) {
+  const s = store || new SavedArticlesStore();
+  const records = await s.all();
+  if (!records.length) return { count: 0 };
+  const payload = buildSavedExport(records, now);
+  await download(savedExportFileName(now), JSON.stringify(payload), 'application/json');
+  return { count: payload.articles.length };
+}
+
+// 回傳 { ok:false, reason:'badJson'|'badFormat' } 或 { ok:true, added, replaced, skipped, full }：
+// 同一篇＝覆蓋；放不下（200 篇上限）的算 full，不自動刪舊的。
+export async function importSavedArticles(text, store) {
+  const parsed = parseSavedExport(text);
+  if (!parsed.ok) return parsed;
+  const s = store || new SavedArticlesStore();
+  const res = { ok: true, added: 0, replaced: 0, skipped: parsed.skipped, full: 0 };
+  for (const rec of parsed.records) {
+    const r = await s.put(rec);
+    if (r.ok) res[r.replaced ? 'replaced' : 'added']++;
+    else if (r.reason === 'full') res.full++;
+    else res.skipped++;
+  }
+  return res;
+}
 
 // 唯讀頁的按鍵：這一頁沒有連線，任何鍵都送不到 PTT ⇒ 只拿來捲動（鍵位照 pmore：
 // 空白／PgDn／f 下一頁、PgUp／b 上一頁、↓／j／Enter 下一列、↑／k 上一列、Home／g／0 頂、

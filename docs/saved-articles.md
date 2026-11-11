@@ -34,7 +34,7 @@
 
 ## 還沒做（依序）
 
-1. 匯出成檔案（JSON），之後再看要不要存圖片本體。
+1. 存圖片本體（現在只存連結；沒網路時預覽打不開）。要先評估 IndexedDB 容量與 200 篇上限怎麼算。
 
 ## 入口
 
@@ -44,6 +44,7 @@
 | 桌機：右鍵選單「存到本機」 | 同上，跟其他一般項目一樣只在 `normalEnabled` 時出現 |
 | 指令面板（F4） | 開面板時 `refresh()` 重讀清單，讀到了補進面板；列最近存的 5 篇（打字比對標題／看板／作者），Enter＝`open(key)`。好讀文章裡（`canSave`）多一個「存到本機」動作＝`saveCurrent()`（`command_palette.savedArticleItems`） |
 | 首頁儀表板「本機收藏」 | `onChange`／`refresh()` 讀清單；點了 `open(key)` 開新分頁唯讀頁，✕ `remove(key)` |
+| 設定 → 設定備份「本機收藏」 | 匯出＝`exportSavedArticles`：整篇紀錄原樣放進 `{ app, kind: 'savedArticles', schemaVersion, articles }`（`saved_article_codec.buildSavedExport`），0 篇不下載；匯入＝`importSavedArticles`：不是 JSON／不是這種匯出檔整份拒絕，個別對不上（身分、內文形狀、列數）跳過，同一篇覆蓋，放不下（200 篇）算 full、不刪舊的。設定頁拿不到 App ⇒ 直接開同一個 IndexedDB，首頁清單下次出現時重讀 |
 | pref `enableSavedArticles`（預設開） | 關掉＝上面四個入口都不出現；已存的不刪，唯讀頁照常打開 |
 
 ## 測試

@@ -27,6 +27,8 @@ import {
   savedReaderKeyFrom,
   savedReaderUrl,
   staticReaderKey,
+  exportSavedArticles,
+  importSavedArticles,
 } from "../../src/js/saved_articles";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
@@ -228,6 +230,54 @@ describe("SavedArticlesStore（真 IndexedDB）", () => {
     expect(await s.put(rec("1aaaaaaa", 1))).toEqual({ ok: false, reason: "tooLarge" });
     expect(await s.put({ v: 1 })).toEqual({ ok: false, reason: "invalid" });
     expect(await s.list()).toEqual([]);
+  });
+
+  // 匯出／匯入（設定 → 備份「本機收藏」）：換瀏覽器時整篇搬過去，壞檔不寫入。
+  test("匯出整篇 → 匯入到另一個瀏覽器（空的 store）一模一樣；再匯入一次＝覆蓋", async () => {
+    const a = makeStore();
+    await a.put(rec("1aaaaaaa", 1));
+    await a.put(rec("1bbbbbbb", 2));
+    const download = vi.fn();
+    const now = new Date(2026, 10, 11);
+    expect(await exportSavedArticles(download, a, now)).toEqual({ count: 2 });
+    const [name, text, mime] = download.mock.calls[0];
+    expect(name).toBe("pttchrome-saved-20261111.json");
+    expect(mime).toBe("application/json");
+    const payload = JSON.parse(text);
+    expect(payload).toMatchObject({ app: "pttchrome", kind: "savedArticles", schemaVersion: 1 });
+    expect(payload.articles.map((r) => r.aid)).toEqual(["1bbbbbbb", "1aaaaaaa"]);
+
+    const b = makeStore();
+    expect(await importSavedArticles(text, b)).toEqual({ ok: true, added: 2, replaced: 0, skipped: 0, full: 0 });
+    expect(await b.get("test/1aaaaaaa")).toEqual(await a.get("test/1aaaaaaa"));
+    expect(await importSavedArticles(text, b)).toEqual({ ok: true, added: 0, replaced: 2, skipped: 0, full: 0 });
+  });
+
+  test("沒有存檔 ⇒ 不下載", async () => {
+    const download = vi.fn();
+    expect(await exportSavedArticles(download, makeStore())).toEqual({ count: 0 });
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  test("壞檔：不是 JSON／不是匯出檔 ⇒ 什麼都不寫；個別壞掉的那篇跳過、其餘照收；放不下的算 full", async () => {
+    const s = makeStore({ limit: 2 });
+    expect(await importSavedArticles("{not json", s)).toEqual({ ok: false, reason: "badJson" });
+    expect(await importSavedArticles(JSON.stringify({ app: "pttchrome", kind: "prefs", prefs: {} }), s)).toEqual({
+      ok: false,
+      reason: "badFormat",
+    });
+    const good = rec("1aaaaaaa", 1);
+    const wrongKey = { ...rec("1bbbbbbb", 2), key: "other/1bbbbbbb" };
+    const noBody = { ...rec("1ccccccc", 3), body: null };
+    const wrongLines = { ...rec("1ddddddd", 4), lineCount: 3 };
+    const file = (articles) => JSON.stringify({ app: "pttchrome", kind: "savedArticles", schemaVersion: 1, articles });
+    expect(await importSavedArticles(file([good, wrongKey, noBody, wrongLines]), s)).toEqual({
+      ok: true, added: 1, replaced: 0, skipped: 3, full: 0,
+    });
+    expect((await s.list()).map((m) => m.aid)).toEqual(["1aaaaaaa"]);
+    expect(await importSavedArticles(file([rec("1eeeeeee", 5), rec("1fffffff", 6)]), s)).toEqual({
+      ok: true, added: 1, replaced: 0, skipped: 0, full: 1,
+    });
   });
 
   test("IndexedDB 不可用 ⇒ 不 throw，回失敗／空清單", async () => {
