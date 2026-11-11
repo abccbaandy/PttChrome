@@ -2713,6 +2713,15 @@ export const en_US = {
   "tooltip_enableSavedArticles": {
     "message": "Adds \"Save on this device\" to an easy-reading article's More menu (right-click on desktop): the whole article as read (text, comments, colors) is stored in this browser; open it from \"Saved on this device\" on the home screen in a new tab, offline and without sending any key to PTT. Up to 200 articles, never uploaded."
   },
+  "options_enableShareTarget": {
+    "message": "Share to PttChrome"
+  },
+  "tooltip_enableShareTarget": {
+    "message": "Pick PttChrome in Android's share sheet (the app, or this site installed as an app): if the shared text has a PTT article link or \"#AID (board)\", that article opens; before login it opens right after you log in."
+  },
+  "share_no_article": {
+    "message": "No PTT article link in what was shared"
+  },
   "saved_action": {
     "message": "Save on this device"
   },

@@ -418,16 +418,11 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 分享選單選了 PttChrome（P69）：別的 App 丟過來的文字裡找 PTT 文章連結，走同一條 deep link。
-     * 找不到就提示一聲（App 照樣叫到前景），不轉手交給瀏覽器。
+     * 分享選單選了 PttChrome（P69）：分享文字原樣包成 fragment 交給網頁（同一條 deep link 入口），
+     * 找連結、開關、找不到的提示都由網頁決定。不轉手交給瀏覽器（使用者是主動分享給本 App）。
      */
     private fun handleShareIntent(intent: Intent) {
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-        when (val r = DeepLink.fromSharedText(text)) {
-            is DeepLink.Result.Article -> deliverDeepLink(r.fragment)
-            DeepLink.Result.OpenApp -> {}
-            DeepLink.Result.NotOurs -> Toast.makeText(this, R.string.share_no_article, Toast.LENGTH_LONG).show()
-        }
+        DeepLink.shareFragment(intent.getStringExtra(Intent.EXTRA_TEXT))?.let { deliverDeepLink(it) }
     }
 
     private fun deliverDeepLink(fragment: String) {

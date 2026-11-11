@@ -82,31 +82,18 @@ class DeepLinkTest {
         assertEquals("\"#aid=1gIeu-3A&board=%E5%85%AB\"", DeepLink.jsString("#aid=1gIeu-3A&board=%E5%85%AB"))
     }
 
-    // P69 分享選單：別的 App 丟過來的是一段文字（標題＋網址、整段訊息），不是單一網址。
-    private fun share(text: String?) = DeepLink.fromSharedText(text)
-
-    @Test fun sharedTextFindsFirstArticleLink() {
-        val fr = Article("Gossiping/M.1786265274.A.5E3.html")
-        assertEquals(fr, share("https://www.ptt.cc/bbs/Gossiping/M.1786265274.A.5E3.html"))
-        assertEquals(fr, share("[問卦] 有沒有分享的八卦？\nhttps://www.ptt.cc/bbs/Gossiping/M.1786265274.A.5E3.html"))
-        // LINE 的訊息：網址黏著全形字、句尾標點、括號
-        assertEquals(fr, share("看這篇https://www.ptt.cc/bbs/Gossiping/M.1786265274.A.5E3.html。好扯"))
-        assertEquals(fr, share("(https://www.ptt.cc/bbs/Gossiping/M.1786265274.A.5E3.html)."))
-        // 前面的網址接不住就看下一個
-        assertEquals(fr, share("https://example.com/x https://www.ptt.cc/bbs/Gossiping/index.html https://www.ptt.cc/bbs/Gossiping/M.1786265274.A.5E3.html"))
-        // 本站分享出去的連結也吃
-        assertEquals(fr, share("PttChrome 連結 https://abccbaandy.github.io/PttChrome/#Gossiping/M.1786265274.A.5E3.html"))
-    }
-
-    @Test fun sharedTextWithoutArticle() {
-        assertEquals(NotOurs, share(null))
-        assertEquals(NotOurs, share(""))
-        assertEquals(NotOurs, share("沒有連結的一段話"))
-        assertEquals(NotOurs, share("https://www.ptt.cc/bbs/Gossiping/index.html"))
-        assertEquals(NotOurs, share("https://example.com/M.1786265274.A.5E3.html"))
-        // 看板名不合法照樣不收（會被原樣送進 s<board>\r）
-        assertEquals(NotOurs, share("https://www.ptt.cc/bbs/_bad/M.1786265274.A.5E3.html"))
-        assertEquals(OpenApp, share("推薦這個 https://abccbaandy.github.io/PttChrome/"))
+    // P69 分享選單：原生只把分享文字包成 fragment，解析與開關在網頁（tests/unit/deep_link.test.js「分享選單」）。
+    @Test fun sharedTextBecomesShareFragment() {
+        assertEquals(
+            "share_text=%5B%E5%95%8F%E5%8D%A6%5D+x%0Ahttps%3A%2F%2Fwww.ptt.cc%2Fbbs%2FGossiping%2FM.1786265274.A.5E3.html",
+            DeepLink.shareFragment("[問卦] x\nhttps://www.ptt.cc/bbs/Gossiping/M.1786265274.A.5E3.html"),
+        )
+        assertEquals(null, DeepLink.shareFragment(null))
+        assertEquals(null, DeepLink.shareFragment("  "))
+        // 編碼後沒有任何會跳出 JS 字串或換行的字元（交給 hashNavigationJs）
+        val f = DeepLink.shareFragment("a\"b</script>\u2028c")!!
+        assertEquals(true, f.matches(Regex("""[A-Za-z0-9_=%+.*-]+""")))
+        assertEquals(4000 + "share_text=".length, DeepLink.shareFragment("a".repeat(5000))!!.length)
     }
 
     @Test fun nonWebSchemesAreNotOurs() {

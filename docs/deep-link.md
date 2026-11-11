@@ -237,16 +237,17 @@ reset()       ← App.onClose：清 pending 與 _loggedIn
 ## 分享選單（P69：別的 App 分享 → 直接開文）
 
 LINE 等 App 裡的 PTT 連結常開在它自己的內建瀏覽器（不發 VIEW intent）⇒ 改用「分享」丟給 PttChrome。
-分享來的是一段文字（「標題＋換行＋網址」、整段訊息），兩端同一套規則找第一個接得住的文章連結：
-網址候選只取 ASCII（`https?://[\x21-\x7e]+`，LINE 會把網址跟中文黏在一起）→ 修掉句尾標點 → ptt.cc 文章網址
-（檔名要 `.html`、hex 大寫）或本站同一頁的 deep link。
+**解析只有一份，在網頁**（`deep_link.parseSharedText`）：兩個入口都把分享文字原樣交進來。
 
-| 入口 | 接線 | 解析 | 守護 |
-|---|---|---|---|
-| APK | manifest `ACTION_SEND` `text/plain` → `MainActivity#handleShareIntent`（singleTask ⇒ 已開著走 `onNewIntent`） | `DeepLink.fromSharedText` → 同 VIEW 的 `deliverDeepLink`；找不到就 Toast，**不交給瀏覽器**（使用者是主動分享給本 App） | JVM `DeepLinkTest.sharedText*` |
-| 安裝成 App 的網頁版 | `manifest.webmanifest` `share_target`（GET `./?share_url&share_text&share_title`） | `deep_link.parseDeepLink` 在 hash、`?board&aid` 之後試分享參數（`parseSharedText`）；`stripDeepLink` 一律拆掉分享參數 | `deep_link.test.js`「分享選單」 |
+| 入口 | 接線 | 守護 |
+|---|---|---|
+| APK | manifest `ACTION_SEND` `text/plain` → `MainActivity#handleShareIntent` → `DeepLink.shareFragment`（`share_text=<URLEncoder>`，上限 4000 字）→ 既有 `deliverDeepLink`（冷啟動帶 fragment／熱啟動 `location.replace`） | JVM `DeepLinkTest.sharedTextBecomesShareFragment` |
+| 安裝成 App 的網頁版 | `manifest.webmanifest` `share_target`（GET `./?share_url&share_text&share_title`；launch_handler focus-existing ⇒ 走 launchQueue） | `deep_link.test.js`「分享選單」 |
 
-- 沒有設定開關：分享選單是系統層的入口，使用者不選就不會觸發；跳轉本身就是既有的 deep link。
+- 找法：分享文字裡的網址候選只取 ASCII（`https?://[\x21-\x7e]+`，LINE 會把網址跟中文黏在一起）→ 修掉句尾標點 → ptt.cc 文章網址（檔名要 `.html`、hex 大寫）或本站同一頁的 deep link；沒有網址才找 PTT 畫面上的「#AID (看板)」（全半形括號）。看板名照舊過 `BOARD_RE`。
+- 參數：query 與 hash 的 key=value 都看（`shareTexts`）；hash／`?board&aid` 優先。`stripDeepLink` 一律拆掉分享參數（找不到文章也拆，F5 不再跑一次）。
+- 開關 pref `enableShareTarget`（預設開）：`deep_link_entry` 以 `parseDeepLink(href, { share })` 傳進去，關掉＝分享參數不看、不提示，照常開站（manifest／intent filter 是靜態的，分享選單裡仍看得到 PttChrome）。
+- 找不到文章：`deep_link_entry` 的 `noArticleHint`（紅底提示「分享的內容裡沒有 PTT 文章連結」），不送鍵、不轉手給瀏覽器（使用者是主動分享給本 App）。
 - guess：網頁版的 share_target 只有 Android Chrome 安裝成 App 後才出現在分享選單（桌機 Chrome／iOS 不支援）。真機未實測。
 
 ## 冷啟動跳轉的坑（2026-08 起陸續實測，全部有回歸守護）

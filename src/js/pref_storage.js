@@ -69,6 +69,9 @@ export const DEFAULT_PREFS = {
   enableRecentArticles: true,
   // 存到本機（P64，saved_articles.js）：好讀文章存進這個瀏覽器、不連線也能讀。
   enableSavedArticles: true,
+  // 分享到 PttChrome（P69，deep_link.js）：別的 App 分享的文字裡有文章連結就開文。跳文本身就是
+  // 既有 deep link（使用者主動分享過來）⇒ 不在安全模式名單內。
+  enableShareTarget: true,
   // 最近讀過開回去時接著上次讀到的地方（js/recent_articles.js，P49）：AID 跳文落地後只捲視口，
   // 不多送鍵 ⇒ 不在安全模式名單內。
   resumeRecentArticles: true,

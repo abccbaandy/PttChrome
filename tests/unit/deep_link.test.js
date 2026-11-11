@@ -4,7 +4,13 @@
 // 任何「看起來像但不合法」的東西都必須回 null（＝照常開站），因為那個字串會被
 // 原樣送進 `s<board>\r` / `#<aid>\r`。
 
-import { parseDeepLink, buildDeepLink, stripDeepLink, parseSharedText } from "../../src/js/deep_link";
+import {
+  parseDeepLink,
+  buildDeepLink,
+  stripDeepLink,
+  parseSharedText,
+  hasShareParams,
+} from "../../src/js/deep_link";
 import manifest from "../../public/manifest.webmanifest?raw";
 import { fnToAid } from "../../src/js/aid_codec";
 
@@ -222,7 +228,7 @@ describe("buildDeepLink", () => {
 });
 
 // P69 分享選單：安裝成 App 的網頁版被選為分享對象 ⇒ manifest share_target 以 GET 開
-// ./?share_url=…&share_text=…&share_title=…。與 APK 的 DeepLinkTest.sharedText* 同一套案例。
+// ./?share_url=…&share_text=…&share_title=…；APK 把分享文字原樣包成 #share_text=…（原生不解析）。
 describe("分享選單（share_target）", () => {
   const PTT = "https://www.ptt.cc/bbs/Gossiping/" + FN;
   const T = { board: "Gossiping", aid: AID };
@@ -269,6 +275,37 @@ describe("分享選單（share_target）", () => {
     expect(parseSharedText("https://www.ptt.cc/bbs/_bad/" + FN, BASE)).toBe(null);
     expect(parseSharedText("https://www.ptt.cc/bbs/Go%0Dssiping/" + FN, BASE)).toBe(null);
     expect(parseSharedText(null, BASE)).toBe(null);
+  });
+
+  test("PTT 畫面上的「#AID (看板)」寫法（全半形括號）；網址優先", () => {
+    expect(parseSharedText("看這篇 #" + AID + " (Gossiping) 好扯", BASE)).toEqual(T);
+    expect(parseSharedText("#" + AID + "（Gossiping）", BASE)).toEqual(T);
+    expect(parseSharedText("#" + AID + " (C_Chat) " + PTT, BASE)).toEqual(T);
+    expect(parseSharedText("#" + AID + " (_bad)", BASE)).toBe(null);
+    expect(parseSharedText("#" + AID, BASE)).toBe(null);
+  });
+
+  test("APK 的 #share_text=…（URLEncoder 編碼，空白是 +）", () => {
+    const frag = "#share_text=" + encodeURIComponent("[問卦] x\n" + PTT).replace(/%20/g, "+");
+    expect(parseDeepLink(BASE + frag)).toEqual(T);
+    expect(hasShareParams(BASE + "#share_text=hello")).toBe(true);
+    expect(stripDeepLink(BASE + frag)).toBe(BASE);
+    expect(stripDeepLink(BASE + "#share_text=hello")).toBe(BASE);
+  });
+
+  test("開關關掉（opts.share false）⇒ 分享參數一律不看；其他 deep link 照常", () => {
+    const off = { share: false };
+    expect(parseDeepLink(shared({ share_url: PTT }), off)).toBe(null);
+    expect(parseDeepLink(BASE + "#share_text=" + encodeURIComponent(PTT), off)).toBe(null);
+    expect(parseDeepLink(BASE + "#Gossiping/" + FN, off)).toEqual(T);
+    expect(parseDeepLink(BASE + "?board=Gossiping&aid=" + AID, off)).toEqual(T);
+  });
+
+  test("hasShareParams：只認分享參數，空值不算", () => {
+    expect(hasShareParams(shared({ share_text: "x" }))).toBe(true);
+    expect(hasShareParams(shared({ share_text: "" }))).toBe(false);
+    expect(hasShareParams(BASE + "#Gossiping/" + FN)).toBe(false);
+    expect(hasShareParams("not a url")).toBe(false);
   });
 
   test("hash／board=aid 照舊優先於分享參數", () => {
