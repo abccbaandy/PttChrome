@@ -404,12 +404,29 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleViewIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND) {
+            handleShareIntent(intent)
+            return
+        }
         if (intent?.action != Intent.ACTION_VIEW) return
         val url = intent.dataString ?: return
         when (val r = DeepLink.classify(url)) {
             is DeepLink.Result.Article -> deliverDeepLink(r.fragment)
             DeepLink.Result.OpenApp -> {}
             DeepLink.Result.NotOurs -> openInBrowserOnly(url.toUri())
+        }
+    }
+
+    /**
+     * 分享選單選了 PttChrome（P69）：別的 App 丟過來的文字裡找 PTT 文章連結，走同一條 deep link。
+     * 找不到就提示一聲（App 照樣叫到前景），不轉手交給瀏覽器。
+     */
+    private fun handleShareIntent(intent: Intent) {
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        when (val r = DeepLink.fromSharedText(text)) {
+            is DeepLink.Result.Article -> deliverDeepLink(r.fragment)
+            DeepLink.Result.OpenApp -> {}
+            DeepLink.Result.NotOurs -> Toast.makeText(this, R.string.share_no_article, Toast.LENGTH_LONG).show()
         }
     }
 

@@ -130,7 +130,7 @@
 - **手機開鍵盤輸入** — PTT 要你打字（標題、搜尋、看板名稱…）時，底部一顆大按鈕直接叫出鍵盤。
 - **手機按任意鍵繼續** — PTT 停在「請按任意鍵繼續」時，底部一顆「繼續」，點一下就往下走。
 - **手機編輯器存檔** — 發文、回文、寫信時底部導覽有「存檔」，不用打開按鍵面板按 Ctrl+X。
-- **Android App** — 切到背景也不斷線、收到水球跳系統通知，LINE、Telegram 裡的 PTT 文章連結直接在 App 開啟；APK 在 [GitHub Releases](../../releases)。
+- **Android App** — 背景不斷線、水球跳系統通知，LINE、Telegram 的 PTT 文章連結直接開或用分享丟進 App；APK 在 [GitHub Releases](../../releases)。
 - **一鍵登出並關閉 App** — 登出時跳出全螢幕確認，可選只登出，或在 Android App 登出完直接關掉 App。
 
 ### ⚙️ 設定

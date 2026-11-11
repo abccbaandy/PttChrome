@@ -49,6 +49,31 @@ object DeepLink {
         }
     }
 
+    /** 分享文字裡的網址候選：只取 ASCII（LINE 會把網址跟中文標題、全形標點黏在一起）。 */
+    private val SHARED_URL = Regex("""https?://[\x21-\x7e]+""")
+
+    /** 句尾標點不是網址的一部分（文章網址恆以 .html 或 fragment 結尾，修掉不會傷到它）。 */
+    private val TRAILING_PUNCT = Regex("""[)\]}>,.;:!?'"]+$""")
+
+    /**
+     * 別的 App 分享過來的文字（ACTION_SEND 的 EXTRA_TEXT）→ 第一個接得住的文章連結。
+     * 分享內容常是「標題＋換行＋網址」或一整段訊息：逐一找網址，第一個是文章的就用它；
+     * 有本站連結但沒帶文章 ⇒ OpenApp；一個都接不住 ⇒ NotOurs（由呼叫端提示，不交給瀏覽器：
+     * 使用者是主動分享給本 App，轉手開瀏覽器會讓人以為分享失敗）。
+     */
+    fun fromSharedText(text: String?, pageUrl: String = AppConfig.PAGE_URL): Result {
+        if (text.isNullOrEmpty()) return Result.NotOurs
+        var openApp = false
+        for (m in SHARED_URL.findAll(text)) {
+            when (val r = classify(m.value.replace(TRAILING_PUNCT, ""), pageUrl)) {
+                is Result.Article -> return r
+                Result.OpenApp -> openApp = true
+                Result.NotOurs -> {}
+            }
+        }
+        return if (openApp) Result.OpenApp else Result.NotOurs
+    }
+
     private fun fromPtt(uri: URI): Result {
         val m = PTT_ARTICLE_PATH.matchEntire(uri.path ?: "") ?: return Result.NotOurs
         val (board, file) = m.destructured

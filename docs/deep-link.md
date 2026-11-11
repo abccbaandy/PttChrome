@@ -234,6 +234,21 @@ reset()       ← App.onClose：清 pending 與 _loggedIn
 - 已知窗口：頁面已載入但 `installDeepLink` 還沒裝 hashchange（開站約 1–2 秒內）時送來的連結會漏接。
 - 模擬器驗法（無對外網路也可）：`pm set-app-links --package <pkg> 2 abccbaandy.github.io`、`pm set-app-links-user-selection --user 0 --package <pkg> true www.ptt.cc` 模擬驗證／勾選；`am start -W -a VIEW -c BROWSABLE -d <url>`；debug APK 開 dev server 模式後用 WebView devtools 讀 `performance.getEntriesByType('navigation')[0].name`（冷啟動帶的 fragment）或包 `__app.deepLinkController.request` 記錄（熱啟動）。連線失敗會 `reset()` 清 `_pending`，別拿它判。
 
+## 分享選單（P69：別的 App 分享 → 直接開文）
+
+LINE 等 App 裡的 PTT 連結常開在它自己的內建瀏覽器（不發 VIEW intent）⇒ 改用「分享」丟給 PttChrome。
+分享來的是一段文字（「標題＋換行＋網址」、整段訊息），兩端同一套規則找第一個接得住的文章連結：
+網址候選只取 ASCII（`https?://[\x21-\x7e]+`，LINE 會把網址跟中文黏在一起）→ 修掉句尾標點 → ptt.cc 文章網址
+（檔名要 `.html`、hex 大寫）或本站同一頁的 deep link。
+
+| 入口 | 接線 | 解析 | 守護 |
+|---|---|---|---|
+| APK | manifest `ACTION_SEND` `text/plain` → `MainActivity#handleShareIntent`（singleTask ⇒ 已開著走 `onNewIntent`） | `DeepLink.fromSharedText` → 同 VIEW 的 `deliverDeepLink`；找不到就 Toast，**不交給瀏覽器**（使用者是主動分享給本 App） | JVM `DeepLinkTest.sharedText*` |
+| 安裝成 App 的網頁版 | `manifest.webmanifest` `share_target`（GET `./?share_url&share_text&share_title`） | `deep_link.parseDeepLink` 在 hash、`?board&aid` 之後試分享參數（`parseSharedText`）；`stripDeepLink` 一律拆掉分享參數 | `deep_link.test.js`「分享選單」 |
+
+- 沒有設定開關：分享選單是系統層的入口，使用者不選就不會觸發；跳轉本身就是既有的 deep link。
+- guess：網頁版的 share_target 只有 Android Chrome 安裝成 App 後才出現在分享選單（桌機 Chrome／iOS 不支援）。真機未實測。
+
 ## 冷啟動跳轉的坑（2026-08 起陸續實測，全部有回歸守護）
 
 1-5 只在 **deep link 冷啟動**才會踩到：它是唯一走 viaMenu 板跳、且唯一在「好讀

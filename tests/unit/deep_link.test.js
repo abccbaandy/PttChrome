@@ -4,7 +4,8 @@
 // 任何「看起來像但不合法」的東西都必須回 null（＝照常開站），因為那個字串會被
 // 原樣送進 `s<board>\r` / `#<aid>\r`。
 
-import { parseDeepLink, buildDeepLink, stripDeepLink } from "../../src/js/deep_link";
+import { parseDeepLink, buildDeepLink, stripDeepLink, parseSharedText } from "../../src/js/deep_link";
+import manifest from "../../public/manifest.webmanifest?raw";
 import { fnToAid } from "../../src/js/aid_codec";
 
 const BASE = "https://example.github.io/pttchrome/";
@@ -217,6 +218,68 @@ describe("buildDeepLink", () => {
 
   test("非法 aid → 不產生連結", () => {
     expect(buildDeepLink(BASE, "Gossiping", "short")).toBeNull();
+  });
+});
+
+// P69 分享選單：安裝成 App 的網頁版被選為分享對象 ⇒ manifest share_target 以 GET 開
+// ./?share_url=…&share_text=…&share_title=…。與 APK 的 DeepLinkTest.sharedText* 同一套案例。
+describe("分享選單（share_target）", () => {
+  const PTT = "https://www.ptt.cc/bbs/Gossiping/" + FN;
+  const T = { board: "Gossiping", aid: AID };
+  const shared = (params) => BASE + "?" + new URLSearchParams(params).toString();
+
+  test("manifest 的 share_target 參數名與解析端一致", () => {
+    const st = JSON.parse(manifest).share_target;
+    expect(st).toEqual({
+      action: "./",
+      method: "GET",
+      params: { title: "share_title", text: "share_text", url: "share_url" },
+    });
+  });
+
+  test("share_url／share_text／share_title 任一帶著文章連結就跳", () => {
+    expect(parseDeepLink(shared({ share_url: PTT }))).toEqual(T);
+    expect(parseDeepLink(shared({ share_text: "[問卦] 有沒有分享的八卦？\n" + PTT }))).toEqual(T);
+    expect(parseDeepLink(shared({ share_title: "標題", share_text: "看這篇" + PTT + "。好扯" }))).toEqual(T);
+    expect(parseDeepLink(shared({ share_title: PTT }))).toEqual(T);
+  });
+
+  test("分享文字：句尾標點、括號、前面接不住的網址", () => {
+    expect(parseSharedText("(" + PTT + ").", BASE)).toEqual(T);
+    expect(
+      parseSharedText("https://example.com/x https://www.ptt.cc/bbs/Gossiping/index.html " + PTT, BASE),
+    ).toEqual(T);
+    expect(parseSharedText("http://WWW.PTT.CC/bbs/Gossiping/" + FN, BASE)).toEqual(T);
+  });
+
+  test("本站分享出去的連結也吃（同一個頁面才算）", () => {
+    expect(parseSharedText("PttChrome 連結 " + BASE + "#Gossiping/" + FN, BASE)).toEqual(T);
+    expect(parseSharedText("https://example.github.io/pttchrome#Gossiping/" + FN, BASE)).toEqual(T);
+    expect(parseSharedText("https://evil.example/pttchrome/#Gossiping/" + FN, BASE)).toBe(null);
+  });
+
+  test("沒有文章連結、或看起來像但不合法 ⇒ null（照常開站）", () => {
+    expect(parseDeepLink(shared({ share_text: "沒有連結的一段話" }))).toBe(null);
+    expect(parseSharedText("https://www.ptt.cc/bbs/Gossiping/index.html", BASE)).toBe(null);
+    expect(parseSharedText("https://example.com/bbs/Gossiping/" + FN, BASE)).toBe(null);
+    // hex 必須大寫、要有 .html（與 APK 一致）
+    expect(parseSharedText("https://www.ptt.cc/bbs/Gossiping/M.1783270974.A.0ca.html", BASE)).toBe(null);
+    expect(parseSharedText("https://www.ptt.cc/bbs/Gossiping/M.1783270974.A.0CA", BASE)).toBe(null);
+    // 看板名會被原樣送進 s<board>\r
+    expect(parseSharedText("https://www.ptt.cc/bbs/_bad/" + FN, BASE)).toBe(null);
+    expect(parseSharedText("https://www.ptt.cc/bbs/Go%0Dssiping/" + FN, BASE)).toBe(null);
+    expect(parseSharedText(null, BASE)).toBe(null);
+  });
+
+  test("hash／board=aid 照舊優先於分享參數", () => {
+    expect(
+      parseDeepLink(BASE + "?share_url=" + encodeURIComponent("https://www.ptt.cc/bbs/C_Chat/" + FN) + "#Gossiping/" + FN),
+    ).toEqual(T);
+  });
+
+  test("消費後拆掉分享參數（找不到文章也拆），其他參數留著", () => {
+    expect(stripDeepLink(shared({ share_url: PTT }))).toBe(BASE);
+    expect(stripDeepLink(BASE + "?site=abc&share_text=hello&share_title=x")).toBe(BASE + "?site=abc");
   });
 });
 
