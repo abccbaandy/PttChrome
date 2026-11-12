@@ -2711,7 +2711,22 @@ export const en_US = {
     "message": "Save on this device"
   },
   "tooltip_enableSavedArticles": {
-    "message": "Adds \"Save on this device\" to an easy-reading article's More menu (right-click on desktop): the whole article as read (text, comments, colors) is stored in this browser; open it from \"Saved on this device\" on the home screen in a new tab, offline and without sending any key to PTT. Up to 200 articles, never uploaded."
+    "message": "Adds \"Save on this device\" to an easy-reading article's More menu (right-click on desktop): the whole article as read (text, comments, colors) is stored in this browser; open it from \"Saved on this device\" on the home screen in a new tab, offline and without sending any key to PTT. Up to 200 articles; the content is never uploaded (with cloud sync on, only the list syncs)."
+  },
+  "options_syncSavedArticles": {
+    "message": "Sync the list of saved articles too"
+  },
+  "tooltip_syncSavedArticles": {
+    "message": "While cloud sync is signed in, the list of saved articles (board, title, author; never the content) syncs too: other devices show them under \"Saved on other devices\" on the home page, and opening one loads the article over the connection."
+  },
+  "saved_others": {
+    "message": "Saved on other devices"
+  },
+  "saved_others_remove": {
+    "message": "Hide on this device (the other device keeps its copy)"
+  },
+  "saved_others_failed": {
+    "message": "Can't open this article right now (not connected or busy)"
   },
   "options_enableShareTarget": {
     "message": "Share to PttChrome"

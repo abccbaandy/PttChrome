@@ -7,7 +7,9 @@
 //   2. **打開＝另開一頁唯讀頁**（`?saved=<key>`）：那一頁不 connect()（view.conn 恆 undefined ⇒
 //      送不出任何鍵），畫面走 term_view.showStaticArticle（同一個 #mainContainer、同一條
 //      _renderScreenLines），不會跟活連線搶畫面、也不佔 PTT 連線名額。
-//   3. 只存在這個瀏覽器（IndexedDB，saved_articles_store.js），不上雲。
+//   3. 內文只存在這個瀏覽器（IndexedDB，saved_articles_store.js），不上雲。用 Google 登入雲端同步的人，
+//      **清單**（看板、AID、標題、作者、存的時間）跟著偏好同步（P70，saved_cloud.js）：別台裝置的首頁
+//      「其他裝置存的」列出來，點了走 deep link 開真文章（要連線），不是唯讀頁。
 import {
   buildSavedArticle,
   decodeRows,
@@ -19,6 +21,7 @@ import { SavedArticlesStore } from './saved_articles_store';
 import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
 import { readEffectivePrefs } from './pref_storage';
+import { normalizeCloudSaved, othersFromCloud, planCloudUpload, cloudKey } from './saved_cloud';
 
 export const SAVED_QUERY_KEY = 'saved';
 const HINT_MS = 2500;
@@ -59,9 +62,22 @@ export function savableArticle(core) {
   return hit;
 }
 
-export function SavedArticles(core, store) {
+// cloud：雲端清單的接口（App 用 pref_sync 接，見 pttchrome.jsx；unit 給假的）：
+//   { signedIn(): bool, upload(plan): Promise<bool>, subscribe(cb(rawMap)) }。沒給＝不同步。
+// hiddenStore：這台在「其他裝置存的」按過 ✕ 的清單（{ read(), write(map) }），預設 localStorage。
+export function SavedArticles(core, store, cloud, hiddenStore) {
   this._core = core;
   this._store = store || new SavedArticlesStore();
+  this._cloud = cloud || null;
+  this._hiddenStore = hiddenStore || localHiddenStore();
+  // 雲端清單（normalizeCloudSaved 過的 map）。null＝還沒收到伺服器確定過的狀態。
+  this._cloudSaved = null;
+  if (this._cloud && typeof this._cloud.subscribe === 'function') {
+    const self = this;
+    this._cloud.subscribe(function (raw) {
+      self._onCloud(raw);
+    });
+  }
   // 清單摘要（首頁「本機收藏」畫這份）。null＝還沒讀過；refresh() 讀 IndexedDB 後通知。
   this.state = null;
   this._listeners = [];
@@ -71,6 +87,66 @@ SavedArticles.prototype = {
   // pref enableSavedArticles（預設開）。關掉＝入口全部不出現；已存的不刪，打開唯讀頁照常。
   enabled: function () {
     return readEffectivePrefs().enableSavedArticles !== false;
+  },
+
+  // 清單同步（P70）：本機收藏開著、pref syncSavedArticles 沒關、而且登入了雲端同步。
+  cloudEnabled: function () {
+    return (
+      this.enabled() &&
+      readEffectivePrefs().syncSavedArticles !== false &&
+      !!this._cloud &&
+      this._cloud.signedIn()
+    );
+  },
+
+  // 首頁「其他裝置存的」：雲端有、這台沒存的。同步關著或還沒收到雲端 ⇒ []。
+  others: function () {
+    if (!this.cloudEnabled() || !this._cloudSaved) return [];
+    return othersFromCloud(this._cloudSaved, this.state || [], this._hiddenStore.read());
+  },
+
+  _onCloud: function (raw) {
+    this._cloudSaved = normalizeCloudSaved(raw);
+    this._syncCloud(null);
+    this._emit();
+  },
+
+  // 把這台的變動寫上雲（removed＝這台剛刪的 cloudKey）。雲端狀態還沒到就先不寫：
+  // 下一個 snapshot 會再比一次（不知道雲端有什麼就上傳，可能把別台剛刪的又加回去）。
+  _syncCloud: async function (removed) {
+    if (!this.cloudEnabled() || !this._cloudSaved) return null;
+    const local = await this._store.list();
+    const plan = planCloudUpload({ cloud: this._cloudSaved, localList: local, removed: removed || [] });
+    if (plan) await this._cloud.upload(plan);
+    return plan;
+  },
+
+  // 雲端清單變了也要讓首頁重畫：給新的陣列（同一個 reference 時 React 的 setState 不會重畫）。
+  _emit: function () {
+    const list = this.state ? this.state.slice() : this.state;
+    this._listeners.forEach((fn) => fn(list));
+  },
+
+  // 開別台存的那篇：跟「最近讀過」同一條 deep link（要連線、會開真文章）。開不了回 false。
+  openOther: function (entry) {
+    const dl = this._core && this._core.deepLinkController;
+    if (!entry || !dl || typeof dl.request !== 'function') return false;
+    return !!dl.request({ board: entry.board, aid: entry.aid }, { quietLanding: true });
+  },
+
+  // 這台不再列別台存的那篇。**只藏在這台、不刪雲端**：存它的那台還留著存檔，刪雲端的話
+  // 它下一次同步（planCloudUpload：本機有、雲端沒有 ⇒ set）就補回來，✕ 等於沒按。
+  // 記下當時的 savedAt：那台之後重存（savedAt 變新）才再出現。不在雲端的順手清掉（上限跟著雲端）。
+  removeOther: function (entry) {
+    const k = entry && cloudKey(entry.board, entry.aid);
+    if (!k || !this.cloudEnabled() || !this._cloudSaved || !this._cloudSaved[k]) return false;
+    const prev = this._hiddenStore.read();
+    const next = {};
+    for (const hk of Object.keys(prev)) if (this._cloudSaved[hk]) next[hk] = prev[hk];
+    next[k] = this._cloudSaved[k].savedAt;
+    this._hiddenStore.write(next);
+    this._emit();
+    return true;
   },
 
   canSave: function () {
@@ -111,7 +187,7 @@ SavedArticles.prototype = {
       cols: buf.cols,
     });
     const res = rec ? await this._store.put(rec) : { ok: false, reason: 'invalid' };
-    if (res.ok) this.refresh();
+    if (res.ok) this.refresh().then(() => this._syncCloud(null));
     return this._hint(res);
   },
 
@@ -130,7 +206,11 @@ SavedArticles.prototype = {
 
   remove: async function (key) {
     const res = await this._store.remove(key);
-    this.refresh();
+    await this.refresh();
+    // 這台刪掉的也從雲端清單拿掉。別台也存了同一篇的話，它下一次同步會補回來，
+    // 並列在這台的「其他裝置存的」——那是對的：那台確實還存著。
+    const k = typeof key === 'string' && key.indexOf('/') > 0 ? key.replace('/', ':') : null;
+    if (k) this._syncCloud([k]);
     return res;
   },
 
@@ -142,6 +222,34 @@ SavedArticles.prototype = {
     return true;
   },
 };
+
+const HIDDEN_KEY = 'pttchrome.savedOthersHidden';
+
+// 「其他裝置存的」按過 ✕ 的清單，存在這個瀏覽器（不同步：在哪台按就藏在哪台）。
+// localStorage 讀寫失敗（隱私模式、被擋）就只留在這次頁面。
+function localHiddenStore() {
+  let mem = null;
+  return {
+    read: function () {
+      if (mem) return Object.assign({}, mem);
+      try {
+        const v = JSON.parse(window.localStorage.getItem(HIDDEN_KEY) || '{}');
+        mem = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+      } catch (e) {
+        mem = {};
+      }
+      return Object.assign({}, mem);
+    },
+    write: function (m) {
+      mem = Object.assign({}, m);
+      try {
+        window.localStorage.setItem(HIDDEN_KEY, JSON.stringify(mem));
+      } catch (e) {
+        // 只留在記憶體
+      }
+    },
+  };
+}
 
 // 匯出／匯入（設定 → 備份「本機收藏」）。設定頁拿不到 App，直接開同一個 IndexedDB；首頁的清單
 // 下次出現時自己重讀。回傳 { count } 匯出了幾篇（0 篇不下載）。

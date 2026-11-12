@@ -2,8 +2,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Each signed-in user may only read/write their own prefs document.
+    // `saved`（P70）＝本機收藏的清單：一個 map，最多 300 篇（src/js/saved_cloud.js#CLOUD_SAVED_LIMIT），
+    // 只有摘要、沒有內文。擋掉不是 map、或塞爆的寫入（文件上限 1MB，偏好同步每次都會帶到它）。
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == uid && savedListOk();
+    }
+
+    function savedListOk() {
+      return request.resource == null
+        || !('saved' in request.resource.data)
+        || (request.resource.data.saved is map && request.resource.data.saved.size() <= 300);
     }
   }
 }

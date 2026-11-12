@@ -308,7 +308,12 @@ export const App = function() {
   // 最近讀過的文章＋稍後再讀（儀表板／指令面板／右鍵選單共用的清單，recent_articles.js）。
   this.recentArticles = new RecentArticles(this);
   // 存到本機（P64，saved_articles.js）：存好讀累積頁到 IndexedDB、在唯讀頁打開。
-  this.savedArticles = new SavedArticles(this);
+  // 收藏清單跟著偏好同步（P70）：pref_sync 的 snapshot 交雲端清單過來、變動由它寫回。
+  this.savedArticles = new SavedArticles(this, null, {
+    signedIn: () => !!prefSync.getUser(),
+    upload: (plan) => prefSync.saveSavedEntries(plan),
+    subscribe: (cb) => prefSync.registerOnCloudSaved(cb),
+  });
   // 寬螢幕雙欄閱讀（讀文章時左邊空白列出剛才的文章列表，split_reader.js）。
   this.splitReader = new SplitReader(this);
   // 文章工具側欄（好讀文章時右邊空白放 AID／推文統計／推文者／圖片牆，article_tools.js）。

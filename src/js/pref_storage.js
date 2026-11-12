@@ -69,6 +69,8 @@ export const DEFAULT_PREFS = {
   enableRecentArticles: true,
   // 存到本機（P64，saved_articles.js）：好讀文章存進這個瀏覽器、不連線也能讀。
   enableSavedArticles: true,
+  // 本機收藏的清單同步到雲端（P70，saved_cloud.js）：只在登入雲端同步時有作用，內文不上雲。
+  syncSavedArticles: true,
   // 分享到 PttChrome（P69，deep_link.js）：別的 App 分享的文字裡有文章連結就開文。跳文本身就是
   // 既有 deep link（使用者主動分享過來）⇒ 不在安全模式名單內。
   enableShareTarget: true,
