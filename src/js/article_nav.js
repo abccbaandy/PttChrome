@@ -118,9 +118,14 @@ export function ArticleNav(core) {
   this._state = { visible: false, left: 0, top: 0, height: 0, mobile: false, total: 0, commentRow: null, marks: [] };
   const self = this;
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self.refresh();
-    });
+    core.buf.addEventListener(
+      'screenSettled',
+      function() {
+        self.refresh();
+      },
+      // 出錯 ⇒ 這次連線收起導覽軸（原生捲軸跟著回來），不再接 settle（event.js 故障隔離）。
+      { feature: 'enableArticleNav', disable: () => self._set({ visible: false }) }
+    );
   if (typeof window !== 'undefined' && window.addEventListener)
     window.addEventListener('resize', function() {
       self.refresh();

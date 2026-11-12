@@ -95,6 +95,7 @@ import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from 
 import { sameAppBar } from './mobile_app_bar';
 import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
 import { i18n } from './i18n';
+import { setListenerErrorPolicy } from './event';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
 import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp, androidCanSetProtocol, androidSetProtocol } from './android_bridge';
@@ -275,6 +276,10 @@ export const App = function() {
   // Debug 錄製器（src/js/debug_recorder.js）：由 debug_record_control.js 掛上/卸下，
   // 純 runtime、不落地。關鍵路徑用 this.debugRecorder?.log(tag, info) 留痕。
   this.debugRecorder = null;
+  // 功能故障隔離（event.js、docs/feature-isolation.md）：正式版某個功能的 settle 監聽者丟例外
+  // ⇒ 其他功能照跑、記進 debug 錄製；有登記停用方式的功能這次連線暫停並提示一次。
+  // dev build／測試是 strict（照樣丟出），這裡不會被叫到。
+  setListenerErrorPolicy({ onError: (info) => this._onFeatureError(info) });
   // Debug 模式（設定→關於，runtime-only）：開著時「⋯」浮動工具裡出現錄製鈕。
   // 唯一寫入點 setDebugMode。
   this.debugMode = false;
@@ -636,8 +641,30 @@ App.prototype._attachConn = function(conn) {
   });
 };
 
+// 功能監聽者出錯（event.js 的故障隔離）。只記本機（console＋debug 錄製），不上傳。
+App.prototype._onFeatureError = function(info) {
+  var err = info.error || {};
+  console.error('pttchrome feature error', info.type, info.feature || '', err);
+  this.debugRecorder?.log('featureError', {
+    type: info.type,
+    feature: info.feature,
+    disabled: info.disabled,
+    message: String(err && err.message ? err.message : err),
+    stack: err && err.stack ? String(err.stack).slice(0, 1200) : null,
+  });
+  if (!info.disabled || !info.feature) return;
+  this._pausedFeatures = this._pausedFeatures || new Set();
+  if (this._pausedFeatures.has(info.feature)) return;
+  this._pausedFeatures.add(info.feature);
+  var name = i18n('options_' + info.feature) || info.feature;
+  this.view.flashListHint(String(i18n('featurePaused')).replace('{name}', name), 5000, HINT_ERROR);
+};
+
 App.prototype.onConnect = function() {
   this.conn.isConnected = true;
+  // 上一條連線因出錯暫停的功能恢復（event.js 的故障隔離只停一條連線）。
+  this.buf.enableAllListeners?.();
+  this._pausedFeatures = null;
   this.view.setConn(this.conn);
   // 終端機模式（DEC 2026 同步輸出…）是 per-connection 的。TermBuf 一個頁面只建
   // 一次，所以新連線一定要從乾淨狀態開始，否則上一條連線若斷在一幀中間

@@ -94,9 +94,14 @@ export function WhatsNew(core, opts) {
   this._state = { visible: false, items: [] };
   const self = this;
   if (core && core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      return self._onSettled();
-    });
+    core.buf.addEventListener(
+      'screenSettled',
+      function() {
+        return self._onSettled();
+      },
+      // 出錯 ⇒ 這次連線收起小卡、不再接 settle（event.js 故障隔離）。
+      { feature: 'showWhatsNew', disable: () => self.dismiss() }
+    );
 }
 
 WhatsNew.prototype = {

@@ -795,6 +795,9 @@ export const en_US = {
   "lightsOn_switchedPlain": {
     "message": "Switched to plain-text display mode and reloaded the post — the PTT server never sends hidden alphanumeric text to the browser, so it has to resend it. Colors are gone for now; press \"Lights off\" to restore them."
   },
+  "featurePaused": {
+    "message": "\"{name}\" ran into a problem and is paused until you reconnect."
+  },
   "lightsOn_switchFailed": {
     "message": "Lights on failed: could not open PTT's color display mode screen. Please try again."
   },

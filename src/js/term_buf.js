@@ -1893,4 +1893,5 @@ TermBuf.prototype = {
   }
 };
 
-Event.mixin(TermBuf.prototype);
+// isolate：screenSettled 等二十幾個功能掛同一條鏈，一個丟例外不能拖垮其他（event.js 檔頭）。
+Event.mixin(TermBuf.prototype, { isolate: true });
