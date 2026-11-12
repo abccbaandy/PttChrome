@@ -144,7 +144,7 @@ describe("SavedArticles 的雲端接線", () => {
     for (const k of Object.keys(prefOverride)) delete prefOverride[k];
   });
 
-  function setup({ signedIn = true, local = [] } = {}) {
+  function setup({ signedIn = true, local = [], hidden = {} } = {}) {
     let list = local.slice();
     const store = {
       list: async () => list.slice(),
@@ -167,7 +167,14 @@ describe("SavedArticles 的雲端接線", () => {
     };
     const requests = [];
     const core = { deepLinkController: { request: (t, o) => (requests.push([t, o]), "navigating") } };
-    const saved = new SavedArticles(core, store, cloud);
+    const hiddenStore = {
+      read: () => ({ ...hidden }),
+      write: (m) => {
+        for (const k of Object.keys(hidden)) delete hidden[k];
+        Object.assign(hidden, m);
+      },
+    };
+    const saved = new SavedArticles(core, store, cloud, hiddenStore);
     return { saved, uploads, requests, push: (raw) => push(raw), store };
   }
   const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -200,13 +207,30 @@ describe("SavedArticles 的雲端接線", () => {
     expect(t.uploads).toEqual([{ set: {}, del: [cloudKey("Stock", aid(1))] }]);
   });
 
-  test("從雲端清單拿掉別台的 ⇒ 立刻不列、寫 del", async () => {
-    const t = setup();
+  // ✕ 只在這台藏起來、不刪雲端：存它的那台還留著存檔，刪雲端的話它下一次同步就補回來（✕ 等於沒按）。
+  test("✕ 別台存的 ⇒ 這台不再列（那台補傳回來也不列），不寫雲端；那台重存（更新）才再出現", async () => {
+    const hidden = {};
+    const t = setup({ hidden });
     t.push(mapOf(entry("Tech_Job", aid(2), 9)));
     await flush();
-    await t.saved.removeOther(t.saved.others()[0]);
+    expect(t.saved.removeOther(t.saved.others()[0])).toBe(true);
     expect(t.saved.others()).toEqual([]);
-    expect(t.uploads).toEqual([{ set: {}, del: [cloudKey("Tech_Job", aid(2))] }]);
+    t.push(mapOf(entry("Tech_Job", aid(2), 9)));
+    await flush();
+    expect(t.saved.others()).toEqual([]);
+    expect(t.uploads).toEqual([]);
+    // 重開頁面（同一份 hidden 儲存）還是藏著
+    const t2 = setup({ hidden });
+    t2.push(mapOf(entry("Tech_Job", aid(2), 9)));
+    expect(t2.saved.others()).toEqual([]);
+    t2.push(mapOf(entry("Tech_Job", aid(2), 20)));
+    expect(t2.saved.others().map((e) => e.aid)).toEqual([aid(2)]);
+  });
+
+  test("othersFromCloud 吃 hidden：savedAt 沒比藏的時候新 ⇒ 不列", () => {
+    const cloud = mapOf(entry("Stock", aid(1), 5), entry("Stock", aid(2), 9));
+    const hidden = { [cloudKey("Stock", aid(1))]: 5, [cloudKey("Stock", aid(2))]: 3 };
+    expect(othersFromCloud(cloud, [], hidden).map((e) => e.aid)).toEqual([aid(2)]);
   });
 
   test.each([

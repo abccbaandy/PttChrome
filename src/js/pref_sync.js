@@ -185,7 +185,8 @@ const attachSnapshotListener = () => {
             " fromCache=" + snap.metadata.fromCache +
             " pendingWrites=" + snap.metadata.hasPendingWrites
         );
-        // 收藏清單：只看伺服器確定過的狀態（echo／離線快取的「沒有」都不算，同 prefs 的守門）。
+        // 收藏清單：跟 prefs 同一道守門（merge／push-local 才交出去；echo、還沒確定的「沒有」不算）。
+        // 離線快取裡有 prefs 時也算 merge ⇒ 可能是舊的清單：planCloudUpload 只加或「舊換新」，舊清單頂多漏傳。
         if (cloudSavedCallback && (action === "merge" || action === "push-local")) {
           try {
             cloudSavedCallback((data && data.saved) || {});

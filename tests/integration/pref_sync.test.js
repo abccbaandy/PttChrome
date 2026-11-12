@@ -612,6 +612,41 @@ describe("saved list (P70)", () => {
       });
   });
 
+  it("a prefs upload leaves the saved list alone", () => {
+    writeStoredPrefs({ fontSize: 16 });
+    return seedDoc({ prefs: { fontSize: 16 }, saved: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5) } })
+      .then(() => startupWithUser(vi.fn()))
+      .then(() => {
+        writeStoredPrefs({ ...readStoredPrefs(), fontSize: 22 });
+        return prefSync.savePrefs(readStoredPrefs());
+      })
+      .then(() => waitForCloud(d => d && d.prefs && d.prefs.fontSize === 22, "prefs upload"))
+      .then(cloudDoc => {
+        expect(Object.keys(cloudDoc.saved)).toEqual([key("1gIeu-3A")]);
+      });
+  });
+
+  it("rules refuse a merge write that grows the saved map past 300", () => {
+    const many = {};
+    for (let i = 0; i < 300; ++i) {
+      const aid = ("A" + String(i).padStart(7, "0")).slice(0, 8);
+      many[key(aid)] = entry(aid, i);
+    }
+    return seedDoc({ prefs: { fontSize: 16 }, saved: many })
+      .then(() => seeder())
+      .then(sd =>
+        setDoc(doc(sd.db, "users", sd.uid), { saved: { [key("Z0000000")]: entry("Z0000000", 999) } }, { merge: true })
+      )
+      .then(
+        () => {
+          throw new Error("the 301st entry should have been refused");
+        },
+        e => {
+          expect(String(e && e.code)).toMatch(/permission-denied/);
+        }
+      );
+  });
+
   it("saveSavedEntries is a no-op before sign-in", () =>
     prefSync.saveSavedEntries({ set: { [key("1gIeu-3A")]: entry("1gIeu-3A", 1) }, del: [] }).then(ok => {
       expect(ok).toBe(false);

@@ -2723,7 +2723,7 @@ export const en_US = {
     "message": "Saved on other devices"
   },
   "saved_others_remove": {
-    "message": "Remove from the cloud list (the other device keeps its copy)"
+    "message": "Hide on this device (the other device keeps its copy)"
   },
   "saved_others_failed": {
     "message": "Can't open this article right now (not connected or busy)"

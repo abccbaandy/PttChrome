@@ -40,11 +40,12 @@
 | 讀 | `pref_sync` 的 snapshot 分類成 `merge`／`push-local`（伺服器確定過的狀態）才交給 `registerOnCloudSaved` 的 callback；echo、離線快取的「沒有」都不算 | 同 prefs 的守門：不知道雲端有什麼就上傳，會把別台剛刪的又加回去 |
 | 寫 | `planCloudUpload`：這台有、雲端沒有或比較舊（`savedAt`）⇒ set；這台剛刪的 ⇒ del；雲端狀態還沒到不寫 | 存的時間一樣、標題不同時兩邊都不蓋（不互蓋到天荒地老） |
 | 上限 | 300 篇（`CLOUD_SAVED_LIMIT`，`firestore.rules` 同一個數字）。滿了只准擠掉**比要加的更舊、而且不是這台存的**那篇，擠不掉就這篇不上雲 | 每次擠掉都是舊換新 ⇒ 好幾台一起超過上限時單調收斂到最新的 300 篇（unit 模擬兩台輪流同步到穩定） |
-| 首頁 | 「本機收藏」下多「其他裝置存的」＝雲端有、這台沒存的（`others()`）：點了 `openOther`＝deep link（同最近讀過，要連線、會開真文章，不是唯讀頁）；✕ `removeOther`＝只從雲端清單拿掉，那台的存檔不動 | 開完可以在這台再存一份 |
+| 首頁 | 「本機收藏」下多「其他裝置存的」＝雲端有、這台沒存的（`others()`）：點了 `openOther`＝deep link（同最近讀過，要連線、會開真文章，不是唯讀頁）；✕ `removeOther`＝只在這台藏起來（localStorage 記當時的 savedAt，那台重存才再出現），不刪雲端：刪了存它的那台下次同步就補回來 | 開完可以在這台再存一份 |
 | 在這台刪 | `remove(key)` 同時從雲端清單拿掉 | 不然它會變成「其他裝置存的」又出現在這台 |
 | 開關 | pref `syncSavedArticles`（預設開），設定 → 備份的「雲端同步」區，只在登入同步後出現；`enableSavedArticles` 關掉時一起停 | 沒登入同步就沒東西可同步 |
 
 **`firestore.rules` 改了要手動部署**（`npx firebase-tools@15 deploy --only firestore:rules`，見 `docs/pref-sync-firestore.md`）：沒部署時線上仍是舊規則（只看 uid），功能照常、只是少了 300 篇的伺服器端檢查。
+rules 只驗「`saved` 是 map、≤300 篇」：Firestore rules 不能逐一走訪 map 的值，每篇的欄位格式由 `normalizeCloudSaved` 在讀回時把關（只能寫自己的文件，壞資料只影響自己）。
 
 ## 還沒做（依序）
 
@@ -66,6 +67,6 @@
 
 `tests/e2e/offline/saved_reader.offline.spec.js`：stock-huang 好讀讀完 → `saveCurrent()` 存進真 IndexedDB（再存＝覆蓋）→ 開 `?saved=` 唯讀頁：沒有任何 BBS WebSocket（對照組：一般開站數得到）、`view.conn` undefined、逐列文字＝存之前的累積頁；找不到的 key ⇒ 錯誤提示。
 
-清單同步：`tests/unit/saved_cloud.test.js`（純函式＋接線）、`tests/integration/pref_sync.test.js`「saved list (P70)」（emulator：別台存的即時推過來、逐篇 set／del 不碰 prefs、rules 擋 301 篇與非 map）。
+清單同步：`tests/unit/saved_cloud.test.js`（純函式＋接線）、`tests/integration/pref_sync.test.js`「saved list (P70)」（emulator：別台存的即時推過來、逐篇 set／del 不碰 prefs、rules 擋 301 篇〔整份寫與 merge 寫〕與非 map、偏好上傳不動 saved）。
 
 `tests/unit/saved_articles.test.js`（browser）：真 TermBuf＋AnsiParser 寫一頁（顏色、全形字、網址、閃爍、底線），存回來 `buildRow` 逐列相同、prototype 相同；壞資料矩陣全回 null；真 IndexedDB 的存／列／讀／刪、覆蓋不佔名額、滿了拒絕、太長拒絕、IndexedDB 不可用不 throw。

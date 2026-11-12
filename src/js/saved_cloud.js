@@ -49,10 +49,12 @@ export function normalizeCloudSaved(raw) {
 }
 
 // 首頁「其他裝置存的」：雲端有、這台沒存的，新存的在前。
-export function othersFromCloud(cloud, localList) {
+// hidden＝這台按過 ✕ 的 { key: 按的時候那篇的 savedAt }：savedAt 沒變新就不列（那台重存才再出現）。
+export function othersFromCloud(cloud, localList, hidden) {
   const mine = new Set((localList || []).map((m) => cloudKey(m.board, m.aid)));
+  const h = hidden || {};
   return Object.keys(cloud || {})
-    .filter((k) => !mine.has(k))
+    .filter((k) => !mine.has(k) && !(typeof h[k] === 'number' && cloud[k].savedAt <= h[k]))
     .map((k) => cloud[k])
     .sort((a, b) => b.savedAt - a.savedAt);
 }

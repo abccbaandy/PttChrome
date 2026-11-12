@@ -2722,7 +2722,7 @@
     "message": "其他裝置存的"
   },
   "saved_others_remove": {
-    "message": "從雲端清單拿掉（那台的存檔不動）"
+    "message": "這台不再顯示（那台的存檔不動）"
   },
   "saved_others_failed": {
     "message": "現在開不了這篇（還沒連線或正在忙）"

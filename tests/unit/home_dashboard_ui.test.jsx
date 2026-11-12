@@ -306,7 +306,7 @@ describe("本機收藏（P64）", () => {
   });
 
   // P70：清單跟著雲端同步，雲端有、這台沒存的列在「其他裝置存的」。點了走 deep link（openOther），
-  // ✕ 只從雲端清單拿掉（removeOther）；開不了 ⇒ 提示。這台一篇都沒存也要出現。
+  // ✕ 只在這台藏起來（removeOther）；開不了 ⇒ 提示。這台一篇都沒存也要出現。
   test("其他裝置存的：這台沒存也列出；點一列 → openOther，✕ → removeOther，開不了 ⇒ 提示", async () => {
     const OTHER = { board: "Tech_Job", aid: "1bbbbbbb", title: "[心得] 別台存的", author: "x", savedAt: 9 };
     const saved = fakeSaved([], true, [OTHER]);
