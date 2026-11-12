@@ -40,3 +40,9 @@ test("github-actions 也分組（每週一支 PR）", () => {
   const actions = YAML.slice(YAML.indexOf('package-ecosystem: "github-actions"'));
   expect(actions).toMatch(/groups:\s*\n\s+\S+:\s*\n\s+patterns:\s*\["\*"\]/);
 });
+
+test("每個 ecosystem 都有 7 天冷卻期（只管版本更新，安全性更新不受影響）", () => {
+  const blocks = YAML.split(/\n\s+- package-ecosystem:/).slice(1);
+  expect(blocks.length).toBeGreaterThanOrEqual(2);
+  for (const b of blocks) expect(b).toMatch(/\n\s+cooldown:\s*\n\s+default-days:\s*7\s*\n/);
+});

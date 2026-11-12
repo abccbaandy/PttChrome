@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # 冷卻期：新版發布滿 7 天才開 PR（供應鏈攻擊多半在幾天內被發現下架）。只管版本更新，
+    # 安全性更新不受影響（GitHub 文件：cooldown 只作用於 version updates）。守護 tests/unit/dependabot_groups.test.js。
+    cooldown:
+      default-days: 7
     # 先比對到的 group 優先。下面兩組不分升級類型（含 major）一律一起升：
     #   - @vitest/browser-playwright 的 peer 是**精確**的 vitest 版本；
     #   - unit-browser 用 playwright 的瀏覽器，CI image tag 卻取自 @playwright/test
@@ -24,6 +28,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # 冷卻期：新版發布滿 7 天才開 PR（供應鏈攻擊多半在幾天內被發現下架）。只管版本更新，
+    # 安全性更新不受影響（GitHub 文件：cooldown 只作用於 version updates）。守護 tests/unit/dependabot_groups.test.js。
+    cooldown:
+      default-days: 7
     # 每週一支 PR。group 只跨同一個 ecosystem，npm 與 actions 本來就各自一支。
     groups:
       actions:
