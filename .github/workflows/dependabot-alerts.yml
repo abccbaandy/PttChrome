@@ -1,0 +1,48 @@
+name: Dependabot alerts
+
+# 每天查一次 Dependabot 未處理警示：有才開／更新 issue「Dependabot 警示待處理」，全部處理完自動關掉
+#（決策與去重見 scripts/dependabot-alerts-report.mjs）。雲端 session 讀不到警示 API，靠這支把警示帶到 issue。
+# 讀警示先用 GITHUB_TOKEN（security-events: read），讀不到再用 repo secret DEPENDABOT_ALERTS_TOKEN；
+# 兩個都讀不到會開「Dependabot 警示讀不到」issue 寫明怎麼補 token。
+# 實測 GITHUB_TOKEN（即使給 security-events: read）讀警示回 403 ⇒ 實際上要靠那個 secret；GITHUB_TOKEN
+# 那一試留著，GitHub 哪天開放了就自動不用 secret。
+# pull_request 只 dry-run（印出會做什麼，不寫 issue）：驗 token 讀不讀得到、腳本跑不跑得起來。
+# 有 paths 過濾 ⇒ 不可加進 dev 的 required checks（沒動這些檔的 PR 永遠不會跑，會卡 pending）。
+on:
+  schedule:
+    - cron: "17 23 * * *" # 台灣時間 07:17（非整點：整點是 GitHub schedule 尖峰）
+  workflow_dispatch:
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/dependabot-alerts.yml"
+      - "scripts/dependabot-alerts-report.mjs"
+
+permissions:
+  contents: read
+  issues: write
+  security-events: read
+
+concurrency:
+  group: dependabot-alerts
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/dependabot-alerts-report.mjs
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Report
+        run: node scripts/dependabot-alerts-report.mjs ${{ github.event_name == 'pull_request' && '--dry-run' || '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DEPENDABOT_ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
