@@ -97,7 +97,10 @@ internal class AppUpdater(private val activity: ComponentActivity) {
                     UpdateCheck.evaluate(BuildConfig.VERSION_NAME, response.body.string())
                 }
             }
-        } catch (e: IOException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 不只 IOException：這條每天開 App 都會跑，任何意外都只能當「這次沒查到」，不能讓 App 開不起來。
             Log.w(TAG, "check: $e")
             null
         }
