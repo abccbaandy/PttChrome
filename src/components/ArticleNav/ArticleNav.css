@@ -36,9 +36,12 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* 位置由 index.jsx 直接寫 transform（捲動不經 React、不重排），高度寫百分比。 */
 .articleNavThumb {
   position: absolute;
+  top: 0;
   left: 4px;
+  will-change: transform;
   width: 6px;
   border-radius: 3px;
   background: rgba(168, 199, 250, 0.45);

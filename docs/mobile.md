@@ -1,6 +1,6 @@
 # 手機版面（`mobileLayout`）
 
-目標裝置：Android Chrome 現代版（iOS Safari `unknown`，未驗）；Android APK 殼（背景不斷線）見 `docs/android-app.md`，其鍵盤高度由原生回報（`keyboardInset` 的 `hostInset`）。動 `mobile_layout.js`、
+目標裝置：**手機只支援 Android APK 版**（使用者定案）——APK 殼（背景不斷線）見 `docs/android-app.md`，其 WebView 就是 Chrome 現代版，鍵盤高度由原生回報（`keyboardInset` 的 `hostInset`）。手機瀏覽器（含安裝成 App 的網頁版）照常可用，但不另外驗、不為它加功能或開待實測項目；iOS 不支援。動 `mobile_layout.js`、
 `App.applyMobileLayout`、`MobileToolbar`、`#t` 的 `inputmode` 前先讀。
 
 ## 狀態

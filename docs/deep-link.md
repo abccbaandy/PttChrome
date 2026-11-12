@@ -248,7 +248,7 @@ LINE 等 App 裡的 PTT 連結常開在它自己的內建瀏覽器（不發 VIEW
 - 參數：query 與 hash 的 key=value 都看（`shareTexts`）；hash／`?board&aid` 優先。`stripDeepLink` 一律拆掉分享參數（找不到文章也拆，F5 不再跑一次）。
 - 開關 pref `enableShareTarget`（預設開）：`deep_link_entry` 以 `parseDeepLink(href, { share })` 傳進去，關掉＝分享參數不看、不提示，照常開站（manifest／intent filter 是靜態的，分享選單裡仍看得到 PttChrome）。
 - 找不到文章：`deep_link_entry` 的 `noArticleHint`（紅底提示「分享的內容裡沒有 PTT 文章連結」），不送鍵、不轉手給瀏覽器（使用者是主動分享給本 App）。
-- guess：網頁版的 share_target 只有 Android Chrome 安裝成 App 後才出現在分享選單（桌機 Chrome／iOS 不支援）。真機未實測。
+- guess：網頁版的 share_target 只有 Android Chrome 安裝成 App 後才出現在分享選單（桌機 Chrome／iOS 不支援）。手機只支援 APK 版（`docs/mobile.md`），這條不實測。
 
 ## 冷啟動跳轉的坑（2026-08 起陸續實測，全部有回歸守護）
 

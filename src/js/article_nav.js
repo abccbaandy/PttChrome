@@ -238,7 +238,11 @@ ArticleNav.prototype = {
   },
 
   // 標記位置會跟著版面變（圖片載入、閉塊照常渲染後換成實測高度、放大縮小），而那些都不經
-  // settle ⇒ 捲動與內容尺寸變化時重量（rAF 合併）。控制器跟 app 同壽，不必拆。
+  // settle ⇒ 內容尺寸變化時重量（ResizeObserver，rAF 合併）。控制器跟 app 同壽，不必拆。
+  // 閉塊捲近變成照常渲染（CHUNK_NEAR_CLASS）時，塊內標記從「塊頂＋序位估」換成真位置，
+  // 塊高不一定變 ⇒ 另外看塊的 class（MutationObserver，只在跨過預載邊界時觸發）。
+  // **不掛 scroll**：捲動本身不改任何列的像素位置，每幀重量所有標記是白做（實機約 2.5 ms／幀，
+  // docs/handoff/android-battery-drain.md U8；守護 tests/unit/article_nav_scroll_cost.test.jsx）。
   _watch: function() {
     const view = this._core.view || {};
     const disp = view.mainDisplay;
@@ -248,8 +252,14 @@ ArticleNav.prototype = {
     const kick = function() {
       if (self._state.visible) self._scheduleMeasure();
     };
-    disp.addEventListener('scroll', kick, { passive: true });
     if (view.mainContainer && typeof ResizeObserver === 'function') new ResizeObserver(kick).observe(view.mainContainer);
+    if (view.mainContainer && typeof MutationObserver === 'function') {
+      new MutationObserver(function(records) {
+        for (let i = 0; i < records.length; ++i) {
+          if (isScreenChunk(records[i].target)) return kick();
+        }
+      }).observe(view.mainContainer, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
   },
 
   _scheduleMeasure: function() {

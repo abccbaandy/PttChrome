@@ -1244,17 +1244,24 @@ span {
 }
 
 /* 文章導覽軸顯示中（js/article_nav.js 在 .main 掛 .articleNavOn）：導覽軸就是這一頁的捲軸，
-   原生的那條只做**隱形**、寬度照留 —— 拿掉（scrollbar-width: none）內容會寬 10px，放大態
-   圖片（width:100%）跟著變高、手機換行版面的折行點也變，導覽軸一出現一消失畫面就位移。
+   原生的那條**整個不畫**（display:none）。只做透明不夠：自訂捲軸由主執行緒畫，捲動時每幀
+   連同 .main 整層重畫（實機每幀 1.3～2.1 ms，docs/handoff/android-battery-drain.md U9）。
+   空出的 10px 由 padding-right 補回 —— 內容寬一變，放大態圖片（width:100%）跟著變高、
+   手機換行版面的折行點也變，導覽軸一出現一消失畫面就位移（.main 的子層不只列，還有文末的
+   下一篇卡片，所以補在 .main 上）。.main 的寬是 fixedResize 寫死的 ⇒ 要 border-box，
+   不然 padding 會把外框撐寬（.main 的 border／上下 padding 都是 0，border-box 不影響高度）。
    捲動本身照舊是瀏覽器原生的（滾輪、觸控、鍵盤）。
    Firefox 不吃 ::-webkit-scrollbar ⇒ 用 scrollbar-color；**不可以對 Chromium 也套**：設了
    標準屬性，Chromium 就整組忽略 ::-webkit-scrollbar，捲軸寬變回系統預設（不是 10px）。
    守護 tests/e2e/offline/article_nav_scrollbar.offline.spec.js。 */
-.main.articleNavOn::-webkit-scrollbar-track,
-.main.articleNavOn::-webkit-scrollbar-track:hover,
-.main.articleNavOn::-webkit-scrollbar-thumb,
-.main.articleNavOn::-webkit-scrollbar-thumb:hover {
-  background: transparent;
+.main.articleNavOn::-webkit-scrollbar {
+  display: none;
+}
+@supports selector(::-webkit-scrollbar) {
+  .main.articleNavOn {
+    box-sizing: border-box;
+    padding-right: 10px;
+  }
 }
 @supports not selector(::-webkit-scrollbar) {
   .main.articleNavOn {

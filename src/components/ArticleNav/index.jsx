@@ -7,6 +7,11 @@ import "./ArticleNav.css";
 // 位置、標記與顯示與否只從 pttchrome.articleNav.onChange 來；「目前看到哪」直接讀終端機的
 // 捲動位置（.main 的 scroll 事件，rAF 合併）。
 //
+// **捲動不經 React**：滑塊位置（transform）與 aria-valuenow 由 scroll 直接寫進 DOM。經 state
+// 的話每一幀整個軸連同上千個標記重新 render，實機約佔 165Hz 每幀預算的四成（耗電，
+// docs/handoff/android-battery-drain.md U8）。手機的醒著／閒置只在切換那一刻 setState。
+// 守護 tests/unit/article_nav_scroll_cost.test.jsx。
+//
 // 點／拖：pointer capture，整段拖曳都由軸接手（手機上不會變成捲頁或下拉重整）。點「推」
 // 那一格＝跳到第一則推文（精準跳列），其他地方＝捲到那個比例。
 // 滑鼠：App 的滑鼠入口在 window ⇒ 事件一律 stopPropagation，App._onUploadLayer 也認
@@ -24,16 +29,29 @@ const KIND_TITLE = {
 // （也不接觸控），捲動中與捲完 IDLE_MS 內才出現、可以抓。
 const IDLE_MS = 1500;
 
-function useViewport(view, visible) {
-  const [vp, setVp] = useState({ top: 0, size: 1, at: 0 });
+// 滑塊跟著 .main 的捲動位置走（直接寫 DOM，見檔頭）。navHeight＝軸的高度（px）：滑塊用
+// translateY 定位（只動合成層，不重排）。每次讀到位置就呼叫 onActive（手機醒來用）。
+function useScrollThumb(view, visible, navHeight, rootRef, thumbRef, onActive) {
+  const activeRef = useRef(onActive);
+  activeRef.current = onActive;
   useEffect(() => {
     const el = view && view.mainDisplay;
     if (!visible || !el) return undefined;
     let raf = 0;
+    let lastSize = -1;
     const read = () => {
       raf = 0;
       const h = el.scrollHeight || 1;
-      setVp({ top: el.scrollTop / h, size: Math.min(1, el.clientHeight / h), at: Date.now() });
+      const top = el.scrollTop / h;
+      const size = Math.max(Math.min(1, el.clientHeight / h) * 100, 3);
+      const thumb = thumbRef.current;
+      if (thumb) {
+        thumb.style.transform = "translateY(" + top * navHeight + "px)";
+        if (size !== lastSize) thumb.style.height = size + "%";
+        lastSize = size;
+      }
+      if (rootRef.current) rootRef.current.setAttribute("aria-valuenow", String(Math.round(top * 100)));
+      activeRef.current();
     };
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(read);
@@ -44,25 +62,34 @@ function useViewport(view, visible) {
       el.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [view, visible]);
-  return vp;
+  }, [view, visible, navHeight, rootRef, thumbRef]);
 }
 
 export const ArticleNav = ({ pttchrome }) => {
   const nav = pttchrome && pttchrome.articleNav;
   const [state, setState] = useState(() => (nav ? nav.state : null));
   const dragRef = useRef(null);
+  const rootRef = useRef(null);
+  const thumbRef = useRef(null);
   const visible = !!(state && state.visible);
-  const vp = useViewport(pttchrome && pttchrome.view, visible);
   const [dragging, setDragging] = useState(false);
   const [awake, setAwake] = useState(false);
-  // 手機的「醒著」：最近一次捲動後 IDLE_MS 內。開文那一刻的第一次量測不算。
-  useEffect(() => {
-    if (!vp.at) return undefined;
-    setAwake(true);
-    const id = setTimeout(() => setAwake(false), IDLE_MS);
-    return () => clearTimeout(id);
-  }, [vp.at]);
+  // 手機的「醒著」：最近一次讀到捲動位置（含開文那一刻）後 IDLE_MS 內。只在切換時 setState。
+  const awakeRef = useRef(false);
+  const idleTimer = useRef(0);
+  const wake = useCallback(() => {
+    if (!awakeRef.current) {
+      awakeRef.current = true;
+      setAwake(true);
+    }
+    clearTimeout(idleTimer.current);
+    idleTimer.current = setTimeout(() => {
+      awakeRef.current = false;
+      setAwake(false);
+    }, IDLE_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(idleTimer.current), []);
+  useScrollThumb(pttchrome && pttchrome.view, visible, visible ? state.height : 0, rootRef, thumbRef, wake);
 
   useEffect(() => {
     if (!nav || typeof nav.onChange !== "function") return undefined;
@@ -112,6 +139,7 @@ export const ArticleNav = ({ pttchrome }) => {
   if (!visible) return null;
   return (
     <div
+      ref={rootRef}
       id={ARTICLE_NAV_ID}
       className={
         "articleNav" +
@@ -121,7 +149,6 @@ export const ArticleNav = ({ pttchrome }) => {
       role="scrollbar"
       aria-orientation="vertical"
       aria-label={i18n("articleNav_label")}
-      aria-valuenow={Math.round(vp.top * 100)}
       style={{ left: state.left, top: state.top, height: state.height }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -136,13 +163,7 @@ export const ArticleNav = ({ pttchrome }) => {
       onTouchEnd={swallow}
     >
       <div className="articleNavTrack" />
-      <div
-        className="articleNavThumb"
-        style={{
-          top: vp.top * 100 + "%",
-          height: Math.max(vp.size * 100, 3) + "%",
-        }}
-      />
+      <div ref={thumbRef} className="articleNavThumb" />
       {state.marks.map((m, i) => (
         <div
           key={m.kind + i}
