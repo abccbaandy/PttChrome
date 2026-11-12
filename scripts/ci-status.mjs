@@ -112,10 +112,12 @@ export function isProjectRun(run) {
 //   - nightly 壓力測試（flaky-hunt.yml）跑在 dev 當下的 head sha 上，答「有沒有 flaky」；
 //   - upstream pttbbs 畫面檢查（ptt-src-screens.yml）的 schedule／dispatch 答「upstream 有沒有
 //     改到讓我們判錯」；只有 PR 觸發的那次（改了這套東西本身）算這次的 CI。
+//   - Dependabot 警示通知（dependabot-alerts.yml）的 schedule／dispatch 答「有沒有未處理警示」，
+//     同上只有 PR 觸發的算。
 export function isSideRun(run) {
   const p = String((run && run.path) || "");
   if (/(^|\/)flaky-hunt\.yml$/.test(p)) return true;
-  if (/(^|\/)ptt-src-screens\.yml$/.test(p) && run.event !== "pull_request") return true;
+  if (/(^|\/)(ptt-src-screens|dependabot-alerts)\.yml$/.test(p) && run.event !== "pull_request") return true;
   return false;
 }
 
