@@ -11,7 +11,7 @@
 //   5. CI 的 e2e 打包版（DEVELOPER_MODE）也是 strict。
 import fs from "node:fs";
 import path from "node:path";
-import { Event, setListenerErrorPolicy } from "../../src/js/event";
+import { Event, setListenerErrorPolicy, runIsolated } from "../../src/js/event";
 import { WhatsNew } from "../../src/js/whats_new";
 import { ArticleNav } from "../../src/js/article_nav";
 
@@ -114,6 +114,27 @@ describe("正式版（非 strict）", () => {
       throw new Error("conn");
     });
     expect(() => bus.dispatchEvent({ type: "data" })).toThrow("conn");
+  });
+});
+
+describe("runIsolated（onPrefChange／onClose 用）", () => {
+  test("正式版：例外交給 onError（type＝label），呼叫端接著做下一個", () => {
+    const errors = [];
+    prev = setListenerErrorPolicy({ strict: false, onError: (info) => errors.push(info) });
+    const ran = [];
+    runIsolated("close:a", () => {
+      throw new Error("boom");
+    });
+    runIsolated("close:b", () => ran.push("b"));
+    expect(ran).toEqual(["b"]);
+    expect(errors).toEqual([expect.objectContaining({ type: "close:a", feature: null, disabled: false })]);
+  });
+  test("strict：照樣丟出", () => {
+    expect(() =>
+      runIsolated("close:a", () => {
+        throw new Error("boom");
+      })
+    ).toThrow("boom");
   });
 });
 
