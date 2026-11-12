@@ -7,7 +7,9 @@
 //   2. **打開＝另開一頁唯讀頁**（`?saved=<key>`）：那一頁不 connect()（view.conn 恆 undefined ⇒
 //      送不出任何鍵），畫面走 term_view.showStaticArticle（同一個 #mainContainer、同一條
 //      _renderScreenLines），不會跟活連線搶畫面、也不佔 PTT 連線名額。
-//   3. 只存在這個瀏覽器（IndexedDB，saved_articles_store.js），不上雲。
+//   3. 內文只存在這個瀏覽器（IndexedDB，saved_articles_store.js），不上雲。用 Google 登入雲端同步的人，
+//      **清單**（看板、AID、標題、作者、存的時間）跟著偏好同步（P70，saved_cloud.js）：別台裝置的首頁
+//      「其他裝置存的」列出來，點了走 deep link 開真文章（要連線），不是唯讀頁。
 import {
   buildSavedArticle,
   decodeRows,
@@ -19,6 +21,7 @@ import { SavedArticlesStore } from './saved_articles_store';
 import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
 import { readEffectivePrefs } from './pref_storage';
+import { normalizeCloudSaved, othersFromCloud, planCloudUpload, cloudKey } from './saved_cloud';
 
 export const SAVED_QUERY_KEY = 'saved';
 const HINT_MS = 2500;
@@ -59,9 +62,20 @@ export function savableArticle(core) {
   return hit;
 }
 
-export function SavedArticles(core, store) {
+// cloud：雲端清單的接口（App 用 pref_sync 接，見 pttchrome.jsx；unit 給假的）：
+//   { signedIn(): bool, upload(plan): Promise<bool>, subscribe(cb(rawMap)) }。沒給＝不同步。
+export function SavedArticles(core, store, cloud) {
   this._core = core;
   this._store = store || new SavedArticlesStore();
+  this._cloud = cloud || null;
+  // 雲端清單（normalizeCloudSaved 過的 map）。null＝還沒收到伺服器確定過的狀態。
+  this._cloudSaved = null;
+  if (this._cloud && typeof this._cloud.subscribe === 'function') {
+    const self = this;
+    this._cloud.subscribe(function (raw) {
+      self._onCloud(raw);
+    });
+  }
   // 清單摘要（首頁「本機收藏」畫這份）。null＝還沒讀過；refresh() 讀 IndexedDB 後通知。
   this.state = null;
   this._listeners = [];
@@ -71,6 +85,62 @@ SavedArticles.prototype = {
   // pref enableSavedArticles（預設開）。關掉＝入口全部不出現；已存的不刪，打開唯讀頁照常。
   enabled: function () {
     return readEffectivePrefs().enableSavedArticles !== false;
+  },
+
+  // 清單同步（P70）：本機收藏開著、pref syncSavedArticles 沒關、而且登入了雲端同步。
+  cloudEnabled: function () {
+    return (
+      this.enabled() &&
+      readEffectivePrefs().syncSavedArticles !== false &&
+      !!this._cloud &&
+      this._cloud.signedIn()
+    );
+  },
+
+  // 首頁「其他裝置存的」：雲端有、這台沒存的。同步關著或還沒收到雲端 ⇒ []。
+  others: function () {
+    if (!this.cloudEnabled() || !this._cloudSaved) return [];
+    return othersFromCloud(this._cloudSaved, this.state || []);
+  },
+
+  _onCloud: function (raw) {
+    this._cloudSaved = normalizeCloudSaved(raw);
+    this._syncCloud(null);
+    this._emit();
+  },
+
+  // 把這台的變動寫上雲（removed＝這台剛刪的 cloudKey）。雲端狀態還沒到就先不寫：
+  // 下一個 snapshot 會再比一次（不知道雲端有什麼就上傳，可能把別台剛刪的又加回去）。
+  _syncCloud: async function (removed) {
+    if (!this.cloudEnabled() || !this._cloudSaved) return null;
+    const local = await this._store.list();
+    const plan = planCloudUpload({ cloud: this._cloudSaved, localList: local, removed: removed || [] });
+    if (plan) await this._cloud.upload(plan);
+    return plan;
+  },
+
+  // 雲端清單變了也要讓首頁重畫：給新的陣列（同一個 reference 時 React 的 setState 不會重畫）。
+  _emit: function () {
+    const list = this.state ? this.state.slice() : this.state;
+    this._listeners.forEach((fn) => fn(list));
+  },
+
+  // 開別台存的那篇：跟「最近讀過」同一條 deep link（要連線、會開真文章）。開不了回 false。
+  openOther: function (entry) {
+    const dl = this._core && this._core.deepLinkController;
+    if (!entry || !dl || typeof dl.request !== 'function') return false;
+    return !!dl.request({ board: entry.board, aid: entry.aid }, { quietLanding: true });
+  },
+
+  // 從雲端清單拿掉別台存的那篇（那台的本機存檔不動，只是不再出現在「其他裝置存的」）。
+  removeOther: async function (entry) {
+    const k = entry && cloudKey(entry.board, entry.aid);
+    if (!k || !this.cloudEnabled() || !this._cloudSaved || !this._cloudSaved[k]) return false;
+    const next = Object.assign({}, this._cloudSaved);
+    delete next[k];
+    this._cloudSaved = next;
+    this._emit();
+    return this._cloud.upload({ set: {}, del: [k] });
   },
 
   canSave: function () {
@@ -111,7 +181,7 @@ SavedArticles.prototype = {
       cols: buf.cols,
     });
     const res = rec ? await this._store.put(rec) : { ok: false, reason: 'invalid' };
-    if (res.ok) this.refresh();
+    if (res.ok) this.refresh().then(() => this._syncCloud(null));
     return this._hint(res);
   },
 
@@ -130,7 +200,10 @@ SavedArticles.prototype = {
 
   remove: async function (key) {
     const res = await this._store.remove(key);
-    this.refresh();
+    await this.refresh();
+    // 這台刪掉的也從雲端清單拿掉，免得它變成「其他裝置存的」又出現在這台。
+    const k = typeof key === 'string' && key.indexOf('/') > 0 ? key.replace('/', ':') : null;
+    if (k) this._syncCloud([k]);
     return res;
   },
 

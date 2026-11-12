@@ -16,7 +16,7 @@
 | 讀回來不可信 | `decodeRows` 任何一處對不上回 `null`（呼叫端當「這篇壞了」） | IndexedDB 可能是舊版、半寫入；不畫半份 |
 | 儲存 | IndexedDB `pttchrome-saved-articles`：`meta`（清單摘要）＋`body`（整篇），一個 transaction 一起寫／刪 | 清單只讀小的 meta；打開才讀內文 |
 | 上限 | 200 篇、單篇 30000 列；**滿了拒絕，不自動刪舊的** | 存檔是使用者明確留下的，偷偷刪比存不進去更糟 |
-| 不上雲 | 只在這個瀏覽器 | 內文大，Firestore 額度扛不住；提案原本說「雲端只同步清單」，第一版先不做 |
+| 內文不上雲 | 內文只在這個瀏覽器；登入雲端同步時只同步**清單**（下面「清單同步到雲端」） | 內文大，Firestore 額度扛不住 |
 | 失敗 | 每個操作 resolve `{ ok:false, reason }`（`invalid`／`tooLarge`／`full`／`quota`／`error`），不 reject | 私密視窗、封鎖網站資料時 IndexedDB 會 throw；呼叫端只要照結果提示 |
 
 ## 唯讀頁（`?saved=<key>`，`saved_articles.js#bootSavedReader`）
@@ -32,6 +32,20 @@
 
 另外比較過、沒採用的兩條（11/11）：A 在活連線的畫面上換資料來源（推文列、下一篇卡片、讀到哪底列等浮層都看 pageState 3＋好讀狀態，活畫面是列表時會互相打架）；B 自己的容器＋自己的 ScreenController（`main.css` 50 多條選擇器掛在 `#mainContainer` 底下、`.main` 的縮放由 `fixedResize` 算，要複製一份）。
 
+## 清單同步到雲端（P70，`saved_cloud.js`）
+
+| 項目 | 規則 | 理由 |
+|---|---|---|
+| 放哪 | 偏好同一份 `users/{uid}` 的 `saved` 欄位：map，key＝`cloudKey`（本機 key 的 `/` 換成 `:`），value＝`{ board, aid, title, author, savedAt }`（標題截 120 字、作者 40 字） | 共用偏好的 onSnapshot，不多開 listener；map 讓每台只 `set`／`deleteField` 自己動到的那幾篇（`setDoc` merge:true 逐 key 合併），兩台同時存不會互蓋整份 |
+| 讀 | `pref_sync` 的 snapshot 分類成 `merge`／`push-local`（伺服器確定過的狀態）才交給 `registerOnCloudSaved` 的 callback；echo、離線快取的「沒有」都不算 | 同 prefs 的守門：不知道雲端有什麼就上傳，會把別台剛刪的又加回去 |
+| 寫 | `planCloudUpload`：這台有、雲端沒有或比較舊（`savedAt`）⇒ set；這台剛刪的 ⇒ del；雲端狀態還沒到不寫 | 存的時間一樣、標題不同時兩邊都不蓋（不互蓋到天荒地老） |
+| 上限 | 300 篇（`CLOUD_SAVED_LIMIT`，`firestore.rules` 同一個數字）。滿了只准擠掉**比要加的更舊、而且不是這台存的**那篇，擠不掉就這篇不上雲 | 每次擠掉都是舊換新 ⇒ 好幾台一起超過上限時單調收斂到最新的 300 篇（unit 模擬兩台輪流同步到穩定） |
+| 首頁 | 「本機收藏」下多「其他裝置存的」＝雲端有、這台沒存的（`others()`）：點了 `openOther`＝deep link（同最近讀過，要連線、會開真文章，不是唯讀頁）；✕ `removeOther`＝只從雲端清單拿掉，那台的存檔不動 | 開完可以在這台再存一份 |
+| 在這台刪 | `remove(key)` 同時從雲端清單拿掉 | 不然它會變成「其他裝置存的」又出現在這台 |
+| 開關 | pref `syncSavedArticles`（預設開），設定 → 備份的「雲端同步」區，只在登入同步後出現；`enableSavedArticles` 關掉時一起停 | 沒登入同步就沒東西可同步 |
+
+**`firestore.rules` 改了要手動部署**（`npx firebase-tools@15 deploy --only firestore:rules`，見 `docs/pref-sync-firestore.md`）：沒部署時線上仍是舊規則（只看 uid），功能照常、只是少了 300 篇的伺服器端檢查。
+
 ## 還沒做（依序）
 
 1. 存圖片本體（現在只存連結；沒網路時預覽打不開）。要先評估 IndexedDB 容量與 200 篇上限怎麼算。
@@ -46,9 +60,12 @@
 | 首頁儀表板「本機收藏」 | `onChange`／`refresh()` 讀清單；點了 `open(key)` 開新分頁唯讀頁，✕ `remove(key)` |
 | 設定 → 設定備份「本機收藏」 | 匯出＝`exportSavedArticles`：整篇紀錄原樣放進 `{ app, kind: 'savedArticles', schemaVersion, articles }`（`saved_article_codec.buildSavedExport`），0 篇不下載；匯入＝`importSavedArticles`：不是 JSON／不是這種匯出檔整份拒絕，個別對不上（身分、內文形狀、列數）跳過，同一篇覆蓋，放不下（200 篇）算 full、不刪舊的。設定頁拿不到 App ⇒ 直接開同一個 IndexedDB，首頁清單下次出現時重讀 |
 | pref `enableSavedArticles`（預設開） | 關掉＝上面四個入口都不出現；已存的不刪，唯讀頁照常打開 |
+| 首頁「其他裝置存的」 | 見上面「清單同步到雲端」 |
 
 ## 測試
 
 `tests/e2e/offline/saved_reader.offline.spec.js`：stock-huang 好讀讀完 → `saveCurrent()` 存進真 IndexedDB（再存＝覆蓋）→ 開 `?saved=` 唯讀頁：沒有任何 BBS WebSocket（對照組：一般開站數得到）、`view.conn` undefined、逐列文字＝存之前的累積頁；找不到的 key ⇒ 錯誤提示。
+
+清單同步：`tests/unit/saved_cloud.test.js`（純函式＋接線）、`tests/integration/pref_sync.test.js`「saved list (P70)」（emulator：別台存的即時推過來、逐篇 set／del 不碰 prefs、rules 擋 301 篇與非 map）。
 
 `tests/unit/saved_articles.test.js`（browser）：真 TermBuf＋AnsiParser 寫一頁（顏色、全形字、網址、閃爍、底線），存回來 `buildRow` 逐列相同、prototype 相同；壞資料矩陣全回 null；真 IndexedDB 的存／列／讀／刪、覆蓋不佔名額、滿了拒絕、太長拒絕、IndexedDB 不可用不 throw。

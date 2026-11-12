@@ -2710,7 +2710,22 @@
     "message": "存到本機"
   },
   "tooltip_enableSavedArticles": {
-    "message": "好讀文章的「更多」（桌機右鍵）多一個「存到本機」：把讀到的整篇（內文、推文、顏色）存在這個瀏覽器，首頁「本機收藏」點了在新分頁打開，不用連線、不送任何鍵給 PTT。最多 200 篇，不上雲。"
+    "message": "好讀文章的「更多」（桌機右鍵）多一個「存到本機」：把讀到的整篇（內文、推文、顏色）存在這個瀏覽器，首頁「本機收藏」點了在新分頁打開，不用連線、不送任何鍵給 PTT。最多 200 篇，內文不上雲（登入雲端同步時只同步清單）。"
+  },
+  "options_syncSavedArticles": {
+    "message": "本機收藏的清單也同步"
+  },
+  "tooltip_syncSavedArticles": {
+    "message": "登入雲端同步時，存到本機的文章清單（看板、標題、作者，不含內文）也一起同步：別台裝置的首頁「本機收藏」會多一段「其他裝置存的」，點了連線打開那篇。"
+  },
+  "saved_others": {
+    "message": "其他裝置存的"
+  },
+  "saved_others_remove": {
+    "message": "從雲端清單拿掉（那台的存檔不動）"
+  },
+  "saved_others_failed": {
+    "message": "現在開不了這篇（還沒連線或正在忙）"
   },
   "options_enableShareTarget": {
     "message": "分享到 PttChrome"

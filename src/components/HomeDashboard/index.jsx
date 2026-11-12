@@ -98,37 +98,81 @@ function ArticleSection({ titleKey, list, source, recent, onFail }) {
 }
 
 // 存到本機（P64，js/saved_articles.js）的一區。點一列＝新分頁打開唯讀頁（不連線）；✕＝刪掉本機存檔。
-function SavedSection({ list, saved }) {
-  if (!list || !list.length) return null;
+// 下面「其他裝置存的」（P70，saved.others()：清單跟著雲端同步、這台沒存的）：點一列＝deep link
+// 開真文章（要連線）；✕＝只從雲端清單拿掉，那台的存檔不動。
+function SavedSection({ list, others, saved, onOtherFail }) {
+  const hasLocal = !!(list && list.length);
+  const hasOthers = !!(others && others.length);
+  if (!hasLocal && !hasOthers) return null;
   return (
     <section className="homeSection">
       <div className="homeSectionHead">
         <h3>{i18n("saved_section")}</h3>
       </div>
-      <div className="homeArticles" data-home-articles="saved">
-        {list.slice(0, HOME_ARTICLE_LIMIT).map((e) => (
-          <div key={e.key} className="homeArticleRow">
-            <Button
-              className="homeArticle"
-              data-home-saved={e.key}
-              title={e.title || "#" + e.aid}
-              onClick={() => saved.open(e.key)}
-            >
-              <span className="homeArticleTitle">{e.title || "#" + e.aid}</span>
-              <span className="homeArticleBoard">{e.board}</span>
-            </Button>
-            <Button
-              className="homeArticleRemove"
-              data-home-saved-remove={e.key}
-              aria-label={i18n("saved_remove")}
-              title={i18n("saved_remove")}
-              onClick={() => saved.remove(e.key)}
-            >
-              ✕
-            </Button>
+      {hasLocal && (
+        <div className="homeArticles" data-home-articles="saved">
+          {list.slice(0, HOME_ARTICLE_LIMIT).map((e) => (
+            <div key={e.key} className="homeArticleRow">
+              <Button
+                className="homeArticle"
+                data-home-saved={e.key}
+                title={e.title || "#" + e.aid}
+                onClick={() => saved.open(e.key)}
+              >
+                <span className="homeArticleTitle">
+                  {e.title || "#" + e.aid}
+                </span>
+                <span className="homeArticleBoard">{e.board}</span>
+              </Button>
+              <Button
+                className="homeArticleRemove"
+                data-home-saved-remove={e.key}
+                aria-label={i18n("saved_remove")}
+                title={i18n("saved_remove")}
+                onClick={() => saved.remove(e.key)}
+              >
+                ✕
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      {hasOthers && (
+        <>
+          <h4 className="homeSubhead">{i18n("saved_others")}</h4>
+          <div className="homeArticles" data-home-articles="saved-others">
+            {others.slice(0, HOME_ARTICLE_LIMIT).map((e) => {
+              const key = e.board + "/" + e.aid;
+              return (
+                <div key={key} className="homeArticleRow">
+                  <Button
+                    className="homeArticle"
+                    data-home-saved-other={key}
+                    title={e.title || "#" + e.aid}
+                    onClick={() => {
+                      if (!saved.openOther(e)) onOtherFail();
+                    }}
+                  >
+                    <span className="homeArticleTitle">
+                      {e.title || "#" + e.aid}
+                    </span>
+                    <span className="homeArticleBoard">{e.board}</span>
+                  </Button>
+                  <Button
+                    className="homeArticleRemove"
+                    data-home-saved-other-remove={key}
+                    aria-label={i18n("saved_others_remove")}
+                    title={i18n("saved_others_remove")}
+                    onClick={() => saved.removeOther(e)}
+                  >
+                    ✕
+                  </Button>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </section>
   );
 }
@@ -142,7 +186,9 @@ export const HomeDashboard = ({ pttchrome }) => {
     recent ? recent.state : null,
   );
   const saved = pttchrome && pttchrome.savedArticles;
-  const [savedList, setSavedList] = useState(() => (saved ? saved.state : null));
+  const [savedList, setSavedList] = useState(() =>
+    saved ? saved.state : null,
+  );
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -301,7 +347,14 @@ export const HomeDashboard = ({ pttchrome }) => {
           />
         )}
         {saved && saved.enabled() && (
-          <SavedSection list={savedList} saved={saved} />
+          <SavedSection
+            list={savedList}
+            others={saved.others()}
+            saved={saved}
+            onOtherFail={() =>
+              pttchrome.view?.flashListHint?.(i18n("saved_others_failed"), 3000)
+            }
+          />
         )}
         {showArticles && (
           <ArticleSection

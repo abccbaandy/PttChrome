@@ -7,7 +7,7 @@
 //   2) 匯入＝立即寫入 localStorage 並走 onReset 全量套用（對話框沒有取消鈕）
 //   3) 壞檔案不得寫入任何東西
 //   4) 雲端同步的登入入口在這一頁，不在一般分頁
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { PrefModal } from "../../src/components/ContextMenu/PrefModal";
 import { setupI18n, i18n } from "../../src/js/i18n";
@@ -256,6 +256,32 @@ describe("設定備份分頁：雲端同步", () => {
     expect(
       screen.getByRole("button", { name: i18n("options_syncSignIn") }),
     ).toBeInTheDocument();
+  });
+});
+
+// P70：「本機收藏的清單也同步」只在登入雲端同步後出現（沒登入就沒東西可同步），預設勾著；
+// 本機收藏關掉時跟著反灰。
+describe("設定備份分頁：收藏清單同步的開關", () => {
+  const box = () => document.querySelector('input[name="syncSavedArticles"]');
+  afterEach(() => prefSync.onAuthState.mockImplementation(() => () => {}));
+
+  test("沒登入 ⇒ 不出現", () => {
+    openBackupTab();
+    expect(box()).toBeNull();
+  });
+
+  test("登入了 ⇒ 出現、預設勾著；本機收藏關掉 ⇒ 反灰", () => {
+    prefSync.onAuthState.mockImplementation((cb) => {
+      cb({ email: "me@example.com" });
+      return () => {};
+    });
+    openBackupTab();
+    expect(box()).not.toBeNull();
+    expect(box().checked).toBe(true);
+    expect(box().disabled).toBe(false);
+    cleanup();
+    openBackupTab({ enableSavedArticles: false });
+    expect(box().disabled).toBe(true);
   });
 });
 

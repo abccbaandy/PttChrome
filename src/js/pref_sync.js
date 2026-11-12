@@ -42,6 +42,9 @@ const authStateListeners = [];
 // SDK download. Kept module-level so listeners attached from any entry point
 // (startup restore or PrefModal sign-in) reach the running app.
 let cloudValuesCallback = null;
+// 本機收藏的雲端清單（P70，saved_cloud.js）：每個確定的 snapshot 把 users/{uid}.saved 交給它。
+// 註冊制同 cloudValuesCallback（App 建 SavedArticles 時註冊），不觸發 SDK 載入。
+let cloudSavedCallback = null;
 // Active onSnapshot unsubscribe; null when not listening.
 let snapshotUnsub = null;
 
@@ -182,6 +185,14 @@ const attachSnapshotListener = () => {
             " fromCache=" + snap.metadata.fromCache +
             " pendingWrites=" + snap.metadata.hasPendingWrites
         );
+        // 收藏清單：只看伺服器確定過的狀態（echo／離線快取的「沒有」都不算，同 prefs 的守門）。
+        if (cloudSavedCallback && (action === "merge" || action === "push-local")) {
+          try {
+            cloudSavedCallback((data && data.saved) || {});
+          } catch (e) {
+            console.warn("pref_sync: saved list callback failed", e);
+          }
+        }
         switch (action) {
           case "push-local":
             savePrefs(local).then(resolveOnce);
@@ -218,6 +229,27 @@ const attachSnapshotListener = () => {
 };
 
 export const getUser = () => currentUser;
+
+// 本機收藏清單（P70）：見 cloudSavedCallback。
+export const registerOnCloudSaved = cb => {
+  cloudSavedCallback = cb;
+};
+
+// 寫收藏清單的變動（saved_cloud.planCloudUpload 的 { set, del }）：merge:true 逐篇合併，
+// 刪除用 deleteField。沒登入回 false；失敗吞掉回 false（本機存檔不受影響，下次同步再補）。
+export const saveSavedEntries = async plan => {
+  if (!currentUser || !plan) return false;
+  const saved = { ...(plan.set || {}) };
+  for (const k of plan.del || []) saved[k] = fb.fsM.deleteField();
+  if (!Object.keys(saved).length) return false;
+  try {
+    await fb.fsM.setDoc(userDocRef(currentUser.uid), { saved }, { merge: true });
+    return true;
+  } catch (e) {
+    console.warn("pref_sync: saved list upload failed", e);
+    return false;
+  }
+};
 
 // main.js registers the app-level apply callback here once at startup.
 // Plain assignment — safe to call before (or without) any Firebase load.

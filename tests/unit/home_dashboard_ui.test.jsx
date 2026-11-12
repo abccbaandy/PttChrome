@@ -252,7 +252,7 @@ test("閱讀紀錄：那張卡片不在了 ⇒ 不動（認不出就不還原）
 });
 
 describe("本機收藏（P64）", () => {
-  function fakeSaved(list, enabled = true) {
+  function fakeSaved(list, enabled = true, others = []) {
     const listeners = new Set();
     const saved = {
       state: null,
@@ -268,6 +268,9 @@ describe("本機收藏（P64）", () => {
       }),
       open: vi.fn(),
       remove: vi.fn(),
+      others: () => others,
+      openOther: vi.fn(() => true),
+      removeOther: vi.fn(),
     };
     return saved;
   }
@@ -300,5 +303,29 @@ describe("本機收藏（P64）", () => {
     render(<HomeDashboard pttchrome={{ homeDashboard: fakeHome(), savedArticles: off }} />);
     expect(off.refresh).not.toHaveBeenCalled();
     expect(q('[data-home-articles="saved"]')).toBeNull();
+  });
+
+  // P70：清單跟著雲端同步，雲端有、這台沒存的列在「其他裝置存的」。點了走 deep link（openOther），
+  // ✕ 只從雲端清單拿掉（removeOther）；開不了 ⇒ 提示。這台一篇都沒存也要出現。
+  test("其他裝置存的：這台沒存也列出；點一列 → openOther，✕ → removeOther，開不了 ⇒ 提示", async () => {
+    const OTHER = { board: "Tech_Job", aid: "1bbbbbbb", title: "[心得] 別台存的", author: "x", savedAt: 9 };
+    const saved = fakeSaved([], true, [OTHER]);
+    const hints = [];
+    const view = { flashListHint: (msg) => hints.push(msg) };
+    render(<HomeDashboard pttchrome={{ homeDashboard: fakeHome(), savedArticles: saved, view }} />);
+    await vi.waitFor(() => expect(q('[data-home-articles="saved-others"]')).not.toBeNull());
+    expect(q('[data-home-articles="saved"]')).toBeNull();
+    const sec = q('[data-home-articles="saved-others"]').closest("section");
+    expect(sec.textContent).toContain(i18n("saved_others"));
+    const row = q('[data-home-saved-other="Tech_Job/1bbbbbbb"]');
+    expect(row.textContent).toBe("[心得] 別台存的Tech_Job");
+    fireEvent.click(row);
+    expect(saved.openOther).toHaveBeenCalledWith(OTHER);
+    expect(hints).toEqual([]);
+    saved.openOther.mockReturnValue(false);
+    fireEvent.click(row);
+    expect(hints).toEqual([i18n("saved_others_failed")]);
+    fireEvent.click(q('[data-home-saved-other-remove="Tech_Job/1bbbbbbb"]'));
+    expect(saved.removeOther).toHaveBeenCalledWith(OTHER);
   });
 });

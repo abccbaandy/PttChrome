@@ -47,6 +47,8 @@ export const PREF_SEARCH_EXEMPT_NAMES = {
     "隱藏的 <input type=file>，不是設定項；入口是它前面那顆匯入按鈕（已由 section:options_backupImport 代表）",
   savedImportFile:
     "隱藏的 <input type=file>，不是設定項；入口是本機收藏的匯入按鈕（已由 section:options_savedBackup 代表）",
+  syncSavedArticles:
+    "只在登入雲端同步後才畫出來（沒登入就沒東西可同步），搜尋跳不到；由 section:options_sync 代表",
   "quickSearchBuiltin-":
     "動態產生，內容取自 quick_search.js#BUILTIN_QUICK_SEARCH，會隨清單變動；由 section:options_quickSearchBuiltin 代表",
 };

@@ -245,6 +245,7 @@ beforeEach(() => {
     .then(() => {
       window.localStorage.clear();
       prefSync.registerOnCloudValues(null);
+      prefSync.registerOnCloudSaved(null);
       infoSpy.mockClear();
       warnSpy.mockClear();
     });
@@ -551,5 +552,98 @@ describe("lifecycle", () => {
         expect(cloudDoc.prefs).not.toHaveProperty("autoLoginUser");
         expect(cloudDoc.prefs.fontSize).toBe(16);
       });
+  });
+});
+
+// 本機收藏的清單（P70，src/js/saved_cloud.js）：跟偏好放同一份 users/{uid}，欄位 saved（map）。
+// 逐篇 set／deleteField，不碰 prefs；firestore.rules 擋掉超過 300 篇的寫入。
+describe("saved list (P70)", () => {
+  const entry = (aid, savedAt) => ({
+    board: "Stock",
+    aid,
+    title: "[標的] " + aid,
+    author: "someone",
+    savedAt
+  });
+  const key = aid => "stock:" + aid;
+
+  it("delivers another device's saved list to the registered callback", () => {
+    writeStoredPrefs({ fontSize: 16 });
+    const onSaved = vi.fn();
+    prefSync.registerOnCloudSaved(onSaved);
+
+    return seedDoc({ prefs: { fontSize: 16 }, saved: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5) } })
+      .then(() => startupWithUser(vi.fn()))
+      .then(() => waitFor(() => onSaved.mock.calls.length >= 1, "saved delivered"))
+      .then(() => {
+        const last = onSaved.mock.calls[onSaved.mock.calls.length - 1][0];
+        expect(last[key("1gIeu-3A")].title).toBe("[標的] 1gIeu-3A");
+        onSaved.mockClear();
+        // 別台又存了一篇 ⇒ 即時推過來
+        return seeder().then(sd =>
+          setDoc(doc(sd.db, "users", sd.uid), { saved: { [key("1gIeu-3B")]: entry("1gIeu-3B", 6) } }, { merge: true })
+        );
+      })
+      .then(() =>
+        waitFor(
+          () => onSaved.mock.calls.some(c => c[0][key("1gIeu-3B")] && c[0][key("1gIeu-3A")]),
+          "second entry propagated"
+        )
+      );
+  });
+
+  it("saveSavedEntries sets and deletes single entries without touching prefs or other entries", () => {
+    writeStoredPrefs({ fontSize: 16 });
+    return seedDoc({
+      prefs: { fontSize: 16 },
+      saved: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5), [key("1gIeu-3B")]: entry("1gIeu-3B", 6) }
+    })
+      .then(() => startupWithUser(vi.fn()))
+      .then(() =>
+        prefSync.saveSavedEntries({ set: { [key("1gIeu-3C")]: entry("1gIeu-3C", 7) }, del: [key("1gIeu-3A")] })
+      )
+      .then(ok => {
+        expect(ok).toBe(true);
+        return waitForCloud(d => d && d.saved && d.saved[key("1gIeu-3C")] && !d.saved[key("1gIeu-3A")], "saved upload");
+      })
+      .then(cloudDoc => {
+        expect(Object.keys(cloudDoc.saved).sort()).toEqual([key("1gIeu-3B"), key("1gIeu-3C")]);
+        expect(cloudDoc.prefs.fontSize).toBe(16);
+      });
+  });
+
+  it("saveSavedEntries is a no-op before sign-in", () =>
+    prefSync.saveSavedEntries({ set: { [key("1gIeu-3A")]: entry("1gIeu-3A", 1) }, del: [] }).then(ok => {
+      expect(ok).toBe(false);
+    }));
+
+  it("rules refuse a saved map over 300 entries", () => {
+    const many = n => {
+      const out = {};
+      for (let i = 0; i < n; ++i) {
+        const aid = ("A" + String(i).padStart(7, "0")).slice(0, 8);
+        out[key(aid)] = entry(aid, i);
+      }
+      return out;
+    };
+    return seedDoc({ prefs: { fontSize: 16 }, saved: many(300) })
+      .then(() => seedDoc({ prefs: { fontSize: 16 }, saved: many(301) }))
+      .then(
+        () => {
+          throw new Error("301 entries should have been refused");
+        },
+        e => {
+          expect(String(e && e.code)).toMatch(/permission-denied/);
+        }
+      )
+      .then(() => seedDoc({ prefs: { fontSize: 16 }, saved: [] }))
+      .then(
+        () => {
+          throw new Error("a non-map saved should have been refused");
+        },
+        e => {
+          expect(String(e && e.code)).toMatch(/permission-denied/);
+        }
+      );
   });
 });

@@ -92,6 +92,14 @@
   color: #bbb;
 }
 
+/* 本機收藏下的「其他裝置存的」（P70）：比區塊標題小一級。 */
+.homeSubhead {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #999;
+}
+
 .homeStatus {
   flex: 1 1 auto;
   font-size: 12px;
