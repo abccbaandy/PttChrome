@@ -10,6 +10,7 @@ import {
   renderAlertBody,
   renderChangeComment,
   renderUnreadableBody,
+  tableCell,
   ISSUE_TITLE,
   UNREADABLE_TITLE,
 } from "../../scripts/dependabot-alerts-report.mjs";
@@ -98,6 +99,12 @@ test("body 帶 marker，讀回來是同一組編號；說明裡的 | 不弄壞�
   expect(body).toContain("a \\| b");
   expect(markedNumbers("沒有 marker")).toBeNull();
   expect(markedNumbers(marker([]))).toEqual([]);
+});
+
+test("tableCell：反斜線、|、換行都不弄壞表格", () => {
+  expect(tableCell("a\\|b")).toBe("a\\\\\\|b");
+  expect(tableCell("x\ny")).toBe("x y");
+  expect(tableCell(undefined)).toBe("");
 });
 
 test("變動留言寫出新增與已處理", () => {

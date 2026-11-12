@@ -79,6 +79,14 @@ export function decide({ readable, items, issues }) {
   return actions;
 }
 
+// 表格儲存格：反斜線先跳脫（不然 "\\|" 會變成跳脫掉的反斜線＋真的分隔線）、| 跳脫、換行壓成空白。
+export function tableCell(text) {
+  return String(text || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, " ");
+}
+
 export function renderAlertBody({ items, date, runUrl, repo }) {
   const lines = [
     `${date} 查到 ${items.length} 則未處理的 Dependabot 警示（每天自動更新這則；全部處理完會自動關閉）。`,
@@ -87,7 +95,7 @@ export function renderAlertBody({ items, date, runUrl, repo }) {
     "|---|---|---|---|---|---|",
     ...items.map(
       (i) =>
-        `| [${i.number}](${i.url}) | ${i.severity} | ${i.pkg}（${i.ecosystem}${i.scope === "development" ? "，dev" : ""}） | \`${i.manifest}\` | ${i.patched || "（尚無）"} | ${String(i.summary).replace(/\|/g, "\\|")} |`,
+        `| [${i.number}](${i.url}) | ${i.severity} | ${i.pkg}（${i.ecosystem}${i.scope === "development" ? "，dev" : ""}） | \`${i.manifest}\` | ${i.patched || "（尚無）"} | ${tableCell(i.summary)} |`,
     ),
     "",
     "處置：傳遞相依在範圍內就 `yarn up -R <套件>`；`proxy/*/` 各自 `npm audit --package-lock-only`。",
