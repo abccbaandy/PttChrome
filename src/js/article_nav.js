@@ -117,12 +117,13 @@ export function ArticleNav(core) {
   this._head = null;
   this._state = { visible: false, left: 0, top: 0, height: 0, mobile: false, total: 0, commentRow: null, marks: [] };
   const self = this;
+  this._onSettle = function() {
+    self.refresh();
+  };
   if (core.buf && core.buf.addEventListener)
     core.buf.addEventListener(
       'screenSettled',
-      function() {
-        self.refresh();
-      },
+      this._onSettle,
       // 出錯 ⇒ 這次連線收起導覽軸（原生捲軸跟著回來），不再接 settle（event.js 故障隔離）。
       { feature: 'enableArticleNav', disable: () => self._set({ visible: false }) }
     );
@@ -220,6 +221,12 @@ ArticleNav.prototype = {
 
   refresh: function() {
     const core = this._core;
+    // 出錯被停用（event.js 故障隔離）⇒ resize／推文列這些入口也不准把軸叫回來，新連線才恢復。
+    const buf = core.buf;
+    if (buf && typeof buf.isListenerDisabled === 'function' && buf.isListenerDisabled(this._onSettle)) {
+      if (this._state.visible) this._set({ visible: false });
+      return;
+    }
     if (!readEffectivePrefs().enableArticleNav || !this._inEasyArticle()) {
       if (this._state.visible) this._set({ visible: false });
       return;

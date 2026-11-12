@@ -7,11 +7,13 @@
 //      連線停用（收乾淨、之後跳過），enableAllListeners 恢復；沒登記的每幀照樣再試。
 //   2. dev build／測試（strict）：照樣往外丟，跟以前一樣（測試不能變鈍）。
 //   3. 沒有 isolate 的物件（連線層）不受影響；TermBuf 有 isolate。
-//   4. 有登記的功能：小卡、導覽軸的 disable 真的把自己收起來。
+//   4. 有登記的功能：小卡、導覽軸的 disable 真的把自己收起來；導覽軸停用後別的入口叫不回來。
+//   5. CI 的 e2e 打包版（DEVELOPER_MODE）也是 strict。
 import fs from "node:fs";
 import path from "node:path";
 import { Event, setListenerErrorPolicy } from "../../src/js/event";
 import { WhatsNew } from "../../src/js/whats_new";
+import { ArticleNav } from "../../src/js/article_nav";
 
 function makeBus(isolate) {
   function Bus() {}
@@ -144,6 +146,65 @@ describe("接線", () => {
     wn._set({ visible: true, items: [{ name: "x", desc: "y" }] });
     bus.dispatchEvent({ type: "screenSettled" });
     expect(wn.state.visible).toBe(false);
+  });
+
+  test("e2e 打包版（DEVELOPER_MODE）也是 strict：CI offline／adverse 的 pageerror 斷言不能被吞", () => {
+    const src = fs.readFileSync(path.resolve(__dirname, "../../src/js/event.js"), "utf8");
+    const m = src.match(/strict:\s*([^\n]+),\n/);
+    expect(m).not.toBeNull();
+    expect(m[1]).toMatch(/import\.meta\.env\.DEV/);
+    expect(m[1]).toMatch(/process\.env\.DEVELOPER_MODE/);
+  });
+
+  test("導覽軸出錯停用 ⇒ resize／推文列這類入口也叫不回來；新連線恢復", () => {
+    prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    const bus = makeBus(true);
+    const lines = ["作者 someone 看板 Test", "內文", "推 abc: 好 10/23 12:34"];
+    let boom = false;
+    Object.defineProperty(bus, "pageLines", {
+      get() {
+        if (boom) throw new Error("boom");
+        return lines;
+      },
+    });
+    bus.pageState = 3;
+    bus.cols = 80;
+    bus.getRowText = (r, s, e, acc) => String((acc || lines)[r]);
+    const core = {
+      mobile: false,
+      buf: bus,
+      easyReading: { _enabled: true, _functionMode: false, scrollToArticleRow: () => true },
+      view: {
+        mainDisplay: {
+          getBoundingClientRect: () => ({ left: 0, right: 800, top: 0, bottom: 600, width: 800 }),
+          scrollHeight: 2000,
+          clientHeight: 600,
+          scrollTop: 0,
+        },
+      },
+    };
+    vi.stubGlobal("window", {
+      innerHeight: 600,
+      innerWidth: 800,
+      addEventListener: () => {},
+      getComputedStyle: () => ({ display: "block" }),
+    });
+    try {
+      const nav = new ArticleNav(core);
+      bus.dispatchEvent({ type: "screenSettled" });
+      expect(nav.state.visible).toBe(true);
+      boom = true;
+      bus.dispatchEvent({ type: "screenSettled" });
+      expect(nav.state.visible).toBe(false);
+      boom = false;
+      nav.refresh(); // resize／推文列 onChange 走的入口
+      expect(nav.state.visible).toBe(false);
+      bus.enableAllListeners();
+      bus.dispatchEvent({ type: "screenSettled" });
+      expect(nav.state.visible).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test("導覽軸登記了停用方式（收起軸）", () => {

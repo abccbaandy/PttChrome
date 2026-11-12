@@ -7,10 +7,13 @@
 //     `{ feature, disable }` 的監聽者，這次連線停用（呼叫它自己的 disable 收乾淨，之後派發
 //     跳過它），enableAllListeners（新連線）恢復；沒帶的照舊每幀再試（不知道怎麼收的功能，
 //     半套停用只會更糟）。
-//   - dev build 與測試（strict）：照樣往外丟 —— 測試不能因為隔離而變鈍。
+//   - dev build、e2e 打包版（DEVELOPER_MODE）與測試（strict）：照樣往外丟 —— 測試不能因為隔離而變鈍。
+//   - 範圍是 TermBuf 的所有事件：settle 之外，change／viewUpdate（好讀的重畫）也包在內。
 // 連線層（telnet／websocket／ssh）不隔離：那裡的例外要照原樣冒出去。
 var errorPolicy = {
-  strict: !!(import.meta.env && import.meta.env.DEV),
+  // CI 的 offline／adverse e2e 跑的是 vite build＋PTTCHROME_E2E_BUNDLE（DEV=false、DEVELOPER_MODE=true）：
+  // 只看 DEV 會讓 e2e 走正式版路徑，例外被吞、pageerror 斷言靜默失效。
+  strict: !!((import.meta.env && import.meta.env.DEV) || process.env.DEVELOPER_MODE),
   onError: null,
 };
 
@@ -79,6 +82,11 @@ Event.prototype._onListenerError = function(type, fn, err) {
       errorPolicy.onError({ type: type, feature: meta ? meta.feature : null, disabled: disabled, error: err });
     } catch (e3) {}
   }
+};
+
+// 功能的其他入口（resize、推文列…）用它判斷自己是否已被停用，免得停用後又被叫回來。
+Event.prototype.isListenerDisabled = function(listener) {
+  return !!(this._disabledListeners && this._disabledListeners.has(listener));
 };
 
 // 新連線：出錯停用的功能恢復（下一次派發照常收到）。
