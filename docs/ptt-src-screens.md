@@ -173,6 +173,32 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
 upstream 再弄壞 build（新的必要 conf、新的需要排除的物件）時 generate 會紅（exit 2）：修法補進
 generate.sh 並記在這節。
 
+## 查 bug 的做法
+
+- **驗畫面判定**（#171、#172、#191、#254、#278）：在 `scenes.mjs` 加場景，用 upstream 原始碼產真畫面餵判定函式
+  （`tests/unit/ptt_src_screens.test.js` 的 `screenAt`，`perFrame` 疊幀），對不上就是 bug。加場景前先查 upstream
+  那個入口有沒有 `setutmpmode`；fixture 裡有日期就釘 `FIXED_NOW`。
+- **本機的 `3rd_script/pttbbs` 可能是舊 clone**（雲端是 `--depth 1`）：跑 `generate.sh` 前先
+  `git -C 3rd_script/pttbbs fetch --depth 50 origin` 再 checkout `origin/main`（upstream main 會 force-push）。
+  不然會像「upstream 改了畫面」（例：`modern_comments` 失敗）。每次 fetch 完先跑一次 `generate.sh`：exit 2 就是
+  當晚 nightly 會紅。
+- **看 fixture 的畫面最快**：臨時 browser test 用 `expect(rows).toBe('')` 讓逐幀畫面＋pageState 印在 diff 裡
+  （browser mode 看不到 console.log）；或轉成假錄製檔丟 `yarn debug:screens`。
+- **種子**：`T` 列接在上一個 `A`（或 `L` 信件）的檔尾（「※ 」列、新格式推文）；`L` 信件有內文（`mail_read` 場景可讀信）；
+  `modern_comments` 用 pmore 設定頁 `o c q` 切留言主題。
+- **fixture 直接組 offline e2e 卷**（#278）：`{meta:{mode:'scenario'}, steps:[{on:'start',recv},{on:'raw',send,recv}…]}`，
+  `recv`＝`Buffer.from(bytes,'latin1').toString('base64')`，丟 `bootScenario`。範例 `tests/e2e/offline/mail_read.offline.spec.js`。
+  伺服器主動送來、沒有對應按鍵的幀（實況推文 #284）用 `feedRaw` 直接餵。
+- **upstream 改的是檔案格式**（#339：推文改 `|id|內容|creation|N`）：種子還是舊格式時，新 pmore 會把它當一般內文原樣印，
+  fixture 看起來像「畫面變了」。先讀 upstream service/post 的寫法改種子重產；舊 fixture 搬 `ptt_src_screens_legacy`，
+  同一組測試兩代都跑（`describe.each`）。
+- **upstream 改 struct**（#254：BM→moderators[]；8d5a7928 rating→score）：照 `FH_RATING`／`BH_MODERATORS` 的作法在
+  `generate.sh` 看 header 給 `-D`，新舊都要編得過；用 `git worktree` 開新舊 upstream 各產一次 fixture 比對。
+- **upstream 改了被 `--wrap` 的函式簽名**（#351）：舊 wrapper 不會編譯錯，而是執行期 SIGSEGV（「driver 異常結束」）。
+  `generate.sh` 看 header 選簽名。場景可帶 `env`（capture.mjs 傳給 driver），讓假服務只在該場景觸發，舊場景零 diff。
+- **driver 卡在「第 N 步沒有任何輸出」**：先用 gdb 斷 `mark_wait` 看 backtrace（例：`vkey_purge` 的 10ms 等待被當成無限期）。
+- **站方私有服務的畫面**（#319）：`--wrap` 掉 libcmbbs 的 client 函式假扮服務，只對場景特定輸入回擋、其餘放行 ⇒ 舊場景不變。
+
 ## 寬終端
 
 欄數恆 80（`docs/terminal-size.md` §4 LOCKED），所以不產寬於 80 欄的畫面；**列數**會隨「固定字體大小」

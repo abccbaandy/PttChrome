@@ -53,4 +53,5 @@
 - [`ssh.md`](ssh.md)：SSH 連線：載體依 scheme 選／瀏覽器端自寫 SSH client（WebCrypto、host key 指紋表）／relay 合約與目的地寫死 ptt.cc:22／協議 pref 本機專屬／失敗時改用另一協議／APK /ssh 管線；動 transport.js、src/js/ssh/**、tools/ssh-relay、proxy/ssh-relay-worker 前先讀
 - [`board-tabs.md`](board-tabs.md)：看板分頁；動 board_tabs.js、components/BoardTabs 前先讀
 - [`local-env-troubleshooting.md`](local-env-troubleshooting.md)：本機 e2e 環境問題對照表（整批秒掛、零 AssertionError 時先查）
+- [`debugging-techniques.md`](debugging-techniques.md)：查 bug／重現偶發紅（整批紅單跑綠、CI 紅本機綠）／手機 tap 沒反應／量效能與 CI 時間的實證做法；找不到根因或要量測前先讀
 - [`saved-articles.md`](saved-articles.md)：存到本機（離線閱讀已存文章）；動 saved_article*.js、saved_articles*.js、term_view.showStaticArticle 前先讀
