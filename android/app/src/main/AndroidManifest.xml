@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- App 內更新（AppUpdater）：自己裝自己的新版 APK；後者讓系統在「自己更新自己」時可以不再問一次。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <application
         android:allowBackup="false"
@@ -73,6 +76,15 @@
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="@string/settings_title" />
+
+        <!-- App 內更新：PackageInstaller 的安裝結果（本 App 自己的 PendingIntent）＋新版裝好後的系統廣播。 -->
+        <receiver
+            android:name=".UpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- specialUse 而非 dataSync：dataSync 在 Android 15 起每 24 小時限 6 小時。 -->
         <service

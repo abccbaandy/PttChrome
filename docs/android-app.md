@@ -24,6 +24,7 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | `.../LocalWebSocketProxy.kt` | loopback 中繼（session 生命週期） |
 | `.../WsProtocol.kt` | RFC 6455 握手／frame 純邏輯（JVM test 守護） |
 | `.../CredentialBridge.kt` | Credential Manager：get/create password、雲端同步 Google 登入（ID token）／登出 |
+| `.../UpdateCheck.kt`／`AppUpdater.kt` | App 內更新：查 GitHub Release、下載驗證、PackageInstaller 安裝（見「App 內更新」） |
 | `.../FileSave.kt` | bridge `saveFile` 的檔名清理（存檔流程本身在 `MainActivity`） |
 | `.../PageSource.kt` | 頁面來源（正式版／dev server）與 dev 網址白名單（JVM `PageSourceTest`） |
 | `.../AppSettings.kt`／`SettingsActivity.kt` | APK 自己的設定（SharedPreferences，不經 pref_sync）＋原生設定頁（含 ptt.cc 連結預設開啟狀態） |
@@ -58,6 +59,18 @@ WebView  https://abccbaandy.github.io/PttChrome/
 - 網頁與 APK 分開發佈：原生在 `__PTT_ANDROID__` 宣告 `quitApp: true`，網頁 `androidCanQuit()` 看到才給這顆
   （舊版 APK 不認得 op，給了按下去沒反應）。
 - 守護：`tests/unit/android_quit_app.test.js`（原生靜態掃描）、`logout_quit_app.test.js`、`android_bridge.test.js`。
+
+## App 內更新
+- 全在原生（網頁沒載出來也能更新）：`UpdateCheck.kt`（純邏輯，JVM `UpdateCheckTest`）＋`AppUpdater.kt`（網路、對話框、PackageInstaller、`UpdateReceiver`、`UpdateNotifier`）。
+- 來源＝GitHub Releases API（免登入，每 IP 每小時 60 次）：取 tag `android-v<x.y.z>`、非草稿／prerelease、附件 `pttchrome.apk` 且下載網址在本 repo Release 路徑下的最大版號，跟 `BuildConfig.VERSION_NAME` 比。
+- **自動檢查**：`MainActivity.onStart`（冷啟動與回前景都經過；App 靠前景服務可以活好幾天，所以不掛在 `onCreate`）→ 本機日期跟 `AppSettings.lastUpdateCheckDay` 不同才查。**查成功才記日期**，沒網路那次不算，下次回前景再查。有新版才跳對話框，「稍後」＝隔天再問。
+- **手動檢查**：App 設定 →「關於」的「檢查更新」，同頁顯示 App 版本。
+- 版本不是 `x.y.z`（debug 的 `-debug`、CI 非發版 build 的 `-dev`）⇒ 不檢查：簽章跟 Release 不同，裝不上去。
+- 下載到 `cacheDir/update/`，**先比對 Release 的大小與 SHA-256**（API 的 `assets[].digest`）才送進 PackageInstaller session；系統另外驗簽章。不用 FileProvider／`ACTION_VIEW`。
+- 安裝：`setRequireUserAction(USER_ACTION_NOT_REQUIRED)`（API 31+，搭配 `UPDATE_PACKAGES_WITHOUT_USER_ACTION`）；系統仍要求確認時（含第一次要允許「安裝不明應用程式」）`UpdateReceiver` 把系統確認畫面開起來。
+- 更新會結束 process（PTT 斷線，對話框先講）。背景不能自己開畫面 ⇒ `MY_PACKAGE_REPLACED` 跳通知「已更新，點一下重新開啟」，回到 App 時收掉。
+- 跨檔契約（tag 前綴、附件檔名、release note 的「## 安裝／更新」標題）守護 `tests/unit/android_app_update.test.js`。
+- 真機 `unknown`：本機只驗到編譯、lint、JVM test；免確認安裝在各廠牌 ROM 是否生效未測。
 
 ## SSH 協議
 - 本機 proxy 多一條 `/ssh/<token>`（WebSocket ⇄ TCP ptt.cc:22，目的地寫死），協議在原生「App 設定 → 連線」，
