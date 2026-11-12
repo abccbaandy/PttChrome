@@ -38,6 +38,12 @@
       "comment": "這是 RFC 6455 規定的 Sec-WebSocket-Accept 計算（SHA-1(key+GUID)），協定強制用 SHA-1，不是拿來做安全用途的雜湊。"
     },
     {
+      "rule": "java/android/missing-certificate-pinning",
+      "path": "android/app/src/main/java/io/github/abccbaandy/pttchrome/AppUpdater.kt",
+      "reason": "won't fix",
+      "comment": "刻意不釘憑證：GitHub 憑證會輪替，釘死後一換憑證 App 內更新就失效，且只能靠發新版 APK 救。更新完整性不靠這條連線：系統安裝時驗簽章，簽章不同裝不上去；下載網址另限本 repo 的 Release 路徑。"
+    },
+    {
       "rule": "js/clear-text-storage-of-sensitive-data",
       "path": "src/js/pref_storage.js",
       "reason": "won't fix",
