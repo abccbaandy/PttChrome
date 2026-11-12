@@ -55,4 +55,32 @@ async function nativeScrollbarPeak(page) {
   }
 }
 
-module.exports = { commentMarkDrift, nativeScrollbarPeak };
+// .main 的外框寬、捲軸佔的寬、內容（#mainContainer）寬、給直系子層的寬（扣掉捲軸與
+// padding：子層不只列，文末的下一篇卡片 width 是 .main 的百分比）與列的折行（scrollHeight）。
+// 導覽軸一出現一消失這幾個都不能變（原生捲軸不畫之後空出的寬度要補回來）。
+async function mainLayout(page) {
+  return page.evaluate((sel) => {
+    const main = document.querySelector(sel);
+    const mc = document.getElementById('mainContainer');
+    const cs = getComputedStyle(main);
+    return {
+      outer: main.offsetWidth,
+      gutter: main.offsetWidth - main.clientWidth,
+      content: mc.getBoundingClientRect().width,
+      inner: main.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+      scrollHeight: main.scrollHeight,
+    };
+  }, MAIN);
+}
+
+// 導覽軸開著量一次 → pref 關、重新判斷 → 再量一次。
+async function layoutWithAndWithoutNav(page, ptt) {
+  const on = await mainLayout(page);
+  await ptt.applyPrefs(page, { enableArticleNav: false });
+  await page.evaluate(() => window.__app.articleNav.refresh());
+  await page.locator('#articleNav').waitFor({ state: 'detached' });
+  const off = await mainLayout(page);
+  return { on, off };
+}
+
+module.exports = { commentMarkDrift, nativeScrollbarPeak, mainLayout, layoutWithAndWithoutNav };

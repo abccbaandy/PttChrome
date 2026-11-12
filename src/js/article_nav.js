@@ -9,8 +9,9 @@
 //   2. 出現條件同推文列（pageState 3＋好讀開著＋不在 functionMode＋累積頁非空）：原生 pmore、
 //      列表、選單一律不出現。
 //   3. 只疊在終端機最右一欄上（像捲軸），不推動、不縮小終端機（docs/terminal-size.md LOCKED）。
-//   4. **它就是這一頁的捲軸**：顯示中 `.main` 掛 ARTICLE_NAV_ON_CLASS，原生捲軸隱形（寬度
-//      照留，main.css），右緣不會有兩條。標記與滑塊用同一把尺（像素位置 / scrollHeight）。
+//   4. **它就是這一頁的捲軸**：顯示中 `.main` 掛 ARTICLE_NAV_ON_CLASS，原生捲軸整個不畫
+//      （main.css），右緣不會有兩條；內容超出時再掛 ARTICLE_NAV_GUTTER_CLASS 補回捲軸的寬度
+//      （_syncGutter）。標記與滑塊用同一把尺（像素位置 / scrollHeight）。
 import { analyzeArticle } from './article_tools';
 import { getImageProxyConfig } from './image_proxy';
 import { readEffectivePrefs } from './pref_storage';
@@ -21,6 +22,8 @@ import { isScreenChunk, isChunkRendered } from '../render/screen_chunk';
 export const ARTICLE_NAV_ID = 'articleNav';
 // 顯示中掛在 `.main` 上：原生捲軸隱形（main.css）。
 export const ARTICLE_NAV_ON_CLASS = 'articleNavOn';
+// 顯示中而且內容超出（原本會有原生捲軸）時再掛：padding-right 補回捲軸佔的寬度（main.css）。
+export const ARTICLE_NAV_GUTTER_CLASS = 'articleNavGutter';
 // 軸的寬度（可點範圍，CSS px）。看得到的只有中間一條細線。
 export const ARTICLE_NAV_WIDTH = 14;
 // 一種標記最多畫幾個（幾千則推文的文章：再多也只是糊成一條）。
@@ -153,7 +156,11 @@ ArticleNav.prototype = {
     if (Object.keys(patch).every((k) => next[k] === this._state[k])) return;
     if (next.visible !== this._state.visible) {
       const disp = (this._core.view || {}).mainDisplay;
-      if (disp && disp.classList) disp.classList.toggle(ARTICLE_NAV_ON_CLASS, next.visible);
+      if (disp && disp.classList) {
+        disp.classList.toggle(ARTICLE_NAV_ON_CLASS, next.visible);
+        if (next.visible) this._syncGutter();
+        else disp.classList.remove(ARTICLE_NAV_GUTTER_CLASS);
+      }
     }
     this._state = next;
     this._listeners.forEach(function(fn) {
@@ -238,7 +245,11 @@ ArticleNav.prototype = {
   },
 
   // 標記位置會跟著版面變（圖片載入、閉塊照常渲染後換成實測高度、放大縮小），而那些都不經
-  // settle ⇒ 捲動與內容尺寸變化時重量（rAF 合併）。控制器跟 app 同壽，不必拆。
+  // settle ⇒ 內容尺寸變化時重量（ResizeObserver，rAF 合併）。控制器跟 app 同壽，不必拆。
+  // 閉塊捲近變成照常渲染（CHUNK_NEAR_CLASS）時，塊內標記從「塊頂＋序位估」換成真位置，
+  // 塊高不一定變 ⇒ 另外看塊的 class（MutationObserver，只在跨過預載邊界時觸發）。
+  // **不掛 scroll**：捲動本身不改任何列的像素位置，每幀重量所有標記是白做（實機約 2.5 ms／幀，
+  // docs/handoff/android-battery-drain.md U8；守護 tests/unit/article_nav_scroll_cost.test.jsx）。
   _watch: function() {
     const view = this._core.view || {};
     const disp = view.mainDisplay;
@@ -248,8 +259,14 @@ ArticleNav.prototype = {
     const kick = function() {
       if (self._state.visible) self._scheduleMeasure();
     };
-    disp.addEventListener('scroll', kick, { passive: true });
     if (view.mainContainer && typeof ResizeObserver === 'function') new ResizeObserver(kick).observe(view.mainContainer);
+    if (view.mainContainer && typeof MutationObserver === 'function') {
+      new MutationObserver(function(records) {
+        for (let i = 0; i < records.length; ++i) {
+          if (isScreenChunk(records[i].target)) return kick();
+        }
+      }).observe(view.mainContainer, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
   },
 
   _scheduleMeasure: function() {
@@ -257,8 +274,20 @@ ArticleNav.prototype = {
     const self = this;
     this._measureRaf = requestAnimationFrame(function() {
       self._measureRaf = 0;
+      if (self._state.visible) self._syncGutter();
       self._measure();
     });
+  },
+
+  // 原生捲軸只在內容超出時才佔寬（overflow-y:auto）⇒ 補寬度也只在超出時補，短文不能憑空
+  // 窄 10px。判斷一律在「補了寬度」的版面上量：補了寬度內容只會更高，補了還放得下才拿掉
+  // （同瀏覽器「不加捲軸放得下就不加」的方向，而且不會在邊界來回切）。內容尺寸變了由
+  // ResizeObserver 經 _scheduleMeasure 再判一次；只在那時候強制排版，捲動時不會跑。
+  _syncGutter: function() {
+    const disp = (this._core.view || {}).mainDisplay;
+    if (!disp || !disp.classList) return;
+    disp.classList.add(ARTICLE_NAV_GUTTER_CLASS);
+    if (!(disp.scrollHeight > disp.clientHeight)) disp.classList.remove(ARTICLE_NAV_GUTTER_CLASS);
   },
 
   // 標記換成像素尺：該列在 .main 內容裡的頂端 / scrollHeight —— 與滑塊（scrollTop /

@@ -87,15 +87,15 @@ renderer 主執行緒 556 ms/s（其餘 thread：Compositor 65、VizWebView 59�
   （拿掉寬度內容會變寬，見 `main.css` 該段註解）；桌機是否同樣每幀重畫未量（unknown）。
 - 兩項都修的預估：每幀 5.97 → 約 2.2 ms（導覽軸 −2.5、捲軸 −1.3～2.1），renderer 主執行緒可跟上 165Hz。
 
-## 提案（未實作，待使用者決定）
+## 提案（第 1、2 項已實作，待新的 batterystats 驗收；第 3、4 項使用者決定先不做）
 結論：前景耗電的主成本＝好讀文章**捲動**時 renderer 主執行緒每幀 5.97 ms（165Hz 預算 6.06 ms），其中兩項是白做的：
 導覽軸每幀 2.5 ms（U8）、自訂捲軸逼出的每幀 Paint 1.3～2.1 ms（U9）。閒置、背景、下載量都已排除。
 | # | 改什麼 | 位置指示怎麼辦 | 狀態 |
 |---|---|---|---|
-| 1 | 導覽軸：`_measure` 不掛 scroll（只留 `ResizeObserver`＋settle）；滑塊位置不經 React state，直接寫 `transform` | 不變（滑塊照舊） | 可直接做 |
-| 2 | 導覽軸**開**時：`.main` 的原生捲軸改 `display:none`（現況是隱形但照畫），10px 寬度用 `padding-right` 補回 | 不變：這時原生捲軸本來就看不到，位置與長度由導覽軸滑塊顯示 | 可直接做；要守版面寬度不變（放大態、`fixedResize`） |
-| 3 | 導覽軸**關**時的捲軸 | 選項 a：維持現況（看得到捲軸，付每幀 Paint）。選項 b：手機拿掉 `::-webkit-scrollbar` 自訂規則，改用系統的浮動捲軸（捲動時浮現、不佔寬） | b 是否免重畫 **unknown**：實驗只測過「隱藏」與「`scrollbar-color`」，沒測過「完全不自訂」；要先用 CSSOM 移除規則再跑同一套實驗 |
-| 4 | 桌機 | — | 是否同樣每幀 Paint unknown，先量再決定要不要比照 |
+| 1 | 導覽軸：`_measure` 不掛 scroll（只留 `ResizeObserver`＋settle，另加閉塊 class 的 `MutationObserver`）；滑塊位置不經 React state，直接寫 `transform` | 不變（滑塊照舊） | 已實作（`article_nav_scroll_cost.test.jsx`） |
+| 2 | 導覽軸**開**時：`.main` 的原生捲軸改 `display:none`（原本是隱形但照畫），10px 寬度用 `padding-right`＋`border-box` 補回 | 不變：這時原生捲軸本來就看不到，位置與長度由導覽軸滑塊顯示 | 已實作（`article_nav_scrollbar.offline.spec.js` 守內容寬度不變） |
+| 3 | 導覽軸**關**時的捲軸（先不做） | 選項 a：維持現況（看得到捲軸，付每幀 Paint）。選項 b：手機拿掉 `::-webkit-scrollbar` 自訂規則，改用系統的浮動捲軸（捲動時浮現、不佔寬） | b 是否免重畫 **unknown**：實驗只測過「隱藏」與「`scrollbar-color`」，沒測過「完全不自訂」；要先用 CSSOM 移除規則再跑同一套實驗 |
+| 4 | 桌機（先不做） | — | 是否同樣每幀 Paint unknown，先量再決定要不要比照 |
 - 順序建議：1＋2 一起（導覽軸預設開，涵蓋多數使用者），修完用同一套實驗確認每幀約 2.2 ms；3、4 各自先量。
 - 驗收：`synthesizeScrollGesture` 實驗 `.main` Paint 掉到個位數／秒、主執行緒幀數接近 165；再抓一份 batterystats 看 CPU／top 是否低於 64% 核心。
 
@@ -107,8 +107,8 @@ renderer 主執行緒 556 ms/s（其餘 thread：Compositor 65、VizWebView 59�
 ## 尚未確認（依優先序）
 | # | 項目 | 怎麼驗 |
 |---|---|---|
-| U8 | 導覽軸每幀 2.5 ms（成因 CONFIRMED，見「實機捲動 trace」） | 待修：先寫「捲動時不呼叫 `_measure`／不經 React」的紅測試再改 |
-| U9 | `.main` 自訂捲軸使每幀 Paint（成因 CONFIRMED，見「每幀 Paint 的成因」） | 待修：靜態守護「好讀 `.main` 不得有會畫出來的 `::-webkit-scrollbar`」＋版面寬度不變的 e2e；修完用同一套 `synthesizeScrollGesture` 實驗確認 Paint 次數掉到個位數／秒 |
+| U8 | 導覽軸每幀 2.5 ms（成因 CONFIRMED，見「實機捲動 trace」） | 已修（提案第 1 項），待實機驗收 |
+| U9 | `.main` 自訂捲軸使每幀 Paint（成因 CONFIRMED，見「每幀 Paint 的成因」） | 導覽軸開時已修（提案第 2 項），待用同一套 `synthesizeScrollGesture` 實驗確認 Paint 次數掉到個位數／秒；導覽軸關時照舊（第 3 項） |
 | U7 | 前景 70 分鐘 216 MB 流量來源（預覽圖、tenor 動圖、`video`） | CDP `Network` 或 `performance.getEntriesByType('resource')` 量一篇文章的位元組數 |
 | U3 | tenor 動圖（`ImagePreviewer.jsx` `InlineVideo`，`video autoplay loop`）持續解碼；165Hz 下權重上調 | 實機開含動圖文章量 renderer CPU，確認捲出可視範圍會卸載（`inline_preview_slot.js` `LAZY_UNMOUNT_MARGIN_PX`） |
 | U4 | OkHttp 20 秒 ping 的行動網路成本（`LocalWebSocketProxy.kt`） | 只在 mobile radio 異常高時追；拉長間隔前先讀不變量 6（NAT 逾時） |

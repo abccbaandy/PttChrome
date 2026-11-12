@@ -27,13 +27,13 @@ unit：`article_tools.test.js`（網址與縮圖候選、推文統計與排行�
 | 項目 | 規則 | 理由 |
 |---|---|---|
 | 資料 | 同側欄：累積頁文字 → `analyzeArticle`（第一則推文、提到我、圖片）＋ `newComments.rowFor`（第一則新推文） | 一個 byte 都不送；還沒讀進來的部分不在軸上，照現有的往下捲／End 補 |
-| 標記位置 | **與滑塊同一把尺**：該列節點在 `.main` 內容裡的像素頂端 / scrollHeight（`_measure`，節點取 `ScreenController.rowNode`，O(1) 不掃 DOM）。閉塊裡的節點不量塊內（會逼瀏覽器排版整塊），用塊頂＋序位比例估；捲動與內容尺寸變化（ResizeObserver）時 rAF 重量。量不到才退回列號 / 總列數（`navMarks`） | 行內圖片一列幾百 px：列號比例在多圖文章離推文區起點差一大截，點「推」之後滑塊也不在「推」上 |
-| 捲軸只有一條 | 顯示中 `.main` 掛 `.articleNavOn`：原生捲軸**隱形但寬度照留**（`::-webkit-scrollbar-*` 透明；Firefox 用 `scrollbar-color`，不可對 Chromium 套）。捲動本身照舊是原生的 | 拿掉捲軸（`scrollbar-width: none`）內容寬會變 10px ⇒ 放大態圖片高度、手機折行點跟著變，軸一出現一消失畫面就位移 |
+| 標記位置 | **與滑塊同一把尺**：該列節點在 `.main` 內容裡的像素頂端 / scrollHeight（`_measure`，節點取 `ScreenController.rowNode`，O(1) 不掃 DOM）。閉塊裡的節點不量塊內（會逼瀏覽器排版整塊），用塊頂＋序位比例估；內容尺寸變化（ResizeObserver）與閉塊變成照常渲染（塊的 class，MutationObserver）時 rAF 重量。**捲動不重量**（每幀量所有標記是耗電主因之一，`docs/handoff/android-battery-drain.md` U8）。量不到才退回列號 / 總列數（`navMarks`） | 行內圖片一列幾百 px：列號比例在多圖文章離推文區起點差一大截，點「推」之後滑塊也不在「推」上 |
+| 捲軸只有一條 | 顯示中 `.main` 掛 `.articleNavOn`：原生捲軸**整個不畫**（`::-webkit-scrollbar{display:none}`），內容超出時（原本才有原生捲軸）空出的 10px 用 `.main.articleNavGutter` 的 `padding-right`＋`border-box` 補回（`_syncGutter`：在補了寬度的版面上量，放得下才拿掉；ResizeObserver 時重判，捲動時不跑），短文不補；Firefox 用 `scrollbar-color` 透明（不可對 Chromium 套）。捲動本身照舊是原生的 | 只做透明的話自訂捲軸照樣由主執行緒每幀重畫整層（U9）；不補寬度則內容寬會變 10px ⇒ 放大態圖片高度、手機折行點跟著變，軸一出現一消失畫面就位移 |
 | 出現 | 同推文列：pageState 3＋好讀開著＋不在 functionMode＋累積頁非空；pref 關、原生 pmore 不出現 | 認不出 ⇒ 原生 |
 | 位置 | 疊在 `.main` 最右 14px，從 `.main` 頂到可見內容下緣（好讀 footer 上緣，推文列顯示中再扣列高，`articleNavGeometry`） | 不推動終端機（`docs/terminal-size.md` LOCKED）；控制器建在推文列之後，同一個 settle 讀得到推文列的新狀態 |
-| 目前看到哪 | 元件直接讀 `.main` 的 scrollTop／clientHeight／scrollHeight（scroll 事件，rAF 合併） | 不必經 settle |
+| 目前看到哪 | 元件直接讀 `.main` 的 scrollTop／clientHeight／scrollHeight（scroll 事件，rAF 合併），**直接寫滑塊的 transform 與 aria-valuenow，不經 React state**；手機醒著／閒置只在切換時 render | 不必經 settle；經 state 的話每幀整個軸連同標記重新 render（U8） |
 | 點／拖 | pointer capture；按在「推」那一格＝`easyReading.scrollToArticleRow(第一則推文)`（精準），其他地方＝`scrollToFraction`（那個比例落在視窗中間） | 只捲視口 |
 | 手機 | 終端機佔滿螢幕寬，軸會疊在推文時間的最後一個字上 ⇒ 比照原生捲軸：平常 `opacity: 0`＋`pointer-events: none`，捲動後 1.5 秒內與拖曳中才出現 | 推文時間照常點得到 |
 | 浮層矩陣 | `overlay_guard` 的 ALLOWED 有 `#articleNav`（捲軸式細軸，蓋到的只是最後一列的右端）；`bottom_overlay`／`mobile_bottom_overlay` 的 COMBOS 有 `commentBar+nextArticle+articleNav` | 跟別的浮層疊在一起時仍要驗 |
 
-測試：`tests/unit/article_nav.test.js`（標記、幾何、出現條件、跳列／拖曳）、`article_nav_measure.test.js`（真 DOM：像素位置、閉塊估計、合併塊／黑名單列、`.articleNavOn`）、`tests/e2e/offline/article_nav.offline.spec.js`（貼右緣、點「推」跳到第一則推文、多圖文章「推」與滑塊同一把尺、真滑鼠拖曳、不送鍵、原生 pmore／pref 關不出現）、`article_nav_scrollbar.offline.spec.js`（拿掉 `--hide-scrollbars`：原生捲軸隱形、pref 關照常顯示）、`mobile_article_nav.offline.spec.js`（平常隱藏不接觸控、捲動後出現、tap「推」、同一把尺、捲軸不重複）。
+測試：`tests/unit/article_nav.test.js`（標記、幾何、出現條件、跳列／拖曳）、`article_nav_measure.test.js`（真 DOM：像素位置、閉塊估計、合併塊／黑名單列、`.articleNavOn`）、`tests/e2e/offline/article_nav.offline.spec.js`（貼右緣、點「推」跳到第一則推文、多圖文章「推」與滑塊同一把尺、真滑鼠拖曳、不送鍵、原生 pmore／pref 關不出現）、`article_nav_scroll_cost.test.jsx`（捲動不重量、不 render，滑塊照樣跟著走）、`article_nav_scrollbar.offline.spec.js`（拿掉 `--hide-scrollbars`：原生捲軸不畫、內容寬度與 pref 關時相同）、`mobile_article_nav.offline.spec.js`（平常隱藏不接觸控、捲動後出現、tap「推」、同一把尺、捲軸不重複）。
