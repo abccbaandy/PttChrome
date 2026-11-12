@@ -19,7 +19,7 @@
   有 paths 過濾 ⇒ 不可加進 required checks。完整說明見 `docs/ptt-src-screens.md`。
 - **每天 `Dependabot alerts`（`.github/workflows/dependabot-alerts.yml`）**：查 Dependabot 未處理警示，有才開／更新 issue
   「Dependabot 警示待處理」（label `dependabot-alerts`，body 是警示表格，編號集合沒變不寫），全部處理完自動關。
-  雲端 session 讀不到警示 API，看這則 issue 就好。讀警示先用 GITHUB_TOKEN，讀不到才用 repo secret `DEPENDABOT_ALERTS_TOKEN`；
+  雲端 session 讀不到警示 API，看這則 issue 就好。讀警示先用 GITHUB_TOKEN，讀不到才用 repo secret `DEPENDABOT_ALERTS_TOKEN`（實測 GITHUB_TOKEN 回 403，所以實際靠 secret）；
   兩個都讀不到會開「Dependabot 警示讀不到」寫明怎麼補 token。PR 觸發只 dry-run；schedule／dispatch 是 `isSideRun`。
   決策守護 `tests/unit/dependabot_alerts_report.test.js`。
 - **deploy job 偶發 `actions/deploy-pages@v5` timeout**：Pages 服務端卡在 `deployment_in_progress`，輪詢約 76s 後 `##[error]Timeout reached, aborting!` 並取消部署 → **測試/build 全綠但 run 紅、站台停在舊 commit**。屬 Pages 基礎設施問題，非本專案 code。判準：該 run 只有 `deploy` 一個 job 紅、`test-*`／`build` 全綠。處置：重跑失敗 job（`POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`；`ci:status --rerun-failed` 目前只認 integration flaky，不會自動重跑它）。**事後必須確認 `github-pages` 環境最新一筆 deployment 的 sha 是本次 commit 且 state=success**，否則站台仍是舊版。

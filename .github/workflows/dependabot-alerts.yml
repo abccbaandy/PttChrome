@@ -4,6 +4,8 @@ name: Dependabot alerts
 #（決策與去重見 scripts/dependabot-alerts-report.mjs）。雲端 session 讀不到警示 API，靠這支把警示帶到 issue。
 # 讀警示先用 GITHUB_TOKEN（security-events: read），讀不到再用 repo secret DEPENDABOT_ALERTS_TOKEN；
 # 兩個都讀不到會開「Dependabot 警示讀不到」issue 寫明怎麼補 token。
+# 實測 GITHUB_TOKEN（即使給 security-events: read）讀警示回 403 ⇒ 實際上要靠那個 secret；GITHUB_TOKEN
+# 那一試留著，GitHub 哪天開放了就自動不用 secret。
 # pull_request 只 dry-run（印出會做什麼，不寫 issue）：驗 token 讀不讀得到、腳本跑不跑得起來。
 # 有 paths 過濾 ⇒ 不可加進 dev 的 required checks（沒動這些檔的 PR 永遠不會跑，會卡 pending）。
 on:
