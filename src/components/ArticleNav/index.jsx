@@ -30,39 +30,51 @@ const KIND_TITLE = {
 const IDLE_MS = 1500;
 
 // 滑塊跟著 .main 的捲動位置走（直接寫 DOM，見檔頭）。navHeight＝軸的高度（px）：滑塊用
-// translateY 定位（只動合成層，不重排）。每次讀到位置就呼叫 onActive（手機醒來用）。
+// translateY 定位（只動合成層，不重排）。出現那一刻與每次捲動呼叫 onActive（手機醒來用）；
+// 軸的高度變了（推文列長高、鍵盤、resize）只重新定位、**不叫醒**（手機軸醒著會蓋住推文時間）。
 function useScrollThumb(view, visible, navHeight, rootRef, thumbRef, onActive) {
   const activeRef = useRef(onActive);
   activeRef.current = onActive;
+  const heightRef = useRef(navHeight);
+  heightRef.current = navHeight;
+  const placeRef = useRef(null);
   useEffect(() => {
     const el = view && view.mainDisplay;
     if (!visible || !el) return undefined;
     let raf = 0;
     let lastSize = -1;
-    const read = () => {
-      raf = 0;
+    const place = () => {
       const h = el.scrollHeight || 1;
       const top = el.scrollTop / h;
       const size = Math.max(Math.min(1, el.clientHeight / h) * 100, 3);
       const thumb = thumbRef.current;
       if (thumb) {
-        thumb.style.transform = "translateY(" + top * navHeight + "px)";
+        thumb.style.transform = "translateY(" + top * heightRef.current + "px)";
         if (size !== lastSize) thumb.style.height = size + "%";
         lastSize = size;
       }
       if (rootRef.current) rootRef.current.setAttribute("aria-valuenow", String(Math.round(top * 100)));
+    };
+    const read = () => {
+      raf = 0;
+      place();
       activeRef.current();
     };
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(read);
     };
+    placeRef.current = place;
     read();
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
+      placeRef.current = null;
       el.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [view, visible, navHeight, rootRef, thumbRef]);
+  }, [view, visible, rootRef, thumbRef]);
+  useEffect(() => {
+    if (placeRef.current) placeRef.current();
+  }, [navHeight]);
 }
 
 export const ArticleNav = ({ pttchrome }) => {

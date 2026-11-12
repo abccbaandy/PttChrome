@@ -179,6 +179,17 @@ describe("捲動時 ArticleNav 元件不重新 render（U8）", () => {
       });
       expect(m.el.className).toContain("articleNav--idle");
       expect(m.commits()).toBe(2);
+
+      // 軸的高度變了（推文列長高、鍵盤、resize）⇒ 滑塊照新高度重新定位，但手機不醒
+      // （醒著的軸會蓋住推文時間的最後一個字、接走觸控）。
+      const thumb = m.el.querySelector(".articleNavThumb");
+      const ratio = () => thumb.getBoundingClientRect().top - m.el.getBoundingClientRect().top;
+      const before = ratio() / m.nav.state.height;
+      await act(async () => {
+        m.nav._set({ height: m.nav.state.height - 60 });
+      });
+      expect(m.el.className).toContain("articleNav--idle");
+      expect(ratio() / m.nav.state.height).toBeCloseTo(before, 2);
       m.r.unmount();
     } finally {
       vi.useRealTimers();

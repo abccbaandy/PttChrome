@@ -28,7 +28,7 @@ unit：`article_tools.test.js`（網址與縮圖候選、推文統計與排行�
 |---|---|---|
 | 資料 | 同側欄：累積頁文字 → `analyzeArticle`（第一則推文、提到我、圖片）＋ `newComments.rowFor`（第一則新推文） | 一個 byte 都不送；還沒讀進來的部分不在軸上，照現有的往下捲／End 補 |
 | 標記位置 | **與滑塊同一把尺**：該列節點在 `.main` 內容裡的像素頂端 / scrollHeight（`_measure`，節點取 `ScreenController.rowNode`，O(1) 不掃 DOM）。閉塊裡的節點不量塊內（會逼瀏覽器排版整塊），用塊頂＋序位比例估；內容尺寸變化（ResizeObserver）與閉塊變成照常渲染（塊的 class，MutationObserver）時 rAF 重量。**捲動不重量**（每幀量所有標記是耗電主因之一，`docs/handoff/android-battery-drain.md` U8）。量不到才退回列號 / 總列數（`navMarks`） | 行內圖片一列幾百 px：列號比例在多圖文章離推文區起點差一大截，點「推」之後滑塊也不在「推」上 |
-| 捲軸只有一條 | 顯示中 `.main` 掛 `.articleNavOn`：原生捲軸**整個不畫**（`::-webkit-scrollbar{display:none}`），空出的 10px 用 `.main` 的 `padding-right`＋`border-box` 補回；Firefox 用 `scrollbar-color` 透明（不可對 Chromium 套）。捲動本身照舊是原生的 | 只做透明的話自訂捲軸照樣由主執行緒每幀重畫整層（U9）；不補寬度則內容寬會變 10px ⇒ 放大態圖片高度、手機折行點跟著變，軸一出現一消失畫面就位移 |
+| 捲軸只有一條 | 顯示中 `.main` 掛 `.articleNavOn`：原生捲軸**整個不畫**（`::-webkit-scrollbar{display:none}`），內容超出時（原本才有原生捲軸）空出的 10px 用 `.main.articleNavGutter` 的 `padding-right`＋`border-box` 補回（`_syncGutter`：在補了寬度的版面上量，放得下才拿掉；ResizeObserver 時重判，捲動時不跑），短文不補；Firefox 用 `scrollbar-color` 透明（不可對 Chromium 套）。捲動本身照舊是原生的 | 只做透明的話自訂捲軸照樣由主執行緒每幀重畫整層（U9）；不補寬度則內容寬會變 10px ⇒ 放大態圖片高度、手機折行點跟著變，軸一出現一消失畫面就位移 |
 | 出現 | 同推文列：pageState 3＋好讀開著＋不在 functionMode＋累積頁非空；pref 關、原生 pmore 不出現 | 認不出 ⇒ 原生 |
 | 位置 | 疊在 `.main` 最右 14px，從 `.main` 頂到可見內容下緣（好讀 footer 上緣，推文列顯示中再扣列高，`articleNavGeometry`） | 不推動終端機（`docs/terminal-size.md` LOCKED）；控制器建在推文列之後，同一個 settle 讀得到推文列的新狀態 |
 | 目前看到哪 | 元件直接讀 `.main` 的 scrollTop／clientHeight／scrollHeight（scroll 事件，rAF 合併），**直接寫滑塊的 transform 與 aria-valuenow，不經 React state**；手機醒著／閒置只在切換時 render | 不必經 settle；經 state 的話每幀整個軸連同標記重新 render（U8） |
