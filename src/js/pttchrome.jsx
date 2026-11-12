@@ -95,7 +95,8 @@ import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from 
 import { sameAppBar } from './mobile_app_bar';
 import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
 import { i18n } from './i18n';
-import { setListenerErrorPolicy } from './event';
+import { setListenerErrorPolicy, runIsolated, reportIsolatedError } from './event';
+import { installPageErrorLog } from './page_error_log';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
 import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp, androidCanSetProtocol, androidSetProtocol } from './android_bridge';
@@ -280,6 +281,8 @@ export const App = function() {
   // ⇒ 其他功能照跑、記進 debug 錄製；有登記停用方式的功能這次連線暫停並提示一次。
   // dev build／測試是 strict（照樣丟出），這裡不會被叫到。
   setListenerErrorPolicy({ onError: (info) => this._onFeatureError(info) });
+  // 全域未捕捉的例外：只在開著 debug 錄製時記一筆（page_error_log.js），不攔、不上傳。
+  if (typeof window !== 'undefined') installPageErrorLog(window, () => this.debugRecorder);
   // Debug 模式（設定→關於，runtime-only）：開著時「⋯」浮動工具裡出現錄製鈕。
   // 唯一寫入點 setDebugMode。
   this.debugMode = false;
@@ -734,30 +737,34 @@ App.prototype.onClose = function(e) {
   // 撐到下一條連線。
   this.buf.resetTerminalModes();
 
+  // 下面逐功能收攤各自包起來（event.js#runIsolated）：正式版某一個丟例外，其餘照收、
+  // 斷線提示照畫（否則畫面停在「連線中」、沒有重連鈕）；dev／測試照樣丟出。
+  const iso = (label, fn) => runIsolated('close:' + label, fn);
+
   // 閱讀紀錄：記下斷線這一刻使用者在哪，重新登入後帶回去。**必須在下面的
   // disable／reset 之前**（它們會丟掉看板身分與跳文落地的那篇）。
-  this.reconnectResume.capture(loggedOut);
+  iso('reconnectResume', () => this.reconnectResume.capture(loggedOut));
 
   // Connection gone: the list buffer is stale by definition — hard reset to
   // idle/native so the reconnect starts clean.
-  this.listSession.disable();
-  this.boardListSession.disable();
+  iso('listSession', () => this.listSession.disable());
+  iso('boardListSession', () => this.boardListSession.disable());
   // Same for the AID back stack: its anchors are replayed as key sequences and
   // rely on this session's per-board cursors (pttbbs getkeep), which die with it.
-  this.aidNavigation.reset();
-  this.boardNoteSkip.reset();
-  this.helpMenu.reset();
+  iso('aidNavigation', () => this.aidNavigation.reset());
+  iso('boardNoteSkip', () => this.boardNoteSkip.reset());
+  iso('helpMenu', () => this.helpMenu.reset());
   // 長推文的探路成果同理：錨點是這條連線的列表游標（pttbbs getkeep），斷線就失效。
   // 不丟掉的話，重連後按下「送出」會拿舊錨點去比對新畫面。
-  this.longPush.disarm();
+  iso('longPush', () => this.longPush.disarm());
   // A deep link waiting for login belongs to the session that is now gone: the
   // reconnect starts back at the login screen, and firing a jump into whatever
   // the user does next is worse than making them click the link again.
-  this.deepLinkController.reset();
+  iso('deepLinkController', () => this.deepLinkController.reset());
   // 收件匣跟著連線走：斷線清空。
-  this.messageInbox.reset();
+  iso('messageInbox', () => this.messageInbox.reset());
 
-  this.cancelMbTimer();
+  iso('mbTimer', () => this.cancelMbTimer());
 
   this.connectState = 2;
   this._keepAliveProbeAt = null;
@@ -2604,8 +2611,9 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     }
   } catch(e) {
-    // eats all errors
-    return;
+    // 逐 key 隔離：一個設定套用失敗不擋其他 key（onValuesPrefChange 逐個呼叫）。
+    // 正式版記進 debug 錄製；dev／測試照樣丟出（以前在這裡默默吞掉，壞了沒人知道）。
+    reportIsolatedError('pref:' + name, e);
   }
 };
 

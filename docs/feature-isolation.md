@@ -18,7 +18,12 @@
 - **沒登記的不停用**，每幀照樣再試：不知道怎麼收乾淨的功能（例如好讀、列表 session 這類狀態機）半套停用只會更糟（畫面凍住）。新功能能乾淨收起（浮層收起、回原生）的，註冊時就帶上 `feature`／`disable`。
 - 目前登記的：新功能小卡（`showWhatsNew`，收起小卡）、文章導覽軸（`enableArticleNav`，收起軸、原生捲軸跟著回來）。
 
-## 還沒做（架構 review A1 的後續步驟）
+## 不走事件派發的入口
 
-- `onPrefChange` 逐 key、`onClose` 逐功能重置用同一套包法。
-- 全域接 `error`／`unhandledrejection`，只寫進本機 debug 錄製的環狀緩衝。
+- **`App.onPrefChange` 逐 key**：每個 key 自己 try/catch，失敗交給 `event.js#reportIsolatedError('pref:<key>')`。以前是默默吞掉；現在 dev／測試照樣丟出。
+- **`App.onClose` 逐功能收攤**：每個 reset／disable 用 `runIsolated('close:<名稱>')` 包起來，一個丟例外，其餘照收、斷線提示照畫（不然畫面停在「連線中」、沒有重連鈕）。新增收攤項目照同樣包。
+- 這兩種只記錄、不停用、不提示（沒有對應的開關）。
+
+## 全域未捕捉的例外
+
+`page_error_log.js`：`window` 的 `error`／`unhandledrejection` 只在開著 debug 錄製時記一筆（`pageError`／`pageRejection`，進錄製器的環狀緩衝），不 `preventDefault`、不上傳。沒開錄製就什麼都不做。

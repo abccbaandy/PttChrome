@@ -24,6 +24,25 @@ export function setListenerErrorPolicy(next) {
   return prev;
 }
 
+// 不走事件派發的功能入口（App.onPrefChange 逐 key、App.onClose 逐功能重置）用同一套政策：
+// strict 照樣丟出；正式版交給 onError（type＝label），呼叫端接著做下一個。
+export function reportIsolatedError(label, err) {
+  if (errorPolicy.strict) throw err;
+  if (typeof errorPolicy.onError === 'function') {
+    try {
+      errorPolicy.onError({ type: label, feature: null, disabled: false, error: err });
+    } catch (e) {}
+  }
+}
+
+export function runIsolated(label, fn) {
+  try {
+    return fn();
+  } catch (err) {
+    reportIsolatedError(label, err);
+  }
+}
+
 export function Event() {}
 
 Event.mixin = function(obj, opts) {
