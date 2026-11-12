@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
     private var bound = false
     private val credentials by lazy { CredentialBridge(this) }
     private val settings by lazy { AppSettings(this) }
+    private val updater by lazy { AppUpdater(this) }
     /** 目前 WebView 載入的來源；注入規則跟著 WebView 建立時決定，換來源＝重建 WebView。 */
     private var pageSource = PageSource.PRODUCTION
     /** 注入給目前這個 WebView 的站台（協議在 App 設定改了，就要重建 WebView 重新注入）。 */
@@ -563,6 +564,9 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // 回到前景：背景時跳的水球通知收掉（內容在畫面／收件匣裡都看得到）。
         MessageNotifier.cancelAll(this)
+        // App 內更新：每天第一次回到前景查一次新版（冷啟動也會走到這裡）；「已更新」通知跟著收掉。
+        UpdateNotifier.cancel(this)
+        updater.autoCheck()
         if (rendererRecreated) {
             rendererRecreated = false
             Toast.makeText(this, R.string.renderer_recreated, Toast.LENGTH_LONG).show()

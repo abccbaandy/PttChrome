@@ -36,6 +36,7 @@ import androidx.core.view.WindowInsetsCompat
  * `openAppSettings`）、長按 App 圖示的捷徑（網頁載不出來時也進得來）、載入失敗頁的連結。
  * 「連結」：ptt.cc 文章連結的系統預設開啟狀態＋入口（docs/deep-link.md「Android APK」）；
  * 「連線 → SSH」（docs/ssh.md「APK」）；
+ * 「關於 → App 版本／檢查更新」（[AppUpdater]，docs/android-app.md「App 內更新」）；
  * 「開發者 → dev server 模式」（docs/android-app.md「debug 版並存與 dev server 模式」）。
  */
 // 平台 Switch：刻意不為一個開關引入 appcompat／material 依賴。
@@ -46,6 +47,7 @@ class SettingsActivity : ComponentActivity() {
     private lateinit var urlInput: EditText
     private lateinit var urlError: TextView
     private lateinit var linkStatus: TextView
+    private val updater by lazy { AppUpdater(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -115,8 +117,21 @@ class SettingsActivity : ComponentActivity() {
         })
 
         content.addView(header(getString(R.string.settings_about)))
+        content.addView(text(getString(R.string.settings_version, BuildConfig.VERSION_NAME), 16f))
+        val updateStatus = text("", 14f, dim = true).apply { visibility = View.GONE }
+        content.addView(Button(this).apply {
+            text = getString(R.string.settings_check_update)
+            setOnClickListener {
+                updater.manualCheck { status ->
+                    updateStatus.text = status
+                    updateStatus.visibility = View.VISIBLE
+                }
+            }
+        })
+        content.addView(updateStatus)
+        content.addView(text(getString(R.string.settings_update_help), 14f, dim = true))
         content.addView(text(getString(R.string.settings_password_note), 14f, dim = true))
-        content.addView(text("${BuildConfig.APPLICATION_ID} ${BuildConfig.VERSION_NAME}", 13f, dim = true))
+        content.addView(text(BuildConfig.APPLICATION_ID, 13f, dim = true))
 
         val scroll = ScrollView(this).apply { addView(content) }
         ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->

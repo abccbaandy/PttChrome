@@ -64,11 +64,14 @@ export function nextVersion(prev, entries) {
   return entries.some((e) => e.kind === "feature") ? [major, minor + 1, 0] : [major, minor, patch + 1];
 }
 
+// 第一行標題與 TAG_PREFIX、附件檔名 `pttchrome.apk` 是 App 內更新（android UpdateCheck.kt）的解析契約：
+// App 靠它們找最新版、切掉這段安裝步驟。守護 tests/unit/android_app_update.test.js。
 export const INSTALL_SECTION = [
   "## 安裝／更新",
   "1. 用 Android 手機下載下面的 `pttchrome.apk`。",
   "2. 開啟下載好的檔案。第一次安裝時，系統會要你允許瀏覽器（或檔案管理員）「安裝不明應用程式」，允許後再按一次安裝。",
   "3. 已經裝過的直接安裝就會覆蓋更新，設定和登入資料都會保留。",
+  "4. 有「檢查更新」的版本不必來這裡下載：App 每天會自己檢查，也可以到「App 設定 → 關於 → 檢查更新」。",
   "",
   "看板、文章、推文這些功能跟網頁版是同一份，會自動更新，不用等新版 App；這裡列的是 App 本身的改動。",
 ].join("\n");

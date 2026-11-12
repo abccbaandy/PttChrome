@@ -26,6 +26,11 @@ class AppSettings(context: Context) {
         get() = AppConfig.normalizeProtocol(prefs.getString(KEY_PROTOCOL, null))
         set(v) = prefs.edit { putString(KEY_PROTOCOL, AppConfig.normalizeProtocol(v)) }
 
+    /** 上次查過更新的本機日期（[AppUpdater.autoCheck]：一天只自動查一次）。 */
+    var lastUpdateCheckDay: String?
+        get() = prefs.getString(KEY_UPDATE_CHECK_DAY, null)
+        set(v) = prefs.edit { putString(KEY_UPDATE_CHECK_DAY, v) }
+
     /** 區網 IP 只在 debug APK 開放（見 [PageSource]）。 */
     val allowLan: Boolean get() = BuildConfig.DEBUG
 
@@ -36,5 +41,6 @@ class AppSettings(context: Context) {
         const val KEY_DEV_ENABLED = "dev_server_enabled"
         const val KEY_DEV_URL = "dev_server_url"
         const val KEY_PROTOCOL = "connection_protocol"
+        const val KEY_UPDATE_CHECK_DAY = "update_last_check_day"
     }
 }

@@ -39,5 +39,25 @@
     <string name="settings_saved">已儲存</string>
     <string name="settings_about">關於</string>
     <string name="settings_password_note">App 存的 PTT 密碼與網頁版（Chrome）分開：Google 密碼管理員只會關聯上架 Google Play 的 App，本 App 從 GitHub 安裝，所以兩邊各存一份。</string>
+    <string name="settings_version">App 版本：%1$s</string>
+    <string name="settings_check_update">檢查更新</string>
+    <string name="settings_update_help">每天第一次開啟 App 會自動檢查一次新版。看板、文章這些功能跟著網頁自動更新，不必更新 App。</string>
+    <string name="update_checking">檢查中…</string>
+    <string name="update_up_to_date">已經是最新版本</string>
+    <string name="update_check_failed">檢查失敗，請確認網路後再試一次</string>
+    <string name="update_unsupported">這是開發版，沒有自動更新</string>
+    <string name="update_available_title">有新版 %1$s</string>
+    <string name="update_available_hint">更新時 App 會關閉、PTT 連線會中斷，裝好後再重新開啟。</string>
+    <string name="update_now">下載並安裝</string>
+    <string name="update_later">稍後</string>
+    <string name="update_downloading_title">正在下載 %1$s</string>
+    <string name="update_downloading_start">連線中…</string>
+    <string name="update_downloading_percent">已下載 %1$d%%</string>
+    <string name="update_installing">下載完成，正在安裝…</string>
+    <string name="update_download_failed">下載失敗，請確認網路後再試一次</string>
+    <string name="update_install_failed">安裝失敗，可以到 GitHub Releases 手動下載 APK</string>
+    <string name="notif_update_channel">App 更新</string>
+    <string name="notif_updated_title">PttChrome 已更新到 %1$s</string>
+    <string name="notif_updated_text">點一下重新開啟</string>
     <string name="asset_statements" translatable="false">[{\"include\": \"https://abccbaandy.github.io/.well-known/assetlinks.json\"}]</string>
 </resources>
