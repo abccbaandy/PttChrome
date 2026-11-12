@@ -134,18 +134,40 @@ export function renderUnreadableBody({ status, runUrl, repo }) {
   ].join("\n");
 }
 
+// Dependabot alerts API 不吃 `page` 參數（帶了回 HTTP 400，token 對也一樣），只能照 Link header 的
+// cursor（after）翻頁。
+export function alertsFirstUrl(repo) {
+  return `https://api.github.com/repos/${repo}/dependabot/alerts?state=open&per_page=100`;
+}
+
+export function nextPageUrl(link) {
+  for (const part of String(link || "").split(",")) {
+    const m = part.match(/<([^>]+)>\s*;\s*rel="next"/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
 // ---- 以下只在 workflow 裡跑 ----
 
 async function fetchAlerts(repo, token) {
   const all = [];
-  for (let page = 1; page <= 10; page++) {
-    const res = await fetch(`https://api.github.com/repos/${repo}/dependabot/alerts?state=open&per_page=100&page=${page}`, {
+  let url = alertsFirstUrl(repo);
+  for (let n = 0; url && n < 10; n++) {
+    const res = await fetch(url, {
       headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28" },
     });
-    if (!res.ok) return { ok: false, status: res.status };
-    const list = await res.json();
-    all.push(...list);
-    if (list.length < 100) break;
+    if (!res.ok) {
+      let message = "";
+      try {
+        message = String((await res.json()).message || "");
+      } catch {
+        // 不是 JSON
+      }
+      return { ok: false, status: res.status, message };
+    }
+    all.push(...(await res.json()));
+    url = nextPageUrl(res.headers.get("link"));
   }
   return { ok: true, alerts: all };
 }
@@ -180,7 +202,7 @@ async function main(argv, env) {
   ]) {
     if (!token) continue;
     read = await fetchAlerts(repo, token);
-    console.log(`${name}: ${read.ok ? `讀到 ${read.alerts.length} 則 open 警示` : `HTTP ${read.status}`}`);
+    console.log(`${name}: ${read.ok ? `讀到 ${read.alerts.length} 則 open 警示` : `HTTP ${read.status} ${read.message || ""}`}`);
     if (read.ok) break;
   }
   const items = read.ok ? summarize(read.alerts) : [];

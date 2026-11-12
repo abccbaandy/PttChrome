@@ -11,6 +11,8 @@ import {
   renderChangeComment,
   renderUnreadableBody,
   tableCell,
+  alertsFirstUrl,
+  nextPageUrl,
   ISSUE_TITLE,
   UNREADABLE_TITLE,
 } from "../../scripts/dependabot-alerts-report.mjs";
@@ -136,5 +138,25 @@ describe("dependabot-alerts.yml", () => {
   test("腳本只 sparse-checkout 自己 ⇒ 不准 import 本地檔案", () => {
     expect(yml).toContain("sparse-checkout: scripts/dependabot-alerts-report.mjs");
     expect(workflow).not.toMatch(/from\s+["']\.{1,2}\//);
+  });
+});
+
+// Dependabot alerts API 不吃 `page` 參數（帶了回 HTTP 400，token 對也一樣），只能照 Link header 的 cursor 翻頁。
+describe("分頁", () => {
+  test("第一頁網址不帶 page", () => {
+    const u = new URL(alertsFirstUrl("o/r"));
+    expect(u.pathname).toBe("/repos/o/r/dependabot/alerts");
+    expect(u.searchParams.get("state")).toBe("open");
+    expect(u.searchParams.get("per_page")).toBe("100");
+    expect(u.searchParams.has("page")).toBe(false);
+  });
+
+  test("下一頁取 Link 的 rel=next；沒有就 null", () => {
+    const link =
+      '<https://api.github.com/repositories/1/dependabot/alerts?per_page=100&after=Y3Vy>; rel="next", ' +
+      '<https://api.github.com/repositories/1/dependabot/alerts?per_page=100&before=Zm9v>; rel="prev"';
+    expect(nextPageUrl(link)).toBe("https://api.github.com/repositories/1/dependabot/alerts?per_page=100&after=Y3Vy");
+    expect(nextPageUrl('<https://x/a>; rel="prev"')).toBeNull();
+    expect(nextPageUrl(null)).toBeNull();
   });
 });

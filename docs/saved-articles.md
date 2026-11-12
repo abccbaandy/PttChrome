@@ -44,7 +44,7 @@
 | 在這台刪 | `remove(key)` 同時從雲端清單拿掉 | 不然它會變成「其他裝置存的」又出現在這台 |
 | 開關 | pref `syncSavedArticles`（預設開），設定 → 備份的「雲端同步」區，只在登入同步後出現；`enableSavedArticles` 關掉時一起停 | 沒登入同步就沒東西可同步 |
 
-**`firestore.rules` 改了要手動部署**（`npx firebase-tools@15 deploy --only firestore:rules`，見 `docs/pref-sync-firestore.md`）：沒部署時線上仍是舊規則（只看 uid），功能照常、只是少了 300 篇的伺服器端檢查。
+**`firestore.rules` 由 `deploy.yml` 自動部署**（要 repo secret `FIREBASE_SERVICE_ACCOUNT`，見 `docs/pref-sync-firestore.md`）：沒部署時線上仍是舊規則（只看 uid），功能照常、只是少了 300 篇的伺服器端檢查。
 rules 只驗「`saved` 是 map、≤300 篇」：Firestore rules 不能逐一走訪 map 的值，每篇的欄位格式由 `normalizeCloudSaved` 在讀回時把關（只能寫自己的文件，壞資料只影響自己）。
 
 ## 還沒做（依序）

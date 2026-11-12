@@ -63,3 +63,34 @@ describe("deploy.yml：build 不等測試，deploy 等測試與 build", () => {
     expect(m[1].split(",").map((s) => s.trim()).sort()).toEqual(["build", "test"]);
   });
 });
+
+// Firestore 規則自動部署：測試綠才部署、舊 commit 不蓋回舊規則、沒設 secret 不讓 dev 變紅。
+const rulesJob = (() => {
+  const start = YAML.search(/^ {2}firestore-rules:\s*$/m);
+  if (start < 0) return "";
+  const rest = YAML.slice(start + 1);
+  const next = rest.search(/^ {2}[A-Za-z][\w-]*:\s*$/m);
+  return next < 0 ? YAML.slice(start) : YAML.slice(start, start + 1 + next);
+})();
+
+describe("deploy.yml：Firestore 規則部署", () => {
+  test("等測試、有自己的鎖且不砍進行中的", () => {
+    expect(rulesJob).toMatch(/^ {4}needs: test\s*$/m);
+    expect(rulesJob).toMatch(/^ {4}concurrency:\s*\n {6}group: firestore-rules\s*\n {6}cancel-in-progress: false\s*$/m);
+  });
+
+  test("先確認仍是最新 commit 才部署；沒有 secret 只提示、exit 0", () => {
+    const check = rulesJob.search(/^\s*id: latest\s*$/m);
+    const deploy = rulesJob.search(/deploy --only firestore:rules/);
+    expect(check).toBeGreaterThan(-1);
+    expect(deploy).toBeGreaterThan(check);
+    expect(rulesJob).toMatch(/- name: Deploy Firestore rules\s*\n\s*if: steps\.latest\.outputs\.deploy == 'true'/);
+    expect(rulesJob).toMatch(/HAS_KEY" != "true" \]; then[\s\S]*?deploy=false[\s\S]*?exit 0/);
+  });
+
+  test("金鑰只寫到 runner 暫存檔、用完刪掉，不印出來", () => {
+    expect(rulesJob).toContain('"$RUNNER_TEMP/firebase-sa.json"');
+    expect(rulesJob).toMatch(/rm -f "\$key"/);
+    expect(rulesJob).not.toMatch(/echo "\$SA_KEY"/);
+  });
+});
