@@ -15,6 +15,7 @@ import { parseStatusRow } from './string_util';
 import { parseLiveStatusRow } from './live_mode';
 import { serializedOpHint } from './serialized_op_gate';
 import { isEasyReadingLive } from './easy_reading';
+import { PAGE_STATE } from './screen_model';
 
 export const LIVE_START_KEY = 'v';
 export const LIVE_LEAVE_KEY = 'q';
@@ -29,7 +30,7 @@ export function liveHelperView({ pageState, lastRowText, cursorOnInputField, bus
   const live = parseLiveStatusRow(lastRowText);
   if (live) return Object.assign({ kind: busy ? 'busy' : 'live' }, live);
   if (busy) return { kind: 'busy' };
-  if (pageState === 3 && parseStatusRow(lastRowText) && !cursorOnInputField) return { kind: 'ready' };
+  if (pageState === PAGE_STATE.READING && parseStatusRow(lastRowText) && !cursorOnInputField) return { kind: 'ready' };
   return { kind: 'unavailable' };
 }
 

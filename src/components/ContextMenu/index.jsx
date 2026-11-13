@@ -16,6 +16,7 @@ import TitleBlacklistModal from "./TitleBlacklistModal";
 import LongPushProgressModal from "./LongPushProgressModal";
 import LongPushErrorModal from "./LongPushErrorModal";
 import AidBoardChoiceModal from "./AidBoardChoiceModal";
+import { PAGE_STATE } from "../../js/screen_model";
 
 // 用到才開的大彈窗拆成獨立 chunk，不進主 bundle（手機冷啟動少解析一截）。
 // 仍在 ContextMenu 掛載時就 render ⇒ chunk 在開站時背景載入、元件照舊常駐，
@@ -334,7 +335,7 @@ export function readLaterTargetOf(
 function commentFilterTargetOf(pttchrome, prefs, normalEnabled, rowElement) {
   const view = pttchrome.view;
   if (!normalEnabled || !prefs.enableCommentFilter || !view) return null;
-  if (!view.useEasyReadingMode || !view.buf || view.buf.pageState !== 3)
+  if (!view.useEasyReadingMode || !view.buf || view.buf.pageState !== PAGE_STATE.READING)
     return null;
   if (typeof view.activeCommentFilter !== "function") return null;
   if (view.activeCommentFilter()) return { active: true };
@@ -849,7 +850,7 @@ export const ContextMenu = ({ pttchrome }) => {
         // = READING，與 term_view 判「可切回好讀模式」用的是同一個值。看板精華區的
         // 文章按 Q 只會退回精華區選單（TermBuf.pagerContext）⇒ 不給。
         articleLinkEnabled:
-          pttchrome.buf.pageState === 3 && !pttchrome.buf.pagerFromEssence,
+          pttchrome.buf.pageState === PAGE_STATE.READING && !pttchrome.buf.pagerFromEssence,
         // 圖片上傳與兩個小幫手的選項各自跟著自己的開關走（同樣是現讀）。
         imageUploadEnabled: !!prefs.enableImageUpload,
         inputHelperEnabled: !!prefs.enableInputHelper,
@@ -1196,7 +1197,7 @@ export const ContextMenu = ({ pttchrome }) => {
         unreadJump: !!pttchrome.unreadJump?.available?.(),
         markAllRead: !!pttchrome.markAllRead?.available?.(),
         copyLink:
-          !!pttchrome.deepLinkController && pttchrome.buf?.pageState === 3,
+          !!pttchrome.deepLinkController && pttchrome.buf?.pageState === PAGE_STATE.READING,
         back: !!pttchrome.aidNavigation?.canGoBack?.(),
         safeMode: !!prefs.nativeSafeMode,
         saveDebugRecord: !!pttchrome.canSaveBackgroundRecording?.(),
@@ -1474,7 +1475,7 @@ export const ContextMenu = ({ pttchrome }) => {
   const onInputHelperCmdSend = useCallback(
     (cmd) => {
       if (inputHelperBlocked(INPUT_HELPER_COLOR)) return;
-      if (!window.getSelection().isCollapsed && pttchrome.buf.pageState == 6) {
+      if (!window.getSelection().isCollapsed && pttchrome.buf.pageState == PAGE_STATE.EDITOR) {
         // something selected
         var sel = pttchrome.view.getSelectionColRow();
         var y = pttchrome.buf.cur_y;

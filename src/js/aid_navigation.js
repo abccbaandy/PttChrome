@@ -81,6 +81,7 @@ import {
   activityAlertTitle,
   isActivityAlertHint
 } from './activity_alert';
+import { PAGE_STATE } from './screen_model';
 
 // AID search rejected: pttbbs answers with a press-any-key message instead of
 // a clean list. Belt-and-braces text guard for the (unlikely) case the message
@@ -805,7 +806,7 @@ AidNavigation.prototype = {
     if (local) return local;
     const buf = this._termBuf;
     const board = this._view && this._view._articleBoard;
-    if (!buf || buf.pageState !== 3 || !board) return null;
+    if (!buf || buf.pageState !== PAGE_STATE.READING || !board) return null;
     const landed = this._landedNow();
     if (!landed || !landed.aid || !landed.board) return null;
     return String(landed.board).toLowerCase() === String(board).toLowerCase()
@@ -867,7 +868,7 @@ AidNavigation.prototype = {
   refresh: function() {
     if (this.active) return false;
     const buf = this._termBuf;
-    if (!buf || buf.pageState !== 3) return false;
+    if (!buf || buf.pageState !== PAGE_STATE.READING) return false;
     const board = this._view && this._view._articleBoard;
     if (!board) return false;
     const last = buf.getRowText(buf.rows - 1, 0, buf.cols);
@@ -1241,7 +1242,7 @@ AidNavigation.prototype = {
   findLocalPostAid: function() {
     const buf = this._termBuf;
     // pageState 3 = READING。不在文章裡時畫面上的網址列不代表「本篇」。
-    if (!buf || buf.pageState !== 3 || !buf.getRowText) return null;
+    if (!buf || buf.pageState !== PAGE_STATE.READING || !buf.getRowText) return null;
     const board = this._view && this._view._articleBoard;
     // 站內信／精華區沒有看板（comment_parse 會把 _articleBoard 清成 null）：
     // 沒有看板就守不了門，也組不出連結。

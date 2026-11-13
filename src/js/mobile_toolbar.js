@@ -58,6 +58,7 @@ import { isEditorFooter } from './screen_captions';
 import { readEffectivePrefs } from './pref_storage';
 import { promptPanelFromBuf, promptChoicesSig } from './prompt_choices';
 import { searchListMode } from './search_status';
+import { PAGE_STATE } from './screen_model';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
   push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
@@ -147,7 +148,7 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
   const last = (facts.rowTexts || [])[facts.rows - 1] || '';
   // 游標在輸入欄＝pmore 自己的 prompt（`/` 搜尋、`:` 跳行…）開著：它畫在倒數第二列、
   // 狀態列留著，光看底列還是 pager；這時推／回文／到底按下去只會打進 prompt。
-  const pager = pageState === 3 && !facts.inputField && atPagerStatusRow(last);
+  const pager = pageState === PAGE_STATE.READING && !facts.inputField && atPagerStatusRow(last);
   const mail = pager && parsePagerFooterContext(last) === 'mail';
   // 看板精華區的文章：footer 跟看板文章一樣，但推／回／Q／翻同主題都只會退回精華區選單
   // （TermBuf.pagerContext）。
@@ -176,8 +177,8 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
       home: o.home
     }),
     end: pager || lists || mailList,
-    editor: pageState === 6,
-    editorSave: pageState === 6 && !!o.editorSave && !facts.inputField && isEditorFooter(last),
+    editor: pageState === PAGE_STATE.EDITOR,
+    editorSave: pageState === PAGE_STATE.EDITOR && !!o.editorSave && !facts.inputField && isEditorFooter(last),
     mailList: mailList,
     search: availableSearchKinds(facts),
     appBar: appBarFromFacts(facts, { ...(opts || {}), pageState: pageState }),

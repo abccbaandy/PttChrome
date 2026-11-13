@@ -20,6 +20,7 @@
 
 import { classifyPushScreen } from './push_screen';
 import { isEditorFooter } from './screen_captions';
+import { PAGE_STATE } from './screen_model';
 
 export const URUSAI_UPLOAD_URL = 'https://api-v1-t2-upload.urusai.cc';
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -95,7 +96,7 @@ export function decideInsertMode({ pageState, lastRowText, cursorOnInputField, h
   if (hasTextTarget) return 'target';
   // pageState 6 會黏住（編輯器裡底列跳出 prompt 時還是 6）⇒ 底列本身也要是編輯器的。
   // 編輯器的 ^S 搜尋／F5 跳行是倒數第二列的 prompt，底列 caption 還在 ⇒ 游標在輸入欄上就不是內文。
-  if (pageState === 6 && isEditorFooter(lastRowText)) return cursorOnInputField ? 'clipboard' : 'send';
+  if (pageState === PAGE_STATE.EDITOR && isEditorFooter(lastRowText)) return cursorOnInputField ? 'clipboard' : 'send';
   if (lastRowText && classifyPushScreen([lastRowText], 1).kind === 'inputPrompt')
     return 'send';
   return 'clipboard';

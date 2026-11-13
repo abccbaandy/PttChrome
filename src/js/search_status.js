@@ -15,6 +15,7 @@ import { readEffectivePrefs } from './pref_storage';
 import { footerCaption, isArticleListFooter } from './screen_captions';
 import { parseBoardKey, boardNameFromKey } from './screen_titles';
 import { isSearchPromptFrame, searchGateFacts } from './article_search';
+import { PAGE_STATE } from './screen_model';
 
 export const SEARCH_STATUS_ID = 'searchStatus';
 // 會記住的搜尋種類（看板搜尋 `s` 是換板，不是篩選）。
@@ -164,7 +165,7 @@ SearchStatus.prototype = {
     if (
       !enabled() ||
       mode !== 'select' ||
-      (buf && buf.pageState === 3) ||
+      (buf && buf.pageState === PAGE_STATE.READING) ||
       !listChromeIntact(facts.rowTexts, facts.curY)
     )
       return this._set({ visible: false });

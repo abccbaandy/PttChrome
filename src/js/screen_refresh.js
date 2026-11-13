@@ -39,6 +39,7 @@ import { serializedOpHint } from './serialized_op_gate';
 import { readValuesWithDefault } from './pref_storage';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
+import { PAGE_STATE } from './screen_model';
 
 export const DEFAULT_REFRESH_MIN_INTERVAL_SEC = 5;
 
@@ -66,7 +67,7 @@ export function refreshTargetFromFacts(facts, pageState, opts) {
   // 游標在輸入欄＝有 prompt 開著（含 pmore 的 `/` 搜尋、`:` 跳行：畫在倒數第二列、狀態列
   // 留著，光看底列還是 pager），重整送的鍵會打進 prompt。
   if (facts.inputField) return null;
-  if (pageState === 3 && atPagerStatusRow(last)) {
+  if (pageState === PAGE_STATE.READING && atPagerStatusRow(last)) {
     // 看板精華區的文章：footer 跟看板文章一字不差，但 s／# 都只會退回精華區選單。
     if (facts.pagerFromEssence) return null;
     let ctx = parsePagerFooterContext(last);

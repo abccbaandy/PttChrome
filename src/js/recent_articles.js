@@ -17,6 +17,7 @@
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { i18n } from './i18n';
+import { PAGE_STATE } from './screen_model';
 
 export const RECENT_ARTICLES_KEY = 'pttchrome.recentArticles.v1';
 export const RECENT_ARTICLES_LIMIT = 30;
@@ -80,7 +81,7 @@ export function resumeLineFromRecord(article) {
 //   等太久 ⇒ 'drop'。
 export function nextResumeStep(s) {
   if (s.ageMs > RESUME_ARM_MS) return 'drop';
-  if (s.navActive || s.pageState !== 3 || s.inst == null || s.inst === s.armedInst || !s.easy) return 'wait';
+  if (s.navActive || s.pageState !== PAGE_STATE.READING || s.inst == null || s.inst === s.armedInst || !s.easy) return 'wait';
   return s.landedKey && s.landedKey === s.key ? 'apply' : 'drop';
 }
 
@@ -253,7 +254,7 @@ RecentArticles.prototype = {
     this._bindScroll();
     this._advanceResume();
     const buf = this._core.buf;
-    if (!buf || buf.pageState !== 3) {
+    if (!buf || buf.pageState !== PAGE_STATE.READING) {
       // 離開文章：下次再進同一篇要重新排到最前面。
       this._lastKey = null;
       this._lastInst = null;
@@ -304,7 +305,7 @@ RecentArticles.prototype = {
     const buf = core.buf;
     const view = core.view || {};
     const er = core.easyReading;
-    if (!buf || buf.pageState !== 3 || buf._settleTimer || !er || !er._enabled || er._functionMode) return false;
+    if (!buf || buf.pageState !== PAGE_STATE.READING || buf._settleTimer || !er || !er._enabled || er._functionMode) return false;
     if (er._pendingScrollRestore || view._articleInstanceId !== this._lastInst) return false;
     const article = recordFor(core).current({ view: view, buf: buf }).article;
     return this._saveLine(this._lastKey, resumeLineFromRecord(article));

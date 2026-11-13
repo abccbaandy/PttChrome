@@ -14,6 +14,7 @@
 //      enableFollowOnly（預設開），關注名單是空的或名單開關關著 ⇒ 不出現。
 import { readEffectivePrefs } from './pref_storage';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
+import { PAGE_STATE } from './screen_model';
 
 export const FOLLOW_ONLY_ID = 'followOnlyChip';
 export const FOLLOW_ONLY_KEY = 'pttchrome.followOnly';
@@ -51,7 +52,7 @@ function writeOn(storage, on) {
 // 這一幀要不要出現鈕（純函式）。facts：{ enabled, followListOn, hasFollow, listWindow, pageState }。
 export function followOnlyAvailable(facts) {
   const f = facts || {};
-  return !!(f.enabled && f.followListOn && f.hasFollow && f.listWindow && f.pageState !== 3);
+  return !!(f.enabled && f.followListOn && f.hasFollow && f.listWindow && f.pageState !== PAGE_STATE.READING);
 }
 
 const HIDDEN = { visible: false, on: false, empty: false, right: 0, top: 0, mobile: false };

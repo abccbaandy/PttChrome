@@ -16,6 +16,7 @@ import { parseBoardName, parseHeaderTitle } from './screen_titles';
 import { NEW_MAIL_MARK } from './mobile_app_bar';
 import { i18n } from './i18n';
 import { startWaterballReply } from './waterball_reply';
+import { PAGE_STATE } from './screen_model';
 
 export const MESSAGE_INBOX_ID = 'messageInbox';
 export const INBOX_LIMIT = 100;
@@ -90,7 +91,7 @@ export function latestSender(items) {
 // 認得出是標題列（【X】或看板標題）時給；文章、prompt、編輯器這類沒有標題列的畫面回 null
 // ＝不知道（看不到不代表沒有新信）。
 export function newMailOnScreen(row0, pageState) {
-  if (pageState === 3) return null;
+  if (pageState === PAGE_STATE.READING) return null;
   const r = row0 || '';
   if (!parseHeaderTitle(r) && !parseBoardName(r)) return null;
   return r.indexOf(NEW_MAIL_MARK) >= 0;

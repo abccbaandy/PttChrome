@@ -18,6 +18,7 @@ import { parseStatusRow } from './string_util';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
 import { serializedOpHint, promptPendingNow, PROMPT_PENDING_HINT } from './serialized_op_gate';
+import { PAGE_STATE } from './screen_model';
 
 export function DeepLinkController(core, view, termBuf) {
   this._core = core;
@@ -219,7 +220,7 @@ DeepLinkController.prototype = {
     const href = this._locationHref();
     let next;
     // pageState 3 = READING。
-    if (buf && buf.pageState === 3) {
+    if (buf && buf.pageState === PAGE_STATE.READING) {
       const nav = this._core.aidNavigation;
       const info = nav && nav.findLocalPostAid ? nav.findLocalPostAid() : null;
       // 還算不出本篇是哪一篇 ⇒ 什麼都不做，維持現況（不要清掉，使用者可能正是
@@ -309,7 +310,7 @@ DeepLinkController.prototype = {
 
   _inNativePager: function() {
     const buf = this._termBuf;
-    if (!buf || buf.pageState !== 3 || !buf.getRowText) return false;
+    if (!buf || buf.pageState !== PAGE_STATE.READING || !buf.getRowText) return false;
     if (!this._view || !this._view._articleBoard) return false;
     return !!parseStatusRow(buf.getRowText(buf.rows - 1, 0, buf.cols));
   },

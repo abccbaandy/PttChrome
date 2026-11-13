@@ -10,6 +10,7 @@
 
 import { b2u, charCells, COMMENT_TIME_RE } from './string_util';
 import { cellText } from './unicode_cells';
+import { PAGE_STATE } from './screen_model';
 
 // Reconstruct the Unicode text of a row from its TermChar[] (one screen line).
 // A DBCS character is stored as a lead byte followed by its second byte; combine
@@ -541,7 +542,7 @@ export function articleBylineFromScreen(row0, row2) {
 // 例外都是「之後還會回到同一篇的非首頁」：好讀 functionMode（推文／回應 prompt、
 // 編輯器）、跳行修補的 prompt、按任意鍵繼續。
 export function shouldClearArticleContextOnSettle({ pageState, functionMode, healInFlight }) {
-  if (pageState === 3 || pageState === 5) return false;
+  if (pageState === PAGE_STATE.READING || pageState === PAGE_STATE.PASS) return false;
   return !functionMode && !healInFlight;
 }
 
@@ -1269,7 +1270,7 @@ export function decideAccumulateBranch({
   shortPageGrowth
 }) {
   if (complete === false) return 'skip';
-  if (!healInFlight && prevPageState !== 3) return 'rebuild';
+  if (!healInFlight && prevPageState !== PAGE_STATE.READING) return 'rebuild';
   // 狀態列是文章 pager、但沒有行號（string_util.parseStatusRow 的 rowsUnknown：
   // pmore override_msg 警告／oldstatusbar）。P1 的 gap／backward 判定與「第 1 行」都
   // 無從判斷，只剩內容重疊可用：

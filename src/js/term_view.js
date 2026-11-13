@@ -35,6 +35,7 @@ import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_ga
 import { tryOpenSearchModal } from './article_search';
 import { isRefreshKeyEvent } from './screen_refresh';
 import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry, listFillRows, LIST_CARD_ROWS } from './mobile_layout';
+import { PAGE_STATE } from './screen_model';
 
 // 單獨按下修飾鍵本身（實體鍵盤按 Shift 準備打大寫）不算「下一個按鍵」，黏滯 Ctrl 不解除。
 var MODIFIER_KEY_NAMES = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'];
@@ -830,7 +831,7 @@ TermView.prototype = {
     // Track the 原PO id for same-author comment highlighting. The "作者" header
     // only appears on the first page of an article, so keep the last parsed value
     // across page-downs; a new article's first page overwrites it.
-    if (this.buf.pageState === 3) {
+    if (this.buf.pageState === PAGE_STATE.READING) {
       // Author AND board come from the SAME header line ("作者 x (y) 看板 Z"), so
       // they are adopted as one event: a 站內信 header has no 看板 field and must
       // therefore CLEAR the board, not inherit the previous post's (a boardless
@@ -886,7 +887,7 @@ TermView.prototype = {
         this._renderScreenLines(lines.slice(), /* dropHidden */ false, /* inlinePreview */ false, /* hoverPreview */ false, { changedRows: changedRows });
       } else if (
         (this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen') &&
-        this.buf.pageState !== 3
+        this.buf.pageState !== PAGE_STATE.READING
       ) {
         // List easy reading (v4, ListSession owns the mode; see list_session.js).
         // pageState 3 (article) frames MUST fall through to the article branches
@@ -1002,7 +1003,7 @@ TermView.prototype = {
               ? { pageState: 1, inListContext: false }
               : { pageState: 2, listEasyReading: true }));
         }
-      } else if (this.useEasyReadingMode && this.buf.pageState == 3) {
+      } else if (this.useEasyReadingMode && this.buf.pageState == PAGE_STATE.READING) {
         // Easy-reading article: accumulate the long page into buf.pageLines (pure
         // JS de-dup, no DOM) then render the whole thing. Blacklisted comment rows
         // are dropped entirely (dropHidden) instead of left as a blank gap.
@@ -1052,7 +1053,7 @@ TermView.prototype = {
         }
       } else if (
         this.useEasyReadingMode &&
-        this.buf.settledPageState === 3 &&
+        this.buf.settledPageState === PAGE_STATE.READING &&
         this.buf.pageLines.length
       ) {
         // TRANSIENT dip out of pageState 3 while still inside the article. pageState is
@@ -1114,7 +1115,7 @@ TermView.prototype = {
   // shared by both modes.
   // 選單畫面的底列 → 登入者帳號（見建構子的 _selfId）。只讀一列、只在選單。
   _noteSelfId: function() {
-    if (this.buf.pageState !== 1) return;
+    if (this.buf.pageState !== PAGE_STATE.MENU) return;
     var id = parseStatusUserid(this.buf.getRowText(this.buf.rows - 1, 0, this.buf.cols));
     if (id) this._selfId = id;
   },
@@ -1158,7 +1159,7 @@ TermView.prototype = {
   justPushedEnhance: function() {
     var j = this._justPushed;
     if (!j || j.articleId !== this._articleInstanceId) return null;
-    if (!this.useEasyReadingMode || this.buf.pageState !== 3) return null;
+    if (!this.useEasyReadingMode || this.buf.pageState !== PAGE_STATE.READING) return null;
     return j;
   },
 
@@ -1171,7 +1172,7 @@ TermView.prototype = {
   activeCommentFilter: function() {
     var f = this._commentFilter;
     if (!f || f.articleId !== this._articleInstanceId) return null;
-    if (!this.useEasyReadingMode || this.buf.pageState !== 3) return null;
+    if (!this.useEasyReadingMode || this.buf.pageState !== PAGE_STATE.READING) return null;
     return f;
   },
 
@@ -1254,7 +1255,7 @@ TermView.prototype = {
   // f.key＝給標註層的 enhance.commentFilter（comment_parse#isFilteredOut）。
   // anchorRow 省略（橫幅切換鈕，P41）⇒ 錨在視窗頂端那一列，同 clearCommentFilter。
   _applyCommentFilter: function(f, anchorRow) {
-    if (!this.useEasyReadingMode || this.buf.pageState !== 3) return false;
+    if (!this.useEasyReadingMode || this.buf.pageState !== PAGE_STATE.READING) return false;
     if (anchorRow == null) {
       var top = this._topRowNode();
       anchorRow = top ? Number(top.el.getAttribute('srow')) : null;
@@ -1384,7 +1385,7 @@ TermView.prototype = {
     // 活 buffer 的標題列；認不出（描述太長擠掉《板名》）⇒ 不標。
     var listBadge = null;
     var effPageState = enhanceOverrides && enhanceOverrides.pageState != null ? enhanceOverrides.pageState : this.buf.pageState;
-    if (effPageState === 2 && this.bbscore && this.bbscore.newComments &&
+    if (effPageState === PAGE_STATE.LIST && this.bbscore && this.bbscore.newComments &&
         typeof this.bbscore.newComments.listBadge === 'function')
       listBadge = this.bbscore.newComments.listBadge(parseBoardName(this.buf.getRowText(0, 0, this.buf.cols)));
     // Maintain the sticky board-list context (see constructor). LIST enters it,
@@ -1601,7 +1602,7 @@ TermView.prototype = {
       this.buf.listRenderMode === 'buffer' || this.buf.listRenderMode === 'frozen';
     var mode = listMode
       ? 'listBuffer'
-      : (this.useEasyReadingMode && this.buf.pageState === 3 ? 'article' : 'native');
+      : (this.useEasyReadingMode && this.buf.pageState === PAGE_STATE.READING ? 'article' : 'native');
     var kbRow = listMode ? this._listCursorRow : this.buf.cur_y;
     if (source === 'mouse')
       this._highlightMover = 'mouse';
@@ -1890,7 +1891,7 @@ TermView.prototype = {
     // excluded (we are already mirroring native there, and _evalFunctionModeExit will
     // resume on its own), and pageState 3 keeps it out of lists/menus/editors.
     if (!this.useEasyReadingMode && !this.buf.easyReadingFunctionMode &&
-        this.buf.pageState === 3 && !e.ctrlKey && !e.altKey &&
+        this.buf.pageState === PAGE_STATE.READING && !e.ctrlKey && !e.altKey &&
         this.bbscore.easyReading &&
         this.bbscore.easyReading.tryReenterFromNative(e)) {
       e.preventDefault();
@@ -3283,7 +3284,7 @@ TermView.prototype = {
 
   // 好讀累積頁是不是正在接實況推文（EasyReading 用它決定按鍵怎麼處理）。
   isLiveReading: function() {
-    return !!this._live && this.buf.pageState === 3 &&
+    return !!this._live && this.buf.pageState === PAGE_STATE.READING &&
       this.buf.pageLines.length === this._live.base + this._live.texts.length;
   },
 
@@ -3339,7 +3340,7 @@ TermView.prototype = {
     // precompute either: without accTail/kContent, resolvePageOverlap loses its content
     // cross-check exactly on the frame that needs it most.
     var healing = !!this.buf.easyReadingHealInFlight;
-    if (complete && (this.buf.prevPageState == 3 || healing) && result && this.buf.pageLines.length) {
+    if (complete && (this.buf.prevPageState == PAGE_STATE.READING || healing) && result && this.buf.pageLines.length) {
       accTail = this.buf.pageLines.slice(-newRows.length).map(rowToText);
       newTexts = newRows.map(rowToText);
       maxK = Math.min(accTail.length, newTexts.length);
@@ -3491,7 +3492,7 @@ TermView.prototype = {
       // 沒有行號的頁只在 decideAccumulateBranch 的 pendingReset 規則下才會以
       // prevPageState 3 走到這裡（零重疊＝新文章），那就是確認過的換文章。
       if (result && (result.rowIndexStart === 1 ||
-                     (result.rowsUnknown && this.buf.prevPageState == 3)))
+                     (result.rowsUnknown && this.buf.prevPageState == PAGE_STATE.READING)))
         this.buf.easyReadingPendingReset = false;
       // 同 redraw 的清空點：只設欄位，由隨後的 render 同步給 ScreenController。
       this._selectedPusher = null;

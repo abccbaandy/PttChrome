@@ -22,6 +22,7 @@
 // 手機換行版面也正確；列表的 readingPosition 用編號＋列內比例）。
 
 import { parseStatusRow } from './string_util';
+import { PAGE_STATE } from './screen_model';
 
 // ---------------------------------------------------------------------------
 // 決策表（純資料，tests/unit/reading_record.test.js 逐格守護）
@@ -245,7 +246,7 @@ ReadingRecord.prototype = {
     const c = ctx || {};
     const buf = c.buf || core.buf;
     const view = c.view || core.view;
-    if (!buf || buf.pageState !== 3 || !view) return null;
+    if (!buf || buf.pageState !== PAGE_STATE.READING || !view) return null;
     const er = core.easyReading;
     const easy = !!(er && er._enabled && !er._functionMode);
     let atBottom = false;

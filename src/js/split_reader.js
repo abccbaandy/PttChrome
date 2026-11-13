@@ -24,6 +24,7 @@ import { serializedOpHint } from './serialized_op_gate';
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { HINT_ERROR } from './status_hint';
+import { PAGE_STATE } from './screen_model';
 
 export const SPLIT_READER_ID = 'splitReader';
 export const SPLIT_COLLAPSED_KEY = 'pttchrome.splitReader.collapsed.v1';
@@ -384,7 +385,7 @@ SplitReader.prototype = {
       return;
     }
     const view = core.view || {};
-    const board = buf.pageState === 3 ? view._articleBoard : null;
+    const board = buf.pageState === PAGE_STATE.READING ? view._articleBoard : null;
     if (!board) {
       if (!this._nav) this._hide();
       return;

@@ -13,6 +13,7 @@
 import { readEffectivePrefs } from './pref_storage';
 import { stripNonBig5, splitPushSegments, big5ByteLength, pushMaxBytes } from './long_push';
 import { detectIpLogged, detectAlignedComments } from './push_screen';
+import { PAGE_STATE } from './screen_model';
 
 export const COMMENT_BAR_ID = 'commentBar';
 // 列高（CSS px）。終端機累積頁尾端要多留這麼高的空白，最後一列才捲得出列的下面
@@ -256,7 +257,7 @@ CommentBar.prototype = {
     const core = this._core;
     const er = core.easyReading;
     const buf = core.buf;
-    return !!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode && (buf.pageLines || []).length &&
+    return !!(buf && buf.pageState === PAGE_STATE.READING && er && er._enabled && !er._functionMode && (buf.pageLines || []).length &&
       // 官方推文實況：留言走實況自己的 (X)留言（footer 上那顆）。這一列送出走長推文，而長推文
       // 假設推完回列表再重開、取 AID 要按 Q——實況裡 Q 是「離開」（long_push_session.startPreflight）。
       !(typeof buf.isLiveScreenNow === 'function' && buf.isLiveScreenNow()));
