@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DEV_SERVER_PIDFILE } from './scripts/kill-dev-server.js';
 import { attachDevSshRelay } from './tools/ssh-relay/ptt-ssh-relay.mjs';
+import { cspMetaPlugin } from './scripts/csp.mjs';
 
 // Build identity, surfaced in the About tab and the startup console line so a
 // running page can be matched to a commit (stale-deploy debugging).
@@ -70,7 +71,8 @@ export default defineConfig(({ command }) => {
   return {
     // 部署在 GitHub Pages 子路徑，所有資源引用走相對路徑。
     base: './',
-    plugins: [react(), htmlVars(), devServerPidfile(), devSshRelay()],
+    // cspMetaPlugin 只在 build 注入 <meta> CSP（scripts/csp.mjs、docs/security.md）。
+    plugins: [react(), htmlVars(), devServerPidfile(), devSshRelay(), cspMetaPlugin()],
     // .bin（Big5 轉碼表）與 .bmp 不在 Vite 內建 asset 清單，明確納入。
     assetsInclude: ['**/*.bin', '**/*.bmp'],
     define: {
