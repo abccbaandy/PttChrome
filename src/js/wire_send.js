@@ -1,3 +1,4 @@
+// @ts-check
 // 送給 PTT 的唯一出口（架構 review A2 步驟 a，docs/wire-send.md）。
 //
 // 所有上線的 byte 都經過這裡：呼叫端不准直接碰 `conn.send`／`convSend`／`sendUserKey`／
@@ -14,6 +15,18 @@
 // 觸發它的那條連線，跟 App.conn 不一定同一個；照原樣傳才不會改到送往哪條連線。
 // conn 是 undefined 時跟原本一樣直接丟例外（呼叫端各自先檢查，這裡不默默吞掉）。
 
+/**
+ * 傳輸層（telnet.js／websocket.js／ssh/）的連線物件，這裡只用到送出的那幾支。
+ * @typedef {object} WireConn
+ * @property {(bytes: string) => void} send
+ * @property {(text: string) => void} convSend
+ * @property {(bytes: string) => void} sendUserKey
+ * @property {(text: string) => void} convSendUserKey
+ * @property {() => void} sendWillNaws
+ * @property {(cols: number, rows: number) => void} sendNaws
+ * @property {() => void} sendTimingMark
+ */
+
 // 送出身分（步驟 b 的使用權會以它為準）。新增送鍵入口就在這裡加一個。
 export const WIRE_SOURCE = Object.freeze({
   QUEUE: 'queue', // CommandQueue（列表好讀、長推文、AID 跳文…的序列化指令）
@@ -24,41 +37,72 @@ export const WIRE_SOURCE = Object.freeze({
   CPR: 'cpr', // 回應 server 的游標位置查詢（UTF-8 線路偵測）
 });
 
+/** @typedef {typeof WIRE_SOURCE[keyof typeof WIRE_SOURCE]} WireSource */
+
+/** @type {Set<unknown>} */
 const KNOWN = new Set(Object.values(WIRE_SOURCE));
 
+/** @param {unknown} source */
 function checkSource(source) {
   if (!KNOWN.has(source)) throw new TypeError('wire_send: unknown source ' + String(source));
 }
 
-// 機器 byte（Big5／控制序列原樣）。
+/**
+ * 機器 byte（Big5／控制序列原樣）。
+ * @param {WireSource} source
+ * @param {WireConn} conn
+ * @param {string} bytes
+ */
 export function sendBytes(source, conn, bytes) {
   checkSource(source);
   conn.send(bytes);
 }
 
-// 機器文字（Unicode，conn 轉線路編碼）。
+/**
+ * 機器文字（Unicode，conn 轉線路編碼）。
+ * @param {WireSource} source
+ * @param {WireConn} conn
+ * @param {string} text
+ */
 export function sendText(source, conn, text) {
   checkSource(source);
   conn.convSend(text);
 }
 
-// 真鍵盤／IME 的 byte。只有 term_view._send 可以叫。
+/**
+ * 真鍵盤／IME 的 byte。只有 term_view._send 可以叫。
+ * @param {WireConn} conn
+ * @param {string} bytes
+ */
 export function sendUserKey(conn, bytes) {
   conn.sendUserKey(bytes);
 }
 
-// 真鍵盤／IME 的文字。只有 term_view._convSend 可以叫。
+/**
+ * 真鍵盤／IME 的文字。只有 term_view._convSend 可以叫。
+ * @param {WireConn} conn
+ * @param {string} text
+ */
 export function sendUserText(conn, text) {
   conn.convSendUserKey(text);
 }
 
-// 視窗大小（telnet NAWS）。will＝先宣告 WILL NAWS（回應 server 的 DO NAWS）。
+/**
+ * 視窗大小（telnet NAWS）。will＝先宣告 WILL NAWS（回應 server 的 DO NAWS）。
+ * @param {WireConn} conn
+ * @param {number} cols
+ * @param {number} rows
+ * @param {{ will?: boolean }} [opts]
+ */
 export function sendWindowSize(conn, cols, rows, { will = false } = {}) {
   if (will) conn.sendWillNaws();
   conn.sendNaws(cols, rows);
 }
 
-// 連線保持探針（IAC DO TIMING-MARK，在 server 的 telnet 層就被吃掉、不是按鍵）。
+/**
+ * 連線保持探針（IAC DO TIMING-MARK，在 server 的 telnet 層就被吃掉、不是按鍵）。
+ * @param {WireConn} conn
+ */
 export function sendKeepAliveProbe(conn) {
   conn.sendTimingMark();
 }

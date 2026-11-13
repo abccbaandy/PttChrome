@@ -40,6 +40,7 @@
 | `@vitest/browser-playwright`、`playwright` | 新增（unit-browser project） | Vitest 官方的 Browser Mode provider；peer 是**精確**的 vitest 版本，`playwright` 必須與 `@playwright/test` 同版（Dependabot 以 group 綁一起升） |
 
 | oxlint（精確 pin） | 新增（2026-11，`yarn lint`，CI 在 test-unit job 裡跑） | 下節「lint」 |
+| typescript（精確 pin 6.x，只當檢查器） | 新增（2026-11，`yarn typecheck`） | 下節「型別檢查」；7.x 被 Yarn 的 compat patch 擋 |
 
 掃描結論：**無其他「過時陣營」殘留**。新增依賴時比照上表——先查是否已有內建／主流替代，無維護的小套件優先內聯。
 
@@ -130,7 +131,21 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - 版本精確 pin，跟 Dependabot 冷卻期一起升。
 - 「重大技術升級」（關於頁）不列：加一個 lint 不是框架或建置鏈替換。
 
-下一步（A5 步驟 b）：`tsc --checkJs` 只套 `wire_send.js`、`screen_model.js` 與指定的純邏輯模組，不轉 TS。
+### 型別檢查（2026-11，TypeScript 只當檢查器，架構 review A5 步驟 b）
+
+`yarn typecheck`（`tsc -p tsconfig.check.json`，CI 在 test-unit job 的 lint 之後）。**不轉 TS**，也不產出任何檔案：
+
+- **逐檔 opt-in**：`checkJs` 關著，只檢查檔頭第一行寫 `// @ts-check` 的 JS；型別寫 JSDoc。現在是 `wire_send.js`、
+  `screen_model.js`。新寫的模組與純邏輯模組想加就在檔頭加一行，並登記到 `tests/unit/typecheck_scope.test.js`
+  （拿掉 `@ts-check` 會紅）。舊式 prototype 碼不強迫。
+- 被 import 的舊檔只拿來推型別、不報錯；要跨界的物件（TermBuf、連線）在模組裡寫一份「只列用到的」typedef
+  （`ScreenBuf`、`WireConn`），不去替舊檔補型別。
+- `strict` 開。版本精確 pin。
+- **TypeScript 7（原生版）目前不能用**：Yarn 4 內建的 `typescript` compat patch 套不上 7.x（安裝時
+  `ENOENT … typescript/lib/_tsc.js`），所以停在 6.x。Yarn 修好或拿掉那個 patch 再升。
+- 「重大技術升級」（關於頁）不列：只是加一個檢查器。
+
+lint 與型別檢查之後（A5 步驟 c，低優先）：適合的 regex 靜態守護改寫成 lint 規則。
 
 ## 主 bundle 拆檔
 

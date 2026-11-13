@@ -1,3 +1,4 @@
+// @ts-check
 // 單一畫面模型的外殼（架構 review A3 步驟 a，docs/screen-model.md）。
 //
 // 「現在是哪個畫面」以前沒有統一的答案：pageState 是 0～6 的數字，各功能再各自叫
@@ -19,6 +20,56 @@
 
 import { parseBoardName } from './screen_titles';
 
+/**
+ * 外殼向 TermBuf 要的東西（只列用到的；TermBuf 本身是舊式 prototype 碼，不檢查型別）。
+ * @typedef {object} ScreenBuf
+ * @property {number} [frameSeq]
+ * @property {number} pageState
+ * @property {number} cur_x
+ * @property {number} cur_y
+ * @property {number} cols
+ * @property {number} rows
+ * @property {(row: number, colStart: number, colEnd: number) => string} getRowText
+ * @property {() => boolean} isPassScreenNow
+ * @property {() => boolean} isEditorScreenNow
+ * @property {() => boolean} isEditorTypingNow
+ * @property {() => boolean} isLiveScreenNow
+ * @property {() => boolean} isMailListScreen
+ * @property {() => boolean} isBoardListScreen
+ * @property {() => boolean} isMenuScreen
+ * @property {() => boolean} isCursorOnInputField
+ * @property {() => boolean} isPromptPending
+ * @property {() => string} pagerContext
+ */
+
+/**
+ * 一幀的事實（由 FACTS 動態掛成 getter）。
+ * @typedef {object} ScreenFacts
+ * @property {string} row0Text
+ * @property {string} lastRowText
+ * @property {boolean} pass
+ * @property {boolean} editor
+ * @property {boolean} editorTyping
+ * @property {boolean} live
+ * @property {boolean} mailList
+ * @property {boolean} boardList
+ * @property {boolean} menu
+ * @property {boolean} cursorOnInputField
+ * @property {boolean} promptPending
+ * @property {string} pagerContext
+ * @property {string | null} boardName
+ */
+
+/**
+ * @typedef {object} FrameKey
+ * @property {number} frameSeq
+ * @property {number} pageState
+ * @property {number} curX
+ * @property {number} curY
+ * @property {number} cols
+ * @property {number} rows
+ */
+
 // TermBuf.setPageState 寫進 buf.pageState 的值。4 從 fork 進來就沒有人寫過，留著是因為
 // 還有幾處比較它（步驟 c 換成具名常數時一起收）。
 export const PAGE_STATE = Object.freeze({
@@ -30,6 +81,8 @@ export const PAGE_STATE = Object.freeze({
   PASS: 5, // 請按任意鍵、動畫畫面
   EDITOR: 6,
 });
+
+/** @typedef {typeof SCREEN_KIND[keyof typeof SCREEN_KIND]} ScreenKind */
 
 export const SCREEN_KIND = Object.freeze({
   UNKNOWN: 'unknown',
@@ -54,6 +107,10 @@ export const SCREEN_KIND = Object.freeze({
 //     不讀 kind —— 這是兩個不同的問題，刻意不合併。
 //   - 1 底下的子分類：信件列表只看指紋（isMailListScreen 不看 pageState）、看板列表與選單
 //     的判定本來就只在 pageState 1 成立。
+/**
+ * @param {ScreenModel & ScreenFacts} model
+ * @returns {ScreenKind}
+ */
 function kindOf(model) {
   switch (model.pageState) {
     case PAGE_STATE.PASS:
@@ -75,6 +132,7 @@ function kindOf(model) {
 }
 
 // 事實名 → 怎麼從 buf 算。每一條都是既有函式的原樣呼叫。
+/** @type {{ [K in keyof ScreenFacts]: (buf: ScreenBuf, model: ScreenModel & ScreenFacts) => ScreenFacts[K] }} */
 const FACTS = {
   row0Text: (buf) => buf.getRowText(0, 0, buf.cols),
   lastRowText: (buf) => buf.getRowText(buf.rows - 1, 0, buf.cols),
@@ -91,13 +149,20 @@ const FACTS = {
   boardName: (buf, model) => parseBoardName(model.row0Text),
 };
 
-export const SCREEN_FACTS = Object.freeze(Object.keys(FACTS));
+/** @type {readonly (keyof ScreenFacts)[]} */
+export const SCREEN_FACTS = Object.freeze(/** @type {(keyof ScreenFacts)[]} */ (Object.keys(FACTS)));
 
 class ScreenModel {
+  /**
+   * @param {ScreenBuf} buf
+   * @param {FrameKey} key
+   */
   constructor(buf, key) {
     this._buf = buf;
     this._key = key;
+    /** @type {Map<keyof ScreenFacts, unknown>} */
     this._memo = new Map();
+    /** @type {ScreenKind | undefined} */
     this._kind = undefined;
     this.frameSeq = key.frameSeq;
     this.pageState = key.pageState;
@@ -105,13 +170,15 @@ class ScreenModel {
     this.cursorY = key.curY;
   }
 
+  /** @param {keyof ScreenFacts} name */
   _fact(name) {
-    if (!this._memo.has(name)) this._memo.set(name, FACTS[name](this._buf, this));
+    if (!this._memo.has(name))
+      this._memo.set(name, FACTS[name](this._buf, /** @type {ScreenModel & ScreenFacts} */ (/** @type {unknown} */ (this))));
     return this._memo.get(name);
   }
 
   get kind() {
-    if (this._kind === undefined) this._kind = kindOf(this);
+    if (this._kind === undefined) this._kind = kindOf(/** @type {ScreenModel & ScreenFacts} */ (/** @type {unknown} */ (this)));
     return this._kind;
   }
 
@@ -121,15 +188,20 @@ class ScreenModel {
 }
 for (const name of SCREEN_FACTS) {
   Object.defineProperty(ScreenModel.prototype, name, {
+    /** @this {ScreenModel} */
     get() {
       return this._fact(name);
     },
   });
 }
 
+/**
+ * @param {ScreenBuf} buf
+ * @returns {FrameKey}
+ */
 function keyOf(buf) {
   return {
-    frameSeq: buf.frameSeq | 0,
+    frameSeq: (buf.frameSeq ?? 0) | 0,
     pageState: buf.pageState,
     curX: buf.cur_x,
     curY: buf.cur_y,
@@ -138,6 +210,10 @@ function keyOf(buf) {
   };
 }
 
+/**
+ * @param {FrameKey} a
+ * @param {FrameKey} b
+ */
 function sameKey(a, b) {
   return (
     a.frameSeq === b.frameSeq &&
@@ -149,14 +225,19 @@ function sameKey(a, b) {
   );
 }
 
+/** @type {WeakMap<ScreenBuf, ScreenModel>} */
 const CACHE = new WeakMap();
 
-// 這一幀的畫面物件。同一幀裡問幾次都是同一個物件。
+/**
+ * 這一幀的畫面物件。同一幀裡問幾次都是同一個物件。
+ * @param {ScreenBuf} buf
+ * @returns {ScreenModel & ScreenFacts}
+ */
 export function screenOf(buf) {
   const key = keyOf(buf);
   const cached = CACHE.get(buf);
-  if (cached && sameKey(cached._key, key)) return cached;
+  if (cached && sameKey(cached._key, key)) return /** @type {ScreenModel & ScreenFacts} */ (/** @type {unknown} */ (cached));
   const model = new ScreenModel(buf, key);
   CACHE.set(buf, model);
-  return model;
+  return /** @type {ScreenModel & ScreenFacts} */ (/** @type {unknown} */ (model));
 }

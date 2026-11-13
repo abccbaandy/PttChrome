@@ -46,6 +46,10 @@ jobs:
       - name: Lint
         run: yarn lint
 
+      # 只檢查檔頭寫了 // @ts-check 的模組（tsconfig.check.json，docs/build-modernization.md「型別檢查」）。
+      - name: Typecheck
+        run: yarn typecheck
+
       - name: Unit tests
         run: |
           yarn test:unit
