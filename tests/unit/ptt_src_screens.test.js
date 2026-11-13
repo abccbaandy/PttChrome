@@ -1425,8 +1425,10 @@ describe("upstream pttbbs 產的新信提示（menu.c#redraw_title）", () => {
 
 // generate.sh 關掉 sample conf 的 CONFIG_OLD_RECOMMEND（PTT 實跑推／噓／→）。以前開著產的 fixture
 // 按 X 直接是「→ id:」，型別選單從沒被 upstream 畫面驗過。
-// 非 IP 板的輸入欄寬＝bbs.c#comment 的 maxlength：78-3-6-1-6 - strlen("tester")。
-const PUSH_FIELD = 62 - "tester".length;
+// 非 IP 板的輸入欄寬＝bbs.c#comment 的 maxlength：78-3-6-1-6 - strlen("tester")，
+// upstream 7e78409 起 ':' 後多一格空白（PTT1 早就是這樣，見 long_push.js#pushMaxBytes）再 -1。
+// 舊 upstream 是 62 - strlen(id)；app 一律以畫面量到的欄寬為準，兩代都對。
+const PUSH_FIELD = 61 - "tester".length;
 
 describe("upstream pttbbs 產的推文畫面（bbs.c#comment）", () => {
   test("文章列表按 X ⇒ 型別選單（可噓），按 1 ⇒「推 自己的 id:」輸入列", () => {
@@ -1579,7 +1581,7 @@ describe("upstream pttbbs 產的推文流程（bbs.c#comment 型別 → 輸入 �
 
   test("寫進文章的推文列帶時間戳 ⇒ 不是輸入列；Test 板不記 IP ⇒ detectIpLogged 為 false（不是 null）", () => {
     const { rowTexts } = screenAt(pushFlowFx, "article");
-    const row = rowTexts.find((t) => /^推 tester *:hello/.test(t));
+    const row = rowTexts.find((t) => /^推 tester *: ?hello/.test(t));
     expect(row).toBeTruthy();
     expect(classifyPushScreen([row])).toEqual({ kind: "other" });
     expect(detectIpLogged(rowTexts)).toBe(false);

@@ -32,7 +32,7 @@
    "name": "countdown-1",
    "keys": "",
    "live": "first live comment",
-   "bytes": "\u001b[?2026h\u001b[8;1H\u001b[1;37m±À \u001b[33mbob\u001b[0;33m:first live comment                                          \u001b[m09/27 09:06\u001b[24;18H\u001b[1;37;42m1\u001b[m\u001b[24;80H\u001b[?2026l"
+   "bytes": "\u001b[?2026h\u001b[8;1H\u001b[1;37m±À \u001b[33mbob\u001b[0;33m: first live comment                                          \u001b[m09/27 09:06\u001b[24;18H\u001b[1;37;42m1\u001b[m\u001b[24;80H\u001b[?2026l"
   },
   {
    "name": "count-up",

@@ -16,7 +16,7 @@
   {
    "name": "save-menu",
    "keys": "\u0018",
-   "bytes": "\u001b[?2026h\u001b[1;37;46m¡iÀÉ®×³B²z¡j\u001b[m\u001b[K\r\n[S]Àx¦s (T)§ï¼ÐÃD (A)©ñ±ó (E)Ä~Äò (R/W/D)Åª¼g§R¼È¦sÀÉ\r\n½T©w­nÀx¦sÀÉ®×¶Ü¡H \u001b[30;47m  \u001b[m\u001b[K\r\n\n\u001b[K\n\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\u001b[3;20H\u001b[?2026l"
+   "bytes": "\u001b[?2026h\u001b[1;37;46m¡iÀÉ®×³B²z¡j\u001b[m\u001b[K\r\n[S/V]Àx¦s (T)§ï¼ÐÃD (A)©ñ±ó (E)Ä~Äò (R/W/D)Åª¼g§R¼È¦sÀÉ\r\n½T©w­nÀx¦sÀÉ®×¶Ü¡H \u001b[30;47m  \u001b[m\u001b[K\r\n\n\u001b[K\n\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\n\u001b[K\u001b[3;20H\u001b[?2026l"
   }
  ]
 }

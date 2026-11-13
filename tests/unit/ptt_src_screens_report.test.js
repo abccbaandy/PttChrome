@@ -148,6 +148,22 @@ describe("ptt-src-screens.yml", () => {
     expect(yml).toContain("node scripts/ptt-src-screens-report.mjs changed");
   });
 
+  // 只跑 ptt_src_screens.test.js 時，upstream be3ce30 的「[S/V]儲存」讓 prompt_choices 的
+  // editorSave 認不出，nightly 卻是綠的（要等有人重產 fixture 才在一般 CI 紅）。
+  test("check 跑每一支吃 fixtures/ptt_src_screens/ 的測試（upstream 畫面變了，哪一支判錯都要紅）", () => {
+    const dir = path.join(__dirname);
+    const consumers = fs
+      .readdirSync(dir)
+      .filter((f) => /\.test\.jsx?$/.test(f))
+      .filter((f) =>
+        /from\s+["'][^"']*fixtures\/ptt_src_screens\//.test(fs.readFileSync(path.join(dir, f), "utf8")),
+      );
+    expect(consumers).toContain("ptt_src_screens.test.js");
+    const check = yml.match(/name: Check parsers against upstream screens[\s\S]*?yarn vitest run ([^\n]+)/);
+    expect(check).toBeTruthy();
+    for (const f of consumers) expect(check[1].split(/\s+/)).toContain(`tests/unit/${f}`);
+  });
+
   test("變動偵測把新產生（未追蹤）的 fixture 也算進去", () => {
     expect(yml).toContain('git add -N "$d"');
   });
