@@ -318,6 +318,8 @@ export function TermBuf(cols, rows) {
   this.altScreen = '';
   this.changed = false;
   this.posChanged = false;
+  // notify 每處理一次內容或游標變動就加一：screen_model.screenOf 的「一幀」以它為界。
+  this.frameSeq = 0;
   this.pageState = 0;
   // 最近一張認得出的選單／列表畫面是精華區（標題列【精華文章】）⇒ 之後開的 pager 是精華區
   // 文章，不是看板文章（見 pagerContext）。只在 setPageState 判出 1／2 的那一幀改寫。
@@ -1144,6 +1146,7 @@ TermBuf.prototype = {
   notify: function(timer) {
     clearTimeout(this.timerUpdate);
     this.timerUpdate = null;
+    if (this.changed || this.posChanged) ++this.frameSeq;
 
     if (this.changed) { // content changed
       this.updateCharAttr();

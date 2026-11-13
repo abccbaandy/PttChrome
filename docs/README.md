@@ -18,6 +18,7 @@
 - [`merge-caption-ai-assist.md`](merge-caption-ai-assist.md)：裝置端 AI 輔助配對；AI 設定總開關與分頁見 `docs/enhanced-addon.md`「設定」節
 - [`build-modernization.md`](build-modernization.md)：依賴／工具選型基準；動建置鏈或評估換依賴前先讀
 - [`wire-send.md`](wire-send.md)：送給 PTT 的唯一出口與送出身分；新增任何送鍵入口（按鍵、滑鼠、浮層按鈕、機器序列）前先讀
+- [`screen-model.md`](screen-model.md)：單一畫面模型：一幀一份的畫面物件、kind 對照、外殼不改規則；新增或修改「現在是哪個畫面」的判斷、動 screen_model.js 前先讀
 - [`security.md`](security.md)：正式版 meta CSP（放行規則與為何收不緊）＋Dependabot 冷卻期；動 `index.html`、加外部 script／連線／內嵌前先讀
 - [`imgur-latency-research.md`](imgur-latency-research.md)：imgur／twimg／catbox 台灣連線慢的根因量測＋Cloudflare Worker 代理實測；碰圖片載入效能或圖片代理前先讀，勿重做量測
 - [`mouse.md`](mouse.md)：滑鼠總體設計：pref schema／區域決策表／gating 表／點擊優先權／左側退出提示帶的座標契約；動 mouse_regions.js 或任何滑鼠入口前先讀
