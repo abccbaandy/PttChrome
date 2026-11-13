@@ -19,6 +19,7 @@ import { aidToFn } from './aid_codec';
 import { paneWidthFor } from './split_reader';
 import { readEffectivePrefs } from './pref_storage';
 import { HINT_ERROR } from './status_hint';
+import { PAGE_STATE } from './screen_model';
 
 export const ARTICLE_TOOLS_ID = 'articleTools';
 export const ARTICLE_TOOLS_COLLAPSED_KEY = 'pttchrome.articleTools.collapsed.v1';
@@ -234,7 +235,7 @@ ArticleTools.prototype = {
     const core = this._core;
     const er = core.easyReading;
     const buf = core.buf;
-    return !!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode && (buf.pageLines || []).length);
+    return !!(buf && buf.pageState === PAGE_STATE.READING && er && er._enabled && !er._functionMode && (buf.pageLines || []).length);
   },
 
   // 讀累積頁的新列（只讀新增的那幾列）。回傳有沒有變。

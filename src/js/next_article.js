@@ -39,6 +39,7 @@ import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
 import { commentBarHeight } from './comment_bar';
 import { CHUNK_CLASS } from '../render/screen_chunk';
+import { PAGE_STATE } from './screen_model';
 
 export const NEXT_ARTICLE_ID = 'nextArticleCard';
 export const NEXT_ARTICLE_VEIL_ID = 'nextArticleVeil';
@@ -280,7 +281,7 @@ NextArticle.prototype = {
     const buf = core.buf;
     return !!(
       buf &&
-      buf.pageState === 3 &&
+      buf.pageState === PAGE_STATE.READING &&
       er &&
       er._enabled &&
       !er._functionMode &&
@@ -333,7 +334,7 @@ NextArticle.prototype = {
     const article = { board: board, author: view._articleAuthor, title: view._articleTitle };
     // 每次文章 settle 都要記（不只讀到文末那幾次）：中途在文章裡換篇再讀到底，也要認得出
     // 游標已經不可信。換文途中不記（落地後 done 會重來）。
-    const hintFresh = !this._nav && buf.pageState === 3 && cursorHintFresh(this._lastList, article);
+    const hintFresh = !this._nav && buf.pageState === PAGE_STATE.READING && cursorHintFresh(this._lastList, article);
     if (this._nav || !this._inEasyArticleEnd()) {
       this._hide();
       return;
@@ -530,7 +531,7 @@ NextArticle.prototype = {
     const core = this._core;
     const er = core.easyReading;
     const buf = core.buf;
-    if (!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode)) return;
+    if (!(buf && buf.pageState === PAGE_STATE.READING && er && er._enabled && !er._functionMode)) return;
     clearTimeout(this._veilWait.timer);
     this._veilWait = null;
     const self = this;

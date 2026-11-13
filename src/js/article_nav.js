@@ -18,6 +18,7 @@ import { readEffectivePrefs } from './pref_storage';
 import { COMMENT_BAR_HEIGHT, commentBarHeight } from './comment_bar';
 import { offsetTopWithin } from './scroll_anchor';
 import { isScreenChunk, isChunkRendered } from '../render/screen_chunk';
+import { PAGE_STATE } from './screen_model';
 
 export const ARTICLE_NAV_ID = 'articleNav';
 // 顯示中掛在 `.main` 上：原生捲軸隱形（main.css）。
@@ -178,7 +179,7 @@ ArticleNav.prototype = {
     const core = this._core;
     const er = core.easyReading;
     const buf = core.buf;
-    return !!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode && (buf.pageLines || []).length);
+    return !!(buf && buf.pageState === PAGE_STATE.READING && er && er._enabled && !er._functionMode && (buf.pageLines || []).length);
   },
 
   // 讀累積頁的新列（同 article_tools._syncLines：pageLines 只往後 concat，換文章／從頭重讀

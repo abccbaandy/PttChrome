@@ -15,6 +15,8 @@
 - **`kind` 與「此刻真的是」是兩個問題**：`kind` 由 `pageState` 推出，`pageState` 會黏（pressanykey 後
   停在 5、編輯器 prompt 停在 6），`kind` 也跟著黏。替使用者送鍵前要的是「此刻真的是」⇒ 讀 `pass`／`editor`／
   `promptPending` 這些事實，不讀 `kind`。
+- **`pageState` 不寫魔術數字**：比較與賦值一律 `PAGE_STATE.X`（`READING` 不是 `3`）。守護
+  `tests/unit/page_state_constants.test.js` 掃整個 src 的程式碼（註解照舊可以寫數字）。
 - **認不出就是 `UNKNOWN`**：`pageState` 0（以及從沒人寫過的 4）一律 `UNKNOWN`，不猜。0 也包含 setPageState
   主動判成 NORMAL 的畫面（底列空白），外殼不區分。
 - **`BOARD_LIST` 不等於「看板列表」**：看板列表大多是 `pageState` 2 ⇒ `LIST`。要判看板列表照舊問 `board_list_parse`。
@@ -36,5 +38,4 @@
 
 ## 下一步（A3 步驟 b～d）
 
-b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後）；c `pageState` 數字比較全換 `PAGE_STATE` 具名常數＋靜態
-守護；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。
+b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。

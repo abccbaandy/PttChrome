@@ -24,6 +24,7 @@ import { readEffectivePrefs } from './pref_storage';
 import { parseListEntry } from './agent_parse';
 import { listRowIdentity, subjectKey, subjectMatches } from './long_push_anchor';
 import { aidToFn } from './aid_codec';
+import { PAGE_STATE } from './screen_model';
 
 export const NEW_COMMENTS_KEY = 'pttchrome.newComments.v1';
 // 最多記幾篇（超過丟最久沒讀的）。一篇一筆 [推文數, 時間]，一千篇約 40KB。
@@ -190,10 +191,10 @@ export const JUMP_ARM_MS = 10000;
 export const JUMP_BOUND_MS = 60000;
 export function nextJumpStep(s) {
   if (!s.bound) {
-    if (s.pageState === 3 && s.inst != null && s.inst !== s.armedInst) return 'bind';
+    if (s.pageState === PAGE_STATE.READING && s.inst != null && s.inst !== s.armedInst) return 'bind';
     return s.ageMs > JUMP_ARM_MS ? 'drop' : 'wait';
   }
-  if (s.inst !== s.boundInst || s.pageState !== 3 || s.userScrolled) return 'drop';
+  if (s.inst !== s.boundInst || s.pageState !== PAGE_STATE.READING || s.userScrolled) return 'drop';
   if (s.row != null) return 'jump';
   if (s.reachedEnd || s.ageMs > JUMP_BOUND_MS) return 'drop';
   return 'wait';
@@ -254,7 +255,7 @@ NewComments.prototype = {
     const er = core.easyReading;
     const disp = view.mainDisplay;
     const now = Date.now();
-    const inArticle = !!(buf && buf.pageState === 3 && er && er._enabled && !er._functionMode);
+    const inArticle = !!(buf && buf.pageState === PAGE_STATE.READING && er && er._enabled && !er._functionMode);
     let row = null;
     if (j.bound && inArticle && !this._reversing()) {
       const lines = buf.pageLines || [];
@@ -375,7 +376,7 @@ NewComments.prototype = {
     const prefs = readEffectivePrefs();
     // 兩個功能共用這份紀錄：任一個開著就記。
     if (!prefs.markNewComments && !prefs.listNewPushCount) return;
-    if (!buf || buf.pageState !== 3 || !er || !er._enabled || er._functionMode || this._reversing()) return;
+    if (!buf || buf.pageState !== PAGE_STATE.READING || !er || !er._enabled || er._functionMode || this._reversing()) return;
     if (!er.easyReadingReachedPageEnd) return;
     const lines = buf.pageLines || [];
     if (!lines.length) return;

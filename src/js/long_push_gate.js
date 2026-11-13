@@ -16,6 +16,7 @@
 
 import { parsePagerFooterContext, parseStatusRow } from './string_util';
 import { isLiveStatusRow } from './live_mode';
+import { PAGE_STATE } from './screen_model';
 
 // CONFIRMED（pttbbs mbbsd/more.c:90-93）：pager 的 key handler 只有這兩個 case 回
 // RET_DORECOMMEND ⇒ 只有它們是「推文鍵」。**小寫 x 不是**（pager 完全沒綁，列表
@@ -40,7 +41,7 @@ export function longPushAvailable(opts) {
   const prefs = o.prefs || {};
   return (
     !!prefs.enableLongPush &&
-    o.pageState === 3 &&
+    o.pageState === PAGE_STATE.READING &&
     !o.pagerFromEssence &&
     parsePagerFooterContext(o.lastRowText) !== 'mail' &&
     !isLiveStatusRow(o.lastRowText)

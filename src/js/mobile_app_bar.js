@@ -20,6 +20,7 @@
 import { boardListContextKind } from './board_list_parse';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
 import { parseBoardName, parseHeaderTitle } from './screen_titles';
+import { PAGE_STATE } from './screen_model';
 
 export const NEW_MAIL_MARK = '你有新信件';
 
@@ -49,11 +50,11 @@ export function appBarFromFacts(facts, opts) {
   const row0 = rowTexts[0] || '';
   const newMail = row0.indexOf(NEW_MAIL_MARK) >= 0;
 
-  if (o.pageState === 3) {
+  if (o.pageState === PAGE_STATE.READING) {
     return bar('article', o.articleTitle, o.articleBoard, false,
       articleDetail(o.articleByline, o.articleBoard));
   }
-  if (o.pageState === 6 && o.editorTitle) return bar('editor', '', '', false);
+  if (o.pageState === PAGE_STATE.EDITOR && o.editorTitle) return bar('editor', '', '', false);
   const ctx = boardListContextKind(facts);
   if (facts.listOwner === OWNER_ARTICLE_LIST || ctx === 'article-list') {
     const board = parseBoardName(row0) || (prev.kind === 'list' ? prev.title : '');

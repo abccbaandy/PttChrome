@@ -31,6 +31,7 @@ import {
   rowHasTitle
 } from './screen_titles';
 import { isLiveStatusRow } from './live_mode';
+import { PAGE_STATE } from './screen_model';
 
 // Quiet period (ms) after the last redraw window before pageState is promoted to
 // `settledPageState`. Must exceed the 30ms notify debounce so a transient
@@ -319,19 +320,19 @@ export function TermBuf(cols, rows) {
   this.posChanged = false;
   // notify 每處理一次內容或游標變動就加一：screen_model.screenOf 的「一幀」以它為界。
   this.frameSeq = 0;
-  this.pageState = 0;
+  this.pageState = PAGE_STATE.NORMAL;
   // 最近一張認得出的選單／列表畫面是精華區（標題列【精華文章】）⇒ 之後開的 pager 是精華區
   // 文章，不是看板文章（見 pagerContext）。只在 setPageState 判出 1／2 的那一幀改寫。
   this.pagerFromEssence = false;
   this.forceFullWidth = false;
 
   this.startedEasyReading = false;
-  this.prevPageState = 0;
+  this.prevPageState = PAGE_STATE.NORMAL;
   // Debounced pageState: updated only once the screen has been quiet for
   // SETTLE_MS, so transient half-painted frames never pollute it. EasyReading's
   // auto re-enable keys off the clean 2 (list) -> 3 (article) settled transition.
-  this.settledPageState = 0;
-  this.prevSettledPageState = 0;
+  this.settledPageState = PAGE_STATE.NORMAL;
+  this.prevSettledPageState = PAGE_STATE.NORMAL;
   this._settleTimer = null;
 
   this.lines = new Array(rows);
@@ -1496,22 +1497,22 @@ TermBuf.prototype = {
     var lastRowText = this.getRowText(lastRowNum, 0, cols);
     if (this._isPauseRow(lastRowText)) {
       //console.log('pageState = 5 (PASS)');
-      this.pageState = 5; // some ansi drawing screen to pass
+      this.pageState = PAGE_STATE.PASS; // some ansi drawing screen to pass
       return;
     }
     if (isEditorFooter(lastRowText)) {
-      this.pageState = 6;
+      this.pageState = PAGE_STATE.EDITOR;
       return;
     }
     if (parseStatusRow(lastRowText)) {
-      this.pageState = 3; // READING
+      this.pageState = PAGE_STATE.READING; // READING
       return;
     }
     // 官方推文實況（文章裡按 v，more.c#live_run）：畫面是文章最後一頁＋推文，底列是實況自己的
     // 狀態列。仍是「在文章裡」（q 回文章列表）⇒ 3；要分辨就問 isLiveScreenNow()。
     // 以前落到下面的 _isAnsiPassFrame 被判成 5（PASS），好讀只能原生鏡像。
     if (isLiveStatusRow(lastRowText)) {
-      this.pageState = 3;
+      this.pageState = PAGE_STATE.READING;
       return;
     }
     // 信件列表（mail.c 走 read.c 的 i_read）：底下的單色判準認不出它（欄位標題列右端的
@@ -1520,7 +1521,7 @@ TermBuf.prototype = {
     // 那封信的標題。一律定成 1，與從主功能表進來時相同（滑鼠只認信件列，見
     // mouse_regions 的 mailHeaderRow）。認不出 ⇒ 照舊走下面。
     if (this.isMailListScreen()) {
-      this.pageState = 1; // MENU（信件列表）
+      this.pageState = PAGE_STATE.MENU; // MENU（信件列表）
       this.pagerFromEssence = false;
       return;
     }
@@ -1531,20 +1532,20 @@ TermBuf.prototype = {
       if (rowHasAnyTitle(firstRowText, MENU_TITLES) ||
         parseListRow(lastRowText)) {
         //console.log('pageState = 1 (MENU)');
-        this.pageState = 1; // MENU
+        this.pageState = PAGE_STATE.MENU; // MENU
         this.pagerFromEssence = rowHasTitle(firstRowText, ARCHIVE_LIST);
       } else if (this.isUnicolor(2, 0, cols-10) && !this.isLineEmpty(1) && (this.cur_x < 19 || this.cur_y == lastRowNum)) {
         //console.log('pageState = 2 (LIST)');
-        this.pageState = 2; // LIST
+        this.pageState = PAGE_STATE.LIST; // LIST
         this.pagerFromEssence = rowHasTitle(firstRowText, ARCHIVE_LIST);
       }
     } else if (this._isAnsiPassFrame()) {
       //console.log('pageState = 5 (PASS)');
-      this.pageState = 5; // some ansi drawing screen to pass
+      this.pageState = PAGE_STATE.PASS; // some ansi drawing screen to pass
     }
-    if (this.pageState != 1 && this.isLineEmpty(lastRowNum)) {
+    if (this.pageState != PAGE_STATE.MENU && this.isLineEmpty(lastRowNum)) {
       //console.log('pageState = 0 (NORMAL)');
-      this.pageState = 0;
+      this.pageState = PAGE_STATE.NORMAL;
     }
   },
 
@@ -1692,7 +1693,7 @@ TermBuf.prototype = {
   // 一格都不掃。getRowText 在這條路上是安全的：notify 先 view.update()（redraw →
   // updateCharAttr 設好 isLeadByte）才 refreshMouseAction。
   isBoardListScreen: function() {
-    if (this.pageState !== 1) return false;
+    if (this.pageState !== PAGE_STATE.MENU) return false;
     var title = this.getRowText(0, 0, this.cols);
     return rowHasTitle(title, BOARD_LIST);
   },
@@ -1700,7 +1701,7 @@ TermBuf.prototype = {
   // pageState 1 的另一種畫面：選單（mbbsd/menu.c#domenu，主功能表與子選單）。
   // 判定見 menu_items.js。
   isMenuScreen: function() {
-    if (this.pageState !== 1) return false;
+    if (this.pageState !== PAGE_STATE.MENU) return false;
     return isMenuScreen(
       this.pageState,
       this.getRowText(0, 0, this.cols),
@@ -1768,7 +1769,7 @@ TermBuf.prototype = {
     // isLineEmpty 會 deref undefined 把整條 notify 炸斷。
     var mailHeader = this.mailListHeaderRow();
     var lineEmpty =
-      (this.pageState === 2 || this.pageState === 4 || mailHeader >= 0) &&
+      (this.pageState === PAGE_STATE.LIST || this.pageState === PAGE_STATE.LEGACY_4 || mailHeader >= 0) &&
       trow >= 0 && trow < this.rows ?
         this.isLineEmpty(trow) : false;
     // 選單的 ANSI 圖區不可點（見 mouse_regions case 1），同樣只有 pageState 1 才掃。

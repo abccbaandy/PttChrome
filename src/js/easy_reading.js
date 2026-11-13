@@ -12,6 +12,7 @@ import { isJumpParkedListScreen } from './list_session';
 import { createBottomStick } from './bottom_stick';
 import { recordFor } from './reading_record';
 import { isLiveStatusRow, liveKeyMirrors } from './live_mode';
+import { PAGE_STATE } from './screen_model';
 
 // Pure decision for auto-enabling easy reading, evaluated once per settle edge
 // (term_buf 'pageStateSettled'), not per redraw frame. Kept side-effect free so it
@@ -46,7 +47,7 @@ export function nextEasyReadingState({
   // to a real board list. 主功能表/分類看板 are also MENU(1) but you can't open an
   // article directly from them (you pass through a board LIST first), so a 1->3 edge
   // in practice only comes from 精華區.
-  return settledPageState === 3 &&
+  return settledPageState === PAGE_STATE.READING &&
     settledFromListOrMenu(prevSettledPageState, prevSettledParkedList) &&
     !enabled && enablePref && supported;
 }
@@ -57,8 +58,8 @@ export function nextEasyReadingState({
 // 的 0 dip（footer 半畫）不會長成列表指紋，那條仍然不開（P4，見下方
 // nextEasyReadingExternalLanding 的註解）。
 export function settledFromListOrMenu(prevSettledPageState, prevSettledParkedList) {
-  if (prevSettledPageState === 2 || prevSettledPageState === 1) return true;
-  return prevSettledPageState === 0 && !!prevSettledParkedList;
+  if (prevSettledPageState === PAGE_STATE.LIST || prevSettledPageState === PAGE_STATE.MENU) return true;
+  return prevSettledPageState === PAGE_STATE.NORMAL && !!prevSettledParkedList;
 }
 
 // Pure decision for the SECOND auto-enable route: easy reading is off because the user
@@ -93,7 +94,7 @@ export function nextEasyReadingReentry({
   statusStart, articleKey, nativeArticleKey, navActive
 }) {
   if (enabled || !enablePref || !supported || functionMode || navActive) return false;
-  if (pageState !== 3 || !complete) return false;
+  if (pageState !== PAGE_STATE.READING || !complete) return false;
   if (statusStart !== 1) return false;          // only ever on a post's first page
   if (!articleKey || !nativeArticleKey) return false;  // can't tell → stay native
   return articleKey !== nativeArticleKey;
@@ -123,7 +124,7 @@ export function nextEasyReadingExternalLanding({
   pageState, complete, statusStart, enabled, enablePref, supported, navActive
 }) {
   if (enabled || !enablePref || !supported || navActive) return false;
-  if (pageState !== 3 || !complete) return false;
+  if (pageState !== PAGE_STATE.READING || !complete) return false;
   return statusStart === 1;   // 只認文章第一頁：從中途頁開始累積會少掉前面的內容
 }
 
@@ -152,7 +153,7 @@ export function nextEasyReadingRowState({
   let halt = false;
 
   // dealing with page state jump to 0 because last row wasn't updated fully
-  startedEasyReading = (pageState == 3);
+  startedEasyReading = (pageState == PAGE_STATE.READING);
 
   if (startedEasyReading) {
     if (curY == lastRowNum && curX == lastColNum) {
@@ -392,11 +393,11 @@ export function nextReverseReadDecision({
 //   'stay'   — anything else (the prompt/menu is still up, or an editor/pass screen
 //              5/6/0, or a transient): keep mirroring native.
 export function functionModeExitDecision({ pageState, isStatusRow, curY, lastRowNum, isLiveRow }) {
-  if (pageState === 3 && isStatusRow && curY === lastRowNum) return 'resume';
+  if (pageState === PAGE_STATE.READING && isStatusRow && curY === lastRowNum) return 'resume';
   // 官方推文實況（按 v 進來、或留言完 scr_restore 回來）：狀態列是實況的 ⇒ 回好讀，由
   // term_view._accumulateLive 把推文接在累積頁後面（認不出時它自己退回原生鏡像）。
-  if (pageState === 3 && isLiveRow && curY === lastRowNum) return 'resume';
-  if (pageState === 1 || pageState === 2) return 'leave';
+  if (pageState === PAGE_STATE.READING && isLiveRow && curY === lastRowNum) return 'resume';
+  if (pageState === PAGE_STATE.MENU || pageState === PAGE_STATE.LIST) return 'leave';
   return 'stay';
 }
 
@@ -426,7 +427,7 @@ export function switchModePlan({ doSwitch, functionMode, pageState }) {
     leavePost: true,
     restoreNativeView: !doSwitch,
     clearPageLines: true,
-    cursorNudge: !!doSwitch && pageState === 3
+    cursorNudge: !!doSwitch && pageState === PAGE_STATE.READING
   };
 }
 
@@ -548,7 +549,7 @@ export function EasyReading(core, view, termBuf) {
 // 只對 0 問它），也省掉文章好讀每次 settle 的整頁 getRowText。
 EasyReading.prototype._isJumpParkedListNow = function() {
   const buf = this._termBuf;
-  if (buf.pageState !== 0 || !buf.getRowText || !buf.isUnicolor) return false;
+  if (buf.pageState !== PAGE_STATE.NORMAL || !buf.getRowText || !buf.isUnicolor) return false;
   const rowTexts = [];
   for (let r = 0; r < buf.rows; ++r) rowTexts.push(buf.getRowText(r, 0, buf.cols));
   return isJumpParkedListScreen({
@@ -1349,7 +1350,7 @@ EasyReading.prototype._healFromTop = function() {
   this._termBuf.easyReadingHealInFlight = false;
   this._termBuf.pageLines = [];
   this._termBuf.easyReadingPendingReset = true;
-  this._termBuf.prevPageState = 0;
+  this._termBuf.prevPageState = PAGE_STATE.NORMAL;
   if (this._view) {
     this._view._accEndRow = null;
     this._view._lastAccumulatedSig = null;
@@ -1399,7 +1400,7 @@ EasyReading.prototype._onScreenSettled = function() {
   // clears the flag, so this cannot wedge. See _healAtLine.
   if (this._termBuf.easyReadingHealInFlight)
     return;
-  if (this._termBuf.pageState !== 3) {
+  if (this._termBuf.pageState !== PAGE_STATE.READING) {
     // Settled OFF the article. term_view.redraw deliberately KEEPS the accumulated page
     // while settledPageState is still 3 (a per-frame pageState dip mid-article must not
     // throw the long page away), so the teardown moved here: the debounced state now
@@ -1645,7 +1646,7 @@ EasyReading.prototype._evalFunctionModeExit = function() {
   this._pmorePrefSeen = false;
   if (decision === 'resume') {
     const wasLive = isEasyReadingLive(this);
-    this._termBuf.prevPageState = 3;  // force accumulatePageLines continuation branch
+    this._termBuf.prevPageState = PAGE_STATE.READING;  // force accumulatePageLines continuation branch
     // Resume = SAME article: a leftover pending-reset would make a short article's
     // first page rebuild (drop accumulation) — clear it explicitly.
     this._termBuf.easyReadingPendingReset = false;
@@ -1753,7 +1754,7 @@ EasyReading.prototype.leaveCurrentPost = function() {
   // Read BEFORE _resetPagingState (which clears both flags) and re-arm AFTER it —
   // otherwise the reset silently eats the one-shot this function exists to set.
   const wasAtEnd = this.easyReadingReachedPageEnd;
-  this._termBuf.prevPageState = 0;
+  this._termBuf.prevPageState = PAGE_STATE.NORMAL;
   // Sticky companion to the one-shot prevPageState=0 above: redraw overwrites
   // prevPageState every frame, so a stale old-article frame between here and the
   // new article's first page can eat the one-shot and the new article would take
@@ -1971,7 +1972,7 @@ EasyReading.prototype.enterEasyReading = function() {
   // Force accumulatePageLines down its "new article" branch (restart pageLines as
   // the whole screen) instead of the same-article continuation branch, and start
   // page accumulation from empty.
-  this._termBuf.prevPageState = 0;
+  this._termBuf.prevPageState = PAGE_STATE.NORMAL;
   this._termBuf.easyReadingPendingReset = true; // sticky twin — see leaveCurrentPost
   this._termBuf.pageLines = [];
   this._termBuf.easyReadingGapDetected = false;

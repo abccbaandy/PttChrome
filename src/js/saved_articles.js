@@ -22,6 +22,7 @@ import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
 import { readEffectivePrefs } from './pref_storage';
 import { normalizeCloudSaved, othersFromCloud, planCloudUpload, cloudKey } from './saved_cloud';
+import { PAGE_STATE } from './screen_model';
 
 export const SAVED_QUERY_KEY = 'saved';
 const HINT_MS = 2500;
@@ -53,7 +54,7 @@ export function savableArticle(core) {
   const buf = core && core.buf;
   const er = core && core.easyReading;
   if (!view || !buf || !er) return null;
-  if (!view.useEasyReadingMode || buf.pageState !== 3 || !er._enabled) return null;
+  if (!view.useEasyReadingMode || buf.pageState !== PAGE_STATE.READING || !er._enabled) return null;
   if (buf.easyReadingFunctionMode) return null;
   if (!buf.pageLines || !buf.pageLines.length) return null;
   const nav = core.aidNavigation;

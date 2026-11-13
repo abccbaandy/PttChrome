@@ -61,6 +61,7 @@ import { toPostAid } from './aid_codec';
 import { KEY_ABORT, KEY_DISMISS } from './screen_dismiss';
 import { recordFor } from './reading_record';
 import { isLiveRepeatPrompt, LIVE_REPEAT_DECLINE } from './open_prompt';
+import { PAGE_STATE } from './screen_model';
 
 function isLiveScreen(buf) {
   return !!(buf && typeof buf.isLiveScreenNow === 'function' && buf.isLiveScreenNow());
@@ -382,7 +383,7 @@ LongPushSession.prototype = {
     if (this.busy) return false;
     // 只在文章裡探。列表上按 X 推的是游標所指的文章，而錨點要從文章標頭取
     // （long_push_gate 的攔截判準也是同一條線）。
-    if (!this._termBuf || this._termBuf.pageState !== 3) return false;
+    if (!this._termBuf || this._termBuf.pageState !== PAGE_STATE.READING) return false;
     // 官方推文實況（pageState 也是 3）：推完留在實況、不回列表，取 AID 的 Q 在實況裡是「離開」
     // ⇒ 整套流程的前提都不成立。留言請用實況自己的 X（long_push_gate.longPushAvailable 同規）。
     if (isLiveScreen(this._termBuf)) return false;
@@ -444,7 +445,7 @@ LongPushSession.prototype = {
       return true;
     }
 
-    this._startedInArticle = this._termBuf.pageState === 3;
+    this._startedInArticle = this._termBuf.pageState === PAGE_STATE.READING;
     // 文章標頭必須在 _enterFunctionMode() **之前**讀（理由見 _prologue）；閱讀位置
     // 由閱讀紀錄給（鏡像期間是凍結的那一份，順序不影響）。
     this._takeBookmark();

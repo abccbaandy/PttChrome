@@ -30,6 +30,7 @@ import {
   rowHasAnyTitle,
 } from './screen_titles';
 import { parseListRow } from './string_util';
+import { PAGE_STATE } from './screen_model';
 
 // `(X)` 之後不要求非空白：desc 第二個字元是什麼由各選單表決定（`2FA`、`My Files`…）。
 const MENU_ITEM_RE = /^ *(?:>|●)? *\(([0-9A-Za-z])\)/;
@@ -53,7 +54,7 @@ export function parseMenuItemRow(text, row) {
 // 這一幀是不是選單畫面（主功能表或任一子選單）。pageState 1 底下另一種是看板列表
 // （含分類看板根目錄，它的狀態列與選單相同，以標題排除）。
 export function isMenuScreen(pageState, row0Text, lastRowText) {
-  if (pageState !== 1) return false;
+  if (pageState !== PAGE_STATE.MENU) return false;
   var row0 = row0Text || '';
   if (rowHasAnyTitle(row0, BOARD_LIST_TITLES)) return false;
   return rowHasTitle(row0, MAIN_MENU) || parseListRow(lastRowText);

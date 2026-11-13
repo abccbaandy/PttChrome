@@ -4,7 +4,10 @@
 // APK（android/，docs/android-app.md）：一律不跳。殼裡沒有「關分頁」，返回鍵由 history_back_guard
 // 轉成 PTT 左鍵、退到底只是 moveTaskToBack；唯一會觸發 beforeunload 的是點 target=_blank 連結
 //（原生攔下改開外部瀏覽器，頁面根本不會離開），確認框只會擋在使用者與外部瀏覽器之間。
+
+import { PAGE_STATE } from './screen_model';
+
 export function shouldWarnBeforeUnload({ connected, pageState, androidApp }) {
   if (androidApp) return false;
-  return !!connected && pageState != 0;
+  return !!connected && pageState != PAGE_STATE.NORMAL;
 }

@@ -23,6 +23,7 @@
 // 絕對不可以套在這裡的 col 上。
 
 import { LIST_TITLE_COL_START, COMMENT_USERID_COL } from './comment_parse';
+import { PAGE_STATE } from './screen_model';
 
 export const ACT_NONE = 'none';
 export const ACT_ENTER = 'enter';
@@ -119,8 +120,8 @@ export function listClickColStart(key) {
 // 推文列的可點區由該列自己的欄位決定（pusherClickRange），不是全畫面共用一個起始欄。
 export function clickableColStart(pageState, rangeOn, listClickStart) {
   if (!rangeOn) return 0;
-  if (pageState === 2 || pageState === 4) return listClickColStart(listClickStart);
-  if (pageState === 1) return MENU_COL_START;
+  if (pageState === PAGE_STATE.LIST || pageState === PAGE_STATE.LEGACY_4) return listClickColStart(listClickStart);
+  if (pageState === PAGE_STATE.MENU) return MENU_COL_START;
   return 0;
 }
 
@@ -306,7 +307,7 @@ export function resolveMouseRegion(input) {
   // 手機換行版面（Phase 3，term_view.reflow）：好讀文章的一列會折成好幾行，格子座標
   // （col/row）與畫面上的字對不起來 ⇒ 以 col 判斷的區域（左側退出帶、邊緣翻頁、
   // 列點擊送鍵）整組不成立。元素層（連結、圖片、功能鍵、合併按鈕）不走這裡，照常。
-  if (o.reflow && o.pageState === 3) return NONE;
+  if (o.reflow && o.pageState === PAGE_STATE.READING) return NONE;
   // 手機主功能表大按鈕（term_view.menuCards）：按鈕高 ≠ chh，格子列號對不上畫面
   // ⇒ 格子層整組不成立（觸控點一下也會先發相容 mousemove，不擋的話底色會落在
   // 別顆按鈕上）。點按鈕由 App.mouse_click 以 DOM 目標取列（menuCardTargetRow）。
@@ -345,15 +346,15 @@ export function resolveMouseRegion(input) {
   // 沒傳這個欄位時整張表逐格等同 2026-09 之前的行為，既有的區域測試就是那半邊的
   // 回歸鎖。pageState 1 另外要求 `boardList`（理由見 listEdgeRegion）。
   const edgeOn =
-    !!o.edgePaging && (o.pageState !== 1 || !!o.boardList);
+    !!o.edgePaging && (o.pageState !== PAGE_STATE.MENU || !!o.boardList);
 
   switch (o.pageState) {
     // 2 = 文章列表（setPageState 產生）；4 = LIST 變體（setPageState 不產生，
     // 只有舊 onMouse_move 用到，保留以免有呼叫端仍手動設定）。差別只在正文列範圍。
     case 2:
     case 4: {
-      const top = o.pageState === 2 ? 2 : 1;
-      const bottom = o.pageState === 2 ? rows - 1 : rows - 2;
+      const top = o.pageState === PAGE_STATE.LIST ? 2 : 1;
+      const bottom = o.pageState === PAGE_STATE.LIST ? rows - 1 : rows - 2;
       // 內文列以外（頂列 Home／底列 End／整列上一頁）：排在 lineEmpty 之前 ——
       // 那個判斷只對內文列有意義，而邊緣區與該列畫了什麼無關。
       if (!(row > top && row < bottom))

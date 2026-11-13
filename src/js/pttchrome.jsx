@@ -121,6 +121,7 @@ import { applyOpenCache } from './open_cache';
 import logoIcon from '../icon/logo.png';
 import logoConnectIcon from '../icon/logo_connect.png';
 import logoDisconnectIcon from '../icon/logo_disconnect.png';
+import { PAGE_STATE } from './screen_model';
 
 function noop() {}
 
@@ -1874,7 +1875,7 @@ App.prototype.navKeyBlockReason = function() {
 // 見 docs/mouse.md「三種 render 分支各由誰處理」。
 App.prototype._serverMouseReportable = function() {
   if (this.buf.listRenderMode !== 'native') return false;
-  if (this.view.useEasyReadingMode && this.buf.pageState === 3) return false;
+  if (this.view.useEasyReadingMode && this.buf.pageState === PAGE_STATE.READING) return false;
   return true;
 };
 
@@ -3076,7 +3077,7 @@ App.prototype.mouse_scroll = function(e) {
   if (!gates.wheel)
     return;
   // if in easyreading, use it like webpage
-  if (this.view.useEasyReadingMode && this.buf.pageState == 3) {
+  if (this.view.useEasyReadingMode && this.buf.pageState == PAGE_STATE.READING) {
     return;
   }
 
@@ -3168,7 +3169,7 @@ App.prototype.setBBSCmd = function setBBSCmd(cmd) {
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         this.easyReading.leaveCurrentPost();
         wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '[');
-      } else if (this.buf.pageState==2 || this.buf.pageState==3 || this.buf.pageState==4) {
+      } else if (this.buf.pageState==PAGE_STATE.LIST || this.buf.pageState==PAGE_STATE.READING || this.buf.pageState==PAGE_STATE.LEGACY_4) {
         wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '[');
       }
       break;
@@ -3176,7 +3177,7 @@ App.prototype.setBBSCmd = function setBBSCmd(cmd) {
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         this.easyReading.leaveCurrentPost();
         wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, ']');
-      } else if (this.buf.pageState==2 || this.buf.pageState==3 || this.buf.pageState==4) {
+      } else if (this.buf.pageState==PAGE_STATE.LIST || this.buf.pageState==PAGE_STATE.READING || this.buf.pageState==PAGE_STATE.LEGACY_4) {
         wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, ']');
       }
       break;
