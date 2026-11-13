@@ -1,0 +1,16 @@
+{
+  "//": "yarn typecheck：只檢查檔頭寫了 // @ts-check 的 JS（checkJs 關著），不轉 TS。規則見 docs/build-modernization.md「型別檢查」。",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["src/js/**/*.js"]
+}
