@@ -187,6 +187,24 @@ describe("一幀一份", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
+  // 不是 TermBuf（沒有 frameSeq）看不出幀的邊界：快取的話內容換了（pageState、游標都沒動）還會拿到
+  // 上一份答案。每次現算＝跟各功能直接呼叫判定函式一樣。
+  test("沒有 frameSeq 的 buf ⇒ 不快取，內容換了就是新答案", () => {
+    let live = true;
+    const buf = {
+      pageState: PAGE_STATE.READING,
+      cur_x: 0,
+      cur_y: 0,
+      cols: 80,
+      rows: 24,
+      getRowText: () => "",
+      isLiveScreenNow: () => live,
+    };
+    expect(screenOf(buf).kind).toBe(SCREEN_KIND.LIVE);
+    live = false;
+    expect(screenOf(buf).kind).toBe(SCREEN_KIND.ARTICLE);
+  });
+
   test("沒人問的事實不算", () => {
     const buf = bufAt(articleFx, "article");
     const spy = vi.spyOn(buf, "isPromptPending");

@@ -39,7 +39,7 @@ import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
 import { commentBarHeight } from './comment_bar';
 import { CHUNK_CLASS } from '../render/screen_chunk';
-import { PAGE_STATE } from './screen_model';
+import { PAGE_STATE, screenOf, SCREEN_KIND } from './screen_model';
 
 export const NEXT_ARTICLE_ID = 'nextArticleCard';
 export const NEXT_ARTICLE_VEIL_ID = 'nextArticleVeil';
@@ -281,16 +281,15 @@ NextArticle.prototype = {
     const buf = core.buf;
     return !!(
       buf &&
-      buf.pageState === PAGE_STATE.READING &&
+      // 文章、而且不是官方推文實況（SCREEN_KIND.LIVE）：實況的文末一直在長，讀者就停在文末看新推文
+      // ——不是讀完了。PTT 這時只認 q，換篇的鍵送不進去（docs/easy-reading.md「實況模式」）。
+      screenOf(buf).kind === SCREEN_KIND.ARTICLE &&
       er &&
       er._enabled &&
       !er._functionMode &&
       !er._reverse &&
       er.easyReadingReachedPageEnd &&
-      (buf.pageLines || []).length &&
-      // 官方推文實況：文末一直在長，讀者就停在文末看新推文——不是讀完了。PTT 這時只認 q，
-      // 換篇的鍵送不進去（docs/easy-reading.md「實況模式」）。
-      !(typeof buf.isLiveScreenNow === 'function' && buf.isLiveScreenNow())
+      (buf.pageLines || []).length
     );
   },
 

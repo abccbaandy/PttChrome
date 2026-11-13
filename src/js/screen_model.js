@@ -235,6 +235,9 @@ const CACHE = new WeakMap();
  */
 export function screenOf(buf) {
   const key = keyOf(buf);
+  // 沒有 frameSeq 的 buf（不是 TermBuf）看不出幀的邊界：每次都現算，不然內容換了還拿到上一份答案。
+  if (typeof buf.frameSeq !== 'number')
+    return /** @type {ScreenModel & ScreenFacts} */ (/** @type {unknown} */ (new ScreenModel(buf, key)));
   const cached = CACHE.get(buf);
   if (cached && sameKey(cached._key, key)) return /** @type {ScreenModel & ScreenFacts} */ (/** @type {unknown} */ (cached));
   const model = new ScreenModel(buf, key);
