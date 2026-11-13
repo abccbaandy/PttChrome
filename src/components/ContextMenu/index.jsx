@@ -117,6 +117,8 @@ import {
   setMenuTargetHighlight,
 } from "../../js/menu_target_highlight";
 import { menuAnchorRect } from "../../js/sheet_placement";
+import * as wire from "../../js/wire_send";
+import { WIRE_SOURCE } from "../../js/wire_send";
 
 function noop() {}
 
@@ -1467,7 +1469,7 @@ export const ContextMenu = ({ pttchrome }) => {
   );
   const onInputHelperReset = useCallback(() => {
     if (inputHelperBlocked(INPUT_HELPER_COLOR)) return;
-    pttchrome.conn.send("\x15[m");
+    wire.sendBytes(WIRE_SOURCE.INPUT_HELPER, pttchrome.conn, "\x15[m");
   }, [pttchrome, inputHelperBlocked]);
   const onInputHelperCmdSend = useCallback(
     (cmd) => {
@@ -1507,14 +1509,14 @@ export const ContextMenu = ({ pttchrome }) => {
         selCmd += "\x1b[C".repeat(repeats);
         cmd = selCmd + cmd;
       }
-      pttchrome.conn.send(cmd);
+      wire.sendBytes(WIRE_SOURCE.INPUT_HELPER, pttchrome.conn, cmd);
     },
     [pttchrome, inputHelperBlocked],
   );
   const onInputHelperConvSend = useCallback(
     (value) => {
       if (inputHelperBlocked(INPUT_HELPER_TEXT)) return;
-      pttchrome.conn.convSend(value);
+      wire.sendText(WIRE_SOURCE.INPUT_HELPER, pttchrome.conn, value);
     },
     [pttchrome, inputHelperBlocked],
   );

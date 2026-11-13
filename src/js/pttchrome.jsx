@@ -50,6 +50,8 @@ import { functionKeyClickPlan, LEFT_ARROW } from './function_key_plan';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
 import { decideKeepAlive, KEEP_ALIVE_TIMEOUT_MS } from './keep_alive';
+import * as wire from './wire_send';
+import { WIRE_SOURCE } from './wire_send';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { effectivePrefs, readEffectivePrefs, readValuesWithDefault, writeValues } from './pref_storage';
 import { WIRE_UTF8, cursorPositionReport } from './wire_charset';
@@ -187,7 +189,7 @@ export const App = function() {
   // send a no-op and the command dies by its own timeout (benign by design).
   this.commandQueue = new CommandQueue({
     send: (d) => {
-      if (this.conn && this.conn.isConnected) this.conn.send(d);
+      if (this.conn && this.conn.isConnected) wire.sendBytes(WIRE_SOURCE.QUEUE, this.conn, d);
     },
     // Per-command timeline into the debug recording (null recorder = zero
     // cost): a reproduced "畫面停住/處理中" hang shows exactly which kind sat
@@ -625,7 +627,7 @@ App.prototype._attachConn = function(conn) {
   this.parser.onCursorPositionRequest =
     conn.wireCharset === WIRE_UTF8
       ? function(row, col) {
-          if (self.conn === conn) conn.send(cursorPositionReport(row, col));
+          if (self.conn === conn) wire.sendBytes(WIRE_SOURCE.CPR, conn, cursorPositionReport(row, col));
         }
       : null;
   conn.onDataSent = function(bytes) {
@@ -639,8 +641,7 @@ App.prototype._attachConn = function(conn) {
     self.onData(e.detail.data);
   });
   this.conn.addEventListener('doNaws', function(e) {
-    conn.sendWillNaws();
-    conn.sendNaws(self.buf.cols, self.buf.rows);
+    wire.sendWindowSize(conn, self.buf.cols, self.buf.rows, { will: true });
   });
 };
 
@@ -849,7 +850,7 @@ App.prototype.switchProtocolAndReconnect = function(protocol) {
 
 App.prototype.sendData = function(str) {
   if (this.connectState == 1)
-    this.conn.convSend(str);
+    wire.sendText(WIRE_SOURCE.APP_TEXT, this.conn, str);
 };
 
 // 機器狀態機的 byte 出口（第五條機器路徑，2026-09-20）。目前的消費者是好讀
@@ -878,7 +879,7 @@ App.prototype.sendData = function(str) {
 App.prototype.sendMachineBytes = function(bytes) {
   if (!bytes) return false;
   if (!this.conn || !this.conn.isConnected) return false;
-  this.conn.send(bytes);
+  wire.sendBytes(WIRE_SOURCE.MACHINE, this.conn, bytes);
   return true;
 };
 
@@ -1671,7 +1672,7 @@ App.prototype.setTermSize = function(cols, rows) {
 
   this.buf.resize(cols, rows);
   if (this.conn) {
-    this.conn.sendNaws(cols, rows);
+    wire.sendWindowSize(this.conn, cols, rows);
   }
 };
 
@@ -1690,7 +1691,7 @@ App.prototype.antiIdle = function() {
     probeAt: this._keepAliveProbeAt
   });
   if (decision.action === 'probe') {
-    this.conn.sendTimingMark();
+    wire.sendKeepAliveProbe(this.conn);
     this._keepAliveProbeAt = now;
     this.debugRecorder?.log('keepAlive.probe');
   } else if (decision.action === 'dead') {
@@ -3137,78 +3138,78 @@ App.prototype.setBBSCmd = function setBBSCmd(cmd) {
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         if (this.view.mainDisplay.scrollTop === 0) {
           this.easyReading.leaveCurrentPost();
-          this.conn.send('\x1b[D\x1b[A\x1b[C');
+          wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\x1b[D\x1b[A\x1b[C');
         } else {
           this.view.mainDisplay.scrollTop -= this.view.chh;
         }
       } else {
-        this.conn.send('\x1b[A');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\x1b[A');
       }
       break;
     case "doArrowDown":
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         if (this.view.mainDisplay.scrollTop >= this.view.mainContainer.clientHeight - this.view.chh * this.buf.rows) {
           this.easyReading.leaveCurrentPost();
-          this.conn.send('\x1b[B');
+          wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\x1b[B');
         } else {
           this.view.mainDisplay.scrollTop += this.view.chh;
         }
       } else {
-        this.conn.send('\x1b[B');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\x1b[B');
       }
       break;
     case "doPageUp":
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         this.view.mainDisplay.scrollTop -= this.view.chh * this.easyReading._turnPageLines;
       } else {
-        this.conn.send('\x1b[5~');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\x1b[5~');
       }
       break;
     case "doPageDown":
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         this.view.mainDisplay.scrollTop += this.view.chh * this.easyReading._turnPageLines;
       } else {
-        this.conn.send('\x1b[6~');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\x1b[6~');
       }
       break;
     case "previousThread":
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         this.easyReading.leaveCurrentPost();
-        this.conn.send('[');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '[');
       } else if (this.buf.pageState==2 || this.buf.pageState==3 || this.buf.pageState==4) {
-        this.conn.send('[');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '[');
       }
       break;
     case "nextThread":
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         this.easyReading.leaveCurrentPost();
-        this.conn.send(']');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, ']');
       } else if (this.buf.pageState==2 || this.buf.pageState==3 || this.buf.pageState==4) {
-        this.conn.send(']');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, ']');
       }
       break;
     case "doEnter":
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         if (this.view.mainDisplay.scrollTop >= this.view.mainContainer.clientHeight - this.view.chh * this.buf.rows) {
           this.easyReading.leaveCurrentPost();
-          this.conn.send('\r');
+          wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\r');
         } else {
           this.view.mainDisplay.scrollTop += this.view.chh;
         }
       } else {
-        this.conn.send('\r');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\r');
       }
       break;
     case "doRight":
       if (this.view.useEasyReadingMode && this.buf.startedEasyReading) {
         if (this.view.mainDisplay.scrollTop >= this.view.mainContainer.clientHeight - this.view.chh * this.buf.rows) {
           this.easyReading.leaveCurrentPost();
-          this.conn.send('\x1b[C');
+          wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\x1b[C');
         } else {
           this.view.mainDisplay.scrollTop += this.view.chh * this.easyReading._turnPageLines;
         }
       } else {
-        this.conn.send('\x1b[C');
+        wire.sendBytes(WIRE_SOURCE.BBS_CMD, this.conn, '\x1b[C');
       }
       break;
     default:

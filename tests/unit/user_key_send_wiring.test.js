@@ -1,9 +1,10 @@
 // 送出到線路的入口分兩種，**界線是入口不是位元組內容**（推導見
 // src/js/vtkbd_send_state.js 檔頭）：
 //
-//   conn.send / conn.convSend                 機器送出 → 懸空的 ESC 態一律化解
-//   conn.sendUserKey / conn.convSendUserKey   真鍵盤／IME → 保留 ESC 組合鍵
+//   wire.sendBytes / wire.sendText             機器送出 → 懸空的 ESC 態一律化解（conn.send / convSend）
+//   wire.sendUserKey / wire.sendUserText       真鍵盤／IME → 保留 ESC 組合鍵（conn.sendUserKey / convSendUserKey）
 //
+// 全部經過唯一出口 src/js/wire_send.js（tests/unit/wire_send.test.js 守「沒人繞過它」）。
 // 後者**只有 term_view._send / _convSend 可以叫**。這條沒有 runtime 守得住
 // （new App() 在 unit 起不來），而用錯的後果是靜默的：機器鍵誤用 userKey ⇒
 // 使用者漏一個 Esc 之後那個鍵被吃成 esc_arg、**畫面不動零輸出**，看起來像 PTT
@@ -34,25 +35,27 @@ const FILES = readAll();
 const fileNamed = (n) => FILES.find((f) => f.name === "js/" + n);
 
 describe("userKey 送出入口只有 term_view 一個", () => {
-  test("沒有別的模組叫 conn.sendUserKey / convSendUserKey", () => {
+  test("沒有別的模組叫 wire.sendUserKey / sendUserText（或繞過出口直接叫 conn 的 userKey 變體）", () => {
     const offenders = FILES.filter(
       (f) =>
         f.name !== "js/term_view.js" &&
         f.name !== "js/telnet.js" &&
-        /\.(send|convSend)UserKey\s*\(/.test(f.code),
+        f.name !== "js/wire_send.js" &&
+        (/\.(send|convSend)UserKey\s*\(/.test(f.code) || /\bsendUser(Key|Text)\s*\(/.test(f.code)),
     ).map((f) => f.name);
     expect(offenders).toEqual([]);
   });
 
   test("term_view._send / _convSend 走的是 userKey 變體，沒有退回 conn.send", () => {
     const code = fileNamed("term_view.js").code;
-    expect(code).toMatch(/_send:\s*function[\s\S]{0,320}?conn\.sendUserKey\(/);
+    expect(code).toMatch(/_send:\s*function[\s\S]{0,320}?wire\.sendUserKey\(this\.conn,/);
     expect(code).toMatch(
-      /_convSend:\s*function[\s\S]{0,320}?conn\.convSendUserKey\(/,
+      /_convSend:\s*function[\s\S]{0,320}?wire\.sendUserText\(this\.conn,/,
     );
     // term_view 是真鍵盤的出口，整份不該再有機器變體的呼叫。
     expect(code).not.toMatch(/\bconn\.send\s*\(/);
     expect(code).not.toMatch(/\bconn\.convSend\s*\(/);
+    expect(code).not.toMatch(/wire\.send(Bytes|Text)\s*\(/);
   });
 });
 
@@ -67,10 +70,10 @@ describe("使用者 byte 上線前必經列表好讀的 cursor-sync 守門", () 
     const code = fileNamed("term_view.js").code;
     // 順序是承重的：問在 conn.*UserKey **之前**才擋得住。
     expect(code).toMatch(
-      /_send:\s*function[\s\S]{0,320}?adoptUserBytes\([\s\S]{0,200}?conn\.sendUserKey\(/,
+      /_send:\s*function[\s\S]{0,320}?adoptUserBytes\([\s\S]{0,200}?wire\.sendUserKey\(/,
     );
     expect(code).toMatch(
-      /_convSend:\s*function[\s\S]{0,320}?adoptUserBytes\([\s\S]{0,200}?conn\.convSendUserKey\(/,
+      /_convSend:\s*function[\s\S]{0,320}?adoptUserBytes\([\s\S]{0,200}?wire\.sendUserText\(/,
     );
     // _convSend 的 payload 是 Unicode 文字 ⇒ 必須標記 conv，接手方才知道要轉 Big5。
     expect(code).toMatch(/adoptUserBytes\(\s*data\s*,\s*\{\s*conv:\s*true\s*\}\s*\)/);
@@ -91,7 +94,7 @@ describe("使用者 byte 上線前必經列表好讀的 cursor-sync 守門", () 
 
 describe("機器送出的入口一個都不能漏掉守門", () => {
   // 四條機器路徑（CommandQueue／App.sendData／anti-idle／App.setBBSCmd）都在
-  // pttchrome.jsx，而且刻意**維持 conn.send** —— 預設就是化解的那一邊，所以這裡
+  // pttchrome.jsx，而且刻意**維持機器變體**（wire.sendBytes／sendText → conn.send／convSend）—— 預設就是化解的那一邊，所以這裡
   // 守的是「別有人順手把它們改成 userKey」（上面第一條）與「別繞過 conn 直接打
   // socket」。
   // telnet.js（_sendRaw）與 websocket.js 是傳輸層自己，其餘都得走 conn。
@@ -105,10 +108,10 @@ describe("機器送出的入口一個都不能漏掉守門", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("CommandQueue 的 send 綁的是 conn.send（機器，會化解）", () => {
+  test("CommandQueue 的 send 綁的是 wire.sendBytes（機器，會化解）", () => {
     const code = fileNamed("pttchrome.jsx").code;
     expect(code).toMatch(
-      /new CommandQueue\(\{[\s\S]{0,400}?this\.conn\.send\(/,
+      /new CommandQueue\(\{[\s\S]{0,400}?wire\.sendBytes\(WIRE_SOURCE\.QUEUE, this\.conn,/,
     );
   });
 });
@@ -132,15 +135,15 @@ describe("機器狀態機的 byte 不走使用者出口", () => {
     expect(code).toMatch(/_core\.sendMachineBytes\s*\(/);
   });
 
-  test("App.sendMachineBytes 綁 conn.send（機器，會化解懸空 ESC），不是 userKey", () => {
+  test("App.sendMachineBytes 綁 wire.sendBytes（機器，會化解懸空 ESC），不是 userKey", () => {
     const code = fileNamed("pttchrome.jsx").code;
     // 順序是承重的：先確認連線（websocket.send 對已關閉的 socket 會 throw
     // InvalidStateError），再送，最後回報「有沒有真的上線」。
     expect(code).toMatch(
-      /App\.prototype\.sendMachineBytes[\s\S]{0,400}?conn\.isConnected[\s\S]{0,200}?conn\.send\(/,
+      /App\.prototype\.sendMachineBytes[\s\S]{0,400}?conn\.isConnected[\s\S]{0,200}?wire\.sendBytes\(WIRE_SOURCE\.MACHINE, this\.conn,/,
     );
     expect(code).not.toMatch(
-      /App\.prototype\.sendMachineBytes[\s\S]{0,400}?sendUserKey/,
+      /App\.prototype\.sendMachineBytes[\s\S]{0,400}?sendUser(Key|Text)/,
     );
   });
 

@@ -1,6 +1,7 @@
 // Terminal View
 
 import { TermKeyboard, isAltRemapEvent } from './term_keyboard';
+import * as wire from './wire_send';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow, withListOpening } from './cursor_highlight';
 import { clickableColStart, DEFAULT_LIST_CLICK_START, DEFAULT_PUSH_CLICK_START, DEFAULT_PUSH_CLICK_END, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion, visibleHintBand } from './mouse_regions';
@@ -737,7 +738,7 @@ TermView.prototype = {
     if (this.bbscore && this.bbscore.adoptUserBytes && this.bbscore.adoptUserBytes(data))
       return;
     if (this.conn)
-      this.conn.sendUserKey(data);
+      wire.sendUserKey(this.conn, data);
   },
 
   // `conv: true` ＝ payload 是 Unicode 文字而不是 byte，接手方必須自己轉 Big5
@@ -750,7 +751,7 @@ TermView.prototype = {
     )
       return;
     if (this.conn)
-      this.conn.convSendUserKey(data);
+      wire.sendUserText(this.conn, data);
   },
 
   setCore: function(core) {
