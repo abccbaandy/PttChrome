@@ -78,7 +78,7 @@ CI 紅但與被測 code 無關見 `docs/ci-troubleshooting.md`。
 
 - `yarn npm audit --all --recursive`；`proxy/*/` 各自 `npm audit --package-lock-only`。
 - 傳遞相依的修正版在範圍內就 `yarn up -R <套件>`（#279）。
-- Dependabot 警示由每天的 `Dependabot alerts` workflow 帶到 issue（`docs/ci-troubleshooting.md`）。
+- Dependabot 警示直接查 `gh api repos/{owner}/{repo}/dependabot/alerts -X GET -f state=open`（雲端 session 也讀得到）。
 
 ## 寫碼時的雷
 
