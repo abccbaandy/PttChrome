@@ -246,13 +246,15 @@ describe("AidNavigation", () => {
   });
 
   test("re-entrant start while active is ignored, but not silently", () => {
-    const { nav, sent, hints } = makeHarness();
+    const { nav, sent, hints, core } = makeHarness();
     nav.start("1gIeu-3A", "Android");
     hints.length = 0;
     nav.start("2AbCdEf0", "C_Chat");
     expect(sent).toEqual(["Q"]);
     // 第二下點擊被吞掉：吞掉使用者的輸入不得無聲（serialized_op_gate），提示跟其他入口同一句。
-    expect(hints).toEqual([serializedOpHint({ aidNavigation: nav })]);
+    // 拿 core 問（不是物件字面值：閘門只認 core 上登記過的持有者，字面值恆回 null ⇒ 這條會恆綠）。
+    expect(hints).toEqual([serializedOpHint(core)]);
+    expect(hints).toEqual(["AID 跳文中，請稍候…"]);
   });
 
   test("idle list session is not disturbed", () => {

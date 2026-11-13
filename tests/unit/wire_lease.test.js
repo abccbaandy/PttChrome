@@ -254,6 +254,19 @@ describe("靜態守護", () => {
     expect(stripComments(gate.text)).not.toMatch(/aidNavigation|longPush|logout|boardNoteSkip/);
   });
 
+  // 閘門只問 core 上登記過的持有者：拿臨時物件字面值去問一定回 null ⇒ 吞鍵沒提示。
+  test("不准拿物件字面值問閘門（serializedOpHint({…}) / wireLeaseHint({…})）", () => {
+    const offenders = [];
+    for (const f of FILES) {
+      stripComments(f.text)
+        .split("\n")
+        .forEach((line, i) => {
+          if (/\b(serializedOpHint|wireLeaseHint)\(\s*\{/.test(line)) offenders.push(`${f.rel}:${i + 1}`);
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+
   // 使用權的 owner：預設 'searchInFlight'＋各功能 `XXX_FLAG = '...'` 與 `flag: '...'` 宣告的名字。
   const OWNERS = new Set(["searchInFlight"]);
   for (const f of FILES) {

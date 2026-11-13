@@ -73,7 +73,7 @@ import { openPromptText, openPromptHint } from './open_prompt';
 import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
 import { isMailboxOverLimitNotice, MAILBOX_OVER_LIMIT_HINT } from './mail_list';
-import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
+import { PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
 import { holdWireWhile } from './wire_lease';
 import { BOARD_PROMPT_RE } from './board_note_skip';
 import {
@@ -557,7 +557,7 @@ AidNavigation.prototype = {
     if (this.active) {
       // 另一趟還在跑（例：跳轉途中又點了一個 AID 連結）：不排隊，但吞掉點擊不得無聲
       // （serialized_op_gate），提示跟其他送鍵入口同一句。
-      this._hint(serializedOpHint({ aidNavigation: this }));
+      this._hint(aidNavigationWireHint(this));
       return;
     }
     if (this._promptBlocks()) return;
