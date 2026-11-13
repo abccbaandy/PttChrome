@@ -8,6 +8,7 @@ import { UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT } from "../../src/js/unread_jump";
 import { MARK_ALL_READ_FLAG, MARK_ALL_READ_HINT } from "../../src/js/mark_all_read";
 import { DeepLinkController } from "../../src/js/deep_link_controller";
 import { parseDeepLink } from "../../src/js/deep_link";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 const TARGET = { board: "Gossiping", aid: "1gIeu-3A" };
 // 分享連結的正規形式是檔名形式（#<Board>/M.<v1>.A.<v2>.html），不是短碼。
@@ -110,7 +111,7 @@ function makeHarness({
     },
     chh
   };
-  const core = { connectState, aidNavigation: nav, autoLogin, easyReading };
+  const core = wireFakeSessions({ connectState, aidNavigation: nav, autoLogin, easyReading });
   const ctl = new DeepLinkController(core, view, termBuf);
   const settle = () => (listeners.screenSettled || []).forEach(fn => fn());
   const arriveAtMainMenu = () => {

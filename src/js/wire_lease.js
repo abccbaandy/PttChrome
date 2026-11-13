@@ -73,13 +73,67 @@ export function releaseWire(core, owner) {
   core[owner] = false;
 }
 
+// --- session 型持有者（A2 步驟 c） -------------------------------------------
+//
+// AID 跳文、長推文、登出、略過進板畫面自己有 session 物件，「線路是不是被它佔著」由 session
+// 自己的狀態（active／busy）決定，而且狀態轉換散在十幾條收尾路徑上。這類不走 acquire／release
+// （漏一條就永久吞鍵），而是**建構時登記一次「怎麼問我」**：閘門每次問的時候現算，
+// session 狀態就是唯一真相，不可能跟使用權不同步。
+//
+// 排序是搬家前閘門寫死的順序（AID 最前），排在 acquireWire 拿的使用權前面。
+// 新的 session 型功能要在這裡加一個名次；一般多步序列用 acquireWire 就好，不必來這裡。
+
+/** session 型持有者的名次（小的先給提示）。 */
+export const SESSION_WIRE_RANK = Object.freeze({
+  aidNavigation: 10,
+  longPush: 20,
+  logout: 30,
+  boardNoteSkip: 40
+});
+
 /**
- * 現在拿著線路的人的提示字；沒人拿著回 null。
+ * @typedef {{ owner: string, rank: number, hintOf: () => (string | null | undefined) }} WireHolder
+ */
+
+/**
+ * session 建構時登記：hintOf() 回非空字串＝現在佔著線路（字串就是提示），回 null／空＝沒佔著。
+ * 同一個 owner 再登記一次＝換成新的（session 重建時舊的不會殘留）。
  * @param {LeaseCore | null | undefined} core
+ * @param {keyof typeof SESSION_WIRE_RANK} owner
+ * @param {() => (string | null | undefined)} hintOf
+ */
+export function holdWireWhile(core, owner, hintOf) {
+  if (!core || typeof hintOf !== 'function') return;
+  const rank = SESSION_WIRE_RANK[owner];
+  if (rank === undefined) throw new Error('wire_lease: 沒有名次的 session 持有者 ' + owner);
+  /** @type {WireHolder[]} */
+  const prev = core._wireHolders || [];
+  const holders = prev.filter(function(h) {
+    return h.owner !== owner;
+  });
+  holders.push({ owner: owner, rank: rank, hintOf: hintOf });
+  holders.sort(function(a, b) {
+    return a.rank - b.rank;
+  });
+  core._wireHolders = holders;
+}
+
+/**
+ * 現在拿著線路的人的提示字；沒人拿著回 null。session 型持有者先問（照名次），再來是使用權
+ * （照先來後到）。
+ * @param {(LeaseCore & { _wireHolders?: WireHolder[] }) | null | undefined} core
  * @returns {string | null}
  */
 export function wireLeaseHint(core) {
-  const leases = core && core._wireLeases;
+  if (!core) return null;
+  const holders = core._wireHolders;
+  if (holders) {
+    for (const h of holders) {
+      const hint = h.hintOf();
+      if (hint) return hint;
+    }
+  }
+  const leases = core._wireLeases;
   if (!leases) return null;
   const first = leases.values().next();
   return first.done ? null : first.value.hint;

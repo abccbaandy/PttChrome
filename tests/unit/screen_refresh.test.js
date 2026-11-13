@@ -14,6 +14,7 @@ import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { OWNER_ARTICLE_LIST } from "../../src/js/list_render_owner";
 import { SLOW_STEP_BUDGET } from "../../src/js/aid_navigation";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 const ROWS = 24;
 const frame = (rows, extra) => {
@@ -194,6 +195,7 @@ function makeCore(rows, { pageState = 2, extra = {} } = {}) {
     commandQueue: { enqueue: (cmd) => enqueued.push(cmd) },
     aidNavigation: { active: false, refresh: vi.fn(() => true) },
   };
+  wireFakeSessions(core);
   return { core, enqueued, hints };
 }
 

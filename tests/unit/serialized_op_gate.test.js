@@ -12,51 +12,55 @@
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { TermView } from "../../src/js/term_view";
 import { App } from "../../src/js/pttchrome";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 const AID_HINT = "AID 跳文中，請稍候…";
 const PUSH_HINT = "長推文送出中，請稍候…";
 
+// 假 session 照真 App 一樣向線路登記（真 App 由各 session 建構子 holdWireWhile）。
+const gate = (c) => serializedOpHint(c && wireFakeSessions(c));
+
 describe("serializedOpHint 述詞", () => {
   test("線路空著 → null", () => {
     expect(
-      serializedOpHint({ aidNavigation: { active: false }, longPush: { active: false } })
+      gate({ aidNavigation: { active: false }, longPush: { active: false } })
     ).toBe(null);
   });
 
   test("AID 跳文在途 → AID 提示", () => {
-    expect(serializedOpHint({ aidNavigation: { active: true } })).toBe(AID_HINT);
+    expect(gate({ aidNavigation: { active: true } })).toBe(AID_HINT);
   });
 
   test("長推文送出中 → 長推文提示", () => {
-    expect(serializedOpHint({ longPush: { active: true } })).toBe(PUSH_HINT);
+    expect(gate({ longPush: { active: true } })).toBe(PUSH_HINT);
   });
 
   test("一鍵登出進行中 → 登出提示", () => {
-    expect(serializedOpHint({ logout: { active: true, opHint: "" } })).toBe(
+    expect(gate({ logout: { active: true, opHint: "" } })).toBe(
       "登出中，請稍候…",
     );
-    expect(serializedOpHint({ logout: { active: false } })).toBe(null);
+    expect(gate({ logout: { active: false } })).toBe(null);
   });
 
   test("探路階段的提示與送出階段不同（使用者要知道自己在等什麼）", () => {
     const preflight = { active: true, opHint: "正在確認能不能推文，請稍候…" };
-    expect(serializedOpHint({ longPush: preflight })).toBe(preflight.opHint);
+    expect(gate({ longPush: preflight })).toBe(preflight.opHint);
   });
 
   test("探完路等使用者打字（armed）→ 線路空著，不可以吞他的鍵", () => {
     // active 是 false、busy 才是 true：那時我們只是握著畫面，沒有命令在飛。
-    expect(serializedOpHint({ longPush: { active: false, busy: true } })).toBe(null);
+    expect(gate({ longPush: { active: false, busy: true } })).toBe(null);
   });
 
   test("兩者同時（理論上不會，共用同一條 CommandQueue）→ AID 優先，不得回 null", () => {
     expect(
-      serializedOpHint({ aidNavigation: { active: true }, longPush: { active: true } })
+      gate({ aidNavigation: { active: true }, longPush: { active: true } })
     ).toBe(AID_HINT);
   });
 
   test("物件還沒建立／core 不存在都不炸", () => {
-    expect(serializedOpHint(undefined)).toBe(null);
-    expect(serializedOpHint({})).toBe(null);
+    expect(gate(undefined)).toBe(null);
+    expect(gate({})).toBe(null);
   });
 });
 
@@ -85,6 +89,7 @@ function keyCtx(busy) {
       hints.push(msg);
     },
   };
+  wireFakeSessions(ctx.bbscore);
   return { ctx, hints, keyboard };
 }
 
@@ -150,6 +155,7 @@ function textCtx(busy) {
       hints.push(msg);
     },
   };
+  wireFakeSessions(ctx.bbscore);
   return { ctx, hints, calls };
 }
 
@@ -212,6 +218,7 @@ function makeApp(busy) {
       hints.push(msg);
     },
   };
+  wireFakeSessions(app);
   return { app, hints };
 }
 

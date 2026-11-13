@@ -29,6 +29,7 @@ import { BoardListSession } from "../../src/js/board_list_session";
 import { SLOW_STEP_BUDGET } from "../../src/js/aid_navigation";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { writeValues, readValuesWithDefault } from "../../src/js/pref_storage";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 beforeAll(() => {
   loadBig5Tables();
@@ -413,7 +414,7 @@ describe("別的序列在線上：多步序列一個 byte 都不送", () => {
   test("AID 跳文、長推文在途 ⇒ 同樣不送", () => {
     for (const busy of [{ aidNavigation: { active: true } }, { longPush: { active: true } }]) {
       const { core, sent } = nativeCore();
-      Object.assign(core, busy);
+      wireFakeSessions(Object.assign(core, busy));
       expect(submitSerializedSteps(core, [{ keys: "s", kind: "x" }], { kind: "x" })).toBe(false);
       expect(sent).toEqual([]);
     }

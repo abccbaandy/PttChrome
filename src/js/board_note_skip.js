@@ -57,6 +57,7 @@ import {
   rowHasAnyTitle
 } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
+import { holdWireWhile } from './wire_lease';
 import { parseHelpMenuScreen } from './help_menu';
 import { parseActivityAlert } from './activity_alert';
 
@@ -172,6 +173,12 @@ export function boardNoteDecision(facts) {
   return { action: 'wait' };
 }
 
+// 佔著線路時給使用者看的提示；沒佔著回 null（wire_lease.holdWireWhile 用）。
+// 只看 busy（代按的那一鍵在線上），arm 等待期不擋。
+export function boardNoteSkipWireHint(s) {
+  return s && s.busy ? '略過進板畫面中，請稍候…' : null;
+}
+
 export function BoardNoteSkip(core, view, termBuf, queue) {
   this._core = core;
   this._view = view;
@@ -187,6 +194,12 @@ export function BoardNoteSkip(core, view, termBuf, queue) {
   this._ownSend = false;
   if (termBuf && termBuf.addEventListener)
     termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
+  // 代按的那一鍵在線上時線路歸我們。使用者此時自己按鍵會先收掉畫面，我們的鍵就落進
+  // 文章列表（← 會直接離板）。只擋 in-flight 這一個來回（busy），arm 等待期不擋。
+  const self = this;
+  holdWireWhile(core, 'boardNoteSkip', function() {
+    return boardNoteSkipWireHint(self);
+  });
 }
 
 BoardNoteSkip.prototype = {

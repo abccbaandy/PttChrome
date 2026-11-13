@@ -27,6 +27,7 @@ import { isMainMenuRow } from './aid_navigation';
 import { resolveDismiss, DISMISS_ANY_KEY, KEY_DISMISS } from './screen_dismiss';
 import { isMailboxOverLimitNotice, MAILBOX_OVER_LIMIT_HINT } from './mail_list';
 import { HINT_ERROR } from './status_hint';
+import { holdWireWhile } from './wire_lease';
 
 const KEY_LEFT = '\x1b[D';
 export const KEY_GOODBYE = 'G\r';
@@ -78,6 +79,11 @@ function signature(rowTexts) {
   return (rowTexts || []).join('\n');
 }
 
+// 佔著線路時給使用者看的提示；沒佔著回 null（wire_lease.holdWireWhile 用）。
+export function logoutWireHint(s) {
+  return s && s.active ? s.opHint || '登出中，請稍候…' : null;
+}
+
 export function LogoutSession(core, view, termBuf, queue) {
   this._core = core;
   this._view = view;
@@ -91,6 +97,10 @@ export function LogoutSession(core, view, termBuf, queue) {
   this.quitApp = false;
   this.opHint = '';
   this._closeTimer = null;
+  const self = this;
+  holdWireWhile(core, 'logout', function() {
+    return logoutWireHint(self);
+  });
 }
 
 LogoutSession.prototype = {
