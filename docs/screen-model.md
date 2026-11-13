@@ -36,6 +36,16 @@
 `cursorOnInputField`、`promptPending`、`pagerContext`、`boardName`。新增事實時在 `FACTS` 加一條、測試的對照表
 加一條（守護會要求兩邊一致）。
 
+- **沒有 `frameSeq` 的 buf 不快取**：不是 TermBuf（測試的假 buf）看不出幀的邊界，每次現算，跟直接呼叫判定函式一樣。
+  假 buf 要補上讀到的判定（例：`isLiveScreenNow`），模型不替缺的函式找藉口。
+
+## 消費端
+
+| 功能 | 讀什麼 |
+|---|---|
+| `comment_bar._inEasyArticle`（推文列） | `kind === ARTICLE`（文章、不是實況） |
+| `next_article._inEasyArticleEnd`（下一篇卡片） | `kind === ARTICLE` |
+
 ## 下一步（A3 步驟 b～d）
 
-b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。
+b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片已搬）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。

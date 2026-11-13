@@ -153,6 +153,8 @@ function setup(lines, { bar = true, bgRows = [], mobile = false, floatTools = fa
         return frame.pageState;
       },
       getRowText: (r) => frame.t[r],
+      // 真 TermBuf 的判定；假 buf 沒有實況畫面（要測實況的那條自己換掉）。
+      isLiveScreenNow: () => false,
       addEventListener: (name, fn) => name === "screenSettled" && (settled = fn),
     },
     view: {
