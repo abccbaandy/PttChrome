@@ -76,7 +76,13 @@ describe('CSP meta 注入', () => {
   });
 
   test('index.html 沒有行內事件屬性或 javascript: 網址（hash 放行不了）', () => {
-    const tags = html.replace(/<!--[\s\S]*?-->/g, '').match(/<[a-z][^>]*>/gi) || [];
+    // 註解要剝到不再變（巢狀／殘缺的 <!-- 一次剝不乾淨）。
+    let bare = html;
+    for (let prev = null; prev !== bare; ) {
+      prev = bare;
+      bare = bare.replace(/<!--[\s\S]*?-->/g, '');
+    }
+    const tags = bare.match(/<[a-z][^>]*>/gi) || [];
     const bad = tags.filter((t) => /\son[a-z]+\s*=/i.test(t) || /javascript:/i.test(t));
     expect(bad).toEqual([]);
   });
