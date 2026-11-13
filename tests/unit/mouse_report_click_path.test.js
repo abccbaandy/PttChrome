@@ -39,7 +39,7 @@ function makeApp({
   };
   app.view = { _send: vi.fn(), useEasyReadingMode, conn };
   // pref 關掉時滾輪會落回既有的 setBBSCmd 翻頁路徑，那條是 fork 來的舊碼、
-  // 直接用 this.conn.send（不是本次新增的），stub 要餵得動它。
+  // 經 wire.sendBytes 送到 this.conn（不是本次新增的），stub 要餵得動它。
   app.conn = conn;
   app._testConn = conn;
   app.mouseButtons = {

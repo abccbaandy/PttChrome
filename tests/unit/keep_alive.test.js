@@ -85,7 +85,7 @@ describe("pttchrome.jsx 不再送按鍵式防閒置", () => {
       "utf8",
     );
     expect(src).not.toMatch(/ANTI_IDLE_STR/);
-    expect(src).toMatch(/sendTimingMark\(\)/);
+    expect(src).toMatch(/wire\.sendKeepAliveProbe\(this\.conn\)/);
   });
 });
 
