@@ -10,7 +10,6 @@
 //      監聽會把焦點搶回隱藏 input。
 // 另外驗快捷鍵（pref aidNavBackKey，預設 F9）真的接到 aidNavigation.back()。
 const { test, expect } = require('@playwright/test');
-const ptt = require('../helpers/ptt');
 const {
   installReplay,
   installOfflineNetwork,

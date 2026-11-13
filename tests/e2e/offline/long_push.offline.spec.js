@@ -10,7 +10,7 @@
 //   - 取消送出 Ctrl-C 收尾
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
+const { bootOffline, waitScreenSettled } = require('../helpers/replay');
 const {
   rightClickPlainText,
   imeSetComposition,
@@ -31,7 +31,6 @@ const ARTICLE_TITLE = '標題  [閒聊] 測試文章';
 const ARTICLE_ORIGIN = '※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)';
 const ARTICLE_URL =
   '※ 文章網址: https://www.ptt.cc/bbs/Test/M.1756700000.A.ABC.html';
-const POST_AID = '1Vr#TnAB';
 const TYPE_MENU = '您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ';
 const PROMPT = '推 testuser: ';
 const CONFIRM = '推 testuser: 內容                        確定[y/N]:';

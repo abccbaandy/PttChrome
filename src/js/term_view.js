@@ -45,8 +45,6 @@ import { isAndroidApp, androidNotify } from './android_bridge';
 import { justPushedMinutes, JUST_PUSHED_MS } from './just_pushed';
 import { staticReaderKey } from './saved_articles';
 
-const DEFINE_INPUT_BUFFER_SIZE = 12;
-
 // Alt remap 送鍵之後，多久之內把組字事件當成 dead key 的副產物吞掉。
 // macOS 的 ⌥E/⌥I/⌥N/⌥U 是組合重音的 dead key：即使 keydown 被 preventDefault，
 // 仍可能開一次組字並 commit 出 é/î/ñ/ü。詳見 onCompositionStart / onInput 的防線。

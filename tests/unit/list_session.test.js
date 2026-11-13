@@ -1076,7 +1076,7 @@ describe("鏈式 prefetch（同方向連補免重複錨定 jump，round-trip 減
   }
 
   test("同方向第二次 demand → 只 enqueue 一個 page 命令（無 anchor 腿；現行兩腿 → 紅）", () => {
-    const { s, enqueued } = firstDemand();
+    const { enqueued } = firstDemand();
     // page 完成（游標落新頁頂 160）→ onDone 遞迴 _maybeDemand，鏈上直送
     enqueued[1].onDone({ moved: true, landed: 160 });
     expect(enqueued.length).toBe(3);
@@ -1084,7 +1084,7 @@ describe("鏈式 prefetch（同方向連補免重複錨定 jump，round-trip 減
   });
 
   test("鏈上 page 的 expect：越過上次落點=moved、等於=edge", () => {
-    const { s, enqueued } = firstDemand();
+    const { enqueued } = firstDemand();
     enqueued[1].onDone({ moved: true, landed: 160 });
     const chained = enqueued[2];
     expect(chained.expect(null, factsWithCursor(165))).toEqual(
@@ -1119,7 +1119,7 @@ describe("鏈式 prefetch（同方向連補免重複錨定 jump，round-trip 減
     // 前導改 flushPending 後，anchor 失敗當下 pending 可能已是使用者的 T2
     // 交易（page 命令早被前導清掉）——全量 flush 會無聲殺掉它、session 卡在
     // frozen。onFail 只准砍自己配對的 prefetch 命令。
-    const { s, enqueued, queue } = firstDemand();
+    const { enqueued, queue } = firstDemand();
     enqueued[0].onFail("timeout");
     expect(queue.flushed || 0).toBe(0);
     expect(queue.pendingKindFlushed).toBe("prefetch");

@@ -63,7 +63,7 @@ async function api(token, method, url, body) {
       "X-GitHub-Api-Version": "2022-11-28",
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
-    body: body ? JSON.stringify(body) : undefined,
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) throw new Error(`${method} ${url} → ${res.status} ${await res.text()}`);
   return res.json();

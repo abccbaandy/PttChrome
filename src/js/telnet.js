@@ -9,17 +9,8 @@ import { setUnicodeCells } from './unicode_cells';
 // 真鍵盤／IME 路徑的守門模式（見 sendUserKey）。模組層常數，省得每次送鍵配一個物件。
 const USER_KEY = { userKey: true };
 
-// Telnet commands
+// Telnet commands（只留用得到的；完整表見 RFC 854）
 const SE = '\xf0';
-const NOP = '\xf1';
-const DATA_MARK = '\xf2';
-const BREAK = '\xf3';
-const INTERRUPT_PROCESS = '\xf4';
-const ABORT_OUTPUT = '\xf5';
-const ARE_YOU_THERE = '\xf6';
-const ERASE_CHARACTER = '\xf7';
-const ERASE_LINE = '\xf8';
-const GO_AHEAD  = '\xf9';
 const SB = '\xfa';
 
 // Option commands
@@ -34,7 +25,6 @@ const ECHO  = '\x01';
 const SUPRESS_GO_AHEAD = '\x03';
 const TERM_TYPE = '\x18';
 const IS = '\x00';
-const SEND = '\x01';
 const NAWS = '\x1f';
 // RFC 860。防閒置／連線保持用：見 sendTimingMark。
 const TIMING_MARK = '\x06';

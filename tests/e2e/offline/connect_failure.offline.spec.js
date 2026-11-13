@@ -14,7 +14,6 @@
 //   → 對話框還在、app 卻以為沒有 modal → term_view 的 keyup / pttchrome 的
 //     mouseover/mouseup 永久把焦點搶回隱藏 input #t，只能重整。
 const { test, expect } = require('@playwright/test');
-const ptt = require('../helpers/ptt');
 const { installReplay, installOfflineNetwork, feedRaw, waitScreenSettled } = require('../helpers/replay');
 
 // window.__i18n 是 main.jsx 在 `new App()` **之後**才掛的 e2e 探針，而 page.goto

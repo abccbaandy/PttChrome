@@ -69,7 +69,6 @@ function makeSession() {
       scrollListTo() {},
     },
   };
-  let settleListener = null;
   const termBuf = {
     rows: 24,
     cols: 80,
@@ -89,9 +88,7 @@ function makeSession() {
       return this._rowTexts[r] || "";
     },
     isUnicolor: () => true,
-    addEventListener(name, fn) {
-      if (name === "screenSettled") settleListener = fn;
-    },
+    addEventListener() {},
     // 模擬 term_view 的看板列表分支：buffer 模式下同步累積＋錨的擷取／還原。
     notify() {
       if (!s || s._renderMode !== "buffer") return;

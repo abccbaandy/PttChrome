@@ -11,7 +11,6 @@ import { ringBell } from './bell';
 import { MOUSE_CURSOR_URLS } from './mouse_cursors';
 import {
   ACT_NONE,
-  ACT_EXIT_ARTICLE,
   CUR_BACK,
   isEdgeCursor,
   resolveMouseRegion,
@@ -466,7 +465,6 @@ TermBuf.prototype = {
     if (!str)
       return;
     var cols = this.cols;
-    var rows = this.rows;
     var lines = this.lines;
     var n = str.length;
     var line = lines[this.cur_y];
@@ -1356,7 +1354,6 @@ TermBuf.prototype = {
     } else colEnd = this.cols;
 
     text = text.slice(colStart, colEnd);
-    var charset = this.view.charset;
     let that = this;
     return text.map( function(c, col, line) {
       if (!c.isLeadByte) {
@@ -1566,7 +1563,6 @@ TermBuf.prototype = {
   },
 
   isLineEmpty: function(iLine){
-    var rows = this.rows;
     var lines = this.lines;
     var line = lines[iLine];
 

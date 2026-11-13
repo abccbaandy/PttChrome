@@ -39,6 +39,8 @@
 | SSH client（`@microsoft/dev-tunnels-ssh`、`ssh2` 等） | **不用函式庫，自寫最小 client**（`src/js/ssh/`）；`ssh2` 只當 devDependency 起測試用 server | 見下節「SSH client」 |
 | `@vitest/browser-playwright`、`playwright` | 新增（unit-browser project） | Vitest 官方的 Browser Mode provider；peer 是**精確**的 vitest 版本，`playwright` 必須與 `@playwright/test` 同版（Dependabot 以 group 綁一起升） |
 
+| oxlint（精確 pin） | 新增（2026-11，`yarn lint`，CI 在 test-unit job 裡跑） | 下節「lint」 |
+
 掃描結論：**無其他「過時陣營」殘留**。新增依賴時比照上表——先查是否已有內建／主流替代，無維護的小套件優先內聯。
 
 ### jsdom → happy-dom 評估（2026-10，happy-dom 20.14.5 vs jsdom 30.1.1，Vitest 5.0.2）
@@ -109,6 +111,26 @@
 server（ed25519／ecdsa／rsa host key、DH14 退回、host key 不符、流量窗口、rekey）。`ssh2` 是純 devDependency，
 不進 bundle；它的 `cpu-features` 原生建置被 Yarn 停用也不影響（純 JS 路徑）。
 WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋ECDSA（PTT 都有提供），不加 polyfill。
+
+### lint（2026-11，oxlint，架構 review A5 步驟 a）
+
+選 oxlint 不選 ESLint：跟建置鏈的 oxc 同一家、零設定就能跑 JSX，整個 repo（src／scripts／tests／tools／proxy）
+不到一秒；ESLint 要另外帶 parser 與 plugin 鏈，是舊陣營。設定 `.oxlintrc.json`：
+
+- **只開 correctness 類**（抓真錯的規則），`yarn lint` 帶 `--deny-warnings`，CI 紅就是有新的真錯。
+- 首次開啟時的分類：真錯修掉（兩份訊息檔 `options_fontSize` 寫了兩次、前一筆是死的；
+  `fetch` 的 GET 帶 `body: undefined`）；死碼刪掉（沒人讀的變數、import、函式約 40 處）。
+- **關掉的規則與理由**（誤報或風格，不是錯）：`no-control-regex`（終端機本來就在比控制字元）、
+  `no-irregular-whitespace`（中文註解與字串的全形空白）、`no-useless-escape`、`unicorn/no-new-array`、
+  `unicorn/no-useless-fallback-in-spread`、`unicorn/prefer-string-starts-ends-with`；react 的
+  `no-this-in-sfc`（把 prototype 舊式碼當成元件，六百多筆誤報）、`set-state-in-effect`／`immutability`／`refs`
+  （React Compiler 的寫法建議）、`react-hooks/exhaustive-deps`（幾處 deps 是刻意的，照建議改會改變行為）。
+  `no-unused-vars` 不管參數與 catch 的 `e`、`_` 開頭的變數。e2e 的 Playwright fixture 寫法（`({}, use)`）與
+  `page.evaluate` 內的 `eval` 在 `tests/e2e/**` 關掉。
+- 版本精確 pin，跟 Dependabot 冷卻期一起升。
+- 「重大技術升級」（關於頁）不列：加一個 lint 不是框架或建置鏈替換。
+
+下一步（A5 步驟 b）：`tsc --checkJs` 只套 `wire_send.js`、`screen_model.js` 與指定的純邏輯模組，不轉 TS。
 
 ## 主 bundle 拆檔
 

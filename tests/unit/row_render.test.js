@@ -40,27 +40,6 @@ function chars(str) {
   return str.split("").map(cell);
 }
 
-// A URL cell: start/end mark the URL boundary, getFullURL returns it on the start.
-function urlCell(c, { start = false, end = false, url = null } = {}) {
-  return {
-    ch: c,
-    isStartOfURL: () => start,
-    isEndOfURL: () => end,
-    getFullURL: () => url,
-    getColor: () => COLOR
-  };
-}
-
-// "PU wowbenny: <url>" — plain prefix cells then the url marked as a hyperlink.
-function urlChars(url) {
-  const cells = chars("PU wowbenny: ");
-  const u = url.split("");
-  u.forEach((c, i) =>
-    cells.push(urlCell(c, { start: i === 0, end: i === u.length - 1, url }))
-  );
-  return cells;
-}
-
 // 一列的外層節點就是 bbsrow span（<span type="bbsrow">）。
 const bbsrow = container => container.querySelector('span[type="bbsrow"]');
 

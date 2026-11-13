@@ -39,9 +39,15 @@ jobs:
           nproc
           lscpu | grep 'Model name' || true
 
+      - name: Install
+        run: yarn install --immutable
+
+      # oxlint 只開抓真錯的規則（.oxlintrc.json，docs/build-modernization.md「lint」）；整個 repo 幾秒跑完。
+      - name: Lint
+        run: yarn lint
+
       - name: Unit tests
         run: |
-          yarn install --immutable
           yarn test:unit
 
   test-integration:

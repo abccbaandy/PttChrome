@@ -132,7 +132,7 @@ describe("ListSession 非白名單鍵一鍵切原生（[ ] = 沒反應回歸，2
   });
 
   test("sync 腿失敗 → 仍切原生＋代送（降級路徑，不得無聲卡 frozen）", () => {
-    const { s, sent, enqueued } = makeSession();
+    const { s, enqueued } = makeSession();
     s._view.flashListHint = () => {};
     s.state = "active";
     s._selectedNum = 42;
@@ -318,7 +318,7 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生"
   });
 
   test("單按未列鍵完整流程：z → sync → 切原生＋代送＋提示（airlock 二連擊退役）", () => {
-    const { s, sent, enqueued } = makeSession();
+    const { s, enqueued } = makeSession();
     const hints = [];
     s._view.flashListHint = (m) => hints.push(m);
     s.state = "active";
@@ -470,7 +470,7 @@ describe("v5 互動封閉：keyClass 白名單枚舉＋未列鍵一鍵切原生"
   test("v / `/`（舊 T2 模擬已拔除）→ 同 passthrough：sync 完成後代送、切原生", () => {
     // 已讀設定/標題搜尋改由原生畫面接手（單按切原生），模擬 prompt/overlay 退役。
     for (const key of ["v", "/"]) {
-      const { s, sent, enqueued } = makeSession();
+      const { s, enqueued } = makeSession();
       s._view.flashListHint = () => {};
       s.state = "active";
       s._renderMode = "buffer";

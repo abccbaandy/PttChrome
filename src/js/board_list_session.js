@@ -1862,7 +1862,6 @@ BoardListSession.prototype = {
   _moveSelection: function(op, opts) {
     const len = this._sequenceLength();
     if (!len) return;
-    const B = this._bodyRows();
     const cursor = this._cursorPos();
     const top = this._navTopPos();
     let next;
