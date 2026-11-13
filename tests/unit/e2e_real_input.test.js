@@ -211,6 +211,30 @@ describe("unit 的手捏瀏覽器事件要指向真輸入 e2e", () => {
 });
 
 // 掃描器壞掉（regex 寫錯、strip 吃太多）時上面那幾條會一直綠 ⇒ 用違規字串自測。
+// touchDrag 的兩行「不起眼但拿掉就壞」：放手前的停頓（不甩）與等 scrollend。拿掉任一行，
+// 拖完立刻 tap 就會被瀏覽器拿去停甩動、不發 click（tests/e2e/README.md「真輸入」量到的事實），
+// 只在快機器上紅 ⇒ 用靜態掃描守。
+describe("touchDrag", () => {
+  const src = stripComments(
+    fs.readFileSync(path.join(E2E_DIR, "helpers", "real_input.js"), "utf8"),
+  );
+  const body = src.slice(src.indexOf("async function touchDrag"), src.indexOf("module.exports"));
+
+  test("放手前先停（超過 40ms 才不會甩動）", () => {
+    const end = body.indexOf("type: 'touchEnd'");
+    const pause = body.lastIndexOf("setTimeout(r, ", end);
+    expect(end).toBeGreaterThan(0);
+    expect(pause).toBeGreaterThan(body.lastIndexOf("type: 'touchMove'", end));
+    const ms = Number(body.slice(pause + "setTimeout(r, ".length).match(/^\d+/)[0]);
+    expect(ms).toBeGreaterThanOrEqual(60);
+  });
+
+  test("有捲動就等 scrollend 才回來", () => {
+    expect(body).toMatch(/addEventListener\('scrollend'/);
+    expect(body).toMatch(/waitForFunction/);
+  });
+});
+
 describe("掃描器自測", () => {
   test("e2e：各種手捏寫法都抓得到", () => {
     const kinds = (s) => scanE2E(s).map((h) => `${h.kind}:${h.event}`);

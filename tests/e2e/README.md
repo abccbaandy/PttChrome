@@ -348,6 +348,7 @@ unit 可以手捏來測分支邏輯，但檔案要有 `// real-input: tests/e2e/
 | IME 組字 | `imeSetComposition`＋`imeCommit`（CDP `Input.imeSetComposition`／`insertText`） |
 | 拖放檔案 | `dragFiles`（回 `{drop, cancel}`）／`dropFiles`：CDP `Input.dispatchDragEvent`，檔案寫進 test output 目錄，MIME 由副檔名決定 |
 | window blur | 見下表 |
+| 觸控拖曳捲動 | `touchDrag`（CDP `Input.dispatchTouchEvent`）：放手前停 100ms（不甩），有捲到就等 `scrollend` 才回來 |
 
 window 失焦（Playwright 1.62 實測，`isTrusted`／`document.hasFocus()`）：Playwright 預設開 focus emulation，
 一般的切頁／`bringToFront`／popup **都不會**發 blur。可用：
@@ -359,6 +360,10 @@ window 失焦（Playwright 1.62 實測，`isTrusted`／`document.hasFocus()`）�
 - app 的 wheel listener 是 window **capture** 且原生模式會 `stopPropagation` ⇒ 測試自己的 wheel listener 要掛 capture，掛在 `.main` 上的（如 debug recorder）只有好讀下收得到。
 - `page.mouse.wheel` 的捲動在 promise 回來**之後**才落地，之後程式設 `scrollTop` 不會中止它 ⇒ 要量「滾完的位置」先等 `scrollend`。
 - passive wheel listener 執行時合成器可能已經捲完（錄到的 `scrollTop` 已是新值）。
+- CDP 觸控拖曳若 touchMove 一送完就 touchEnd，放手速度離譜 ⇒ 甩動 8 秒以上不結束（撞到邊界時 `scrollTop` 早就不動，
+  `waitScrollStable` 照樣判穩定）。甩動中的 tap 被拿去停甩動，**只有 pointer／touch 事件、不發 click** ⇒ 點標題不捲、
+  點卡片不進板；機器慢時甩動恰好自然結束 ⇒ 本機紅、CI 綠。`touchDrag` 放手前停 100ms（Chromium VelocityTracker
+  超過 40ms 沒移動就當速度 0）＋等 `scrollend`。守護 `tests/unit/e2e_real_input.test.js`「touchDrag」。
 - CDP 拖放的 drop 是「先 dragover、再 drop」兩段 IPC，drop 派給 dragover 當下的命中元素。命中元素若在兩段之間
   被卸載（例如還在跑關閉動畫的 Mantine Modal），drop 會派給脫離文件的節點 ⇒ window 上的 listener 收不到、沒人
   preventDefault ⇒ 瀏覽器改開新分頁載入檔案，app 的遮罩卡住。⇒ **拖放前先等上一個對話框真的卸載**

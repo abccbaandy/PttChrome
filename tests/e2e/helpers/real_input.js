@@ -259,7 +259,32 @@ async function hoverFloatTools(page) {
 
 // 單指觸控拖曳（CDP Input.dispatchTouchEvent：瀏覽器自己產生 touchstart/move/end，
 // 含捲動與 overscroll 的原生處理）。steps 個 touchMove 等距走完 from → to。
-async function touchDrag(page, from, to, steps = 8) {
+//
+// **拖動有捲到任何東西 ⇒ 等到瀏覽器發 scrollend 才回來**（手勢＋放手後的甩動慣性都結束）。
+// 只看 scrollTop 不動不夠：拖到底撞邊界時 scrollTop 立刻停住，甩動卻還在跑；這時的 tap
+// 會被 Chromium 拿去「停住甩動」，**不產生 click**（實測：只有 pointerdown/up、touchstart/end，
+// scrollend 在 tap 之後才發）⇒ 點標題沒捲、點卡片沒進板。快機器（本機）必撞、慢機器（CI）
+// 甩動在下一步之前已自然結束 ⇒「本機紅、CI 綠」。
+// 沒捲到（下拉重整、拖把手被 preventDefault）就不等：那種拖動不會有 scrollend。
+async function touchDrag(page, from, to, steps = 8, { settleTimeout = 8000 } = {}) {
+  await page.evaluate(() => {
+    const st = { scrolled: false, ended: false };
+    const onScroll = () => {
+      st.scrolled = true;
+      st.ended = false;
+    };
+    const onEnd = () => {
+      st.ended = true;
+    };
+    // scroll／scrollend 在元素上不冒泡，但 document 的 capture 階段照樣收得到。
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    document.addEventListener('scrollend', onEnd, { capture: true });
+    st.off = () => {
+      document.removeEventListener('scroll', onScroll, { capture: true });
+      document.removeEventListener('scrollend', onEnd, { capture: true });
+    };
+    window.__touchDragScroll = st;
+  });
   const s = await cdp(page);
   const pt = (x, y) => [{ x, y }];
   await s.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(from.x, from.y) });
@@ -268,7 +293,32 @@ async function touchDrag(page, from, to, steps = 8) {
     const y = from.y + ((to.y - from.y) * i) / steps;
     await s.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x, y) });
   }
+  // 手指停住再放開（不甩）：Chromium 的 VelocityTracker 在「最後一次移動到放手」超過 40ms
+  // 時把放手速度當 0（kAssumePointerStoppedTime）⇒ 沒有甩動慣性。不停的話 CDP 的 touchMove
+  // 幾乎同一時刻送達，算出來的放手速度離譜，本機實測甩動 8 秒以上都不結束（沒有 scrollend），
+  // 期間任何 tap 都被拿去停甩動、不產生 click。
+  await new Promise((r) => setTimeout(r, 100));
   await s.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  try {
+    // scroll 事件跟著 rendering update 派發：先過兩幀，免得還沒收到就判成「沒捲」。
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await page.waitForFunction(
+      () => {
+        const st = window.__touchDragScroll;
+        return !st || !st.scrolled || st.ended;
+      },
+      null,
+      { timeout: settleTimeout }
+    );
+  } catch (e) {
+    throw new Error(`touchDrag：拖動捲了畫面，但 ${settleTimeout}ms 內沒等到 scrollend（甩動一直沒停）`);
+  } finally {
+    await page.evaluate(() => {
+      const st = window.__touchDragScroll;
+      if (st) st.off();
+      window.__touchDragScroll = null;
+    });
+  }
 }
 
 module.exports = {
