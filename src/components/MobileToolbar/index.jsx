@@ -59,15 +59,13 @@ import {
   toolbarSlots,
   mobileToolbarContext,
 } from "../../js/mobile_toolbar";
-import {
-  promptPanelFromBuf,
-  promptChoicesSig,
-} from "../../js/prompt_choices";
+import { promptPanelFromBuf, promptChoicesSig } from "../../js/prompt_choices";
 import {
   splitMoreGrid,
   stableMoreSplit,
   MORE_GRID_LABEL_KEYS,
 } from "./more_sheet_layout";
+import { screenOf } from "../../js/screen_model";
 import "./MobileToolbar.css";
 
 // 文章導覽按鈕的方向圖示（THREAD_NAV_GROUPS 的 dir）。
@@ -248,7 +246,8 @@ export const MobileToolbar = ({
       const now = promptPanelFromBuf(pttchrome.buf, readEffectivePrefs());
       if (!now || promptChoicesSig(now) !== choicesSig) return;
       if (it.action === "keyboard") {
-        if (!pttchrome.softKeyboard) setKeyboard(pttchrome.toggleSoftKeyboard());
+        if (!pttchrome.softKeyboard)
+          setKeyboard(pttchrome.toggleSoftKeyboard());
         return;
       }
       for (const ch of it.send) {
@@ -555,8 +554,7 @@ export const MobileToolbar = ({
           i18n("mobileToolbar_editorSave"),
           () => {
             const buf = pttchrome.buf;
-            if (!buf || !buf.isEditorTypingNow || !buf.isEditorTypingNow())
-              return;
+            if (!buf || !screenOf(buf).editorTyping) return;
             sendAction("editorSave");
           },
         );
@@ -569,9 +567,9 @@ export const MobileToolbar = ({
           i18n("mobileToolbar_mailCompose"),
           () => {
             const buf = pttchrome.buf;
-            if (!buf || !buf.isMailListScreen || !buf.isMailListScreen())
-              return;
-            if (buf.isPromptPending && buf.isPromptPending()) return;
+            if (!buf) return;
+            const screen = screenOf(buf);
+            if (!screen.mailList || screen.promptPending) return;
             sendAction("mailCompose");
           },
         );
