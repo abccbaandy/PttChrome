@@ -20,7 +20,6 @@ import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import { u2b } from "../../src/js/string_util";
 import {
-  rowToText,
   parseListArticleNum,
   parseListAuthor,
   parseListTitleRaw,

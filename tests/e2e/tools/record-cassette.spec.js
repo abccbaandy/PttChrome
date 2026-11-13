@@ -471,18 +471,3 @@ async function waitRecvQuiet(page, timeout = 15000) {
   console.log('[record] waitRecvQuiet 超时（继续 flush 当前累积）');
 }
 
-// 触发整页重画并录下 server 回送的 recv（list 模式用）。Ctrl-L = '\x0c'。
-async function captureRedraw(page) {
-  await page.evaluate(() => {
-    const app = window.__app;
-    window.__rl = [];
-    const orig = app.onData.bind(app);
-    app.onData = (d) => {
-      window.__rl.push(d);
-      return orig(d);
-    };
-    app.conn.send('\x0c'); // Ctrl-L 重画
-  });
-  await page.waitForTimeout(2000);
-  return await page.evaluate(() => btoa(window.__rl.join('')));
-}

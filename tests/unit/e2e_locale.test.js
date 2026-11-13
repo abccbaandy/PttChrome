@@ -27,8 +27,7 @@ function specFiles(dir, out = []) {
 function newContextCalls(src) {
   const calls = [];
   const re = /\bnewContext\s*\(/g;
-  let m;
-  while ((m = re.exec(src))) {
+  while (re.exec(src)) {
     let depth = 1;
     let i = re.lastIndex;
     for (; i < src.length && depth > 0; i++) {

@@ -2934,14 +2934,6 @@ App.prototype.mouse_down = function(e) {
     //this.setInputAreaFocus();
     if (!(window.getSelection().isCollapsed))
       this.CmdHandler.setAttribute('SkipMouseClick','1');
-
-    var onbbsarea = true;
-    if (e.target.className)
-      if (this.checkClass(e.target.className))
-        onbbsarea = false;
-    if (e.target.tagName)
-      if (e.target.tagName.indexOf("menuitem") >= 0 )
-        onbbsarea = false;
   } else if(e.button == 2) {
     this.mouseButtons.onMouseDown(e.button);
   }

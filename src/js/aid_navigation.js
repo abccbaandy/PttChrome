@@ -1397,7 +1397,7 @@ AidNavigation.prototype = {
       expect: function(snapshot, facts) {
         if (facts.kind === 'clean-list') return { onList: true };
         if (facts.kind === 'article') return { onList: false };
-        return !!parseStatusRow(facts.rowTexts[facts.rows - 1] || '')
+        return parseStatusRow(facts.rowTexts[facts.rows - 1] || '')
           ? { onList: false }
           : false;
       },

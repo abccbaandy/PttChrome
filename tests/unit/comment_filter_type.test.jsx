@@ -16,7 +16,7 @@ import { TermView } from "../../src/js/term_view";
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { mountScreen, unmountAll } from "./helpers/mount_screen";
 import { row, seg } from "./helpers/screen_fixtures";
-import { render, screen, act, cleanup } from "@testing-library/react";
+import { render, act, cleanup } from "@testing-library/react";
 import { CommentFilterBar } from "../../src/components/CommentFilterBar";
 
 beforeAll(() => setupI18n());

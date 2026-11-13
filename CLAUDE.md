@@ -34,6 +34,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
 - 偏好雲端同步：`src/js/pref_sync.js`（Google 登入 + Firestore `users/{uid}`，npm modular SDK 走 dynamic `import()` 拆 lazy chunk，未登入零下載；密碼絕不上雲）。儲存層 `src/js/pref_storage.js`。App Check（reCAPTCHA Enterprise）擋 script 直打 API 燒額度；dev 走 debug token（機器 env `APPCHECK_DEBUG_TOKEN`，**不入 repo**）。詳見 `docs/pref-sync-firestore.md`。
 
 ## 測試
+- **Lint**：`yarn lint`（oxlint，不到一秒，CI 會擋）。只開抓真錯的規則；關掉某條規則要在 `docs/build-modernization.md`「lint」寫理由。
 - **Unit（首選，穩定）**：`yarn test:unit`（Vitest，不連網；設定 `vitest.config.mjs`）＝兩個 project：
   `unit`（node env＋`threads` pool，純邏輯／解析／靜態掃描）與 `unit-browser`（**Vitest Browser Mode，真 headless
   Chromium**，DOM／渲染／React 週邊 UI）。需要 DOM 的檔案**第一行**寫 `// @unit-env browser`（純邏輯檔別寫）；

@@ -29,7 +29,6 @@ const {
 } = require('../helpers/real_input');
 
 const nav = loadCassette('cchat-list-nav');
-const prompt = loadCassette('cchat-list-prompt');
 const pinned = loadCassette('cchat-list-pinned');
 // 舊 server（全形 ● 游標，pttbbs b9a5029f 之前）錄的同一支腳本。主測試已改跑新
 // 素材，這卷專門守護「解析 server 畫面的 parser 對兩代游標都要認得」——只留一條
@@ -1205,7 +1204,7 @@ test.describe('文章列表好读模式（离线）', () => {
       await waitScreenSettled(page);
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('ArrowDown');
-      const beforeClick = await waitState(
+      await waitState(
         page,
         (x) => x.queueIdle && x.selectedNum !== openNum
       );
@@ -1509,7 +1508,7 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
         enableEasyReadingList: true,
         easyReadingListPrefetchCount: 0
       });
-      let s = await waitState(page, (x) => x.state === 'active' && x.queueIdle);
+      await waitState(page, (x) => x.state === 'active' && x.queueIdle);
 
       // 选取设为卷内 jump 目标：passthrough 的 native-sync-jump 序号必须与录制
       // jump step 一致，门控才会喂。
@@ -1526,7 +1525,7 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
       // 画面）→ 原生镜像显示 getdata prompt。
       await page.locator('#t').focus();
       await page.keyboard.press('v');
-      s = await waitState(
+      await waitState(
         page,
         (x) => x.state === 'functionMode' && x.renderMode === 'native',
         10000
@@ -1556,7 +1555,7 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
       // 自动把我们切回好读。这就是本次改动要的行为：使用者除了非导览操作本身，
       // 大部分时间都看不到原生模式。
       await page.keyboard.press('Enter');
-      s = await waitState(
+      await waitState(
         page,
         (x) => x.state === 'active' && x.renderMode === 'buffer',
         15000

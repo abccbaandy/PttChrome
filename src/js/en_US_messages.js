@@ -1877,9 +1877,6 @@ export const en_US = {
   "options_bbsMargin": {
     "message": "Margins around BBS view (px)"
   },
-  "options_fontSize": {
-    "message": "BBS font size"
-  },
   "options_termSize": {
     "message": "BBS terminal size"
   },

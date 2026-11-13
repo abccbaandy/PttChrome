@@ -4437,7 +4437,6 @@ ListSession.prototype = {
     const seq = this._sequence();
     if (!seq.length) return;
     const len = seq.length;
-    const B = this._bodyRows();
     const cursor = this._cursorPos(seq);
     const top = this._navTopPos(seq);
     let next;
@@ -4710,7 +4709,6 @@ ListSession.prototype = {
     const nums = this._termBuf.listLineNums || [];
     if (this._selectedNum != null) return nums.indexOf(this._selectedNum);
     if (this._selectedPinnedKey != null) {
-      const lines = this._termBuf.listLines || [];
       for (let i = 0; i < nums.length; ++i) {
         if (nums[i] == null && this._pinnedKeyAt(i) === this._selectedPinnedKey)
           return i;

@@ -18,8 +18,7 @@ import {
   decideAccumulateBranch,
   classifyPageTransition,
   annotateComment,
-  FloorCounter,
-  parseComment
+  FloorCounter
 } from "../../src/js/comment_parse";
 import { parseStatusRow } from "../../src/js/string_util";
 

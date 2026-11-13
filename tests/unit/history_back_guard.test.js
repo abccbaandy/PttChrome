@@ -395,7 +395,6 @@ describe("多階返回放行", () => {
     const nav = makeNavigation({ currentIndex: 5 });
     const t = setup({ navigation: nav });
     t.activate();
-    t.win.navigation.addEventListener; // noop，保持 API 形狀
     nav.traverseTo(1);
     // 上面設了 passThrough；再送一個非 traverse 不該把它清掉也不該再設一次
     t.back();

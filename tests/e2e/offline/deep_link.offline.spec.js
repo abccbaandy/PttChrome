@@ -5,7 +5,6 @@
 // 測不到的那一段——URL 真的被 boot 流程讀到、待跳目標真的被收下、網址真的被
 // 清乾淨（F5 不重跳），以及整條路徑不炸。
 const { test, expect } = require('@playwright/test');
-const ptt = require('../helpers/ptt');
 const { installReplay, installOfflineNetwork } = require('../helpers/replay');
 const { E2E_LOCALE } = require('../e2e_locale');
 

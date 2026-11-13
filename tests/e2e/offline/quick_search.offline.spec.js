@@ -6,7 +6,6 @@
 //
 // 不需 cassette：stub WebSocket 離線 boot 後直接餵畫面。
 const { test, expect } = require('@playwright/test');
-const ptt = require('../helpers/ptt');
 const { installReplay, waitConnected, feedRaw, waitScreenSettled } = require('../helpers/replay');
 const { waitRectStable } = require('../helpers/layout');
 const { rightClickSelectedText } = require('../helpers/real_input');
