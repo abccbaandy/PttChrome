@@ -45,7 +45,10 @@
 |---|---|
 | `comment_bar._inEasyArticle`（推文列） | `kind === ARTICLE`（文章、不是實況） |
 | `next_article._inEasyArticleEnd`（下一篇卡片） | `kind === ARTICLE` |
+| `article_tools._inEasyArticle`（文章工具側欄） | `kind` 是 `ARTICLE` 或 `LIVE`（只讀累積頁，實況照樣出現） |
+| `MobileToolbar` 編輯器「存檔」 | 按下當下讀 `editorTyping` 事實 |
+| `MobileToolbar` 信件列表「寫信」 | 按下當下讀 `mailList`、`promptPending` 事實 |
 
 ## 下一步（A3 步驟 b～d）
 
-b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片已搬）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。
+b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信已搬）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。

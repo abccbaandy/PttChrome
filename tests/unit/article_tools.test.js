@@ -181,6 +181,8 @@ function makeCore({ side = 600, mobile = false, easy = true, functionMode = fals
         return acc;
       },
       getRowText: (r, _c0, _c1, a) => a[r],
+      // 真 TermBuf 的判定；預設不是官方推文實況（要測實況的那條自己換掉）。
+      isLiveScreenNow: () => false,
       addEventListener: (name, fn) => (listeners[name] = fn),
     },
     view: {
@@ -229,6 +231,14 @@ afterEach(() => {
 });
 
 describe("ArticleTools：何時出現", () => {
+  // 側欄只讀累積頁、不送鍵：官方推文實況（文章裡按 v）照樣出現（推文列、下一篇卡片才排除實況）。
+  test("官方推文實況中 ⇒ 照樣出現", () => {
+    const { core, tools, settle } = makeCore();
+    core.buf.isLiveScreenNow = () => true;
+    settle();
+    expect(tools.state.visible).toBe(true);
+  });
+
   test("好讀文章、右邊放得下 ⇒ 出現，帶統計、排行、圖片、AID 網址", () => {
     const { tools, settle } = makeCore();
     settle();
