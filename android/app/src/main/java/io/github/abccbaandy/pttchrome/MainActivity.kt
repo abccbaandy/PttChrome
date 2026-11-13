@@ -63,6 +63,8 @@ class MainActivity : ComponentActivity() {
     private val credentials by lazy { CredentialBridge(this) }
     private val settings by lazy { AppSettings(this) }
     private val updater by lazy { AppUpdater(this) }
+    /** 行動數據／計費網路判定（bridge 'networkState'；變了就發 'pttandroid:network' 給網頁）。 */
+    private val networkWatch by lazy { NetworkWatch(this) { reportNetwork(it) } }
     /** 目前 WebView 載入的來源；注入規則跟著 WebView 建立時決定，換來源＝重建 WebView。 */
     private var pageSource = PageSource.PRODUCTION
     /** 注入給目前這個 WebView 的站台（協議在 App 設定改了，就要重建 WebView 重新注入）。 */
@@ -132,6 +134,7 @@ class MainActivity : ComponentActivity() {
         }
         root = FrameLayout(this)
         setContentView(root)
+        networkWatch.start()
         // 系統列、瀏海讓出來；**軟鍵盤刻意不讓**：鍵盤把 WebView 縮小＝layout resize ⇒ 網頁重算
         // 列數、重送 NAWS（docs/mobile.md「軟鍵盤蓋住底列」）。改成鍵盤疊在上面，高度用事件告訴網頁，
         // 網頁走跟手機 Chrome 同一條 keyboardInset 路徑（android_bridge.js 'pttandroid:ime'）。
@@ -232,6 +235,8 @@ class MainActivity : ComponentActivity() {
             .put("quitApp", true)
             // 認得 bridge 'setProtocol'：網頁據此才在連線失敗提示給「改用另一個協議」（docs/ssh.md「APK」）。
             .put("setProtocol", true)
+            // 認得 bridge 'networkState' 並會發 'pttandroid:network'：網頁據此才在行動網路時改成點了才開圖。
+            .put("networkState", true)
         restoringRenderer = false
         WebViewCompat.addDocumentStartJavaScript(
             wv, "window.__PTT_ANDROID__ = Object.freeze($config);", origins
@@ -269,6 +274,13 @@ class MainActivity : ComponentActivity() {
                     // 「登出並關閉 App」：網頁已走完 PTT 正常登出。跟通知的「中斷連線並關閉」同一條；
                     // 服務還沒綁上（不該發生）就只收掉畫面。不回覆：Activity 馬上結束。
                     service?.quit() ?: finishAndRemoveTask()
+                    return@addWebMessageListener
+                }
+                "networkState" -> {
+                    reply.postMessage(
+                        JSONObject().put("id", request.optInt("id")).put("ok", true)
+                            .put("metered", networkWatch.metered).toString()
+                    )
                     return@addWebMessageListener
                 }
                 "notify" -> {
@@ -528,6 +540,12 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun reportNetwork(metered: Boolean) {
+        webView?.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('pttandroid:network',{detail:{metered:$metered}}))", null,
+        )
+    }
+
     private fun openInExternalBrowser(url: Uri) {
         try { startActivity(Intent(Intent.ACTION_VIEW, url)) } catch (_: Exception) {}
     }
@@ -658,6 +676,7 @@ class MainActivity : ComponentActivity() {
     // 保活、畫面更新），暫停 JS 等於讓連線在網頁那端卡住。
 
     override fun onDestroy() {
+        networkWatch.stop()
         service?.onQuitRequested = null
         if (bound) unbindService(connection)
         if (isFinishing) stopService(Intent(this, ConnectionService::class.java))

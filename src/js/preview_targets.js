@@ -43,6 +43,15 @@ export function isPreviewTarget(el) {
 // （ContextMenu/index.jsx 開頭那個無條件的 preventDefault）。
 export const NATIVE_MENU_SELECTOR = 'img.easyReadingImg';
 
+// 自己處理長按／右鍵的元素（行動網路「開圖」按鈕：長按＝全篇開圖，
+// render/inline_preview_slot.js#ensureTapButton）。全域選單看到它就讓開
+// （context_menu_items.contextMenuDisposition 'own'）。
+export const OWN_CONTEXTMENU_SELECTOR = '[data-own-contextmenu]';
+
+export function isOwnContextMenuTarget(el) {
+  return !!(el && el.closest && el.closest(OWN_CONTEXTMENU_SELECTOR));
+}
+
 // e.target 是否落在內嵌預覽圖上（含其後代——<img> 沒有後代，但寫法保持一致）。
 export function isNativeMenuTarget(el) {
   return !!(el && el.closest && el.closest(NATIVE_MENU_SELECTOR));

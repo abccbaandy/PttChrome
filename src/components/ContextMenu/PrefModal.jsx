@@ -895,6 +895,16 @@ export const PrefModal = ({
                   {i18n("tooltip_imageFitScreen")}
                 </Text>
                 <PrefCheckbox
+                  name="tapToLoadImagesOnMobileData"
+                  checked={values.tapToLoadImagesOnMobileData}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_tapToLoadImagesOnMobileData")}
+                </PrefCheckbox>
+                <Text size="xs" c="dimmed" mb="xs">
+                  {i18n("tooltip_tapToLoadImagesOnMobileData")}
+                </Text>
+                <PrefCheckbox
                   name="enableNotifications"
                   checked={values.enableNotifications}
                   onChange={onCheckboxChange}

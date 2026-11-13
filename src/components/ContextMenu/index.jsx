@@ -78,7 +78,10 @@ import {
   copyPreviews,
   replyTargetId,
 } from "../../js/context_menu_items";
-import { isNativeMenuTarget } from "../../js/preview_targets";
+import {
+  isNativeMenuTarget,
+  isOwnContextMenuTarget,
+} from "../../js/preview_targets";
 import { pushMaxBytes } from "../../js/long_push";
 import { longPushAvailable } from "../../js/long_push_gate";
 import { clearDraft, writeDraft } from "../../js/long_push_draft";
@@ -335,7 +338,11 @@ export function readLaterTargetOf(
 function commentFilterTargetOf(pttchrome, prefs, normalEnabled, rowElement) {
   const view = pttchrome.view;
   if (!normalEnabled || !prefs.enableCommentFilter || !view) return null;
-  if (!view.useEasyReadingMode || !view.buf || view.buf.pageState !== PAGE_STATE.READING)
+  if (
+    !view.useEasyReadingMode ||
+    !view.buf ||
+    view.buf.pageState !== PAGE_STATE.READING
+  )
     return null;
   if (typeof view.activeCommentFilter !== "function") return null;
   if (view.activeCommentFilter()) return { active: true };
@@ -589,6 +596,7 @@ export const ContextMenu = ({ pttchrome }) => {
       const touch = isTouchContextMenu(event);
       const disposition = contextMenuDisposition({
         nativeTarget: isNativeMenuTarget(event.target),
+        ownTarget: isOwnContextMenuTarget(event.target),
         doDOMMouseScroll: CmdHandler.getAttribute("doDOMMouseScroll") === "1",
         // 不帶 touch：拖選取把手後補發的 contextmenu 沒有觸控標記（見該函式註解）。
         mobile: pttchrome.mobile,
@@ -602,6 +610,7 @@ export const ContextMenu = ({ pttchrome }) => {
         return;
       }
       if (disposition === "native") return; // 一個 preventDefault 都不准叫
+      if (disposition === "own") return; // 元素自己的 contextmenu listener 處理
       event.stopPropagation();
       event.preventDefault();
       pttchrome.contextMenuShown = true;
@@ -850,7 +859,8 @@ export const ContextMenu = ({ pttchrome }) => {
         // = READING，與 term_view 判「可切回好讀模式」用的是同一個值。看板精華區的
         // 文章按 Q 只會退回精華區選單（TermBuf.pagerContext）⇒ 不給。
         articleLinkEnabled:
-          pttchrome.buf.pageState === PAGE_STATE.READING && !pttchrome.buf.pagerFromEssence,
+          pttchrome.buf.pageState === PAGE_STATE.READING &&
+          !pttchrome.buf.pagerFromEssence,
         // 圖片上傳與兩個小幫手的選項各自跟著自己的開關走（同樣是現讀）。
         imageUploadEnabled: !!prefs.enableImageUpload,
         inputHelperEnabled: !!prefs.enableInputHelper,
@@ -1197,7 +1207,8 @@ export const ContextMenu = ({ pttchrome }) => {
         unreadJump: !!pttchrome.unreadJump?.available?.(),
         markAllRead: !!pttchrome.markAllRead?.available?.(),
         copyLink:
-          !!pttchrome.deepLinkController && pttchrome.buf?.pageState === PAGE_STATE.READING,
+          !!pttchrome.deepLinkController &&
+          pttchrome.buf?.pageState === PAGE_STATE.READING,
         back: !!pttchrome.aidNavigation?.canGoBack?.(),
         safeMode: !!prefs.nativeSafeMode,
         saveDebugRecord: !!pttchrome.canSaveBackgroundRecording?.(),
@@ -1475,7 +1486,10 @@ export const ContextMenu = ({ pttchrome }) => {
   const onInputHelperCmdSend = useCallback(
     (cmd) => {
       if (inputHelperBlocked(INPUT_HELPER_COLOR)) return;
-      if (!window.getSelection().isCollapsed && pttchrome.buf.pageState == PAGE_STATE.EDITOR) {
+      if (
+        !window.getSelection().isCollapsed &&
+        pttchrome.buf.pageState == PAGE_STATE.EDITOR
+      ) {
         // something selected
         var sel = pttchrome.view.getSelectionColRow();
         var y = pttchrome.buf.cur_y;
@@ -1535,9 +1549,18 @@ export const ContextMenu = ({ pttchrome }) => {
     },
     [pttchrome, update],
   );
-  const onLiveHelperStart = useCallback(() => runLiveAction(startLive), [runLiveAction]);
-  const onLiveHelperLeave = useCallback(() => runLiveAction(leaveLive), [runLiveAction]);
-  const onLiveHelperBell = useCallback(() => runLiveAction(toggleLiveBell), [runLiveAction]);
+  const onLiveHelperStart = useCallback(
+    () => runLiveAction(startLive),
+    [runLiveAction],
+  );
+  const onLiveHelperLeave = useCallback(
+    () => runLiveAction(leaveLive),
+    [runLiveAction],
+  );
+  const onLiveHelperBell = useCallback(
+    () => runLiveAction(toggleLiveBell),
+    [runLiveAction],
+  );
 
   // 錄製鈕在「⋯」浮動工具裡（純 JS 渲染鏈），由 App 的 debugMode 決定出不出現；
   // 關閉時若仍在錄製，App.setDebugMode 會先停止並下載（不丟資料）。

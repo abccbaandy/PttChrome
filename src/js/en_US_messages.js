@@ -774,6 +774,12 @@ export const en_US = {
   "imageGray_on": {
     "message": "Grayscale (for reverse image search)"
   },
+  "imageTapLoad": {
+    "message": "▶ Load image (long-press: all)"
+  },
+  "imageTapLoad_title": {
+    "message": "Saving mobile data: tap to load this image, long-press (right-click) to load every image in this article"
+  },
   "imageGray_off": {
     "message": "Restore colors"
   },
@@ -1171,6 +1177,12 @@ export const en_US = {
   },
   "options_imageFitScreen": {
     "message": "Load preview images at a size that fits the screen"
+  },
+  "options_tapToLoadImagesOnMobileData": {
+    "message": "Don't auto-load images on mobile data in the App"
+  },
+  "tooltip_tapToLoadImagesOnMobileData": {
+    "message": "When the Android App is on mobile data (or a metered network such as a hotspot), image links get a \"Load image\" button instead: tap to load that one, long-press to load the whole article. Images load automatically again on Wi-Fi."
   },
   "tooltip_imageFitScreen": {
     "message": "Images from X (Twitter) load at just the size your screen shows: they look the same but appear faster and use less data. The original is loaded when you click to enlarge or zoom in. Off = always load the original. Takes effect after reload."

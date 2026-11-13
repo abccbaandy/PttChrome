@@ -77,6 +77,7 @@ import {
   clearInlinePreviewGray,
   invalidateInlinePreviewHeights,
 } from "./inline_preview_slot";
+import { resetImageUnlocks } from "../js/image_load_gate";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import { ChunkLayer } from "./screen_chunk";
 import { imageSizeMode, stepImageZoom } from "../js/image_zoom";
@@ -387,6 +388,8 @@ export class ScreenController {
       // 單張圖的暫時性灰階同理走唯一入口（直接清 Set 會漏掉已經掛著、還帶著
       // data-gray 的節點 ⇒ 下一篇一開場就有幾張莫名其妙的灰圖）。
       this._resetImagesGray();
+      // 行動網路「點了才開圖」的解鎖（含長按全部開）是 per-article 的（js/image_load_gate.js）。
+      resetImageUnlocks();
       // 開燈的 CSS 態同樣走唯一入口（直接賦值會漏掉容器 class）。**軌 B 不會被
       // 這裡還原**：pmore 的 bpref 是 per-connection 全域，下一篇文章仍是純文字
       // 模式，所以按鈕會依 enhance.rawMode 直接顯示成「關燈」（刻意，見

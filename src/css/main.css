@@ -1672,7 +1672,8 @@ body.mobile-layout #recentResume {
 .inlinePreviewSlot .previewLoading,
 .inlinePreviewSlot .previewError,
 .inlinePreviewSlot > .previewGrayBtn,
-.inlinePreviewSlot > .previewZoomBar {
+.inlinePreviewSlot > .previewZoomBar,
+.inlinePreviewSlot > .previewTapLoad {
   pointer-events: auto;
 }
 .inlinePreviewSlot > .inlinePreviewContent,
@@ -1681,6 +1682,36 @@ body.mobile-layout #recentResume {
 }
 .inlinePreviewSpacer {
   pointer-events: none;
+}
+
+/* 行動網路「點了才開」的開圖按鈕（src/render/inline_preview_slot.js#ensureTapButton，
+   js/image_load_gate.js）。slot 的 grid item，與內容疊同一格；這時內容是空的、spacer 也
+   不撐高度 ⇒ slot 高度＝按鈕高度。外框高度與上下 margin 取整數像素，理由同 .previewLoading
+   （小數高度出現／消失會讓 scroll anchoring 補償出次像素跳動）。
+   觸控要好按：高度不低於 32px。-webkit-touch-callout 關掉 iOS 式的長按預覽（Android 長按
+   照樣發 contextmenu，由按鈕自己的 listener 接成「全篇開圖」）。 */
+.inlinePreviewSlot > .previewTapLoad {
+  grid-area: stack;
+  justify-self: center;
+  align-self: start;
+  box-sizing: border-box;
+  height: max(32px, round(1.8em, 1px));
+  margin: round(0.4em, 1px) 0;
+  padding: 0 1em;
+  font-size: 0.9em;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  color: #e9ecef;
+  background: rgba(33, 37, 41, 0.85);
+  border: 1px solid #868e96;
+  border-radius: 6px;
+  -webkit-touch-callout: none;
+}
+.inlinePreviewSlot > .previewTapLoad:hover,
+.inlinePreviewSlot > .previewTapLoad:focus-visible {
+  border-color: #ced4da;
+  color: #fff;
 }
 
 /* 單張圖的暫時性灰階切換鈕（src/render/inline_preview_slot.js#ensureGrayButton）。

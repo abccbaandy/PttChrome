@@ -59,8 +59,10 @@ export function scanE2E(src) {
   for (const m of code.matchAll(E2E_CTOR)) out.push({ kind: "ctor", event: m[2] });
   const dispatches = (code.match(/\.dispatchEvent\(/g) || []).length;
   // 每一次 dispatch 都要對得上一個看得出型別的建構子；多出來的（派發變數、
-  // 派發別處建好的事件）型別不明 ⇒ 一律算違規。
-  const ctorCount = out.length;
+  // 派發別處建好的事件）型別不明 ⇒ 一律算違規。派發 CustomEvent（我們自己的事件，
+  // 例如模擬 APK 原生發的 'pttandroid:*'）對得上建構子、但不算違規。
+  const customCount = (code.match(/new\s+(?:window\.)?CustomEvent\(/g) || []).length;
+  const ctorCount = out.length + customCount;
   for (let i = ctorCount; i < dispatches; ++i) out.push({ kind: "dispatch", event: "?" });
   for (const _ of code.matchAll(/\.onKeyDown\(/g)) out.push({ kind: "onKeyDown", event: "keydown" });
   return out;
@@ -231,6 +233,11 @@ describe("掃描器自測", () => {
     expect(scanE2E("// el.dispatchEvent(new MouseEvent('click'))\n")).toEqual([]);
     expect(scanE2E("/* el.dispatchEvent(new MouseEvent('click')) */\n")).toEqual([]);
     expect(scanE2E("new CustomEvent('x-ours')")).toEqual([]);
+    expect(scanE2E("window.dispatchEvent(new CustomEvent('pttandroid:x', { detail: {} }))")).toEqual([]);
+    // CustomEvent 只抵得了自己那一次派發，夾帶的型別不明派發照抓。
+    expect(
+      scanE2E("w.dispatchEvent(new CustomEvent('a')); w.dispatchEvent(ev);").map((h) => h.kind),
+    ).toEqual(["dispatch"]);
     expect(scanE2E("await page.mouse.click(1, 2, { button: 'right' });")).toEqual([]);
   });
 

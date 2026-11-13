@@ -126,8 +126,14 @@ export function copyPreviews(state, href) {
 // 選取模式時右鍵也走原生（使用者自己開的模式，可接受）。桌機不受影響
 // （applyMobileLayout 在非手機時強制 mobileSelectMode=false，這裡也再看一次 mobile）。
 // 見 docs/mobile.md「長按選單與選取模式」。
-export function contextMenuDisposition({ nativeTarget, doDOMMouseScroll, mobile, selectMode }) {
+//
+//   'own'     — 元素自己處理長按／右鍵（[data-own-contextmenu]，目前是行動網路的「開圖」
+//               按鈕：長按＝全篇開圖）。我們的選單不開、也不 preventDefault，交給元素自己的
+//               listener（它在 bubble 階段，這裡是 #BBSWindow capture，先到）。排在 swallow
+//               之後（旗標只在這裡被消費）、selectMode 之前（選取模式開著也要能全篇開圖）。
+export function contextMenuDisposition({ nativeTarget, ownTarget, doDOMMouseScroll, mobile, selectMode }) {
   if (doDOMMouseScroll) return "swallow";
+  if (ownTarget) return "own";
   if (nativeTarget || (!!mobile && !!selectMode)) return "native";
   return "menu";
 }

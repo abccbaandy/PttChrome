@@ -25,6 +25,7 @@ WebView  https://abccbaandy.github.io/PttChrome/
 | `.../WsProtocol.kt` | RFC 6455 握手／frame 純邏輯（JVM test 守護） |
 | `.../CredentialBridge.kt` | Credential Manager：get/create password、雲端同步 Google 登入（ID token）／登出 |
 | `.../UpdateCheck.kt`／`AppUpdater.kt` | App 內更新：查 GitHub Release、下載驗證、PackageInstaller 安裝（見「App 內更新」） |
+| `.../NetworkWatch.kt` | 預設網路是否行動數據／計費（見「行動網路點了才開圖」） |
 | `.../FileSave.kt` | bridge `saveFile` 的檔名清理（存檔流程本身在 `MainActivity`） |
 | `.../PageSource.kt` | 頁面來源（正式版／dev server）與 dev 網址白名單（JVM `PageSourceTest`） |
 | `.../AppSettings.kt`／`SettingsActivity.kt` | APK 自己的設定（SharedPreferences，不經 pref_sync）＋原生設定頁（含 ptt.cc 連結預設開啟狀態） |
@@ -50,6 +51,12 @@ WebView  https://abccbaandy.github.io/PttChrome/
 - 設定「連線 → BBS proxy」：不生效，改顯示說明（`options_androidProxyNote`）。
 - 連線失敗提示不做 Origin／proxy 診斷（`pttchrome.jsx` onClose：`isAndroidApp()` 時不給 `diagnose`）。
 - Web Notification（WebView 沒有）：水球通知改走 bridge `notify` → `MessageNotifier.kt`（獨立頻道「水球」，使用者可在系統設定單獨關）。WebView 切到背景不一定有 blur ⇒ 網頁在 APK 每則都送（`App.onData` 閘門），**前景與否由原生判斷**（`Lifecycle.State.STARTED`），回到前景（`onStart`）把跳過的收掉。仍受網頁「水球通知」開關控制。守護：`android_bridge.test.js`、`background_notification.test.js`、`waterball_notify_gate.test.js`、JVM `MessageNotifierTest`。真機 `unknown`。
+
+## 行動網路點了才開圖
+- 原生 `NetworkWatch.kt`：`registerDefaultNetworkCallback`（需 `ACCESS_NETWORK_STATE`），判準 `isMeteredNetwork`＝`TRANSPORT_CELLULAR || !NET_CAPABILITY_NOT_METERED`（手機熱點／計費 Wi-Fi／VPN 疊行動數據都算；JVM `NetworkWatchTest`）。onLost 不改值。
+- 網頁 `android_bridge.watchAndroidMeteredNetwork`：先綁 `pttandroid:network` 事件再問 `networkState`；事件比回覆新就以事件為準。舊 APK 沒宣告 `config.networkState` ⇒ 恆當非行動網路。
+- 閘門 `src/js/image_load_gate.js`（pref `tapToLoadImagesOnMobileData`，預設開）：成立時 `render/inline_preview_slot.js` 對 `ImagePreviewer.isPreviewableUrl` 為真的連結不掛載預覽（連 `requestPreview` 都不呼叫），放 `.previewTapLoad` 按鈕。點＝`unlockImage(href)`；長按＝contextmenu（不自己計時）＝`unlockAllImages`，其餘照一般延遲載入；ContextMenu 看到 `[data-own-contextmenu]` 回 `'own'` 讓開。解鎖以 href 存 module 級、掛載過的自動記下（重建／切網路不收回），換文章 `screen.js` 呼叫 `resetImageUnlocks`。閘門期間不套佔位高度與替身盒。
+- 守護：unit `image_tap_load.test.js`、`android_network_state.test.js`、`context_menu_disposition.test.js`；offline e2e `image_tap_load.offline.spec.js`（假 APK 殼＋真右鍵）。真機 `unknown`（真長按在 Android 發 contextmenu 為 Chromium 既有行為，見 `docs/mobile.md`）。
 
 ## 登出並關閉 App
 - 網頁登出確認（手機「更多」→ 登出，`components/LogoutConfirm`）的「登出並關閉 App」：先走完 PTT 正常登出

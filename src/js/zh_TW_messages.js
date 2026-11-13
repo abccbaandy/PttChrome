@@ -773,6 +773,12 @@
   "imageGray_on": {
     "message": "轉成灰階（便於以圖找圖）"
   },
+  "imageTapLoad": {
+    "message": "▶ 開圖（長按：全篇開圖）"
+  },
+  "imageTapLoad_title": {
+    "message": "行動網路省流量：點一下開這張圖，長按（右鍵）開這篇所有的圖"
+  },
   "imageGray_off": {
     "message": "還原色彩"
   },
@@ -1170,6 +1176,12 @@
   },
   "options_imageFitScreen": {
     "message": "預覽圖載入適合螢幕的尺寸"
+  },
+  "options_tapToLoadImagesOnMobileData": {
+    "message": "App 使用行動網路時不自動開圖"
+  },
+  "tooltip_tapToLoadImagesOnMobileData": {
+    "message": "Android App 連的是行動數據（或手機熱點等計費網路）時，圖片連結下改放「開圖」按鈕：點一下開那張，長按開整篇的圖。換回 Wi-Fi 就恢復自動開圖。"
   },
   "tooltip_imageFitScreen": {
     "message": "X（Twitter）的圖先載剛好夠螢幕顯示的尺寸，看起來一樣、出得更快也更省流量；點圖放大或調高倍率時才換原圖。關掉＝一律載原圖。重新整理後生效。"

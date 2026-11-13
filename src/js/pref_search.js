@@ -87,6 +87,11 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_imageFitScreen",
       tooltipKey: "tooltip_imageFitScreen",
     },
+    {
+      key: "tapToLoadImagesOnMobileData",
+      titleKey: "options_tapToLoadImagesOnMobileData",
+      tooltipKey: "tooltip_tapToLoadImagesOnMobileData",
+    },
     { key: "enableNotifications", titleKey: "options_enableNotifications" },
     { key: "deepLinkHandoffNotify", titleKey: "options_deepLinkHandoffNotify" },
     {

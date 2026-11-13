@@ -101,7 +101,8 @@ import { setListenerErrorPolicy, runIsolated, reportIsolatedError } from './even
 import { installPageErrorLog } from './page_error_log';
 import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_util';
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
-import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp, androidCanSetProtocol, androidSetProtocol } from './android_bridge';
+import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp, androidCanSetProtocol, androidSetProtocol, watchAndroidMeteredNetwork } from './android_bridge';
+import { setNetworkMetered, setTapToLoadEnabled } from './image_load_gate';
 import { bootSite } from './boot_site';
 import { shouldWarnBeforeUnload } from './unload_guard';
 import {
@@ -545,6 +546,8 @@ export const App = function() {
   }
   // Android APK：鍵盤高度由原生回報（見 android_bridge.js 'pttandroid:ime'）。
   if (isAndroidApp()) onAndroidIme(() => this._onVisualViewport());
+  // Android APK：行動數據／計費網路 ⇒ 好讀改成點了才開圖（js/image_load_gate.js）。
+  watchAndroidMeteredNetwork(setNetworkMetered);
   this.applyMobileLayout();
 };
 
@@ -2411,6 +2414,10 @@ App.prototype.onPrefChange = function(name, value) {
     case 'imageFitScreen':
       // 同 useImgurProxy：只改模組 config、不 redraw，對之後新解析的預覽生效。
       setImageFitEnabled(value);
+      break;
+    case 'tapToLoadImagesOnMobileData':
+      // 只改閘門狀態：存活中的佔位盒自己訂閱了變化（按鈕出現／消失），不 redraw。
+      setTapToLoadEnabled(value);
       break;
     case 'useImgurProxy':
       setImageProxyConfig({ enabled: value });

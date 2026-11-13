@@ -28,6 +28,10 @@
 //     連線失敗提示的「改用 SSH／改用 WebSocket」（docs/ssh.md「APK」）：原生把協議寫進 App 設定
 //    （不經 pref_sync），回傳新協議的本機 proxy 站台，網頁拿它立即重連。protocol：'websocket'｜'ssh'。
 //     只在 config.setProtocol 為 true（認得這個 op 的 APK 才宣告）時才給這個選項（androidCanSetProtocol）。
+//   → { id, op: 'networkState' }                        ← { id, ok, metered }
+//     目前預設網路是否為行動數據／計費網路（NetworkWatch.kt）。之後的變化由原生主動發
+//     'pttandroid:network' 事件。只在 config.networkState 為 true（認得這個 op 的 APK 才宣告）時才問。
+//     消費端 image_load_gate.js：行動網路時好讀改成「點了才開圖」。
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
 // googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
 //   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider
@@ -45,6 +49,7 @@
 //   'pttandroid:ime'  detail: { inset }  軟鍵盤蓋住 WebView 底部的高度（CSS px）。
 //   APK 刻意不讓鍵盤把 WebView 縮小（那是 layout resize ⇒ 改列數、重送 NAWS，
 //   docs/mobile.md「軟鍵盤蓋住底列」），所以 visualViewport 量不到鍵盤，改由原生告知。
+//   'pttandroid:network'  detail: { metered }  預設網路改變（行動數據／計費網路 ⇔ 其他）。
 //
 // 原生 → 網頁的同步呼叫（evaluateJavascript 取回傳值）：
 //   window.pttHostBack()  系統返回鍵且 WebView 不能 goBack（history sentinel 還沒疊）時呼叫；
@@ -211,6 +216,33 @@ export function onAndroidIme(fn) {
   };
   window.addEventListener(IME_EVENT, handler);
   return () => window.removeEventListener(IME_EVENT, handler);
+}
+
+// 這個 APK 認得 'networkState' 並會發 'pttandroid:network'（見檔頭）。舊 APK ⇒ 一律當不是行動網路。
+export function androidCanReportNetwork() {
+  const c = config();
+  return !!(c && c.networkState === true) && androidBridgeAvailable();
+}
+
+export const NETWORK_EVENT = 'pttandroid:network';
+
+// 訂閱「是否為行動數據／計費網路」：先綁事件再問一次現況（綁在前面，問的途中切換也不會漏）。
+// fn(metered: boolean)。回傳取消訂閱；這個環境回報不了就什麼都不做。
+export function watchAndroidMeteredNetwork(fn) {
+  if (!androidCanReportNetwork()) return () => {};
+  let changed = false;
+  const handler = e => {
+    changed = true;
+    fn(!!(e && e.detail && e.detail.metered));
+  };
+  window.addEventListener(NETWORK_EVENT, handler);
+  requestAndroid('networkState')
+    .then(r => {
+      // 回覆路上已經收到較新的事件 ⇒ 以事件為準。
+      if (!changed && r && r.ok) fn(!!r.metered);
+    })
+    .catch(() => null);
+  return () => window.removeEventListener(NETWORK_EVENT, handler);
 }
 
 export const _REQUEST_TIMEOUT_MS = REQUEST_TIMEOUT_MS;

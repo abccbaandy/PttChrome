@@ -40,6 +40,25 @@ describe("contextMenuDisposition", () => {
   });
 });
 
+// 自己處理長按的元素（[data-own-contextmenu]：行動網路的「開圖」按鈕，長按＝全篇開圖）。
+// #BBSWindow 的 capture handler 先到，若照舊開選單／preventDefault＋stopPropagation，按鈕
+// 自己的 listener 永遠收不到 ⇒ 長按變成跳出我們的選單。
+describe("元素自己處理（own）", () => {
+  test("按在開圖按鈕上 ⇒ own（不開選單）", () => {
+    expect(contextMenuDisposition({ ownTarget: true, doDOMMouseScroll: false })).toBe("own");
+  });
+
+  test("選取模式開著也一樣（否則手機開選取模式時長按全篇開圖失效）", () => {
+    expect(
+      contextMenuDisposition({ ownTarget: true, doDOMMouseScroll: false, mobile: true, selectMode: true }),
+    ).toBe("own");
+  });
+
+  test("右鍵滾輪旗標仍先判（旗標只在這裡被消費）", () => {
+    expect(contextMenuDisposition({ ownTarget: true, doDOMMouseScroll: true })).toBe("swallow");
+  });
+});
+
 // 手機按鍵列的「選取模式」（docs/mobile.md「選取模式」）。
 //
 // 判斷**只看模式、不看事件來源**：Android Chrome 拖完選取把手放手時會再補發一次

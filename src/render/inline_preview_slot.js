@@ -59,7 +59,17 @@
 //   pinned（分尺寸模式的實測高度）— 只在**版面寬度不變**時成立。字級／視窗 resize
 //     與圖文並排切換都會改寬度 ⇒ 由 invalidateInlinePreviewHeights() 清掉（見該函式）。
 import React from "react";
-import ImagePreviewer, { requestPreview } from "../components/ImagePreviewer";
+import ImagePreviewer, {
+  isPreviewableUrl,
+  requestPreview,
+} from "../components/ImagePreviewer";
+import {
+  needsTapToLoad,
+  onImageLoadGateChange,
+  rememberLoaded,
+  unlockAllImages,
+  unlockImage,
+} from "../js/image_load_gate";
 import { renderInto, unmountFrom } from "../js/react_root";
 import { i18n } from "../js/i18n";
 import { diag, diagActive } from "../js/diag";
@@ -281,7 +291,10 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   // 佔位高度**只寫 spacer**（兄弟節點）。寫 node/content 會抑制瀏覽器的捲動補償，
   // 見檔頭硬不變量。用 min-height 而非 height：spacer 裡還可能有替身盒，兩者取大。
   function applyFloorHeight() {
-    const floor = slotFloorHeight(state.pinned, state.sizeMode);
+    // 「點了才開」期間只有一顆按鈕，不撐出圖片的佔位高度（否則一整片空白中間一顆鈕）。
+    const floor = tapGated()
+      ? 0
+      : slotFloorHeight(state.pinned, state.sizeMode);
     // slotFloorHeight 回的是數字；補 px。
     if (floor) spacer.style.minHeight = `${floor}px`;
     else spacer.style.removeProperty("min-height");
@@ -309,7 +322,9 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     // 「非媒體連結」與「從沒載成功過的圖」不會因此留下假空白。
     // 沒掛載時不必查 DOM：內容層必然是空的（unmountFrom 同步清掉 React 的節點）。
     const want =
-      state.aspect && (!state.mounted || !hasLoadedMedia(content))
+      state.aspect &&
+      !tapGated() &&
+      (!state.mounted || !hasLoadedMedia(content))
         ? state.aspect
         : null;
     if (!want) {
@@ -475,6 +490,76 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     zoomBar = null;
   }
 
+  // ------------------------------------------------------------ 點了才開（行動網路）
+  // js/image_load_gate.js 成立時，可預覽的連結不掛載預覽、改放一顆「開圖」按鈕：
+  // 點一下＝只開這張；長按（觸控的 contextmenu，桌機右鍵同一個事件）＝本篇全部恢復自動開。
+  // 長按接的是瀏覽器自己發的 contextmenu，不自己計時（原生行為不模擬）；全域右鍵選單
+  // 看到 [data-own-contextmenu] 就讓開（context_menu_items.contextMenuDisposition 'own'）。
+  // 按鈕是 slot 的 grid item（與灰階鈕同一套），不放進 content：content 是 React root 的容器。
+  const previewable = isPreviewableUrl(href);
+  let tapButton = null;
+  let lastGated = null;
+
+  // 已經掛載過（正在顯示）的不收回成按鈕：網路中途切到行動數據時，眼前的圖不該消失。
+  function tapGated() {
+    return !state.mounted && needsTapToLoad(href, previewable);
+  }
+
+  function ensureTapButton() {
+    if (tapButton) return;
+    tapButton = el(
+      "button",
+      {
+        class: "previewTapLoad",
+        type: "button",
+        title: i18n("imageTapLoad_title"),
+        "data-own-contextmenu": "1",
+      },
+      i18n("imageTapLoad"),
+    );
+    // 不搶終端機焦點（隱藏 input #t），同倍率列。
+    tapButton.addEventListener("mousedown", (e) => e.preventDefault());
+    tapButton.addEventListener("click", (e) => {
+      // 不冒到容器的「點圖放大」委派、也不走終端機的滑鼠路徑（同灰階鈕）。
+      e.stopPropagation();
+      e.preventDefault();
+      unlockImage(href);
+    });
+    tapButton.addEventListener("contextmenu", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      unlockAllImages();
+    });
+    node.appendChild(tapButton);
+  }
+
+  function removeTapButton() {
+    if (!tapButton) return;
+    tapButton.remove();
+    tapButton = null;
+  }
+
+  // 閘門狀態的唯一同步點（建立當下、網路切換、解鎖、換文章、pref 都走這裡）。
+  function syncTapGate() {
+    if (state.destroyed) return;
+    const gated = tapGated();
+    if (gated === lastGated) return;
+    lastGated = gated;
+    if (gated) {
+      ensureTapButton();
+      applyFloorHeight();
+      syncGhost();
+      return;
+    }
+    removeTapButton();
+    applyFloorHeight();
+    syncGhost();
+    // 解鎖了：照一般流程決定要不要掛（在視野附近才掛）。不支援 IntersectionObserver 的
+    // 環境本來就是立即掛載。
+    if (!supported) mount();
+    else decide();
+  }
+
   // 錄製期間的佔位盒軌跡（tag preview.slot，見 js/diag.js）。高度類問題（捲動時
   // 版面跳動）要看的是「哪一張、在哪個模式、內容／佔位／替身盒各多高」。會觸發
   // layout 的量測只在錄製時做。
@@ -498,7 +583,12 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
 
   function mount() {
     if (state.mounted || state.destroyed) return;
+    if (tapGated()) return; // 行動網路：等使用者點（syncTapGate 會再叫回來）
     state.mounted = true;
+    // 載過的記下來：整份重建、或之後才切到行動網路，都不把看過的圖收回成按鈕。
+    rememberLoaded(href);
+    removeTapButton();
+    lastGated = false;
     renderInto(
       content,
       React.createElement(ImagePreviewer, {
@@ -523,6 +613,8 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     syncGhost();
     applyFloorHeight();
     logSlot("unmount");
+    // 換文章清了解鎖之後才捲遠的舊 slot：閘門此刻可能成立，按鈕要跟著出來。
+    syncTapGate();
   }
 
   // 這次用的 observer 組（destroy 要 unobserve 的對象）：module 級的組合可能已經被換掉
@@ -564,6 +656,8 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
       far: facts.far || chunkFar,
     });
     if (action === "mount") {
+      // 行動網路「點了才開」：facts.mounted 維持 false，解鎖後 decide() 會再來一次。
+      if (tapGated()) return;
       facts.mounted = true;
       mount();
     } else if (action === "unmount") {
@@ -640,6 +734,9 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   // 的事，等它的話重建（AI 校正逐筆回填、字級…）會讓灰圖閃一下原彩。按鈕本身
   // 不在這裡建（要等量得到圖寬），只有屬性。
   syncGray();
+  // 「點了才開」的按鈕同樣第一幀就要在（等 observer 回報會先畫出一幀什麼都沒有）。
+  syncTapGate();
+  const unsubscribeGate = onImageLoadGateChange(syncTapGate);
 
   if (supported) {
     observe(observersFor(scrollRoot()));
@@ -708,6 +805,8 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
         t2();
         sizeTeardown.delete(node);
       }
+      unsubscribeGate();
+      removeTapButton();
       removeGrayButton();
       removeZoomBar();
       if (state.mounted) {

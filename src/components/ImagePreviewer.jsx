@@ -59,6 +59,11 @@ export const requestPreview = (href) => {
 export const resolveSrcToImageUrl = ({ src }) =>
   imageUrlResolvers.find((r) => r.test(src)).request(src);
 
+// 同步判斷「這個連結會不會開出預覽」（有 resolver 接手，不是落到最後的 Default）。
+// 不發任何請求；行動網路「點了才開圖」用它決定哪些連結要給按鈕（image_load_gate.js）。
+export const isPreviewableUrl = (href) =>
+  !!href && !imageUrlResolvers.find((r) => r.test(href)).isDefault;
+
 // Hover preview only deals with still images: measure height for positioning.
 // Non-image descriptors (video/iframe/album) pass through unchanged — OnHover
 // renders nothing for them.
@@ -203,7 +208,8 @@ const useFullResUpgrade = (fullCandidates, ready) => {
     isFullResWanted,
   );
   const [full, setFull] = React.useState({ src: null, gaveUp: false });
-  const active = !!fullCandidates && ready && wantFull && !full.src && !full.gaveUp;
+  const active =
+    !!fullCandidates && ready && wantFull && !full.src && !full.gaveUp;
   React.useEffect(() => {
     if (!active) return undefined;
     let cancelled = false;
@@ -230,7 +236,10 @@ const useFullResUpgrade = (fullCandidates, ready) => {
       if (probe) probe.onload = probe.onerror = null;
     };
   }, [active, fullCandidates]);
-  const drop = React.useCallback(() => setFull({ src: null, gaveUp: true }), []);
+  const drop = React.useCallback(
+    () => setFull({ src: null, gaveUp: true }),
+    [],
+  );
   return [full.src, drop];
 };
 
@@ -843,6 +852,7 @@ const imageUrlResolvers = [
   },
   {
     /* Default: not previewable */
+    isDefault: true,
     test() {
       return true;
     },
