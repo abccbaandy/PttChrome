@@ -1555,7 +1555,7 @@ test.describe('passthrough 一键切原生（离线，search/mark 卷）', () =>
       // 自动把我们切回好读。这就是本次改动要的行为：使用者除了非导览操作本身，
       // 大部分时间都看不到原生模式。
       await page.keyboard.press('Enter');
-      s = await waitState(
+      await waitState(
         page,
         (x) => x.state === 'active' && x.renderMode === 'buffer',
         15000
