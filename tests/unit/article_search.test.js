@@ -18,8 +18,12 @@ import {
   SEARCH_INFLIGHT_MAX_MS,
   shouldInterceptSearchKey,
   submitSearch,
+  submitBlockedHint,
+  submitSerializedSteps,
   tryOpenSearchModal,
 } from "../../src/js/article_search";
+import { acquireWire, releaseWire } from "../../src/js/wire_lease";
+import { UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT } from "../../src/js/unread_jump";
 import { CommandQueue } from "../../src/js/command_queue";
 import { BoardListSession } from "../../src/js/board_list_session";
 import { SLOW_STEP_BUDGET } from "../../src/js/aid_navigation";
@@ -375,6 +379,50 @@ describe("searchInFlight（序列化操作閘門）", () => {
       activeListSession: () => ({ state: "opening", _beginPassthroughBytes: vi.fn() }),
     };
     submitSearch(core, "title", "abc");
+    expect(core.searchInFlight).toBeFalsy();
+  });
+});
+
+// 點看板分頁（board_tabs）、首頁卡片開看板（home_dashboard.openBoard）、搜尋彈窗送出前都不先問
+// serialized_op_gate。以前別的序列（跳到第一篇未讀：End → PgUp… → 跳號⏎）正在跑時，搜尋的
+// s<板>⏎ 會插進它的步驟之間（CommandQueue 只排隊，序列是邊走邊長的）⇒ 換到別板之後，未讀
+// 那條接著在新板上翻頁、送「<編號>⏎」，等於替使用者在別的板開了一篇文。多步序列的唯一送出口
+// 在這裡把關：別人拿著線路就一個 byte 都不送，呼叫端照舊用 submitBlockedHint 告訴使用者。
+describe("別的序列在線上：多步序列一個 byte 都不送", () => {
+  function nativeCore() {
+    const sent = [];
+    const queue = new CommandQueue({
+      send: (d) => sent.push(d),
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+    });
+    return { core: { commandQueue: queue, activeListSession: () => null }, queue, sent };
+  }
+
+  test("跳到第一篇未讀在途 ⇒ 看板分頁的 s<板>⏎ 不送、提示給未讀那條；它收尾後照送", () => {
+    const { core, sent } = nativeCore();
+    acquireWire(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT, 0);
+    expect(submitSearch(core, "board", "Stock")).toBe(false);
+    expect(sent).toEqual([]);
+    expect(submitBlockedHint(core)).toBe(UNREAD_JUMP_HINT);
+    releaseWire(core, UNREAD_JUMP_FLAG);
+    expect(submitSearch(core, "board", "Stock")).toBe(true);
+    expect(sent.length).toBe(1);
+  });
+
+  test("AID 跳文、長推文在途 ⇒ 同樣不送", () => {
+    for (const busy of [{ aidNavigation: { active: true } }, { longPush: { active: true } }]) {
+      const { core, sent } = nativeCore();
+      Object.assign(core, busy);
+      expect(submitSerializedSteps(core, [{ keys: "s", kind: "x" }], { kind: "x" })).toBe(false);
+      expect(sent).toEqual([]);
+    }
+  });
+
+  test("沒送出 ⇒ 不拿線路（不然對方收尾後還會被自己擋住）", () => {
+    const { core } = nativeCore();
+    acquireWire(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT, 0);
+    submitSearch(core, "board", "Stock");
     expect(core.searchInFlight).toBeFalsy();
   });
 });

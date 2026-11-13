@@ -275,6 +275,8 @@ export function submitSearch(core, kind, text, cb) {
   });
   if (!built || !core) return false;
   if (promptPendingNow(core)) return false;
+  // 別的序列在線上：submitSerializedSteps 也會擋，這裡先擋是為了不留下沒收尾的閱讀紀錄書籤。
+  if (serializedOpHint(core)) return false;
   bm = recordFor(core).begin(kind === 'board' ? 'board-search' : 'article-search');
   // 列表好讀接管中：凍結交易、結果列表一落地就回好讀（最後一步從 prompt 送出，
   // 見 list_session._beginLandingTransaction）。認不出（找不到的 vmsg、進板畫面）
@@ -302,6 +304,10 @@ export function submitSerializedSteps(core, built, opts) {
   if (!built || !built.length || !core) return false;
   // 第一步就會送鍵：prompt 開著時一個 byte 都不送（見 promptPendingNow）。
   if (promptPendingNow(core)) return false;
+  // 別的序列在線上（AID 跳文、長推文、跳到第一篇未讀…）：一個 byte 都不送。序列是邊走邊長的、
+  // CommandQueue 只排隊 ⇒ 插進它的步驟之間會讓它在別的畫面上繼續送鍵（點看板分頁換板後，未讀
+  // 那條在新板送「<編號>⏎」開了一篇文）。呼叫端用 submitBlockedHint 告訴使用者在等誰。
+  if (serializedOpHint(core)) return false;
   const o = opts || {};
   const flag = o.flag || 'searchInFlight';
   const hint = o.hint;

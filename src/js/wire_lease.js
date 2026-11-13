@@ -13,9 +13,8 @@
 // （search_status、e2e 的 `__app.searchInFlight === false`）。**寫它只准經這裡**，
 // 守護 tests/unit/wire_lease.test.js（靜態掃 src）。
 //
-// 多人同時拿著 ⇒ 提示給最早拿的那個（搬家前是固定優先序，搜尋最前）。會發生：點看板分頁
-// （board_tabs）、首頁開看板、搜尋彈窗送搜尋前不先問閘門，別的序列在線上時兩個會並存。
-// 鍵照樣被擋，差別只在提示字。
+// 多人同時拿著 ⇒ 提示給最早拿的那個（搬家前是固定優先序，搜尋最前）。多步序列的送出口
+// （article_search.submitSerializedSteps）在別人拿著時不送，正常不會並存；保底照順序給。
 
 /** 沒給提示字時的保底（不准無聲吞鍵）。 */
 export const LEASE_FALLBACK_HINT = '指令處理中，請稍候…';
