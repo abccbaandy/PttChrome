@@ -2,6 +2,8 @@
 //
 // 承重點：`v` 沒進 getdata prompt 時第二步絕不可送（同「前已讀後未讀」，
 // tests/unit/list_mark_read.test.js）；prompt 畫在 row 22 不是底列 ⇒ 判定要掃整個畫面。
+import { acquireWire } from "../../src/js/wire_lease";
+import { UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT } from "../../src/js/unread_jump";
 import { MarkAllRead, markReadPromptShown } from "../../src/js/mark_all_read";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { HINT_ERROR } from "../../src/js/status_hint";
@@ -157,7 +159,7 @@ describe("不適用／忙碌時不送鍵但不靜默", () => {
 
   test("別的序列化操作在途 → 提示、不送", () => {
     const { core, enqueued, hints } = makeCore();
-    core.unreadJumpInFlight = true;
+    acquireWire(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT, 0);
     expect(new MarkAllRead(core).start()).toBe(false);
     expect(enqueued).toEqual([]);
     expect(hints.at(-1).m).toBe("正在找第一篇未讀，請稍候…");

@@ -1,5 +1,7 @@
 // 跳到第一篇未讀（src/js/unread_jump.js、docs/unread-jump.md）：已讀標記怎麼讀、
 // 「第一篇」怎麼從新往舊判斷、End → PgUp… → 跳號的送鍵序列、收手條件。
+import { acquireWire } from "../../src/js/wire_lease";
+import { REFRESH_FLAG, REFRESH_HINT } from "../../src/js/screen_refresh";
 import {
   listRowMark,
   pageUnreadEntries,
@@ -281,7 +283,7 @@ describe("UnreadJump.start：End → PgUp… → 跳號", () => {
 
   test("線路忙碌（別的序列化操作在途）⇒ 不送鍵、給該操作的提示", () => {
     const { core, enqueued, hints } = makeCore();
-    core.refreshInFlight = true;
+    acquireWire(core, REFRESH_FLAG, REFRESH_HINT, 0);
     new UnreadJump(core).start();
     expect(enqueued).toEqual([]);
     expect(hints.at(-1).m).toBe("重新整理中，請稍候…");

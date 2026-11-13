@@ -19,6 +19,7 @@ import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { SLOW_STEP_BUDGET } from './aid_navigation';
 import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
+import { acquireWire, releaseWire } from './wire_lease';
 export { PROMPT_PENDING_HINT, promptPendingNow };
 
 // 種類 → PTT 端的按鍵。`?` 與 `/` 是同一個指令（read.c:1430-1431），送出一律用 `/`。
@@ -205,29 +206,26 @@ export function buildSearchSteps(kind, text, cb) {
   ];
 }
 
-// 兩步在途的旗標（core.searchInFlight），由 serialized_op_gate 讀：期間使用者的鍵一律
+// 兩步在途時拿著線路使用權（wire_lease，owner 'searchInFlight'），由 serialized_op_gate 讀：期間使用者的鍵一律
 // 吞掉＋提示。少了它，「搜尋鍵已上線、prompt 還沒畫出來」那一刻按的 Enter 會先到
 // server，把空 prompt 送出（＝取消），關鍵字接著落到列表上變成指令（live 錄製檔
 // live-2026-10-07T12-51-14：`/\f` → End → `\r` → 關鍵字永遠沒送）。
 // 解除點：第二步完成／任一步失敗／被 flush；保底計時器防任何一條漏掉造成永久吞鍵。
 export const SEARCH_INFLIGHT_MAX_MS = 15000;
 
-// flag：旗標欄位名，預設 'searchInFlight'。畫面重新整理（screen_refresh.js）走同一條
-// 送出路徑、但用自己的 'refreshInFlight'（serialized_op_gate 才給得出對的提示字）。
-export function beginInFlight(core, flag) {
+export const SEARCH_HINT = '搜尋中，請稍候…';
+
+// 向線路取得使用權（wire_lease）。flag ＝使用權的 owner（也是 core 上的鏡像欄位名），
+// 預設 'searchInFlight'；別的功能（screen_refresh 的 'refreshInFlight'、unread_jump…）
+// 走同一條送出路徑、但用自己的 owner 與提示字。**帶 flag 就要帶 hint**（被擋下時
+// 使用者看到的字；守護 tests/unit/wire_lease.test.js）。
+export function beginInFlight(core, flag, hint) {
   const f = flag || 'searchInFlight';
-  core[f] = true;
-  clearTimeout(core['_' + f + 'Timer']);
-  core['_' + f + 'Timer'] = setTimeout(function() {
-    endInFlight(core, f);
-  }, SEARCH_INFLIGHT_MAX_MS);
+  acquireWire(core, f, hint || (f === 'searchInFlight' ? SEARCH_HINT : ''), SEARCH_INFLIGHT_MAX_MS);
 }
 
 export function endInFlight(core, flag) {
-  const f = flag || 'searchInFlight';
-  core[f] = false;
-  clearTimeout(core['_' + f + 'Timer']);
-  core['_' + f + 'Timer'] = null;
+  releaseWire(core, flag || 'searchInFlight');
 }
 
 // 把旗標的解除接進每一步的終局 callback（保留呼叫端原本的 callback）。
@@ -296,8 +294,8 @@ export function submitBlockedHint(core, fallback) {
   return serializedOpHint(core) || fallback || '指令處理中，請稍候再試';
 }
 // submitSearch 的送出半段：多步序列（每步 {keys, kind, expect, onDone, onFail}）交給
-// 「現在誰在畫列表」。opts.kind ＝ passthrough 的診斷名稱，opts.flag ＝在途旗標欄位名
-// （預設 'searchInFlight'），opts.resumeOnLanding ＝列表好讀時走凍結交易、落地即回好讀
+// 「現在誰在畫列表」。opts.kind ＝ passthrough 的診斷名稱，opts.flag／opts.hint ＝線路使用權的
+// owner 與提示字（預設 'searchInFlight'／搜尋中，見 beginInFlight），opts.resumeOnLanding ＝列表好讀時走凍結交易、落地即回好讀
 // （list_session._beginLandingTransaction 寫了誰能用）。回 false ＝沒送（線路被別的交易
 // 佔住／沒有佇列）。
 export function submitSerializedSteps(core, built, opts) {
@@ -306,6 +304,7 @@ export function submitSerializedSteps(core, built, opts) {
   if (promptPendingNow(core)) return false;
   const o = opts || {};
   const flag = o.flag || 'searchInFlight';
+  const hint = o.hint;
   const steps = trackInFlight(core, built, flag);
   const owner = typeof core.activeListSession === 'function' ? core.activeListSession() : null;
   if (owner && typeof owner._beginPassthroughBytes === 'function') {
@@ -313,7 +312,7 @@ export function submitSerializedSteps(core, built, opts) {
     // 的守門。呼叫端負責提示，不可無聲吞掉。
     if (owner.state === 'opening' || (owner.state === 'functionMode' && owner._renderMode === 'frozen'))
       return false;
-    beginInFlight(core, flag);
+    beginInFlight(core, flag, hint);
     owner._beginPassthroughBytes(steps, {
       kind: o.kind || 'search',
       hint: null,
@@ -323,7 +322,7 @@ export function submitSerializedSteps(core, built, opts) {
   }
   const queue = core.commandQueue;
   if (!queue) return false;
-  beginInFlight(core, flag);
+  beginInFlight(core, flag, hint);
   // 原生鏡像：文章好讀不會在列表上，這裡不必切 functionMode。
   const enqueue = function(i) {
     const step = steps[i];

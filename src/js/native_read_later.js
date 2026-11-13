@@ -24,6 +24,7 @@ import { recordFor } from './reading_record';
 import { serializedOpHint } from './serialized_op_gate';
 
 export const NATIVE_READ_LATER_FLAG = 'nativeReadLaterInFlight';
+export const NATIVE_READ_LATER_HINT = '讀取文章代碼中，請稍候…';
 
 // 純判定：這一列能不能在原生列表上「稍後再讀」。
 //   in: { rowText, row, cursorRow, rows, filter: { blacklist, titleKeywords } }
@@ -126,7 +127,7 @@ export function readLaterNative(core, target, onAnswer, onFail) {
       }
     }
   );
-  if (!submitSerializedSteps(core, steps, { kind: 'read-later', flag: NATIVE_READ_LATER_FLAG })) {
+  if (!submitSerializedSteps(core, steps, { kind: 'read-later', flag: NATIVE_READ_LATER_FLAG, hint: NATIVE_READ_LATER_HINT })) {
     end('cancel');
     return false;
   }

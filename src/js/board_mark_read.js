@@ -21,7 +21,7 @@ import {
 import { submitSerializedSteps, submitBlockedHint } from './article_search';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
-import { MARK_ALL_READ_FLAG } from './mark_all_read';
+import { MARK_ALL_READ_FLAG, MARK_ALL_READ_HINT } from './mark_all_read';
 
 // 原生畫面上某一列（buf row）的目標。newflag（編號欄印的是文章總數）時跳號會失真 ⇒ 不給。
 export function boardMarkReadTargetFromFacts(facts, row) {
@@ -118,7 +118,7 @@ BoardMarkRead.prototype = {
         }
       }
     ];
-    if (!submitSerializedSteps(core, steps, { kind: 'board-mark-read', flag: MARK_ALL_READ_FLAG })) {
+    if (!submitSerializedSteps(core, steps, { kind: 'board-mark-read', flag: MARK_ALL_READ_FLAG, hint: MARK_ALL_READ_HINT })) {
       this._hint(submitBlockedHint(core, '指令處理中，請稍候再試'));
       return false;
     }

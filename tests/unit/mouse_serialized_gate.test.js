@@ -5,6 +5,7 @@
 // （列表點列 ⏎、左側退出帶 ←）、滾輪翻頁、中鍵 ← 以前只看 aidNavigation.active ⇒ 序列中途
 // 插進一個 ⏎／PgDn／←：例如「跳到第一篇未讀」End → PgUp 之間點一列就開了那篇文章，
 // 後面的 PgUp 落在文章裡。
+import { acquireWire } from "../../src/js/wire_lease";
 import { App } from "../../src/js/pttchrome";
 import { ACT_ENTER, ACT_EXIT } from "../../src/js/mouse_regions";
 
@@ -39,7 +40,8 @@ function makeApp({ busy = null } = {}) {
   app.listSession = null;
   app.CmdHandler = { setAttribute: vi.fn() };
   app.setBBSCmd = vi.fn();
-  if (busy) app[busy] = true;
+  // 各功能向線路取得使用權（wire_lease）；owner 就是舊的旗標欄位名。
+  if (busy) acquireWire(app, busy, "忙碌中", 0);
   return app;
 }
 

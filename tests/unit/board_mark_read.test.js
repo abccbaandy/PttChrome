@@ -3,6 +3,7 @@
 // 承重點：看板列表的 `v` **只作用在真游標那一列**，沒有 prompt、沒有確認 ⇒ 原生路徑一定是
 // 「跳號 → 確認游標停在**同一個板名** → 才送 v」。落地認不出就停手，絕不對錯的看板送 v。
 // 平滑捲動接管時的路徑在 board_list_session.test.js。
+import { beginInFlight } from "../../src/js/article_search";
 import {
   BoardMarkRead,
   boardMarkReadTargetFromFacts,
@@ -139,7 +140,7 @@ describe("原生：跳號 → 落地確認 → v", () => {
 
   test("別的序列化操作在途 → 提示、不送", () => {
     const { core, enqueued, hints } = makeCore();
-    core.searchInFlight = true;
+    beginInFlight(core);
     expect(new BoardMarkRead(core).start({ num: 5, name: "B5" })).toBe(false);
     expect(enqueued).toEqual([]);
     expect(hints.at(-1).m).toBe("搜尋中，請稍候…");
