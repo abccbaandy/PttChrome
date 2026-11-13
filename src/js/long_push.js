@@ -109,7 +109,7 @@ export function big5ByteLength(text) {
 // BRD_ALIGNEDCMT 板（bbs.c#recommend 的 aligncmt）先把 id 補成 `%-*s` IDLEN 才
 // strlen ⇒ 扣的永遠是 12，不是 id 實際長度（alignedCmt）。
 // term.ptt.cc 的私有版本在 ':' 後多一格空白，實測比上游少一格
-// （docs/pttbbs-screen-protocol.md §11.1／§12）⇒ 61 / 46。
+// （docs/pttbbs-screen-protocol.md §11.1／§12）⇒ 61 / 46。upstream 7e78409 也併進了這格空白。
 // vgetstring 的 size check 是 `iend+1 >= len → bell()`（vtuikit.c:1399）
 // ⇒ 真正打得進去的是 maxlength - 1 bytes。
 export function pushMaxBytes(opts) {

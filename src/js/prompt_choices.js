@@ -14,6 +14,7 @@
 //              整句比對（表 REPLY_PROMPTS），一個字不同就不出現。
 //   editorSave mbbsd/edit.c#write_file：vs_hdr("檔案處理")、row 1「[S]發文 (T)改標題 (A)放棄 (E)繼續
 //              (R/W/D)讀寫刪暫存檔」、getdata(2, 0, "確定要儲存檔案嗎？ ", ans, 2, LCECHO)。
+//              upstream be3ce30 起 V 也是存檔，row 1 寫成「[S/V]發文」⇒ 新舊兩種都認（送的仍是 s）。
 //              S 的字依種類是儲存／發文／發信；(U)上傳資料、(T)改標題 看設定有沒有。
 //              R/W/D（暫存檔）不放：手機上幾乎用不到，要用照樣自己打。
 //   yesNo      vtuikit.c#vans／getdata 的是非題，提示結尾是 [y/N]、[Y/n]、(y/N)、(Y/N)？[N] 這幾種
@@ -136,7 +137,7 @@ function recognize(facts) {
 
   if (prompt === '確定要儲存檔案嗎？' && facts.cursorRow === 2 &&
       norm(rows[0]).indexOf('檔案處理') >= 0) {
-    const m = /^[[(]S[\])](儲存|發文|發信)( \(U\)上傳資料)?( \(T\)改標題)? \(A\)放棄 \(E\)繼續 \(R\/W\/D\)讀寫刪暫存檔$/
+    const m = /^[[(]S(?:\/V)?[\])](儲存|發文|發信)( \(U\)上傳資料)?( \(T\)改標題)? \(A\)放棄 \(E\)繼續 \(R\/W\/D\)讀寫刪暫存檔$/
       .exec(norm(rows[1]));
     if (m) {
       const items = [item('s', m[1], { isDefault: true })];

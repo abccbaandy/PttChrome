@@ -22,7 +22,8 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 ```
 
 - 不架站、不登入、不需要 logind／Go 服務。`generate.sh` exit 2＝build／driver／場景問題（不是解析器壞）。
-- 平常 `yarn test:unit` 跑 repo 裡那份 fixture（產自 pttbbs fbe8e67）；nightly 換成 upstream HEAD 產的。
+- 平常 `yarn test:unit` 跑 repo 裡那份 fixture；nightly 換成 upstream HEAD 產的，check 跑**每一支**吃
+  `fixtures/ptt_src_screens/` 的測試（不只 `ptt_src_screens.test.js`；新增消費端要列進 workflow，`ptt_src_screens_report.test.js` 守）。
 - **輸出可重現**：driver 定義自己的 `time()`（執行檔的符號蓋過 libc），時間釘在 `FIXED_NOW`；同一份
   upstream 跑兩次 fixture 逐位元組相同。所以 fixture 有 diff＝upstream 改了畫面。
 
@@ -74,7 +75,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `aid_miss` | `read:Test`／24 | `#` `1AAAAAAA⏎` 空白 `#` `!!⏎` | #AID 找不到／不合法兩句都中 `AID_NOT_FOUND_RE`，底列是 pressanykey（送空白）；列表與收掉後的列表不中 |
 | `board_list_refresh` | `fav`／24 | `/` `⏎` | 看板列表重整的兩步 expect（`isBoardKeywordPromptFrame`、回到列表）；prompt 幀游標不在列上 ⇒ 不接管 |
 | `main_menu_newmail` | `menu:newmail`／24 | — | 「你有新信件」：`newMailOnScreen`、`hasNewMail`、`appBarFromFacts` newMail；沒新信的 `main_menu` 三者皆 false |
-| `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`：型別選單→typeMenu（可噓）、`1`→inputPrompt（`推 tester:`）；`inputFieldWidth`＝maxlength（62-strlen(id)）、`pushMaxBytes` |
+| `push` | `read:Test`／24 | `X` `1` | `classifyPushScreen`：型別選單→typeMenu（可噓）、`1`→inputPrompt（`推 tester: `）；`inputFieldWidth`＝maxlength（7e78409 起 ':' 後多一格空白 ⇒ 61-strlen(id)，之前 62-strlen(id)）、`pushMaxBytes` |
 | `push_flow` | `read:Test`／24 | `X` `1` `hello⏎` `y⏎` `⏎` | typeMenu→inputPrompt→確定[y/N] confirm、寫入後→other；開文的推文列帶時間戳不是輸入列，`detectIpLogged`→false |
 | `push_again` | `read:Test`／24 | `X` `1` `hello⏎` `y⏎` `X` `world⏎` | 長推文續推：90 秒內再按 X ⇒ 倒數第二列「時間太近」、沒有型別選單、直接 `→ tester:` 輸入列（欄寬同上） |
 | `push_content_denied` | `read:Test`／24 | `X` `1` `buy spam now⏎` `y⏎` 空白 | 確定之後被內容檢查擋下：整頁「內容檢查 未送出」＋pressanykey ⇒ `classifyPushScreen` fatal（`parseContentDenied`）；按鍵後回列表 → other |
@@ -87,7 +88,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `menu_search` | `menu`／24 | `s` | 主功能表的 s ⇒ 選看板 prompt（board） |
 | `mail_list` | `menu`／24 | `^Z m` | 信件列表：caption「信件列表」⇒ 列表好讀／看板列表不接管；首頁儀表板「新信」的落地（離開主功能表）。表頭右側綠色「(大小:N篇)」讓 row 2 不是單色 ⇒ 單色判準認不出；`setPageState` 另以 `isMailListScreen` 定成 1 |
 | `mail_read` | `menu`／24 | `^Z m`、`⏎`、`←` | 讀信是同一個 pmore 狀態列（pageState 3）；← 回信件列表 pageState 回到 1（以前黏在 3）；滑鼠只認信件列（欄位標題列、空列點了會打開最後一封） |
-| `editor` | `read:Mine`／24 | `E` | 編輯器底列「編輯文章」＋狀態框 ⇒ `pageState` 6；`image_upload.decideInsertMode`：編輯器／推文內容列送字，型別選單／確定／列表／文章走剪貼簿 |
+| `editor` | `read:Mine`／24 | `E` | 編輯器底列「編輯文章」＋狀態框 ⇒ `pageState` 6；`image_upload.decideInsertMode`：編輯器／推文內容列送字，型別選單／確定／列表／文章走剪貼簿；^X 檔案處理 `prompt_choices` editorSave（be3ce30 起 row 1 是「[S/V]儲存」，舊版「[S]」） |
 | `editor_prompt` | `read:Mine`／24 | `E` `^S` `ab` `⏎` | 編輯器裡倒數第二列的 prompt（`[搜尋]關鍵字:`、`區分大小寫(Y/N/Q)?`）：底列「編輯文章」還在、pageState 6，但游標在輸入欄 ⇒ `isEditorTypingNow` false：編輯器輸入框不出現、上傳網址走剪貼簿 |
 | `board_complete` | `menu`／24 | `s` `M` 空白 `x` `o` 空白 | 選看板自動完成：`parseBoardPromptFrame` 讀輸入欄／候選（依板名排序）、被拒的字輸入欄不變（`boardQueryResult` rejected）、中間幀的舊清單、唯一補完 `resolvedBoardName` |
 | `digest_aid` | `read:Gossip`／24 | `1⏎` `#5giJk-0-⏎` `#1giJk-0-⏎` | 完整列表上 # 文摘的 G AID：新版 `read_cmd_aid` 丟掉 `select_by_aid` 設的 default_ch=Tab ⇒ 不切文摘、游標不動、沒有錯誤，`aidSearchLanded` 照樣過；換成原文的 M（`aid_codec.toPostAid`）才落在原文 |

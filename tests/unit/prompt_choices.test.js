@@ -137,6 +137,11 @@ describe("字樣比對：認不出就不出現", () => {
   test("編輯器檔案處理：標題列不是「檔案處理」、選項列格式不符、不在第 2 列 ⇒ null", () => {
     const ok = { cursorRow: 2, rowTexts: ["【 檔案處理 】", "[S]儲存 (A)放棄 (E)繼續 (R/W/D)讀寫刪暫存檔"] };
     expect(summary(promptChoices(facts("確定要儲存檔案嗎？ ", ok)))).toEqual(["S 儲存*", "A 放棄", "E 繼續編輯"]);
+    // upstream be3ce30：V 也是存檔，row 1 寫成 [S/V]（新舊並存都要認）
+    const sv = { ...ok, rowTexts: [ok.rowTexts[0], "[S/V]發文 (T)改標題 (A)放棄 (E)繼續 (R/W/D)讀寫刪暫存檔"] };
+    expect(summary(promptChoices(facts("確定要儲存檔案嗎？ ", sv)))).toEqual([
+      "S 發文*", "T 改標題", "A 放棄", "E 繼續編輯",
+    ]);
     expect(promptChoices(facts("確定要儲存檔案嗎？ ", { ...ok, rowTexts: ["別的", ok.rowTexts[1]] }))).toBeNull();
     expect(promptChoices(facts("確定要儲存檔案嗎？ ", { ...ok, rowTexts: [ok.rowTexts[0], "(S)存檔 (Z)別的"] }))).toBeNull();
     expect(promptChoices(facts("確定要儲存檔案嗎？ ", { ...ok, cursorRow: 5 }))).toBeNull();

@@ -26,7 +26,7 @@
   {
    "name": "input",
    "keys": "1",
-   "bytes": "\u001b[?2026h\r\u001b[1;33m±À\u001b[m tester:\u001b[30;47m                                                        \u001b[m\u001b[24;11H\u001b[?2026l"
+   "bytes": "\u001b[?2026h\r\u001b[1;33m±À\u001b[m tester: \u001b[30;47m                                                       \u001b[m\u001b[24;12H\u001b[?2026l"
   }
  ]
 }
