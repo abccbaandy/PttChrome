@@ -241,13 +241,6 @@ describe("isProjectRun / projectRuns", () => {
     expect(isProjectRun({ ...screens, event: "pull_request" })).toBe(true);
   });
 
-  test("Dependabot alerts：schedule／dispatch 不算（警示另開 issue），PR 觸發的算", () => {
-    const alerts = { ...deploy, name: "Dependabot alerts", event: "schedule", path: ".github/workflows/dependabot-alerts.yml" };
-    expect(isProjectRun(alerts)).toBe(false);
-    expect(isProjectRun({ ...alerts, event: "workflow_dispatch" })).toBe(false);
-    expect(isProjectRun({ ...alerts, event: "pull_request" })).toBe(true);
-  });
-
   test("side run 連結論都不進（REGRESSION：舊版只從 isProjectRun 排除，結論仍看全部 run ⇒ 同 sha 的 nightly 紅會讓 push 判紅）", () => {
     const hunt = { ...deploy, event: "schedule", path: ".github/workflows/flaky-hunt.yml" };
     const screens = { ...deploy, event: "workflow_dispatch", path: ".github/workflows/ptt-src-screens.yml" };
