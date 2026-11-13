@@ -188,8 +188,35 @@ test.describe('搜尋彈窗（離線）', () => {
     );
     await ptt.sendKey(page, '/');
     await expect(modalInput(page)).toBeVisible();
+    // CI 曾紅過一次（#412）：點了 × 之後「新的」15 秒內都還在，本機壓力下重跑 160 次重現不出來。
+    // 再撞到時要分得出是「點擊沒落在 × 上／handler 沒跑」（儲存裡還有）還是「刪了又被讀回來」
+    // （儲存裡已經沒有）：記下 click 的落點，失敗時連同儲存內容一起印出來。
+    await page.evaluate(() => {
+      window.__forgetClicks = [];
+      window.addEventListener(
+        'click',
+        (e) => {
+          const t = e.target;
+          window.__forgetClicks.push({
+            tag: t && t.tagName,
+            forget: t && t.closest ? (t.closest('[data-search-forget]') || {}).dataset?.searchForget || null : null,
+            x: e.clientX,
+            y: e.clientY,
+          });
+        },
+        true,
+      );
+    });
     await page.locator('[data-search-forget="新的"]').click();
-    await expect(page.locator('[data-search-recent-item="新的"]')).toHaveCount(0);
+    try {
+      await expect(page.locator('[data-search-recent-item="新的"]')).toHaveCount(0);
+    } catch (e) {
+      const diag = await page.evaluate(() => ({
+        clicks: window.__forgetClicks,
+        stored: localStorage.getItem('pttchrome.searchHistory.v1'),
+      }));
+      throw new Error(e.message + '\n診斷（#412）：' + JSON.stringify(diag));
+    }
     await modalInput(page).press('ArrowUp');
     await expect(modalInput(page)).toHaveValue('舊的');
     await page.locator('[data-search-forget-all]').click();
