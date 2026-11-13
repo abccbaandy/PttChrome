@@ -17,6 +17,8 @@
 // 刻意不含 commandQueue.inFlightKind：那道在 App.onFunctionKey 裡排在
 // functionKeyClickPlan **之後**（_enterFunctionMode / stopEasyReading 要先跑），位置
 // 本身有語意，搬進來會改行為。
+import { wireLeaseHint } from './wire_lease';
+
 export function serializedOpHint(core) {
   if (!core) return null;
   if (core.aidNavigation && core.aidNavigation.active)
@@ -29,18 +31,11 @@ export function serializedOpHint(core) {
   // 跳過進板畫面：代按的那一鍵在線上。使用者此時自己按鍵會先收掉畫面，我們的鍵
   // 就落進文章列表（← 會直接離板）。只擋 in-flight 這一個來回，arm 等待期不擋。
   if (core.boardNoteSkip && core.boardNoteSkip.busy) return '略過進板畫面中，請稍候…';
-  // 搜尋彈窗送出的兩步（搜尋鍵 → 等 prompt → 關鍵字），見 article_search.js。
-  if (core.searchInFlight) return '搜尋中，請稍候…';
-  // 列表的重新整理（s<板>⏎／看板列表 /⏎），見 screen_refresh.js。
-  if (core.refreshInFlight) return '重新整理中，請稍候…';
-  // 跳到第一篇未讀（End → PgUp… → 跳號），見 unread_jump.js。
-  if (core.unreadJumpInFlight) return '正在找第一篇未讀，請稍候…';
-  // 設為已讀：文章列表 v → v⏎（mark_all_read.js）／看板列表 跳號 → v（board_mark_read.js）。
-  if (core.markAllReadInFlight) return '設定已讀中，請稍候…';
-  // 原生列表的稍後再讀（跳號 → Q → 空白），見 native_read_later.js。
-  if (core.nativeReadLaterInFlight) return '讀取文章代碼中，請稍候…';
-  // 首頁儀表板抓我的最愛（Ctrl+Z f → 讀頁 → q），見 home_dashboard.js。
-  if (core.homeFavFetchInFlight) return '正在更新我的最愛，請稍候…';
+  // 其餘替使用者送多步序列的功能（搜尋、重新整理、跳到第一篇未讀、設為已讀、稍後再讀、
+  // 首頁抓我的最愛…）向線路取得使用權時自己帶提示字（wire_lease.js）：這裡不必認識它們，
+  // 新功能也不必回來改這個閘門。
+  const leaseHint = wireLeaseHint(core);
+  if (leaseHint) return leaseHint;
   return null;
 }
 

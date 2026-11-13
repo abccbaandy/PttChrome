@@ -3,6 +3,9 @@
 // 「什麼時候可以跳」與「用哪個入口跳」。AidNavigation 用假物件（它自己的序列
 // 已經在 aid_navigation.test.js 驗過了），這裡守的是排程行為。
 
+import { acquireWire, releaseWire } from "../../src/js/wire_lease";
+import { UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT } from "../../src/js/unread_jump";
+import { MARK_ALL_READ_FLAG, MARK_ALL_READ_HINT } from "../../src/js/mark_all_read";
 import { DeepLinkController } from "../../src/js/deep_link_controller";
 import { parseDeepLink } from "../../src/js/deep_link";
 
@@ -290,8 +293,8 @@ describe("已登入", () => {
   test.each([
     ["長推文送出中", core => { core.longPush = { active: true }; }, core => { core.longPush.active = false; }],
     ["登出中", core => { core.logout = { active: true }; }, core => { core.logout.active = false; }],
-    ["找第一篇未讀中", core => { core.unreadJumpInFlight = true; }, core => { core.unreadJumpInFlight = false; }],
-    ["設為已讀中", core => { core.markAllReadInFlight = true; }, core => { core.markAllReadInFlight = false; }]
+    ["找第一篇未讀中", core => { acquireWire(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT, 0); }, core => { releaseWire(core, UNREAD_JUMP_FLAG); }],
+    ["設為已讀中", core => { acquireWire(core, MARK_ALL_READ_FLAG, MARK_ALL_READ_HINT, 0); }, core => { releaseWire(core, MARK_ALL_READ_FLAG); }]
   ])("別的鍵序列在線上（%s）→ 收著不派工，做完後下一次 settle 才跳", (_name, busy, done) => {
     const h = makeHarness();
     h.arriveAtMainMenu();

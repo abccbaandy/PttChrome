@@ -42,6 +42,9 @@ import { recordFor } from './reading_record';
 import { PAGE_STATE } from './screen_model';
 
 export const DEFAULT_REFRESH_MIN_INTERVAL_SEC = 5;
+// 送出期間的線路使用權（wire_lease）：owner 與被擋下時的提示字。
+export const REFRESH_FLAG = 'refreshInFlight';
+export const REFRESH_HINT = '重新整理中，請稍候…';
 
 // 文章列表裡 s 會「離開」的子模式：搜尋結果（MODE_SELECT）與文摘（MODE_DIGEST）。
 // 新版 caption 分得出來（read.c#i_read_caption）；舊版一律「文章選讀」分不出來，
@@ -324,7 +327,8 @@ ScreenRefresh.prototype = {
     if (
       submitSerializedSteps(core, steps, {
         kind: 'refresh',
-        flag: 'refreshInFlight',
+        flag: REFRESH_FLAG,
+        hint: REFRESH_HINT,
         resumeOnLanding: true
       })
     )

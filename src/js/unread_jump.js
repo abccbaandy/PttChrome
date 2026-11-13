@@ -22,6 +22,7 @@ import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
 
 export const UNREAD_JUMP_FLAG = 'unreadJumpInFlight';
+export const UNREAD_JUMP_HINT = '正在找第一篇未讀，請稍候…';
 // 往上連續幾篇非未讀＝走進已讀區。
 export const READ_RUN = 5;
 // 最多往上翻幾頁，找不到就放棄、停在原地。
@@ -201,12 +202,12 @@ UnreadJump.prototype = {
         pgups++;
         // 第一步的 onDone 被 submitSerializedSteps 包過、會先解除旗標 ⇒ 接續時重新掛上
         //（同步執行，中間沒有使用者按鍵插得進來）。
-        beginInFlight(core, UNREAD_JUMP_FLAG);
+        beginInFlight(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT);
         pageStep(KEY_PGUP, 'unread-pgup', pageLanded, false);
         return;
       }
       if (next.action === 'jump') {
-        beginInFlight(core, UNREAD_JUMP_FLAG);
+        beginInFlight(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT);
         push({
           keys: String(next.num) + '\r',
           kind: 'unread-jump',
@@ -231,6 +232,7 @@ UnreadJump.prototype = {
       !submitSerializedSteps(core, steps, {
         kind: 'unread-jump',
         flag: UNREAD_JUMP_FLAG,
+        hint: UNREAD_JUMP_HINT,
         resumeOnLanding: true
       })
     )

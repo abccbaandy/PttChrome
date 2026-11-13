@@ -25,6 +25,7 @@ import { markReadPromptShown } from './mark_read_prompt';
 export { markReadPromptShown };
 
 export const MARK_ALL_READ_FLAG = 'markAllReadInFlight';
+export const MARK_ALL_READ_HINT = '設定已讀中，請稍候…';
 
 export function MarkAllRead(core) {
   this._core = core;
@@ -99,6 +100,7 @@ MarkAllRead.prototype = {
       !submitSerializedSteps(core, steps, {
         kind: 'mark-all-read',
         flag: MARK_ALL_READ_FLAG,
+        hint: MARK_ALL_READ_HINT,
         resumeOnLanding: true
       })
     ) {

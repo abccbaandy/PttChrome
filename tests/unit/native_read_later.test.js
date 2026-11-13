@@ -6,6 +6,7 @@
 //   3. 置底文跳不過去 ⇒ 只在游標列時給；刪除文、鎖文、黑名單擋掉的列不給。
 //   4. 選單開著期間畫面換了（那一列的字不同、游標移走）⇒ 一個 byte 都不送。
 //   5. 列表好讀正在畫（activeListSession 有主）⇒ 不給，那條走 list_session.readLaterAt。
+import { beginInFlight } from "../../src/js/article_search";
 import {
   nativeReadLaterTarget,
   nativeReadLaterTargetAt,
@@ -239,7 +240,7 @@ describe("readLaterNative：跳號 → Q → 空白", () => {
 
   test("別的序列在線上 ⇒ 不送", () => {
     const { core, enqueued } = makeCore(listFrame());
-    core.searchInFlight = true;
+    beginInFlight(core);
     expect(
       readLaterNative(core, nativeReadLaterTargetAt(core, 10), () => {}),
     ).toBe(false);

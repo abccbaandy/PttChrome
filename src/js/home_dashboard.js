@@ -39,6 +39,7 @@ import { recordFor } from './reading_record';
 import { HINT_ERROR } from './status_hint';
 
 export const HOME_FAV_FETCH_FLAG = 'homeFavFetchInFlight';
+export const HOME_FAV_FETCH_HINT = '正在更新我的最愛，請稍候…';
 export const HOME_FAV_CACHE_KEY = 'pttchrome.homeFavorites.v1';
 export const HOME_RECENT_KEY = 'pttchrome.homeRecentBoards.v1';
 // 快取多久算新鮮（面板打開時超過就自動重抓一次）。
@@ -663,7 +664,7 @@ HomeDashboard.prototype = {
       });
     };
     const leave = function() {
-      beginInFlight(core, HOME_FAV_FETCH_FLAG);
+      beginInFlight(core, HOME_FAV_FETCH_FLAG, HOME_FAV_FETCH_HINT);
       push({
         keys: 'q',
         kind: 'home-fav-leave',
@@ -682,7 +683,7 @@ HomeDashboard.prototype = {
     };
     const restoreThenLeave = function(current) {
       if (origCursor == null || origCursor === current) return leave();
-      beginInFlight(core, HOME_FAV_FETCH_FLAG);
+      beginInFlight(core, HOME_FAV_FETCH_FLAG, HOME_FAV_FETCH_HINT);
       push({
         keys: String(origCursor) + '\r',
         kind: 'home-fav-restore',
@@ -705,7 +706,7 @@ HomeDashboard.prototype = {
       // 進來停在上次的游標那頁 ⇒ 先跳回第 1 頁。
       if (!pages.length && p.topNum !== 1 && !jumpedFirst) {
         jumpedFirst = true;
-        beginInFlight(core, HOME_FAV_FETCH_FLAG);
+        beginInFlight(core, HOME_FAV_FETCH_FLAG, HOME_FAV_FETCH_HINT);
         favStep('1\r', 'home-fav-first', function(q) {
           return q.topNum === 1;
         });
@@ -716,7 +717,7 @@ HomeDashboard.prototype = {
       pages.push(p.entries);
       lastTop = p.topNum;
       if (p.full && p.lastNum != null && pages.length < FAV_MAX_PAGES) {
-        beginInFlight(core, HOME_FAV_FETCH_FLAG);
+        beginInFlight(core, HOME_FAV_FETCH_FLAG, HOME_FAV_FETCH_HINT);
         favStep(String(p.lastNum + 1) + '\r', 'home-fav-page', function(q) {
           return q.cursorNum != null;
         });
@@ -727,7 +728,7 @@ HomeDashboard.prototype = {
     favStep(ZA_FAVORITE, 'home-fav-open', function() {
       return true;
     });
-    if (!submitSerializedSteps(core, steps, { kind: 'home-favorites', flag: HOME_FAV_FETCH_FLAG })) {
+    if (!submitSerializedSteps(core, steps, { kind: 'home-favorites', flag: HOME_FAV_FETCH_FLAG, hint: HOME_FAV_FETCH_HINT })) {
       if (bm) recordFor(core).end(bm, 'cancel');
       bm = null;
       return false;

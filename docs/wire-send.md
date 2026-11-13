@@ -29,8 +29,23 @@
 不帶身分的：`sendUserKey`／`sendUserText`（真鍵盤）、`sendWindowSize`（NAWS）、`sendKeepAliveProbe`
 （TIMING-MARK，在 server 的 telnet 層就被吃掉、不是按鍵）。
 
-## 下一步（A2 步驟 b）
+## 線路使用權（`src/js/wire_lease.js`）
 
-`serialized_op_gate.js` 逐一列舉的 in-flight 旗標改成「向出口取得使用權」（帶提示文字與逾時），使用者輸入
-要不要放行、prompt 是否開著都在出口判斷。閘門目前**都還在原呼叫點**，搬的時候一條一條來、每條跑 offline e2e，
-`onFunctionKey` 的先後順序照原樣。
+替使用者送**多步序列**的功能（搜尋、重新整理、跳到第一篇未讀、設為已讀、原生列表稍後再讀、首頁抓我的最愛），
+序列跑完前要佔住線路：期間使用者的鍵一律吞掉＋提示（`serialized_op_gate.serializedOpHint`），不然中間插進來的
+byte 會被 PTT 的 typeahead 吃掉或打進 prompt。
+
+- **功能自己帶提示字來拿**：`beginInFlight(core, OWNER, HINT)`／`submitSerializedSteps(core, steps, { flag, hint })`
+  （`article_search.js`，底下是 `acquireWire`／`releaseWire`）。閘門只問「現在有沒有人拿著」，**新功能不必回來改閘門**。
+  帶 owner 就要帶提示字；逾時（15 秒）自動放掉，防收尾漏掉造成永久吞鍵。
+- `core[owner]`（舊的 `xxxInFlight` 欄位名）仍鏡像成 true／false 給只讀它的人（`search_status`、e2e 的
+  `__app.searchInFlight === false`）。**寫它只准經 `wire_lease`**。
+- 守護 `tests/unit/wire_lease.test.js`：閘門不准再列舉 `InFlight`、鏡像欄位不准別處寫、帶 owner 必帶提示字、
+  各功能提示字與搬家前一字不差。
+
+## 還沒搬的（A2 步驟 b 之後）
+
+- 自己有 session 物件的序列（AID 跳文、長推文、登出、跳過進板畫面）仍由閘門讀 `active`／`busy`，排在使用權前面。
+  要搬就讓 session 開跑時拿使用權、提示字照 `opHint` 給，順序不能變（AID 優先）。
+- `commandQueue.inFlightKind` 那道在 `App.onFunctionKey` 裡排在 `functionKeyClickPlan` 之後，位置本身有語意，照原樣。
+- 「使用者輸入要不要放行、prompt 是否開著」還在各入口判斷，還沒收進出口。
