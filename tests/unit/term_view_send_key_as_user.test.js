@@ -10,6 +10,7 @@
 //  2. 上游接手時不得落到 TermKeyboard。
 //  3. 列表好讀模式必須交給 listSession，不可以自己送 byte。
 import { TermView } from "../../src/js/term_view";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 function makeView({ listRenderMode = "native", useEasyReadingMode = false } = {}) {
   const view = Object.create(TermView.prototype);
@@ -41,6 +42,7 @@ function makeView({ listRenderMode = "native", useEasyReadingMode = false } = {}
   view._keyboard = { onKeyDown: vi.fn((e) => seen.keyboard.push(e)) };
   view.flashListHint = vi.fn((m) => seen.hints.push(m));
   view.seen = seen;
+  wireFakeSessions(view.bbscore);
   return view;
 }
 

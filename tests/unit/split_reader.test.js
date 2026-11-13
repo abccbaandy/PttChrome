@@ -24,6 +24,7 @@ import {
 } from "../../src/js/split_reader";
 import { RESTORE_TABLE } from "../../src/js/reading_record";
 import { HINT_ERROR } from "../../src/js/status_hint";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 const ROWS = 24;
 
@@ -265,6 +266,7 @@ function makeCore({ side = 600, mobile = false } = {}) {
     core.view._articleTitle = title;
     show(articleScreen());
   };
+  wireFakeSessions(core);
   return {
     core,
     split,

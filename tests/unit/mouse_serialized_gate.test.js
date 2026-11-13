@@ -8,6 +8,7 @@
 import { acquireWire } from "../../src/js/wire_lease";
 import { App } from "../../src/js/pttchrome";
 import { ACT_ENTER, ACT_EXIT } from "../../src/js/mouse_regions";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 function makeApp({ busy = null } = {}) {
   const app = Object.create(App.prototype);
@@ -42,6 +43,7 @@ function makeApp({ busy = null } = {}) {
   app.setBBSCmd = vi.fn();
   // 各功能向線路取得使用權（wire_lease）；owner 就是舊的旗標欄位名。
   if (busy) acquireWire(app, busy, "忙碌中", 0);
+  wireFakeSessions(app);
   return app;
 }
 

@@ -11,6 +11,7 @@
 import { App } from "../../src/js/pttchrome";
 import { CommandQueue } from "../../src/js/command_queue";
 import { MFDISP_RAW_PLAIN } from "../../src/js/pmore_pref";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 // 快速設定頁（pmore.c#pmore_QuickRawModePref，ystart = b_lines-2）：標題／選項列／vmsg。
 const PREF_TITLE_ROW =
@@ -45,6 +46,7 @@ function makeApp(opts = {}) {
     flashListHint: (m) => hints.push(m),
   };
   app.commandQueue = new CommandQueue({ send: (d) => sent.push(d) });
+  wireFakeSessions(app);
   return { app, sent, viewSent, hints };
 }
 

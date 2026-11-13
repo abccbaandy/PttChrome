@@ -1969,7 +1969,7 @@ describe("refresh（重新整理本篇）", () => {
       articleBoard: "C_Chat"
     });
     expect(nav.refresh()).toBe(true);
-    expect(serializedOpHint({ aidNavigation: nav })).toBe("重新整理中，請稍候…");
+    expect(serializedOpHint(core)).toBe("重新整理中，請稍候…");
     expect(sent).toEqual(["Q"]);
     answerOriginInfo(queue, "1gKF7GO4");
     expect(sent[1]).toBe(" sC_Chat\r\f");

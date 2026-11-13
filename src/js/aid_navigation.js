@@ -74,6 +74,7 @@ import { recordFor } from './reading_record';
 import { toPostAid } from './aid_codec';
 import { isMailboxOverLimitNotice, MAILBOX_OVER_LIMIT_HINT } from './mail_list';
 import { serializedOpHint, PROMPT_PENDING_HINT, promptPendingNow } from './serialized_op_gate';
+import { holdWireWhile } from './wire_lease';
 import { BOARD_PROMPT_RE } from './board_note_skip';
 import {
   parseActivityAlert,
@@ -360,6 +361,11 @@ export function externalOriginAnchor(bm, targetBoard) {
   };
 }
 
+// 佔著線路時給使用者看的提示；沒佔著回 null（wire_lease.holdWireWhile 用）。
+export function aidNavigationWireHint(nav) {
+  return nav && nav.active ? nav.opHint || 'AID 跳文中，請稍候…' : null;
+}
+
 export function AidNavigation(core, view, termBuf, queue, history) {
   this._core = core;
   this._view = view;
@@ -371,6 +377,11 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   this.active = false;
   // active 期間 serialized_op_gate 給使用者的提示字；null ＝預設的「AID 跳文中」。
   this.opHint = null;
+  // active 期間線路歸我們（serialized_op_gate 經 wire_lease 問，排第一）。
+  const self = this;
+  holdWireWhile(core, 'aidNavigation', function() {
+    return aidNavigationWireHint(self);
+  });
   // 目前這一輪是 refresh()（失敗訊息與收尾不同於跳文）。
   this._refreshing = false;
   // 目前這一輪是 startResume()（斷線重連後回到原處）。

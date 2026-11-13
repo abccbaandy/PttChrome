@@ -43,9 +43,22 @@ byte 會被 PTT 的 typeahead 吃掉或打進 prompt。
 - 守護 `tests/unit/wire_lease.test.js`：閘門不准再列舉 `InFlight`、鏡像欄位不准別處寫、帶 owner 必帶提示字、
   各功能提示字與搬家前一字不差。
 
-## 還沒搬的（A2 步驟 b 之後）
+### 自己有 session 的序列（`holdWireWhile`）
 
-- 自己有 session 物件的序列（AID 跳文、長推文、登出、跳過進板畫面）仍由閘門讀 `active`／`busy`，排在使用權前面。
-  要搬就讓 session 開跑時拿使用權、提示字照 `opHint` 給，順序不能變（AID 優先）。
+AID 跳文、長推文、登出、略過進板畫面的「佔著線路」由 session 自己的狀態決定（`active`／`busy`），狀態轉換散在
+十幾條收尾路徑上 ⇒ 不走 acquire／release（漏一條就永久吞鍵），而是**建構時登記一次「怎麼問我」**
+（`holdWireWhile(core, owner, hintOf)`），閘門每次現算。`hintOf` 是各 session 模組 export 的
+`xxxWireHint(session)`（長推文看 `active` 不看 `busy`：armed 時使用者在打字；略過進板只看 `busy`：arm 等待期不擋）。
+
+- 名次固定在 `SESSION_WIRE_RANK`（AID → 長推文 → 登出 → 略過進板），排在 `acquireWire` 的使用權前面；沒有名次的 owner 直接丟。
+- `serialized_op_gate` 不准再認識任何功能（靜態守護 `wire_lease.test.js`）。
+- 測試的假 session（`{ aidNavigation: { active: true } }`）沒跑建構子：用 `tests/unit/helpers/session_wire.js#wireFakeSessions(core)` 代登記。
+
+## 還沒搬的（A2 步驟 c 之後）
+
+- `board_search_bridge.submit`（搜尋彈窗在背景 `s` prompt 已開著時送出）不問閘門。不能只加一道「忙就回 false」：
+  回 false 後呼叫端改走 `submitSearch`，它會因 prompt 開著拒絕，背景 prompt 就沒人收（橋接沒 cancel）；在別人拿著線路時
+  送 Ctrl-C 收掉也一樣是插鍵。現在靠「開彈窗時問過＋modal 擋鍵＋`submitSerializedSteps` 在 prompt 開著時不送」沒事；
+  要收得先決定「忙的時候背景 prompt 誰收、何時收」。
 - `commandQueue.inFlightKind` 那道在 `App.onFunctionKey` 裡排在 `functionKeyClickPlan` 之後，位置本身有語意，照原樣。
 - 「使用者輸入要不要放行、prompt 是否開著」還在各入口判斷，還沒收進出口。

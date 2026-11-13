@@ -11,6 +11,7 @@
 import { TermView } from "../../src/js/term_view";
 import { App } from "../../src/js/pttchrome";
 import { writeValues, readValuesWithDefault } from "../../src/js/pref_storage";
+import { wireFakeSessions } from "./helpers/session_wire";
 
 const READ_ROW =
   "  瀏覽 第 1/2 頁 ( 45%)  目前顯示: 第 1~23 行  (y)回應(X%)推文(h)說明(←)離開 ";
@@ -68,6 +69,7 @@ function keyCtx(over) {
     _keyboard: keyboard,
     flashListHint: vi.fn(),
   };
+  wireFakeSessions(ctx.bbscore);
   return { ctx, keyboard, easyReading, openLongPushModal };
 }
 

@@ -62,6 +62,7 @@ import { KEY_ABORT, KEY_DISMISS } from './screen_dismiss';
 import { recordFor } from './reading_record';
 import { isLiveRepeatPrompt, LIVE_REPEAT_DECLINE } from './open_prompt';
 import { PAGE_STATE } from './screen_model';
+import { holdWireWhile } from './wire_lease';
 
 function isLiveScreen(buf) {
   return !!(buf && typeof buf.isLiveScreenNow === 'function' && buf.isLiveScreenNow());
@@ -101,6 +102,12 @@ const MSG = {
   noResponse: 'PTT 沒有回應'
 };
 
+// 佔著線路時給使用者看的提示；沒佔著回 null（wire_lease.holdWireWhile 用）。
+// 看 active 不看 busy：armed 時使用者在輸入框打字，線路空著。
+export function longPushWireHint(s) {
+  return s && s.active ? s.opHint || '長推文送出中，請稍候…' : null;
+}
+
 export function LongPushSession(core, view, termBuf, queue) {
   this._core = core;
   this._view = view;
@@ -131,6 +138,12 @@ export function LongPushSession(core, view, termBuf, queue) {
   this.onSent = null;
   this._timer = null;
   this._reset();
+  // active（不是 busy）期間線路歸我們：armed 時使用者在輸入框打字，線路空著。
+  // 提示字隨階段不同（探路／送出），opHint 給。
+  const self = this;
+  holdWireWhile(core, 'longPush', function() {
+    return longPushWireHint(self);
+  });
 }
 
 LongPushSession.prototype = {

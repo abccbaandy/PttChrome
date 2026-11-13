@@ -21,22 +21,11 @@ import { wireLeaseHint } from './wire_lease';
 
 export function serializedOpHint(core) {
   if (!core) return null;
-  if (core.aidNavigation && core.aidNavigation.active)
-    return core.aidNavigation.opHint || 'AID 跳文中，請稍候…';
-  // 提示字隨階段不同（探路／送出），由 session 自己給——active 為真時一定有值。
-  if (core.longPush && core.longPush.active)
-    return core.longPush.opHint || '長推文送出中，請稍候…';
-  if (core.logout && core.logout.active)
-    return core.logout.opHint || '登出中，請稍候…';
-  // 跳過進板畫面：代按的那一鍵在線上。使用者此時自己按鍵會先收掉畫面，我們的鍵
-  // 就落進文章列表（← 會直接離板）。只擋 in-flight 這一個來回，arm 等待期不擋。
-  if (core.boardNoteSkip && core.boardNoteSkip.busy) return '略過進板畫面中，請稍候…';
-  // 其餘替使用者送多步序列的功能（搜尋、重新整理、跳到第一篇未讀、設為已讀、稍後再讀、
-  // 首頁抓我的最愛…）向線路取得使用權時自己帶提示字（wire_lease.js）：這裡不必認識它們，
-  // 新功能也不必回來改這個閘門。
-  const leaseHint = wireLeaseHint(core);
-  if (leaseHint) return leaseHint;
-  return null;
+  // 誰佔著線路、提示字是什麼，都由功能自己告訴 wire_lease：自己有 session 的（AID 跳文、
+  // 長推文、登出、略過進板畫面）建構時登記 holdWireWhile，名次固定、AID 最前；其餘替使用者送
+  // 多步序列的（搜尋、重新整理、跳到第一篇未讀…）跑的時候 acquireWire。這裡不必認識任何
+  // 一個功能，新功能也不必回來改這個閘門。
+  return wireLeaseHint(core);
 }
 
 // PTT 正等著一個 prompt（輸入欄、推文型別選單；term_buf.isPromptPending，本幀事實）。

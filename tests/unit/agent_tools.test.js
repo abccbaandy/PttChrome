@@ -6,6 +6,7 @@ import {
   findArticleUrl,
 } from '../../src/js/agent_tools';
 import { parseBlacklist, parseTitleBlacklist } from '../../src/js/comment_parse';
+import { wireFakeSessions } from "./helpers/session_wire";
 
 const MAIN_MENU = ['【主功能表】                     批踢踢實業坊', '', ''];
 
@@ -61,6 +62,7 @@ function fakeCore(overrides = {}) {
     },
     ...overrides,
   };
+  wireFakeSessions(core);
   return core;
 }
 

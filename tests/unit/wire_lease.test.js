@@ -9,8 +9,13 @@ import {
   acquireWire,
   releaseWire,
   wireLeaseHint,
+  holdWireWhile,
   LEASE_FALLBACK_HINT,
 } from "../../src/js/wire_lease";
+import { AidNavigation } from "../../src/js/aid_navigation";
+import { LongPushSession } from "../../src/js/long_push_session";
+import { LogoutSession } from "../../src/js/logout_session";
+import { BoardNoteSkip } from "../../src/js/board_note_skip";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { beginInFlight, endInFlight, SEARCH_HINT } from "../../src/js/article_search";
 import { UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT } from "../../src/js/unread_jump";
@@ -120,9 +125,101 @@ describe("各功能拿線路時的提示字與搬家前一致", () => {
   });
 
   test("AID 跳文、長推文這些自己有 session 的仍排在使用權前面", () => {
-    const core = { aidNavigation: { active: true } };
+    const core = {};
     beginInFlight(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT);
+    const nav = new AidNavigation(core, null, null, null);
+    nav.active = true;
     expect(serializedOpHint(core)).toBe("AID 跳文中，請稍候…");
+    nav.active = false;
+    expect(serializedOpHint(core)).toBe(UNREAD_JUMP_HINT);
+  });
+});
+
+// A2 步驟 c：自己有 session 的序列建構時登記，閘門不再認識它們（docs/wire-send.md）。
+describe("session 型持有者（holdWireWhile）", () => {
+  // 真的 session 建構子（不是假物件）：App 建構時就是這樣登記的。
+  function realSessions(order) {
+    const core = {};
+    const make = {
+      aidNavigation: () => (core.aidNavigation = new AidNavigation(core, null, null, null)),
+      longPush: () => (core.longPush = new LongPushSession(core, null, null, null)),
+      logout: () => (core.logout = new LogoutSession(core, null, null, null)),
+      boardNoteSkip: () => (core.boardNoteSkip = new BoardNoteSkip(core, null, null, null)),
+    };
+    for (const k of order) make[k]();
+    return core;
+  }
+
+  test("各 session 的提示字與搬家前一字不差", () => {
+    const core = realSessions(["aidNavigation", "longPush", "logout", "boardNoteSkip"]);
+    expect(serializedOpHint(core)).toBe(null);
+    core.aidNavigation.active = true;
+    expect(serializedOpHint(core)).toBe("AID 跳文中，請稍候…");
+    core.aidNavigation.opHint = "重新整理中，請稍候…";
+    expect(serializedOpHint(core)).toBe("重新整理中，請稍候…");
+    core.aidNavigation.active = false;
+    core.longPush.active = true;
+    core.longPush._phase = "preflight";
+    expect(serializedOpHint(core)).toBe("正在確認能不能推文，請稍候…");
+    core.longPush._phase = "sending";
+    expect(serializedOpHint(core)).toBe("長推文送出中，請稍候…");
+    core.longPush.active = false;
+    core.logout.active = true;
+    expect(serializedOpHint(core)).toBe("登出中，請稍候…");
+    core.logout.active = false;
+    core.boardNoteSkip.busy = true;
+    expect(serializedOpHint(core)).toBe("略過進板畫面中，請稍候…");
+    core.boardNoteSkip.busy = false;
+    expect(serializedOpHint(core)).toBe(null);
+  });
+
+  test("長推文探完路等使用者打字（armed：busy 但不 active）⇒ 線路空著", () => {
+    const core = realSessions(["longPush"]);
+    core.longPush._armed = { any: 1 };
+    expect(core.longPush.busy).toBe(true);
+    expect(serializedOpHint(core)).toBe(null);
+  });
+
+  test("略過進板畫面 arm 等待期（active 但不 busy）⇒ 線路空著", () => {
+    const core = realSessions(["boardNoteSkip"]);
+    core.boardNoteSkip.armed = true;
+    core.boardNoteSkip._armedAt = Date.now();
+    expect(serializedOpHint(core)).toBe(null);
+  });
+
+  test("名次固定：不管建構順序，同時佔著時 AID → 長推文 → 登出 → 略過進板", () => {
+    const core = realSessions(["boardNoteSkip", "logout", "longPush", "aidNavigation"]);
+    core.boardNoteSkip.busy = true;
+    core.logout.active = true;
+    core.longPush.active = true;
+    core.aidNavigation.active = true;
+    expect(serializedOpHint(core)).toBe("AID 跳文中，請稍候…");
+    core.aidNavigation.active = false;
+    expect(serializedOpHint(core)).toBe("長推文送出中，請稍候…");
+    core.longPush.active = false;
+    expect(serializedOpHint(core)).toBe("登出中，請稍候…");
+    core.logout.active = false;
+    expect(serializedOpHint(core)).toBe("略過進板畫面中，請稍候…");
+  });
+
+  test("同一個 owner 再登記＝換成新的（session 重建時舊的不殘留）", () => {
+    const core = {};
+    const old = new AidNavigation(core, null, null, null);
+    const fresh = new AidNavigation(core, null, null, null);
+    old.active = true;
+    expect(serializedOpHint(core)).toBe(null);
+    fresh.active = true;
+    expect(serializedOpHint(core)).toBe("AID 跳文中，請稍候…");
+    expect(core._wireHolders.length).toBe(1);
+  });
+
+  test("沒有名次的 owner 直接丟（新 session 型功能要在 SESSION_WIRE_RANK 排好位置）", () => {
+    expect(() => holdWireWhile({}, "somethingNew", () => null)).toThrow();
+  });
+
+  test("core 不存在不炸", () => {
+    expect(() => holdWireWhile(null, "aidNavigation", () => "x")).not.toThrow();
+    expect(() => new AidNavigation(null, null, null, null)).not.toThrow();
   });
 });
 
@@ -150,6 +247,11 @@ describe("靜態守護", () => {
   test("serialized_op_gate 不再逐一列舉 xxxInFlight 旗標（新功能不必回來改閘門）", () => {
     const gate = FILES.find((f) => f.rel === "js/serialized_op_gate.js");
     expect(stripComments(gate.text)).not.toMatch(/InFlight/);
+  });
+
+  test("serialized_op_gate 也不再認識自己有 session 的序列（AID、長推文、登出、略過進板）", () => {
+    const gate = FILES.find((f) => f.rel === "js/serialized_op_gate.js");
+    expect(stripComments(gate.text)).not.toMatch(/aidNavigation|longPush|logout|boardNoteSkip/);
   });
 
   // 使用權的 owner：預設 'searchInFlight'＋各功能 `XXX_FLAG = '...'` 與 `flag: '...'` 宣告的名字。
