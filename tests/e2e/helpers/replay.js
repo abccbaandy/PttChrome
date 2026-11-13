@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { installResizeObserverGuard } = require('./resize_observer_guard');
+const { installCspGuard } = require('./csp_guard');
 const {
   beginImageRequest,
   endImageRequest,
@@ -98,6 +99,7 @@ async function installReplay(page, opts = {}) {
   const neverOpen = opts.neverOpen === true || !!openHost;
   const isBbsSrc = isBbsSocketUrl.toString();
   await installResizeObserverGuard(page);
+  await installCspGuard(page);
   // 首頁儀表板（pref enableHomeDashboard，預設開）會蓋住主功能表、打開時自己送 Ctrl+Z f
   // 去抓我的最愛 ⇒ 畫主功能表的 spec 會被它擋住滑鼠、送出記錄多出 byte。預設關掉，
   // 只有 home_dashboard.offline.spec.js 以 opts.homeDashboard 打開。
