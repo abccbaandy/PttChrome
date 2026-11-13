@@ -118,7 +118,7 @@ jobs:
         run: |
           yarn install --immutable
           # 每支吃 fixtures/ptt_src_screens/ 的測試都要列（守護 ptt_src_screens_report.test.js）。
-          yarn vitest run tests/unit/ptt_src_screens.test.js tests/unit/prompt_choices.test.js tests/unit/mail_card.test.js tests/unit/reading_footer.test.js
+          yarn vitest run tests/unit/ptt_src_screens.test.js tests/unit/prompt_choices.test.js tests/unit/mail_card.test.js tests/unit/reading_footer.test.js tests/unit/screen_model.test.js
 
   report:
     needs: [generate, check]
