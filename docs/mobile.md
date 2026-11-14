@@ -366,6 +366,11 @@ offline e2e `mobile_select_text.offline.spec.js`（長按以真右鍵代替，�
   session `_maxScrollTop`／`applyScrollAfterRender` 傳給 `maxScrollTopFor` 的 `bodyRows` 同源。照 bodyRows 補，卡片 43×3 列
   ≫ 視口 47 列 ⇒ 清單下方一大塊捲得到的空白。組視窗跑在 `_syncMobileSurface` 對帳之前 ⇒ 卡片旗標取 `_listCardsThisFrame()`
   （＝是否手機），不讀上一幀的 `listCards`。守護 `list_card.test.js`、`board_list_accumulate.test.js`。
+- **不滿一頁的空白卡片（P85，pref `mobileListEndHint`，預設開）**：整列空白（`list_card.isBlankListRow`，PTT 補的空列
+  或上面的補白列）的卡片帶 `data-list-blank`（值＝提示字），CSS 拿掉分隔線，**緊接在有內容的卡片後**那一張用 `::after`
+  寫「沒有更多了」（absolute 疊在卡片裡，固定高不變、不會被複製）。「第一張」交給 CSS 相鄰選擇器，每列只看自己 ⇒
+  dirty-row 逐列 patch 的前提不破；`listCardEndHint` 進 `annotationsKey`。守護 `list_end_hint.test.js`、
+  `mobile_list_end_hint.offline.spec.js`。
 - **視口幾何單一真相源 `mobile_layout.listViewportGeometry({rows, headerRows, cards})`**：桌機＝header 下 `rows-4` 列；
   卡片＝`bodyTopRows:0`、`viewportRows: rows`（header／footer 收起）。消費端三處必須同源：`term_view._renderScreenLines`
   的 `listScroll.viewportPx`（對帳**之後**算）、`App.clientToPos`、兩個 session 的 `_pageRows()`。

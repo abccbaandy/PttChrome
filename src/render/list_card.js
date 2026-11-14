@@ -31,6 +31,7 @@ import {
   hasServerCursorMark,
 } from "../js/comment_parse";
 import { isBoardUnreadMark, isBoardBulletMark } from "../js/board_list_parse";
+import { i18n } from "../js/i18n";
 
 // [start, end) cell 範圍 → 一段上色的 DOM（沒有內容回 null）。邊界落在 DBCS 中間時
 // 往外擴成完整的字；前後空白剪掉（卡片的欄位不需要補齊寬度，右對齊的序號也不必）。
@@ -124,6 +125,15 @@ export function isTitleBoxMark(chars) {
 const BOARD_BULLET_COL = 28;
 export { isBoardUnreadMark, isBoardBulletMark };
 
+// 整列都是空白（這頁不滿時 PTT 補的空列）。P85：這種卡片不畫分隔線，第一張空卡片
+// 顯示「沒有更多了」——「第一張」由 CSS 的相鄰選擇器決定（main.css），每列只看自己，
+// dirty-row 逐列 patch 的列獨立前提不破。
+export function isBlankListRow(chars) {
+  const line = chars || [];
+  for (let i = 0; i < line.length; ++i) if (!isBlankCell(line[i])) return false;
+  return true;
+}
+
 // 一行裡用到的全部 cell 範圍（測試檢查不重疊用）。
 export function layoutSpans(line) {
   return [line.lead, ...line.main, ...line.end].filter(Boolean);
@@ -142,6 +152,7 @@ export function buildListCard({
   listRead,
   listNewPush,
   listFollowed,
+  endHint,
 }) {
   const layout = CARD_LAYOUT[kind] || CARD_LAYOUT.article;
   // 游標記號（labelListCursor 的半形 `>`，舊 server 的全形 ● 佔兩格）蓋在 cell 0：
@@ -213,6 +224,11 @@ export function buildListCard({
         "data-list-followed": listFollowed ? "" : undefined,
         "data-list-mark":
           layout === CARD_LAYOUT.article ? articleCardMark(chars) : undefined,
+        // P85（pref mobileListEndHint）：值是提示字，CSS ::after 畫（不會被選取／複製）。
+        "data-list-blank":
+          endHint && isBlankListRow(chars)
+            ? i18n("mobileListEndHint_text")
+            : undefined,
         "data-board-unread": boardMode
           ? unreadBoard
             ? "new"

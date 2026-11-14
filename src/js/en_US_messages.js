@@ -1952,6 +1952,15 @@ export const en_US = {
   "tooltip_mobileCardHideTitleBox": {
     "message": "Mobile article list cards drop the empty box PTT draws before original posts, so titles show two more cells. \"R:\" and \"轉\" stay. Display only; no keys are sent."
   },
+  "options_mobileListEndHint": {
+    "message": "Show \"No more\" at the end of mobile lists"
+  },
+  "tooltip_mobileListEndHint": {
+    "message": "When a list page is not full (search results, a board with only a few posts), the empty rows are no longer drawn as blank cards; the first empty spot says \"No more\" instead. Display only; no keys are sent."
+  },
+  "mobileListEndHint_text": {
+    "message": "— No more —"
+  },
   "options_mobileBoardCardUnread": {
     "message": "Highlight boards with new posts on mobile board cards"
   },

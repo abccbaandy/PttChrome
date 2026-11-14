@@ -467,6 +467,27 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   white-space: pre;
   box-shadow: inset 0 -1px 0 #333;
 }
+/* P85（pref mobileListEndHint，list_card.isBlankListRow）：這頁不滿時 PTT 補的空白列不畫分隔線，
+   第一張空卡片（緊接在有內容的卡片後）寫「沒有更多了」。字在 data-list-blank、::after 畫（不會被
+   選取／複製）；absolute 疊在卡片裡，卡片固定高不變。 */
+.main.mobileListCards .listBodyView > span.listCard[data-list-blank] {
+  position: relative;
+  box-shadow: none;
+}
+.main.mobileListCards
+  .listBodyView
+  > span.listCard:not([data-list-blank])
+  + span.listCard[data-list-blank]::after {
+  content: attr(data-list-blank);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #777;
+  font-size: 0.7em;
+  font-family: system-ui, sans-serif;
+}
 /* 兩行的高度加起來＝ 3em − 2×0.3em ＝ 2.4em（標題行 1.3em＋次行 1.1em）。
    每行三段 flex：游標欄｜左欄（lead，推文數／已讀標記，兩行同寬上下對齊）｜main
    （吃剩餘寬度，放不下省略號）｜end（靠右：序號・日期／人氣／板主）。
