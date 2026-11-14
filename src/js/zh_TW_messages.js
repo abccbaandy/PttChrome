@@ -1951,6 +1951,15 @@
   "tooltip_mobileCardHideTitleBox": {
     "message": "手機的文章列表卡片不畫原文標題前的空框，標題多顯示兩格。「R:」「轉」照留。只改畫法，不會送任何按鍵。"
   },
+  "options_mobileListEndHint": {
+    "message": "手機列表到底時寫「沒有更多了」"
+  },
+  "tooltip_mobileListEndHint": {
+    "message": "看板搜尋結果、只剩幾篇的列表這類不滿一頁的畫面，下面的空白不再畫成一張張空卡片，改在第一個空白處寫「沒有更多了」。只改畫法，不會送任何按鍵。"
+  },
+  "mobileListEndHint_text": {
+    "message": "— 沒有更多了 —"
+  },
   "options_mobileBoardCardUnread": {
     "message": "手機看板卡片標出有新文章的看板"
   },

@@ -1369,6 +1369,8 @@ TermView.prototype = {
         this.listCards && lsOv.kind === 'article' && !!readEffectivePrefs().mobileCardHideTitleBox;
       enhanceOverrides.listCardBoardUnread =
         this.listCards && lsOv.kind === 'board' && !!readEffectivePrefs().mobileBoardCardUnread;
+      // P85：這頁不滿時空白卡片不畫線、第一張寫「沒有更多了」。
+      enhanceOverrides.listCardEndHint = this.listCards && !!readEffectivePrefs().mobileListEndHint;
     }
     // 這一幀實際畫出去的那一份 lines。`data-row` 的定義就是「傳給 <Screen> 的
     // lines index」（dropHidden 移除的列不位移其餘列的 data-row），所以凡是拿

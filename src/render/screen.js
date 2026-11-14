@@ -1310,6 +1310,7 @@ export class ScreenController {
         kind: enhance.listCards,
         hideTitleBox: !!enhance.listCardHideTitleBox,
         boardUnread: !!enhance.listCardBoardUnread,
+        endHint: !!enhance.listCardEndHint,
         forceWidth,
         highlightClass:
           this.highlight.row === row ? this.highlight.cls : undefined,
