@@ -51,11 +51,14 @@
 | `new_comments`（新推文跳轉、記錄已讀推文數） | `inArticle`（文章或實況） |
 | `recent_articles`（離開文章重排、記讀到哪） | `inArticle` |
 | `nav_key_gate`（返回手勢／瀏覽器上一頁送 ←） | `pageState`、`pass`、`cursorOnInputField`、`lastRowText` 事實 |
+| `aid_navigation`（重新整理本篇、本篇是哪一篇） | `inArticle`；重新整理另讀 `lastRowText` |
 | `long_push_gate.pushGateFacts`（X 改開長推文輸入框） | `pageState`、`lastRowText`、`cursorOnInputField` 事實（`pagerFromEssence` 照讀 buf） |
+
+搬完的模組列在 `tests/unit/screen_model_consumers.test.js` 的 `MIGRATED`：不准再直接讀 `buf.pageState`（新搬完一個就加進去）。
 
 `inArticle`＝kind 是 `ARTICLE` 或 `LIVE`，只看 pageState、不算 live 事實；「文章與實況都要」的消費端讀它，要分開的讀 kind。
 `message_inbox.newMailOnScreen` 是吃 pageState 參數的純函式，留原樣。
 
 ## 下一步（A3 步驟 b～d）
 
-b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信、返回手勢與長推文攔截的守門已搬；還在直接讀 pageState 的送鍵入口：mouse_regions、aid_navigation、editor_input、live_helper、image_upload）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。
+b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信、返回手勢與長推文攔截的守門已搬；還在直接讀 pageState 的送鍵入口：mouse_regions、editor_input、live_helper、image_upload）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。
