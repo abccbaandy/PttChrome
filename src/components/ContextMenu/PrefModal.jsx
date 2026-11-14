@@ -734,7 +734,6 @@ export const PrefModal = ({
     // stale values — undoing the cleanup and overwriting newer cloud prefs from
     // another device.
     if (show) {
-      console.info("PrefModal: open → re-read prefs from storage");
       const stored = readValuesWithDefault();
       setValues(stored);
       setStoredSnapshot(stored);
