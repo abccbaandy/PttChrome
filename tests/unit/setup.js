@@ -6,10 +6,14 @@
 import "@testing-library/jest-dom";
 // 英文語系在正式版是開站前 await 的 lazy chunk（src/js/i18n.js 檔頭）；測試裡
 // setupI18n() 是同步呼叫，所以先註冊好。
-import { registerLocale } from "../../src/js/i18n";
+import { registerLocale, setupI18n } from "../../src/js/i18n";
 import { en_US } from "../../src/js/en_US_messages";
 import { resetBrowserStorage } from "./helpers/browser_storage";
 
 registerLocale("en_us", en_US);
+// 正式版開站時一定先 setupI18n()（main.jsx）。測試沒叫的話每個 i18n() 都回 undefined
+// 並印「missing i18n」：畫出來的字是空的（測不到真實文字），CI log 也被洗掉幾百行。
+// 要測特定語系的檔照舊自己設 navigator.languages 再叫 setupI18n()。
+setupI18n();
 // 前一個測試檔留下的 storage 不能漏到這個檔（helpers/browser_storage.js）。
 if (typeof window !== "undefined") resetBrowserStorage(window);
