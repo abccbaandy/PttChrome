@@ -340,6 +340,9 @@ export const DEFAULT_PREFS = {
   // 手機列表這頁不滿時，空白卡片不畫分隔線、第一張寫「沒有更多了」（P85，list_card.isBlankListRow）。
   // 只改畫法、不送鍵 ⇒ 不在安全模式清單。
   mobileListEndHint: true,
+  // 手機好讀文章右下的「⋯」浮動工具收進「更多」面板的「這篇文章」區（P76，screen.sheetTools）。
+  // 只改入口位置、工具本身照舊 ⇒ 不在安全模式清單。
+  mobileFloatToolsInMore: true,
   // 手機編輯器：底部導覽第 2 格「存檔」（送 ^X 打開 PTT 原生檔案處理選單）＋App Bar 寫「編輯文章」
   // （P57，mobile_toolbar.editorSave）。使用者自己按的鍵、只在本幀打字會進內文時出現。
   mobileEditorSave: true,

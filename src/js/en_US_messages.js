@@ -1955,6 +1955,15 @@ export const en_US = {
   "options_mobileListEndHint": {
     "message": "Show \"No more\" at the end of mobile lists"
   },
+  "options_mobileFloatToolsInMore": {
+    "message": "Put article tools in \"More\" on mobile"
+  },
+  "tooltip_mobileFloatToolsInMore": {
+    "message": "The floating \"⋯\" button no longer covers the article; per-article tools (merge image captions, lights on…) move to a \"This article\" section at the top of the bottom \"More\" sheet. Turn off to get the floating button back."
+  },
+  "mobileMore_sectionArticle": {
+    "message": "This article"
+  },
   "tooltip_mobileListEndHint": {
     "message": "When a list page is not full (search results, a board with only a few posts), the empty rows are no longer drawn as blank cards; the first empty spot says \"No more\" instead. Display only; no keys are sent."
   },

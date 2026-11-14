@@ -290,6 +290,7 @@ export class ScreenController {
     this._debugSaveButton = null;
     this._debugRecording = false;
     this._floatTools = null; // 收那些工具的「⋯」（merge_buttons.js#createFloatingTools）
+    this._sheetTools = []; // P76：手機改收進「更多」時，同一份工具交給 sheetTools()
     this._hoverHost = null;
 
     this._initAiTasks();
@@ -1860,8 +1861,15 @@ export class ScreenController {
       tools.push(this._debugSaveButton.el);
     }
 
+    // P76：手機把這些工具收進「更多」面板（enhance.floatToolsInSheet＝手機版面＋pref
+    // mobileFloatToolsInMore）。**同一份 tools**：清單只在上面算一次，「⋯」與「更多」不會各說各話；
+    // 收進去時不畫「⋯」，由 sheetTools() 在開面板那一刻交給 MobileToolbar。
+    // 例外：debug 錄製中照舊畫「⋯」（紅色）——「正在錄」要一直看得到，收進面板就只剩打開才知道。
+    const inSheet = !!(enhance && enhance.floatToolsInSheet) && !this._debugRecording;
+    this._sheetTools = inSheet ? tools : [];
+
     const wanted = [];
-    if (tools.length) {
+    if (tools.length && !inSheet) {
       if (!this._floatTools) this._floatTools = createFloatingTools();
       this._floatTools.setTools(tools);
       this._syncFloatToolsActive();
@@ -1897,6 +1905,33 @@ export class ScreenController {
       this._captionAi ? this._aiPending : 0,
     );
     this._syncFloatToolsActive();
+  }
+
+  // P76：「更多」面板的「這篇文章」區（手機、pref 開著時才有東西）。每一項就是那顆浮動工具按鈕
+  // 本身：label＝它此刻的字（一律是「點下去會發生什麼」），run＝按它 ⇒ 效果跟在「⋯」面板裡點
+  // 一模一樣。開面板那一刻現問（同 savedArticles.canSave），不另存一份狀態。
+  sheetTools() {
+    return this._sheetTools.map((b) => ({
+      id: b.id,
+      label: b.textContent,
+      active: this._toolActive(b.id),
+      run: () => b.click(),
+    }));
+  }
+
+  _toolActive(id) {
+    switch (id) {
+      case "mergeImageCaptionBtn":
+        return this._mergeCaption !== null;
+      case "mergeImageCaptionAiBtn":
+        return !!this._captionAi;
+      case "lightsOnBtn":
+        return this._lightsActive();
+      case "debugRecordBtn":
+        return !!this._debugRecording;
+      default:
+        return null; // 不是開關（跳到新推文、存下最近 3 分鐘）
+    }
   }
 
   // 「⋯」收合時也要看得出有工具作用中（圖文並排／AI／燈），以及正在錄製。

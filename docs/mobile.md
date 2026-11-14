@@ -175,6 +175,11 @@ PTT 問「選一個」時，底部導覽上方浮出可點選項（`MobileToolba
 - 位置 `{right,bottom}` 存 localStorage `pttchrome.floatToolsPos`（`mobile_layout.load/saveFloatPos`，不寫 prefs），可拖曳，
   預設 `FLOAT_TOOLS_DEFAULT_POS`＝在底部工具列上方。手機 z-index 2400 < 工具列 2500。
 - `data-own-control` ⇒ `pttchrome.jsx#isOwnControlTarget` 把整塊（含面板間隙）當成自己的控制項，不落到邊緣翻頁。
+- **手機預設不畫「⋯」，收進「更多」（P76）**：pref `mobileFloatToolsInMore`（預設開）＋`App.mobile` → `enhance.floatToolsInSheet`。
+  `_syncOverlays` 照樣算出同一份 `tools`，收進去時不掛「⋯」、存成 `_sheetTools`；MobileToolbar 開「更多」那一刻問
+  `view.componentScreen.sheetTools()`，畫在面板最上面的「這篇文章」區（label＝按鈕此刻的字、`run()`＝按那顆按鈕本身，
+  效果跟在「⋯」裡點一樣；開關類帶 `aria-pressed`）。清單只有一份 ⇒ 兩邊不會各說各話。關掉開關回到「⋯」。
+  守護 unit `float_tools_in_sheet.test.js`、offline `mobile_float_tools`（真 tap；「⋯」那幾條明確關掉開關）。
 - pref `showMergeCaptionButton`／`showLightsOnButton`（預設 true，增強分頁）→ `enhance.mergeCaptionButton`／`lightsButton`。
   關掉時 `screen.js#update` 還原效果（合併狀態、軌 A）；軌 B（已切純文字）要送鍵，按鈕保留到使用者切回。
 

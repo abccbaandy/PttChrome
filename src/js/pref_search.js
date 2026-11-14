@@ -412,6 +412,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileListEndHint",
     },
     {
+      key: "mobileFloatToolsInMore",
+      titleKey: "options_mobileFloatToolsInMore",
+      tooltipKey: "tooltip_mobileFloatToolsInMore",
+    },
+    {
       key: "mobileBoardTools",
       titleKey: "options_mobileBoardTools",
       tooltipKey: "tooltip_mobileBoardTools",
