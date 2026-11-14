@@ -15,8 +15,15 @@ const MIGRATED = [
   "aid_navigation.js",
 ];
 
-const stripComments = (code) =>
-  code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:'"\\])\/\/.*$/gm, "$1");
+// 一行的程式碼部分（同 page_state_constants.test.js#codeOf）：逐行判，不跨行剝 ⇒ 字串裡的 `/*` 不會
+// 吃掉後面整段程式碼造成假綠，行號也跟原檔一致。
+function codeOf(line) {
+  const t = line.trimStart();
+  if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) return "";
+  const m = line.match(/(^|\s)\/\//);
+  return m ? line.slice(0, m.index) : line;
+}
+const stripComments = (code) => code.split("\n").map(codeOf).join("\n");
 
 describe("已搬到畫面物件的模組不直接讀 buf.pageState", () => {
   test.each(MIGRATED)("%s", (file) => {
@@ -24,7 +31,7 @@ describe("已搬到畫面物件的模組不直接讀 buf.pageState", () => {
     const hits = code
       .split("\n")
       .map((line, i) => ({ line: line.trim(), no: i + 1 }))
-      .filter(({ line }) => /\b(?:buf|_termBuf|termBuf)\.pageState\b/.test(line));
+      .filter(({ line }) => /\b(?:buf|_termBuf|termBuf)\.pageState\b|\[[\x27"]pageState[\x27"]\]|\{[^}]*\bpageState\b[^}]*\}\s*=\s*(?:this\.)?_?(?:buf|termBuf)\b/.test(line));
     expect(hits).toEqual([]);
   });
 
