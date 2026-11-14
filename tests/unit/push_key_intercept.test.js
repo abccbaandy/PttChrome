@@ -26,6 +26,8 @@ const makeBuf = (over) => ({
   rows: 24,
   cols: 80,
   getRowText: () => READ_ROW,
+  // 攔截讀的是畫面物件（screen_model.screenOf）：模型會讀到的判定假 buf 要補齊（docs/screen-model.md）。
+  isCursorOnInputField: () => false,
   easyReadingFunctionMode: false,
   startedEasyReading: false,
   listRenderMode: "native",
