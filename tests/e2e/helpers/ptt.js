@@ -524,7 +524,8 @@ async function resetSession(page) {
     page.evaluate(() => {
       const b = window.__app.buf;
       // pass 畫面要排除文章（pageState 3）：pmore 的狀態列「末列中段同色＋游標停右下角」
-      // 也滿足 _isAnsiPassFrame ⇒ 會被當成 pass 按空白鍵＝翻頁（2026-10 live：連翻 12 頁）。
+      // 以前也滿足 _isAnsiPassFrame ⇒ 被當成 pass 按空白鍵＝翻頁（連翻 12 頁）。產品端已排除
+      // 狀態列（term_buf_page_state.test.js 守），這道多的防線留著：live 一次登入，誤按的代價高。
       return {
         menu: b.getRowText(0, 0, b.cols).includes('主功能表'),
         pass: b.pageState !== 3 && b.isPassScreenNow(),
