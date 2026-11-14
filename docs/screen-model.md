@@ -20,6 +20,10 @@
 - **認不出就是 `UNKNOWN`**：`pageState` 0（以及從沒人寫過的 4）一律 `UNKNOWN`，不猜。0 也包含 setPageState
   主動判成 NORMAL 的畫面（底列空白），外殼不區分。
 - **`BOARD_LIST` 不等於「看板列表」**：看板列表大多是 `pageState` 2 ⇒ `LIST`。要判看板列表照舊問 `board_list_parse`。
+- **upstream 每一幀都登記了 `kind`**：`screen_model.test.js` 的 `KIND_CENSUS` 把 `ptt_src_screens` 每個場景、
+  每個有名字的幀的 `kind` 寫死，nightly 換 upstream HEAD 重產時一起跑 ⇒ upstream 改畫面讓 kind 變了當晚就紅。
+  表記的是現在的答案（含黏住的：說明選單疊在文章上仍是 `ARTICLE`），刻意改判定時逐格看過再改表；新場景要補一列。
+  同一份普查也守「`pass` 事實為真 ⟺ `kind` 是 `PASS`」（pmore 狀態列不算 pass 畫面）。
 
 ## `kind` 對照
 
@@ -63,4 +67,4 @@
 
 ## 下一步（A3 步驟 b～d）
 
-b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信、返回手勢與長推文攔截的守門已搬；還在直接讀 pageState 的送鍵入口：mouse_regions（純函式吃 pageState 參數，呼叫端在 term_view）、image_upload_controller.insertUrls（上傳完成的 promise 裡讀，不在 notify 之後的時機，先不搬）；editor_input、live_helper 已搬）。下一篇卡片／新推文／最近讀過剩下的直接讀取也已收進模型（`pageState`、`inArticle`）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。
+b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信、返回手勢與長推文攔截的守門已搬；還在直接讀 pageState 的送鍵入口：mouse_regions（純函式吃 pageState 參數，呼叫端在 term_view）、image_upload_controller.insertUrls（上傳完成的 promise 裡讀，不在 notify 之後的時機，先不搬）；editor_input、live_helper 已搬）。下一篇卡片／新推文／最近讀過剩下的直接讀取也已收進模型（`pageState`、`inArticle`）；d upstream 產畫面的 nightly 已對畫面物件驗（`KIND_CENSUS`），剩 `parse_failure_degrade` 突變矩陣改對畫面物件驗。

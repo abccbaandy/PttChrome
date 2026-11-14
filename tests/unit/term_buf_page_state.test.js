@@ -352,4 +352,20 @@ describe("TermBuf.setPageState — menu.c 子選單", () => {
     const core = { modalShown: false, conn: { isConnected: true }, buf: t.buf };
     expect(navKeyAllowed(core)).toBe(true);
   });
+
+  // pmore 的狀態列有底色、游標停右下角，跟 ANSI 動畫的 pass 畫面同一個形狀；
+  // isPassScreenNow 以前不排除它 ⇒ 每一頁文章都說是 pass（upstream 版見 screen_model.test.js 普查）。
+  test("pmore 文章（狀態列有底色、游標停右下角）⇒ pageState 3，isPassScreenNow() 為 false", () => {
+    const t = makeBuf();
+    t.paint(
+      CLEAR + at(0, 0) + "\x1b[44m 作者 \x1b[47;34m lucy (lucy)" + "\x1b[m" + at(5, 0) + "一段內文" +
+      at(ROWS - 1, 0) + "\x1b[34;46m" +
+      padCols("  瀏覽 第 1 頁 (  2%)  目前顯示: 第 01~22 行", COLS - width("(h)說明 (←/q)離開")) +
+      "(h)說明 (←/q)離開" + "\x1b[m" +
+      at(ROWS - 1, COLS - 1)
+    );
+    expect(t.buf.pageState).toBe(3);
+    expect(t.buf._isAnsiPassFrame()).toBe(false);
+    expect(t.buf.isPassScreenNow()).toBe(false);
+  });
 });
