@@ -241,7 +241,15 @@ function trackInFlight(core, steps, flag) {
   };
   steps.forEach(function(step, i) {
     step.onFail = wrap(step.onFail);
-    step.onFlushed = end;
+    // 呼叫端自己的 onFlushed 也要叫（跳到第一篇未讀靠它收起進度卡；直接蓋掉＝第一步被
+    // flush 時卡片永久掛著）。
+    const flushed = step.onFlushed;
+    step.onFlushed = flushed
+      ? function() {
+          end();
+          flushed();
+        }
+      : end;
     if (i === steps.length - 1) step.onDone = wrap(step.onDone);
   });
   return steps;

@@ -77,6 +77,8 @@ describe("決策表", () => {
     // 使用者拍板：找不到第一篇未讀時停在翻到的那頁。
     ["unread-jump", "done", "none", "none", "none"],
     ["unread-jump", "fail", "none", "none", "none"],
+    // P83：找的過程中取消＝回到按之前那篇（跳號由 unread_jump 送，視野由列表擁有者還原）。
+    ["unread-jump", "cancel", "none", "origin", "none"],
     ["list-fast-scroll", "done", "none", "none", "none"],
     ["list-fast-scroll", "cancel", "none", "none", "none"],
     ["list-fast-scroll", "fail", "none", "none", "none"],

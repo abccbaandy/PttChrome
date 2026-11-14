@@ -134,6 +134,10 @@ export const DEFAULT_PREFS = {
   // 「跳到第一篇未讀」（文章列表，docs/unread-jump.md）的快捷鍵。預設 F7（使用者指定）：
   // Chrome 的 F7 是「鍵盤瀏覽模式」對話框，keydown 被 preventDefault 就不會出現。
   unreadJumpKey: "F7",
+  // 跳到第一篇未讀的畫面回饋（P83／P84，js/unread_jump_ui.js）：找的過程顯示進度卡＋取消、
+  // 落地後標出「以下未讀」分界。只畫浮層、取消只是不再往上翻＋跳回原本那篇 ⇒ 不在安全模式名單。
+  unreadJumpProgress: true,
+  unreadJumpDivider: true,
   // 指令面板（js/command_palette.js）：一個輸入框整合進板、貼網址開文、搜尋、各功能與
   // 設定項。快捷鍵預設 F4：上面那串之外剩下的 F 鍵；Ctrl+K 不行（pttbbs 編輯器／輸入欄／
   // pager 都在用）。只在按下快捷鍵／點右鍵選單時才動 ⇒ 不在安全模式名單內。

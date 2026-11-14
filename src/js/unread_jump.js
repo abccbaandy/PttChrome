@@ -20,6 +20,8 @@ import { endLanded, numJumpLanded } from './aid_navigation';
 import { serializedOpHint } from './serialized_op_gate';
 import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
+import { readEffectivePrefs } from './pref_storage';
+import { UnreadJumpProgress, rowShowsNum } from './unread_jump_ui';
 
 export const UNREAD_JUMP_FLAG = 'unreadJumpInFlight';
 export const UNREAD_JUMP_HINT = '正在找第一篇未讀，請稍候…';
@@ -67,8 +69,10 @@ export function pageUnreadEntries(rowTexts, nums, rows, filter) {
   return out;
 }
 
+// seen ＝讀過幾篇（進度卡第二行）、unread ＝其中幾篇未讀（落地分界的「以下未讀 N 篇」：
+// 走進已讀區之前看到的未讀都在答案那篇以下）。
 export function initialScanState() {
-  return { lastUnread: null, run: 0, lowest: Infinity, done: false };
+  return { lastUnread: null, run: 0, lowest: Infinity, done: false, seen: 0, unread: 0 };
 }
 
 // 吃一頁（由新到舊），回新的 state。done ＝已經走進已讀區；那時 lastUnread 就是答案
@@ -81,9 +85,11 @@ export function scanUnreadPage(state, entries) {
     if (e.num >= s.lowest) continue;
     s.lowest = e.num;
     s.progressed = true;
+    s.seen++;
     if (e.mark == null || NEUTRAL_MARKS.indexOf(e.mark) >= 0) continue;
     if (UNREAD_MARKS.indexOf(e.mark) >= 0) {
       s.lastUnread = e.num;
+      s.unread++;
       s.run = 0;
     } else if (++s.run >= READ_RUN) {
       s.done = true;
@@ -116,8 +122,33 @@ export function pageLanded(facts) {
   });
 }
 
+// 落地分界（P84）：落地後等列表好讀重建、畫面穩定再量那一列。
+const DIVIDER_SETTLE_MS = 120;
+const DIVIDER_RETRY_MS = 250;
+
+// 好讀列表上游標那一列（手機是卡片本體）。認得的條件：列表好讀在畫（buffer）、選取的那篇
+// 就是 num、游標列在畫面上。桌機列的文字還要真的寫著那個編號（手機卡片把編號和日期排在
+// 同一段、字串黏在一起，認不了字 ⇒ 只靠選取）。認不出 ⇒ null（不畫）。
+export function landedRowElement(core, num) {
+  const view = core && core.view;
+  if (!view || !view.buf || view.buf.listRenderMode !== 'buffer') return null;
+  const ls = core.listSession;
+  const pos = ls && typeof ls.readingPosition === 'function' ? ls.readingPosition() : null;
+  if (!pos || pos.cursorNum !== num) return null;
+  const row = view._listCursorRow;
+  const root = typeof document !== 'undefined' ? document.getElementById('mainContainer') : null;
+  if (row == null || row < 0 || !root) return null;
+  const el = root.querySelector('[data-type="bbsline"][data-row="' + row + '"]');
+  if (!el) return null;
+  if (!view.listCards && !rowShowsNum(el.textContent, num)) return null;
+  return el;
+}
+
 export function UnreadJump(core) {
   this._core = core;
+  // 正在跑的那一次（null ＝沒在跑）。cancel() 只在這裡留旗標，下一頁讀完時才收手。
+  this._run = null;
+  this._ui = null;
 }
 
 UnreadJump.prototype = {
@@ -126,12 +157,37 @@ UnreadJump.prototype = {
     if (view && view.flashListHint) view.flashListHint(msg, ms || 3000, level);
   },
 
+  _progress: function() {
+    if (!this._ui) {
+      const self = this;
+      this._ui = new UnreadJumpProgress({
+        onCancel: function() {
+          self.cancel();
+        }
+      });
+    }
+    return this._ui;
+  },
+
   // 這一幀能不能用（文章列表，與重新整理同一個判準）。
   available: function() {
     const core = this._core;
     if (!core.conn || !core.conn.isConnected) return false;
     const t = refreshTargetOf(core);
     return !!t && t.kind === 'article-list';
+  },
+
+  // 找的過程中按「取消」／Esc（P83）。回 true ＝這次在跑而且還能取消（呼叫端吞掉 Esc）。
+  // 只留旗標：正在等回應的那一步照常收完，下一頁讀完時改送「回到原本那篇」的跳號。
+  // 已經在跳號（最後一步）就不能取消了 ⇒ 回 false，Esc 照舊走忙碌閘門。
+  cancel: function() {
+    const run = this._run;
+    if (!run || run.phase !== 'scan') return false;
+    if (!run.cancelled) {
+      run.cancelled = true;
+      if (run.ui) run.ui.cancelling();
+    }
+    return true;
   },
 
   // 一律回 true（呼叫端吞掉快捷鍵）：F 鍵本來就送不到 PTT，不能用時給提示而不是
@@ -148,6 +204,11 @@ UnreadJump.prototype = {
       return true;
     }
     const self = this;
+    const prefs = readEffectivePrefs();
+    const view = core.view || {};
+    // 進度卡跟一般狀態提示同一個總開關（showStatusHints）。
+    const showProgress = prefs.unreadJumpProgress !== false && view.showStatusHints !== false;
+    const showDivider = prefs.unreadJumpDivider !== false;
     let state = initialScanState();
     let pgups = 0;
     // expect 拿得到 (snapshot, facts)、onDone 拿不到 ⇒ 由 expect 記下落地那一幀。
@@ -159,12 +220,32 @@ UnreadJump.prototype = {
     const end = function() {
       endInFlight(core, UNREAD_JUMP_FLAG);
     };
-    // 閱讀紀錄（決策表 'unread-jump'）：目的就是移動，找不到也停在翻到的那頁。
+    // 閱讀紀錄（決策表 'unread-jump'）：目的就是移動，找不到也停在翻到的那頁；取消＝回原處。
     let bm = recordFor(core).begin('unread-jump');
+    // 取消時跳回去的那篇：書籤記著按下去當下游標那篇（好讀＝選取的那篇、原生＝游標列）。
+    const originNum = bm && bm.list && bm.list.cursorNum != null ? bm.list.cursorNum : null;
+    const run = { phase: 'scan', cancelled: false, ui: null };
+    this._run = run;
+    // 好讀列表接管中 ⇒ 送出後畫面凍住（調暗）；原生 ⇒ 使用者看得到 PTT 在翻頁，不調暗。
+    const owner = typeof core.activeListSession === 'function' ? core.activeListSession() : null;
+    if (showProgress) {
+      run.ui = this._progress();
+      run.ui.begin(!!owner);
+      // 進度卡比「讀取中…」具體：期間不疊那一顆（凍結交易會開它）。
+      if (view.setListLoadingSuppressed) view.setListLoadingSuppressed(true);
+    }
+    // 收起進度卡（每個出口都要走，漏一條就是卡片／調暗永久掛著）。
+    const closeUi = function() {
+      if (self._run === run) self._run = null;
+      if (!run.ui) return;
+      run.ui.end();
+      if (view.setListLoadingSuppressed) view.setListLoadingSuppressed(false);
+    };
     const finish = function(outcome) {
       end();
       if (bm) recordFor(core).end(bm, outcome);
       bm = null;
+      closeUi();
     };
     const push = function(step) {
       // 每一步都補 \f：PgUp 已經在第一頁、跳號目標就是游標所在列時 PTT 送零 byte，
@@ -174,8 +255,25 @@ UnreadJump.prototype = {
         finish('fail');
         self._hint('跳到第一篇未讀失敗（已停在原生畫面）', 0, HINT_ERROR);
       };
-      step.onFlushed = end;
+      step.onFlushed = function() {
+        end();
+        closeUi();
+      };
       steps.push(step);
+    };
+    // 跳號（從「跳至第幾項」prompt 送出，numJumpLanded 要求游標列＝目標編號）。
+    const pushJump = function(num, kind, onDone) {
+      run.phase = 'jump';
+      if (run.ui) run.ui.committing();
+      beginInFlight(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT);
+      push({
+        keys: String(num) + '\r',
+        kind: kind,
+        expect: function(snap, facts) {
+          return numJumpLanded(facts, num);
+        },
+        onDone: onDone
+      });
     };
     // trust ＝這一步的落點指紋能不能自證游標（列表好讀落地即回好讀的前提，見
     // list_session._beginLandingTransaction）：End 的 endLanded 要求游標＝最後一列非空列，
@@ -197,6 +295,20 @@ UnreadJump.prototype = {
     const onPage = function() {
       const f = landed || {};
       state = scanUnreadPage(state, pageUnreadEntries(f.rowTexts || [], f.nums, f.rows, listFilterOf(core.view)));
+      if (run.ui) run.ui.update(pgups, state.seen);
+      if (run.cancelled) {
+        // 取消（P83）：回到按下去之前那篇。認不出原本那篇（置底、不在列表上）就停在翻到的那頁。
+        if (originNum != null) {
+          pushJump(originNum, 'unread-cancel', function() {
+            finish('cancel');
+            self._hint('已取消，回到原本的位置', 1500);
+          });
+          return;
+        }
+        finish('cancel');
+        self._hint('已取消跳到第一篇未讀', 1500);
+        return;
+      }
       const next = nextUnreadAction(state, pgups);
       if (next.action === 'pgup') {
         pgups++;
@@ -207,17 +319,11 @@ UnreadJump.prototype = {
         return;
       }
       if (next.action === 'jump') {
-        beginInFlight(core, UNREAD_JUMP_FLAG, UNREAD_JUMP_HINT);
-        push({
-          keys: String(next.num) + '\r',
-          kind: 'unread-jump',
-          expect: function(snap, facts) {
-            return numJumpLanded(facts, next.num);
-          },
-          onDone: function() {
-            finish('done');
-            self._hint('已跳到第一篇未讀', 1500);
-          }
+        const unread = state.unread;
+        pushJump(next.num, 'unread-jump', function() {
+          finish('done');
+          self._hint('✓ 已跳到第一篇未讀 #' + next.num, 1500);
+          if (showDivider) self._drawDivider(next.num, unread);
         });
         return;
       }
@@ -235,9 +341,31 @@ UnreadJump.prototype = {
         hint: UNREAD_JUMP_HINT,
         resumeOnLanding: true
       })
-    )
+    ) {
+      closeUi();
+      if (bm) recordFor(core).end(bm, 'fail');
       this._hint(submitBlockedHint(core, '指令處理中，請稍候再試'));
+    }
     return true;
+  },
+
+  // 落地分界（P84）：只在好讀列表畫（原生不畫）；畫面重建後才量，量不到再試一次，仍認不出就算了
+  // （完成提示已經說了跳到哪一篇）。
+  _drawDivider: function(num, unread) {
+    const self = this;
+    const core = this._core;
+    const findRow = function() {
+      return landedRowElement(core, num);
+    };
+    const tryDraw = function(retry) {
+      if (self._progress().showDivider(findRow, unread)) return;
+      if (retry) setTimeout(function() {
+        tryDraw(false);
+      }, DIVIDER_RETRY_MS);
+    };
+    setTimeout(function() {
+      tryDraw(true);
+    }, DIVIDER_SETTLE_MS);
   }
 };
 

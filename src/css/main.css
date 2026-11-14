@@ -2265,3 +2265,121 @@ body.mobile-layout {
 #mainContainer .commentFilterExpandedHead.commentFilterShown > :not(.commentFilterSkip) {
   opacity: 0.6;
 }
+
+/* 跳到第一篇未讀的畫面回饋（P83／P84，js/unread_jump_ui.js）。全是 body 底下的浮層，
+   不寫 #mainContainer；調暗只看 body class（凍結中的好讀列表，原生不調暗）。 */
+body.unreadJumpBusy #mainContainer {
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+/* 置中用 left/right 0＋auto margin：left:50%＋translate 的 shrink-to-fit 只拿得到半個視窗寬，
+   手機上第二行會被截斷。 */
+.unreadJumpProgress {
+  position: fixed;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: max-content;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid #3a3f4b;
+  border-radius: 10px;
+  background: rgba(28, 30, 36, 0.96);
+  color: #eee;
+  font: 14px/1.4 system-ui, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+.unreadJumpSpinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #555;
+  border-top-color: #5aa9ff;
+  border-radius: 50%;
+  animation: unreadJumpSpin 0.8s linear infinite;
+}
+@keyframes unreadJumpSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.unreadJumpText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.unreadJumpTitle,
+.unreadJumpDetail {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.unreadJumpDetail {
+  color: #9aa0ab;
+  font-size: 12px;
+}
+.unreadJumpCancel {
+  flex: none;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #5aa9ff;
+  font: 600 14px system-ui, sans-serif;
+  cursor: pointer;
+}
+.unreadJumpCancel:hover {
+  background: rgba(90, 169, 255, 0.12);
+}
+.unreadJumpCancel[hidden] {
+  display: none;
+}
+/* 落地分界（P84）：App Bar（z 150）蓋得住它，捲到 App Bar 下面時不會浮在標題上。 */
+.unreadJumpDividerLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  pointer-events: none;
+}
+.unreadJumpRowFlash {
+  position: fixed;
+  background: rgba(90, 169, 255, 0.16);
+  box-shadow: inset 3px 0 0 #5aa9ff;
+  transition: opacity 0.6s;
+}
+.unreadJumpRowFlash.faded {
+  opacity: 0;
+}
+.unreadJumpDivider {
+  position: fixed;
+  height: 0;
+  border-top: 2px solid #5aa9ff;
+}
+.unreadJumpDividerLabel {
+  position: absolute;
+  right: 12px;
+  top: -10px;
+  padding: 0 7px;
+  border: 1px solid #5aa9ff;
+  border-radius: 9px;
+  background: #0b0c10;
+  color: #5aa9ff;
+  font: 600 12px/18px system-ui, sans-serif;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .unreadJumpSpinner {
+    animation: none;
+    border-color: #5aa9ff;
+  }
+  body.unreadJumpBusy #mainContainer,
+  .unreadJumpRowFlash {
+    transition: none;
+  }
+}

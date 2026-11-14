@@ -1810,6 +1810,13 @@ TermView.prototype = {
     // 序列化操作（AID 跳文／長推文）在途：程式化的鍵序列擁有這條線路，使用者的鍵
     // 會與它競態（typeahead，協定 §2）。吞掉並給提示——條件與提示文字四條入口共用，
     // 見 serialized_op_gate.js。
+    // 例外：跳到第一篇未讀找的過程中 Esc ＝取消（P83，unread_jump.cancel 只留旗標、不送鍵；
+    // 已經在跳號就回 false，照舊吞掉＋提示）。
+    if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey &&
+        this.bbscore.unreadJump && this.bbscore.unreadJump.cancel()) {
+      e.preventDefault();
+      return;
+    }
     var busyHint = serializedOpHint(this.bbscore);
     if (busyHint) {
       e.preventDefault();
@@ -2605,6 +2612,8 @@ TermView.prototype = {
     this._listLoadingWanted = !!on;
     // 「讀取中…」屬一般提示：關掉 showStatusHints 就不出現（關閉仍要照常隱藏）。
     if (on && !shouldShowHint(null, this.showStatusHints, this._hintDialogCover)) on = false;
+    // 有更具體的進度顯示在畫面上（跳到第一篇未讀的進度卡，P83）：不再疊一個「讀取中…」。
+    if (on && this._listLoadingSuppressed) on = false;
     var el = this._listLoadingEl;
     if (on && !el) {
       el = document.createElement('div');
@@ -2618,6 +2627,15 @@ TermView.prototype = {
       this._listLoadingEl = el;
     }
     if (el) el.style.display = on ? 'block' : 'none';
+  },
+
+  // 別的功能自己顯示了進度（unread_jump 的進度卡）：期間藏起「讀取中…」，結束時照呼叫端
+  // 當下要的狀態復原（同 setHintDialogCover 的復原方式）。
+  setListLoadingSuppressed: function(on) {
+    on = !!on;
+    if (on === !!this._listLoadingSuppressed) return;
+    this._listLoadingSuppressed = on;
+    if (this._listLoadingEl) this.setListLoading(!!this._listLoadingWanted);
   },
 
   // 設定頁這類蓋滿畫面的對話框開關（ContextMenu 依 showsSettings 推導呼叫）。只動提示的
