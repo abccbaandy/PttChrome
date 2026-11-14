@@ -31,6 +31,7 @@ import {
   IconArchive,
   IconBookmark,
   IconInfoCircle,
+  IconTextWrap,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import {
@@ -366,6 +367,13 @@ export const MobileToolbar = ({
     setPanel(null);
     const sa = pttchrome.savedArticles;
     if (sa && typeof sa.saveCurrent === "function") sa.saveCurrent();
+  }, [pttchrome]);
+
+  // 選取文字頁（P81）：開在使用者正在讀的地方（畫面上方 1/3 那一列）。
+  const onSelectText = useCallback(() => {
+    setPanel(null);
+    const p = pttchrome.selectTextPage;
+    if (p && typeof p.open === "function") p.open(p.rowAtViewport());
   }, [pttchrome]);
 
   // 跳到第一篇未讀：與桌機快捷鍵（預設 F7）同一個入口（unread_jump.js）。
@@ -791,6 +799,12 @@ export const MobileToolbar = ({
       onClick: onSaveLocal,
     },
     __threadNav: !!context.threadNav,
+    // 手機「選取文字」頁（P81，js/select_text_page.js）：開「更多」那一刻算能不能開。
+    __selectText: !!pttchrome.selectTextPage?.available?.() && {
+      label: i18n("selectText_title"),
+      Icon: IconTextWrap,
+      onClick: onSelectText,
+    },
     __select: {
       label: i18n("mobileKeypad_select"),
       Icon: IconCursorText,

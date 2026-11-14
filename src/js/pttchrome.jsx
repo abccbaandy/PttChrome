@@ -84,6 +84,7 @@ import { NewComments } from './new_comments';
 import { SplitReader, isSplitReaderTarget } from './split_reader';
 import { filterSummary } from './list_row_filter';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
+import { SelectTextPage } from './select_text_page';
 import { NextArticle, isNextArticleTarget } from './next_article';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
 import { ArticleNav, isArticleNavTarget } from './article_nav';
@@ -330,6 +331,8 @@ export const App = function() {
   this.splitReader = new SplitReader(this);
   // 文章工具側欄（好讀文章時右邊空白放 AID／推文統計／推文者／圖片牆，article_tools.js）。
   this.articleTools = new ArticleTools(this);
+  // 手機「選取文字」頁（P81，select_text_page.js）：好讀文章的文字開成可原生選取的全螢幕頁。
+  this.selectTextPage = new SelectTextPage(this);
   // 好讀文章底部常駐推文列（comment_bar.js；送出走長推文管線，App.openQuickPush）。
   this.commentBar = new CommentBar(this);
   this.searchStatus = new SearchStatus(this);

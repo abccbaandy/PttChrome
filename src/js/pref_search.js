@@ -382,6 +382,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileAppBarArticleDetail",
     },
     {
+      key: "mobileSelectTextPage",
+      titleKey: "options_mobileSelectTextPage",
+      tooltipKey: "tooltip_mobileSelectTextPage",
+    },
+    {
       key: "mobileCardHideTitleBox",
       titleKey: "options_mobileCardHideTitleBox",
       tooltipKey: "tooltip_mobileCardHideTitleBox",

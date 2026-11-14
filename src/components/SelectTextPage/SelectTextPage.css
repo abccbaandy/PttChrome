@@ -1,0 +1,121 @@
+/* 手機「選取文字」頁（components/SelectTextPage，P81）。全螢幕、恆為暗色（同 sheet／登出確認）。
+   文字區左右各留 20px：原生選取把手整顆在畫面內，也碰不到系統返回手勢的邊緣。 */
+.selectTextPage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1a1b1e;
+  color: #dee2e6;
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  /* 頁內沒有輸入框，但軟鍵盤若還開著，底部按鈕跟著讓開（同 MobileSheet）。 */
+  padding-bottom: var(--vv-kb-inset, 0px);
+  animation: selectTextPageIn 140ms ease-out;
+}
+
+@keyframes selectTextPageIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selectTextPage {
+    animation: none;
+  }
+}
+
+.selectTextPageHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 0 4px 0 16px;
+  border-bottom: 1px solid #2c2e33;
+  flex: none;
+}
+
+.selectTextPageTitle {
+  font-size: 18px;
+  color: #e9ecef;
+  white-space: nowrap;
+}
+
+.selectTextPageHint {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #909296;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectTextPageClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #dee2e6;
+  flex: none;
+}
+
+/* 原生選取：一般網頁文字（text），長行自動換行、保留空白（ASCII 排版不跑掉）。 */
+.selectTextPageBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 16px 20px;
+  font-family: MingLiu, monospace;
+  font-size: 17px; /* 實際值由 index.jsx 依手機字級 +1 覆寫 */
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.selectTextPageLine {
+  min-height: 1.6em;
+}
+
+.selectTextPageFooter {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid #2c2e33;
+  flex: none;
+}
+
+.selectTextPageBtn {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid #495057;
+  border-radius: 10px;
+  background: transparent;
+  color: #dee2e6;
+  font-size: 16px;
+}
+
+.selectTextPagePrimary {
+  border-color: #1971c2;
+  background: #1971c2;
+  color: #fff;
+}
+
+.selectTextPagePrimary[data-empty] {
+  opacity: 0.45;
+}
