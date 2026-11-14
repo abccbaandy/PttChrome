@@ -354,7 +354,7 @@ RecentArticles.prototype = {
     const step = nextResumeStep({
       ageMs: Date.now() - r.at,
       navActive: !!(nav && nav.active),
-      pageState: buf ? buf.pageState : null,
+      pageState: buf ? screenOf(buf).pageState : null,
       inst: view._articleInstanceId,
       armedInst: r.armedInst,
       easy: !!(er && er._enabled && !er._functionMode),
