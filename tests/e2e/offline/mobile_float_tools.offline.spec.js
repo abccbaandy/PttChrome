@@ -7,7 +7,13 @@
 // 拖曳／展開方向的分支邏輯在 tests/unit/float_tools.test.js。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
+const {
+  bootOffline,
+  feedRaw,
+  waitScreenSettled,
+  findCassettes,
+  replayCassette,
+} = require('../helpers/replay');
 const { waitRectStable, waitDialogSettled } = require('../helpers/layout');
 
 const ESC = '\x1b';
@@ -139,6 +145,41 @@ test.describe('手機：文章工具收進「更多」', () => {
     await waitDialogSettled(page, LIGHTS);
     await item.tap();
     await expect.poll(() => isLit(page)).toBe(false);
+  });
+
+  // 提案原情境：好讀模式的圖文文章，「⋯」原本壓在內文右下。收進去以後從「更多」點「圖文並排」。
+  test('好讀圖文文章：內文上沒有「⋯」，從更多真 tap「圖文並排」⇒ 合併兩欄', async ({ page }) => {
+    test.setTimeout(90000);
+    const cassette = findCassettes('article-caption')[0];
+    test.skip(!cassette, '尚無 article-caption cassette');
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, cassette, { easyReading: true });
+    await waitScreenSettled(page);
+    await expect(page.locator('#floatTools')).toHaveCount(0);
+    await expect(page.locator('.mergedImageBlock')).toHaveCount(0);
+
+    const MERGE = '[data-panel="more"] [data-key="__articleTool-mergeImageCaptionBtn"]';
+    await page.locator('[data-key="__more"]').tap();
+    const item = page.locator(MERGE);
+    await expect(item).toBeVisible();
+    await expect(item).toHaveAttribute('aria-pressed', 'false');
+    await waitDialogSettled(page, MERGE);
+    await item.tap();
+    await expect(page.locator('[data-panel="more"]')).toBeHidden();
+    await expect.poll(() => page.locator('.mergedImageBlock').count()).toBeGreaterThanOrEqual(2);
+    expect(await page.locator('.mergedCaptionCol [data-type="bbsline"]').count()).toBeGreaterThan(0);
+    await expect(page.locator('#floatTools')).toHaveCount(0);
+
+    // 再開面板：同一顆標示作用中。這顆是三段循環（圖在前 → 字在前 → 還原），跟「⋯」裡按一模一樣。
+    for (let i = 0; i < 2; i++) {
+      await page.locator('[data-key="__more"]').tap();
+      await expect(item).toHaveAttribute('aria-pressed', 'true');
+      await waitDialogSettled(page, MERGE);
+      await item.tap();
+      await expect(page.locator('[data-panel="more"]')).toBeHidden();
+    }
+    await expect.poll(() => page.locator('.mergedImageBlock').count()).toBe(0);
   });
 
   test('這篇沒有任何工具 ⇒ 更多面板沒有「這篇文章」區', async ({ page }) => {

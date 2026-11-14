@@ -1865,7 +1865,11 @@ export class ScreenController {
     // mobileFloatToolsInMore）。**同一份 tools**：清單只在上面算一次，「⋯」與「更多」不會各說各話；
     // 收進去時不畫「⋯」，由 sheetTools() 在開面板那一刻交給 MobileToolbar。
     // 例外：debug 錄製中照舊畫「⋯」（紅色）——「正在錄」要一直看得到，收進面板就只剩打開才知道。
-    const inSheet = !!(enhance && enhance.floatToolsInSheet) && !this._debugRecording;
+    // 只在文章裡收：面板那一區叫「這篇文章」，主選單／列表上的 debug 鈕照舊留在「⋯」。
+    const inSheet =
+      !!(enhance && enhance.floatToolsInSheet) &&
+      enhance.pageState === PAGE_READING &&
+      !this._debugRecording;
     this._sheetTools = inSheet ? tools : [];
 
     const wanted = [];

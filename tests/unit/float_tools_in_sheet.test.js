@@ -4,10 +4,12 @@
 //   - 收進去 ⇒ 不畫「⋯」，同一份工具由 sheetTools() 交出去（label＝按鈕此刻的字）；
 //   - run() ＝按那顆按鈕本身 ⇒ 效果與在「⋯」面板點一模一樣（這裡用錄製鈕驗：onDebugRecord 被叫、label 換）；
 //   - 開關關掉 ⇒ 照舊畫「⋯」、sheetTools() 是空的（兩邊不會同時出現）；
+//   - 只在文章（pageState READING）收：主選單／列表上照舊畫「⋯」；
 //   - 開關切換時下一次 render 就換位置，不殘留另一邊；debug 錄製中照舊畫紅色「⋯」。
 // real-input: tests/e2e/offline/mobile_float_tools.offline.spec.js
 import { mountScreen, unmountAll } from "./helpers/mount_screen";
 import { setupI18n, i18n } from "../../src/js/i18n";
+import { PAGE_READING } from "../../src/js/screen_annotations";
 
 beforeAll(() => setupI18n());
 afterEach(unmountAll);
@@ -36,7 +38,7 @@ function props(enhance) {
     lines: LINES,
     enableLinkInlinePreview: false,
     enableLinkHoverPreview: false,
-    enhance: Object.assign({ pageState: 1, debugRecordButton: true }, enhance),
+    enhance: Object.assign({ pageState: PAGE_READING, debugRecordButton: true }, enhance),
   };
 }
 
@@ -95,5 +97,11 @@ test("debug 錄製中 ⇒ 照舊畫紅色「⋯」（正在錄要一直看得到
 test("沒有任何工具 ⇒ 兩邊都沒有", () => {
   const s = mountScreen(props({ floatToolsInSheet: true, debugRecordButton: false }));
   expect(floatTools(s)).toBe(null);
+  expect(s.controller.sheetTools()).toEqual([]);
+});
+
+test("不在文章裡（主選單）⇒ 照舊畫「⋯」，不進「這篇文章」區", () => {
+  const s = mountScreen(props({ floatToolsInSheet: true, pageState: 1 }));
+  expect(floatTools(s)).not.toBe(null);
   expect(s.controller.sheetTools()).toEqual([]);
 });
