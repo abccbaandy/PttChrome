@@ -73,6 +73,8 @@ describe("真畫面的 kind", () => {
     const s = screenOf(bufAt(fx, frame));
     expect(s.kind).toBe(kind);
     expect(s.unknown).toBe(false);
+    // inArticle ＝「文章或實況」，其他畫面都不是。
+    expect(s.inArticle).toBe(kind === SCREEN_KIND.ARTICLE || kind === SCREEN_KIND.LIVE);
   });
 
   test("推文輸入列：kind 仍是列表，prompt 由事實回答（兩個問題不合併）", () => {

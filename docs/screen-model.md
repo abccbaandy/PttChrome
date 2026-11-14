@@ -48,6 +48,11 @@
 | `article_tools._inEasyArticle`（文章工具側欄） | `kind` 是 `ARTICLE` 或 `LIVE`（只讀累積頁，實況照樣出現） |
 | `MobileToolbar` 編輯器「存檔」 | 按下當下讀 `editorTyping` 事實 |
 | `MobileToolbar` 信件列表「寫信」 | 按下當下讀 `mailList`、`promptPending` 事實 |
+| `new_comments`（新推文跳轉、記錄已讀推文數） | `inArticle`（文章或實況） |
+| `recent_articles`（離開文章重排、記讀到哪） | `inArticle` |
+
+`inArticle`＝kind 是 `ARTICLE` 或 `LIVE`，只看 pageState、不算 live 事實；「文章與實況都要」的消費端讀它，要分開的讀 kind。
+`message_inbox.newMailOnScreen` 是吃 pageState 參數的純函式，留原樣。
 
 ## 下一步（A3 步驟 b～d）
 
