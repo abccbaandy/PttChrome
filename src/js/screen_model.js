@@ -185,6 +185,13 @@ class ScreenModel {
   get unknown() {
     return this.kind === SCREEN_KIND.UNKNOWN;
   }
+
+  // 在文章裡（含官方推文實況）＝ kind 是 ARTICLE 或 LIVE。只看 pageState，不必算 live 事實
+  // （兩者都在 pageState 3 底下）。給「文章與實況都要」的消費端（新推文標記、最近讀過…）用，
+  // 要分開的讀 kind。
+  get inArticle() {
+    return this.pageState === PAGE_STATE.READING;
+  }
 }
 for (const name of SCREEN_FACTS) {
   Object.defineProperty(ScreenModel.prototype, name, {
