@@ -138,8 +138,9 @@ export const RESTORE_TABLE = {
     cancel: cell(null, 'origin', 'origin'),
     fail: cell(null, 'origin', 'origin')
   },
-  // 跳到第一篇未讀：目的就是移動；找不到時停在翻到的那頁（使用者拍板）。
-  'unread-jump': { done: NONE, cancel: NONE, fail: NONE },
+  // 跳到第一篇未讀：目的就是移動；找不到時停在翻到的那頁（使用者拍板）。找的過程中取消（P83）
+  // ＝跳號回原本那篇（unread_jump 自己送）＋列表視野回原處。
+  'unread-jump': { done: NONE, cancel: cell(null, 'origin'), fail: NONE },
   // 列表快速捲動把手（list_fast_scroll.js）放開＝跳號：目的就是移動；跳號逾時退原生，
   // 停在 PTT 給的那頁（同鍵盤數字跳號）；取消＝一個 byte 都沒送。
   'list-fast-scroll': { done: NONE, cancel: NONE, fail: NONE },

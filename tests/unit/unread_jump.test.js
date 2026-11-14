@@ -1,5 +1,10 @@
 // 跳到第一篇未讀（src/js/unread_jump.js、docs/unread-jump.md）：已讀標記怎麼讀、
 // 「第一篇」怎麼從新往舊判斷、End → PgUp… → 跳號的送鍵序列、收手條件。
+const prefOverride = vi.hoisted(() => ({}));
+vi.mock("../../src/js/pref_storage", async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), ...prefOverride }) };
+});
 import { acquireWire } from "../../src/js/wire_lease";
 import { REFRESH_FLAG, REFRESH_HINT } from "../../src/js/screen_refresh";
 import {
@@ -187,7 +192,8 @@ describe("UnreadJump.start：End → PgUp… → 跳號", () => {
     expect(jumped.nums[jumped.curY]).toBe(202614);
     land(enqueued[2], jumped);
     expect(core.unreadJumpInFlight).toBe(false);
-    expect(hints.at(-1).m).toBe("已跳到第一篇未讀");
+    // 完成提示帶出編號（P84）。
+    expect(hints.at(-1).m).toBe("✓ 已跳到第一篇未讀 #202614");
   });
 
   test("黑名單取 view 當下的設定：作者被擋的未讀不是答案", () => {
@@ -287,5 +293,197 @@ describe("UnreadJump.start：End → PgUp… → 跳號", () => {
     new UnreadJump(core).start();
     expect(enqueued).toEqual([]);
     expect(hints.at(-1).m).toBe("重新整理中，請稍候…");
+  });
+});
+
+// 進度卡（P83）與落地分界（P84）的資料：讀過幾篇、其中幾篇未讀。
+describe("scanUnreadPage：seen／unread 計數", () => {
+  test("seen 數每篇只算一次（同一頁重讀不加）；unread 只數走進已讀區之前的未讀", () => {
+    let s = initialScanState();
+    const mark = (n) => (n >= 110 ? "+" : n === 107 ? "+" : " ");
+    const f = page(range(101, 120, mark));
+    const entries = pageUnreadEntries(f.rowTexts, f.nums, ROWS);
+    s = scanUnreadPage(s, entries);
+    // 120..110 未讀（11 篇）、109、108 已讀、107 未讀 ⇒ 連續數歸零、106..102 再 5 篇已讀才收手。
+    expect(s.done).toBe(true);
+    expect(s.lastUnread).toBe(107);
+    expect(s.unread).toBe(12);
+    expect(s.seen).toBe(120 - 102 + 1); // 收手那篇（102）之後不再讀
+    // PgUp 沒動（同一頁再來一次）：已經讀過的那些不再加。
+    const again = scanUnreadPage(Object.assign({}, s, { done: false }), entries.filter((e) => e.num >= 102));
+    expect(again.seen).toBe(s.seen);
+  });
+});
+
+// 假的進度 UI：記下呼叫（DOM 版本在 unread_jump_ui.test.js 用真瀏覽器測）。
+function fakeUi() {
+  const calls = [];
+  const ui = {};
+  for (const k of ["begin", "update", "cancelling", "committing", "end", "showDivider", "clearDivider"])
+    ui[k] = (...a) => {
+      calls.push([k, ...a]);
+      return true;
+    };
+  return { ui, calls };
+}
+
+describe("P83：進度卡與取消", () => {
+  afterEach(() => {
+    for (const k of Object.keys(prefOverride)) delete prefOverride[k];
+  });
+
+  test("進度卡：開始 begin、每讀完一頁 update(翻了幾頁, 看過幾篇)、跳號時收起取消、結束 end", () => {
+    const { core, enqueued } = makeCore();
+    const suppressed = [];
+    core.view.setListLoadingSuppressed = (on) => suppressed.push(on);
+    const uj = new UnreadJump(core);
+    const { ui, calls } = fakeUi();
+    uj._ui = ui;
+    const mark = (n) => (n >= 202614 ? "+" : n === 202613 ? "~" : " ");
+    uj.start();
+    // 原生（沒有列表好讀接管）⇒ 不調暗。進度卡期間藏「讀取中…」。
+    expect(calls[0]).toEqual(["begin", false]);
+    expect(suppressed).toEqual([true]);
+    land(enqueued[0], page(range(202611, 202630, mark)));
+    expect(calls.at(-1)).toEqual(["update", 0, 20]);
+    land(enqueued[1], page(range(202591, 202610, mark), 0));
+    expect(calls.filter((c) => c[0] === "update").at(-1)).toEqual(["update", 1, 22]); // 第二頁讀到湊滿 5 篇已讀就停
+    expect(calls.at(-1)).toEqual(["committing"]);
+    land(enqueued[2], page(range(202611, 202630, mark), 3));
+    expect(calls.at(-1)).toEqual(["end"]);
+    expect(suppressed).toEqual([true, false]);
+  });
+
+  test("每個出口都收起進度卡：失敗、被 flush、根本沒送出", () => {
+    for (const exit of ["fail", "flush", "blocked"]) {
+      const { core, enqueued } = makeCore();
+      const suppressed = [];
+      core.view.setListLoadingSuppressed = (on) => suppressed.push(on);
+      if (exit === "blocked") core.commandQueue = null;
+      const uj = new UnreadJump(core);
+      const { ui, calls } = fakeUi();
+      uj._ui = ui;
+      uj.start();
+      if (exit === "fail") enqueued[0].onFail();
+      if (exit === "flush") enqueued[0].onFlushed();
+      expect(calls.at(-1)).toEqual(["end"]);
+      expect(suppressed).toEqual([true, false]);
+      expect(uj.cancel()).toBe(false);
+    }
+  });
+
+  test("列表好讀接管中 ⇒ begin(true)（凍結的列表調暗）", () => {
+    const { core } = makeCore();
+    core.activeListSession = () => ({ state: "active", _renderMode: "buffer", _beginPassthroughBytes: () => {} });
+    const uj = new UnreadJump(core);
+    const { ui, calls } = fakeUi();
+    uj._ui = ui;
+    uj.start();
+    expect(calls[0]).toEqual(["begin", true]);
+  });
+
+  test("設定關掉（unreadJumpProgress=false）或狀態提示總開關關掉 ⇒ 不出進度卡，送鍵照舊", () => {
+    for (const setup of [() => (prefOverride.unreadJumpProgress = false), (core) => (core.view.showStatusHints = false)]) {
+      const { core, enqueued } = makeCore();
+      setup(core);
+      const uj = new UnreadJump(core);
+      const { ui, calls } = fakeUi();
+      uj._ui = ui;
+      uj.start();
+      expect(enqueued.map((c) => c.keys)).toEqual([END]);
+      expect(calls).toEqual([]);
+      for (const k of Object.keys(prefOverride)) delete prefOverride[k];
+    }
+  });
+
+  test("取消：等這一頁讀完 ⇒ 不再 PgUp，改跳回按之前那篇（書籤的游標編號），閱讀紀錄記 cancel", () => {
+    const { core, enqueued, hints } = makeCore();
+    const restore = vi.fn();
+    core.listSession = {
+      readingPosition: () => ({ kind: "list", board: "Test", mode: "plain", topNum: 1, cursorNum: 7 }),
+      requestViewportRestore: restore,
+    };
+    const uj = new UnreadJump(core);
+    const { ui, calls } = fakeUi();
+    uj._ui = ui;
+    uj.start();
+    expect(uj.cancel()).toBe(true);
+    expect(calls.at(-1)).toEqual(["cancelling"]);
+    // 再按一次 Esc 也還是吞掉，不重複。
+    expect(uj.cancel()).toBe(true);
+    expect(calls.filter((c) => c[0] === "cancelling")).toHaveLength(1);
+    // 正在等的 End 照常收完；這頁還沒走進已讀區，但取消了 ⇒ 不送 PgUp。
+    land(enqueued[0], page(range(81, 100, () => "+")));
+    expect(enqueued.map((c) => c.keys)).toEqual([END, "7\r"]);
+    // 跳號中不能再取消（Esc 交回忙碌閘門）。
+    expect(uj.cancel()).toBe(false);
+    land(enqueued[1], page(range(1, 20, () => " "), 6));
+    expect(core.unreadJumpInFlight).toBe(false);
+    expect(hints.at(-1).m).toBe("已取消，回到原本的位置");
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(calls.at(-1)).toEqual(["end"]);
+    expect(uj.cancel()).toBe(false);
+  });
+
+  test("取消但不知道原本那篇（置底／不在列表）⇒ 停在翻到的那頁，不送鍵", () => {
+    const { core, enqueued, hints } = makeCore();
+    const uj = new UnreadJump(core);
+    uj._ui = fakeUi().ui;
+    uj.start();
+    uj.cancel();
+    land(enqueued[0], page(range(81, 100, () => "+")));
+    expect(enqueued.map((c) => c.keys)).toEqual([END]);
+    expect(core.unreadJumpInFlight).toBe(false);
+    expect(hints.at(-1).m).toBe("已取消跳到第一篇未讀");
+  });
+
+  test("沒在跑 ⇒ cancel() 回 false（Esc 照常送給 PTT）", () => {
+    const { core } = makeCore();
+    expect(new UnreadJump(core).cancel()).toBe(false);
+  });
+});
+
+describe("P84：落地分界", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const k of Object.keys(prefOverride)) delete prefOverride[k];
+  });
+
+  function runToJump(core, uj) {
+    const enqueued = [];
+    core.commandQueue = { enqueue: (cmd) => enqueued.push(cmd) };
+    uj.start();
+    land(enqueued[0], page(range(81, 100, (n) => (n >= 90 ? "+" : " "))));
+    land(enqueued[1], page(range(81, 100, () => " "), 9));
+  }
+
+  test("跳到之後畫分界，N＝找的過程數到的未讀數；設定關掉就不畫", () => {
+    vi.useFakeTimers();
+    const { core } = makeCore();
+    const uj = new UnreadJump(core);
+    const draws = [];
+    uj._drawDivider = (num, n) => draws.push([num, n]);
+    uj._ui = fakeUi().ui;
+    runToJump(core, uj);
+    expect(draws).toEqual([[90, 11]]);
+
+    prefOverride.unreadJumpDivider = false;
+    const uj2 = new UnreadJump(core);
+    const draws2 = [];
+    uj2._drawDivider = (num, n) => draws2.push([num, n]);
+    uj2._ui = fakeUi().ui;
+    runToJump(core, uj2);
+    expect(draws2).toEqual([]);
+  });
+
+  test("沒有未讀／放棄／失敗都不畫分界", () => {
+    const { core, enqueued } = makeCore();
+    const uj = new UnreadJump(core);
+    const draws = [];
+    uj._drawDivider = (num, n) => draws.push([num, n]);
+    uj._ui = fakeUi().ui;
+    uj.start();
+    land(enqueued[0], page(range(1, 20, () => " ")));
+    expect(draws).toEqual([]);
   });
 });

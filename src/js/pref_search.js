@@ -231,6 +231,16 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_unreadJumpKey",
     },
     {
+      key: "unreadJumpProgress",
+      titleKey: "options_unreadJumpProgress",
+      tooltipKey: "tooltip_unreadJumpProgress",
+    },
+    {
+      key: "unreadJumpDivider",
+      titleKey: "options_unreadJumpDivider",
+      tooltipKey: "tooltip_unreadJumpDivider",
+    },
+    {
       key: "enableCommandPalette",
       titleKey: "options_enableCommandPalette",
       tooltipKey: "tooltip_enableCommandPalette",

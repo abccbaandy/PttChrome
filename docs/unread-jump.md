@@ -38,6 +38,24 @@
 - 落地判定：End 用 `aid_navigation.endLanded`、PgUp 用 `pageLanded`（同板、游標在條目區、有編號）、跳號用 `numJumpLanded`。
 - 在途旗標 `unreadJumpInFlight`（`serialized_op_gate`）：期間使用者的鍵一律吞掉＋提示。
 
+## 過程回饋（P83／P84，`src/js/unread_jump_ui.js`）
+
+找的過程是好幾個往返（End＋最多 20 次 PgUp＋跳號），列表好讀時畫面整段凍住，沒有回饋就像沒反應。
+
+- **進度卡**（pref `unreadJumpProgress`，預設開；`showStatusHints` 關掉也不出現）：超過 `PROGRESS_DELAY_MS`（300ms）
+  還沒結束才出現（快的不閃），第二行每讀完一頁更新「已往上翻 N 頁・看過 M 篇」（`scanUnreadPage` 的 `seen`）。
+  好讀列表接管中（凍結）⇒ body 掛 `unreadJumpBusy` 調暗 `#mainContainer`；原生不調暗（使用者看得到 PTT 在翻）。
+  卡片期間 `term_view.setListLoadingSuppressed(true)`：不再疊凍結交易的「讀取中…」。
+- **取消**（卡片上的鈕、Esc；`term_view.onKeyDown` 在忙碌閘門**之前**問 `unreadJump.cancel()`）：只留旗標，正在等回應的
+  那一步照常收完，下一頁讀完時改送 `<原本那篇>⏎`（閱讀紀錄書籤的 `list.cursorNum`），閱讀紀錄 `cancel` ＝列表原處。
+  不知道原本那篇（置底、不在列表上）⇒ 停在翻到的那頁。已經在跳號（最後一步）就不能取消，Esc 照舊吞掉＋提示。
+- **每個出口都要收卡片**：完成、失敗、被 flush（`article_search.trackInFlight` 保留呼叫端的 `onFlushed`）、根本沒送出。
+- **落地分界**（pref `unreadJumpDivider`，預設開）：跳號落地、列表好讀重建後，在游標那一列（手機是卡片）上緣畫
+  「以下未讀 N 篇」（N＝`scanUnreadPage` 的 `unread`，走進已讀區之前看到的未讀），那一篇淡藍底 2 秒後淡掉。
+  只在列表好讀（`listRenderMode === 'buffer'`）畫、選取必須就是那一篇，認不出就不畫。都是 body 底下的 fixed 浮層，
+  **不寫 `#mainContainer`**；列表自己捲動（接管後補頁、捲動錨定）時重新量、跟著那一列走，使用者一動手（按鍵、點、
+  觸控、滾輪、改視窗大小）就收。
+
 ## 只在文章列表
 
 與重新整理同一個判準（`screen_refresh.refreshTargetOf` 的 `article-list`；搜尋結果／文摘不算，編號空間不同）。
@@ -52,5 +70,8 @@
 ## 守護
 
 - unit：`unread_jump.test.js`（標記、判定、送鍵序列、收手條件、忙碌）、`mobile_toolbar.test.js`、
-  `list_card.test.js`（`data-list-mark`）、`list_card_css.test.js`（放大／調暗的 CSS 契約）。
-- offline e2e：`unread_jump.offline.spec.js`（真 F7）。
+  `list_card.test.js`（`data-list-mark`）、`list_card_css.test.js`（放大／調暗的 CSS 契約）、
+  `unread_jump_ui.test.js`（進度卡延遲／取消鈕不搶焦點、分界跟著列走與收起時機）。
+- offline e2e：`unread_jump.offline.spec.js`（真 F7）；`unread_jump_feedback.offline.spec.js`／
+  `mobile_unread_jump_feedback.offline.spec.js`（頁面裡的假 PTT 列表 `helpers/fake_board.js` 照 read.c 翻頁，
+  列表好讀凍結交易整段真跑：進度卡、Esc／點按取消回原處、落地分界、開關關掉＝舊行為）。

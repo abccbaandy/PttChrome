@@ -1738,6 +1738,18 @@
   "tooltip_unreadJumpKey": {
     "message": "點此後按任意鍵設定 (預設 F7)"
   },
+  "options_unreadJumpProgress": {
+    "message": "跳到第一篇未讀時顯示進度"
+  },
+  "tooltip_unreadJumpProgress": {
+    "message": "找的過程顯示已往上翻幾頁、看過幾篇，可以按「取消」或 Esc 回到原本那篇"
+  },
+  "options_unreadJumpDivider": {
+    "message": "跳到第一篇未讀後標出分界"
+  },
+  "tooltip_unreadJumpDivider": {
+    "message": "在第一篇未讀上方畫一條線，標出「以下未讀 N 篇」，捲動或按鍵就收起（好讀列表）"
+  },
   "options_refreshKeyIntercept": {
     "message": "F5／⌘R 重新整理 PTT 畫面"
   },

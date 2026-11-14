@@ -1739,6 +1739,18 @@ export const en_US = {
   "tooltip_unreadJumpKey": {
     "message": "Click then press any key to set (default F7)"
   },
+  "options_unreadJumpProgress": {
+    "message": "Show progress while jumping to the first unread"
+  },
+  "tooltip_unreadJumpProgress": {
+    "message": "Shows how many pages were scanned; press Cancel or Esc to go back to where you were"
+  },
+  "options_unreadJumpDivider": {
+    "message": "Mark the unread boundary after jumping"
+  },
+  "tooltip_unreadJumpDivider": {
+    "message": "Draws a line above the first unread with the unread count; it goes away when you scroll or press a key (easy-reading list)"
+  },
   "options_refreshKeyIntercept": {
     "message": "F5 / ⌘R refreshes the PTT screen"
   },

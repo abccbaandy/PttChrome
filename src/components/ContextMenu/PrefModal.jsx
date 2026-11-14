@@ -1226,6 +1226,22 @@ export const PrefModal = ({
                   {...anchor("unreadJumpKey")}
                 />
                 <PrefCheckbox
+                  name="unreadJumpProgress"
+                  checked={values.unreadJumpProgress}
+                  onChange={onCheckboxChange}
+                  description={i18n("tooltip_unreadJumpProgress")}
+                >
+                  {i18n("options_unreadJumpProgress")}
+                </PrefCheckbox>
+                <PrefCheckbox
+                  name="unreadJumpDivider"
+                  checked={values.unreadJumpDivider}
+                  onChange={onCheckboxChange}
+                  description={i18n("tooltip_unreadJumpDivider")}
+                >
+                  {i18n("options_unreadJumpDivider")}
+                </PrefCheckbox>
+                <PrefCheckbox
                   name="enableCommandPalette"
                   checked={values.enableCommandPalette}
                   onChange={onCheckboxChange}

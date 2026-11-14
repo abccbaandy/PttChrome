@@ -35,7 +35,7 @@
 - [`screen-refresh.md`](screen-refresh.md)：重新整理：PTT 無原生重整鍵的讀碼依據／三種畫面各自的原生路徑（s<板>⏎、/⏎、AID 重開）／F5 攔截範圍／手機下拉重整為何是「原生不准模擬」的例外；動 screen_refresh.js、pull_refresh.js、aid_navigation.refresh 前先讀
 - [`reading-record.md`](reading-record.md)：閱讀紀錄：使用者眼睛看到的位置（文章讀到哪／列表視野）的唯一擁有者＋凍結＋功能×結果的還原決策表＋身後的列表；新增或修改任何會切原生／改畫面的功能、動 reading_record.js 或列表的待還原錨前先讀
 - [`agent-tools.md`](agent-tools.md)：AI agent 工具：`window.pttAgent`＋WebMCP 同一份定義／高階工具一律走 aid_navigation／背景分頁必拒；要用 agent 操作 PTT 或動 agent_tools.js、agent_parse.js、aid_navigation 的 startBoard/startNum 前先讀
-- [`unread-jump.md`](unread-jump.md)：跳到第一篇未讀：判定規則／End→PgUp 序列／收手條件；動 unread_jump.js 前先讀
+- [`unread-jump.md`](unread-jump.md)：跳到第一篇未讀：判定規則／End→PgUp 序列／收手條件／過程回饋（進度卡、取消、落地分界）；動 unread_jump.js、unread_jump_ui.js 前先讀
 - [`command-palette.md`](command-palette.md)：指令面板 F4：輸入→項目對照、每項接到哪個既有入口、為何不能用 Ctrl+K；動 command_palette.js 或 CommandPalette 前先讀
 - [`home-dashboard.md`](home-dashboard.md)：首頁儀表板：主功能表指紋／Ctrl+Z f 抓我的最愛的翻頁序列／不是 modal、打字收起／e2e 預設關；動 home_dashboard.js 或 components/HomeDashboard 前先讀
 - [`split-reader.md`](split-reader.md)：寬螢幕雙欄閱讀：左欄＝列表快照／換文走 startNum／搜尋結果不出現／只用終端機左邊的空白；動 split_reader.js 或 components/SplitReader 前先讀
