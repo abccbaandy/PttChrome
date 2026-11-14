@@ -2269,6 +2269,14 @@ export const PrefModal = ({
                   {i18n("options_mergeSameAuthorComments")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="mergedCommentEachTime"
+                  checked={values.mergedCommentEachTime}
+                  onChange={onCheckboxChange}
+                  disabled={!values.mergeSameAuthorComments}
+                >
+                  {i18n("options_mergedCommentEachTime")}
+                </PrefCheckbox>
+                <PrefCheckbox
                   name="commentBlockSpacing"
                   checked={values.commentBlockSpacing}
                   onChange={onCheckboxChange}

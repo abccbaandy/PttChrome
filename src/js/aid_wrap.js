@@ -59,8 +59,10 @@ export function detectWrappedAids(chars, breaks) {
     if (!isPlainCh(chars, br.index, NEWLINE)) continue; // 防禦：breaks 指的就是換行格
 
     // ---- 左片段：緊貼換行往左取連續 AID 字元，前面必須正好是一個 '#' ----
-    if (!isAidCell(chars, br.index - 1)) continue;
-    let l = br.index - 1;
+    // 換行前若接著上一則自己的時間（P82 每則標時間），從內容尾端 leftEnd 算。
+    const leftEnd = br.leftEnd != null ? br.leftEnd : br.index;
+    if (!isAidCell(chars, leftEnd - 1)) continue;
+    let l = leftEnd - 1;
     while (isAidCell(chars, l - 1)) --l;
     const hashCol = l - 1;
     if (!isPlainCh(chars, hashCol, '#')) continue;
@@ -71,7 +73,7 @@ export function detectWrappedAids(chars, breaks) {
       if (b && (isAidChar(b.ch) || b.ch === '#')) continue;
     }
     let left = '';
-    for (let i = l; i < br.index; ++i) left += chars[i].ch;
+    for (let i = l; i < leftEnd; ++i) left += chars[i].ch;
     if (left.length >= AID_LEN) continue; // 已是完整 AID ⇒ 逐列偵測的事
 
     // ---- 右片段：必須從**下一則內容的第 0 欄**接續（換行 cell 的下一格）----
@@ -87,7 +89,7 @@ export function detectWrappedAids(chars, breaks) {
     // 網址 fragment 與 AIDc 同形（見 term_url_flag.js）：兩側任一落在已標記的 URL
     // 內就不接，否則會把一條好好的網址從中切開。
     if (
-      rangeInTermUrl(chars, hashCol, br.index) ||
+      rangeInTermUrl(chars, hashCol, leftEnd) ||
       rangeInTermUrl(chars, br.index + 1, endCol)
     ) {
       continue;
@@ -98,7 +100,7 @@ export function detectWrappedAids(chars, breaks) {
     // 後綴可能還在右片段之後，也可能又被切到再下一則——parseBoardSuffix 已能跨換行。
     const board = parseBoardSuffix(chars, endCol);
     // 左殘段（'#' 起至換行前）與右殘段（換行後至 endCol）各自成錨。
-    out.push({ startCol: hashCol, endCol: br.index, aid, board });
+    out.push({ startCol: hashCol, endCol: leftEnd, aid, board });
     out.push({ startCol: br.index + 1, endCol, aid, board });
     if (seen.size >= MAX_PER_BLOCK) break;
   }

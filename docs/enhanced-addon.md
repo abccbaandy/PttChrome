@@ -118,6 +118,10 @@
   - **置右靠資料不靠 CSS**：run 內必為同 userid ⇒ 各列 `info.start` 相同 ⇒ 合併末行的左緣偏移
     （懸掛縮排）等於原列的 ⇒ 帶著原 padding 就落在**與原生逐列渲染完全相同的欄**（時間 col 67..77，
     整行 78 欄 < 容器 80 欄故不會換行）。勿改成「接在內容尾端」（使用者回報過）或 CSS 絕對定位。
+  - **每則標時間（P82，pref `mergedCommentEachTime`，預設開）**：第 1～n-1 則也在換行 cell 前接上**自己那一列**
+    的段尾（`buildMergedCommentChars(lines, run, { eachTime })`），每一行的時間都落在原生那一欄。換行前多了時間
+    ⇒ `breaks[].leftEnd`＝左則內容尾端（url_wrap／aid_wrap 從那裡往左取殘段），`aid_parse.parseBoardSuffix`
+    會跳過「padding＋可選 IP＋時間」再找下一則開頭的 `(看板)`；`lineTails` 給手機卡片拆用。關掉＝上面那條舊行為。
   - 全段**沿用原列 cell** → 配色與原生模式一致、且是一般文字，`^C`（走
     `window.getSelection().toString()`）選得到。**勿改成另外的標籤節點**（不可選取＝不可複製）。
 - DOM：`LinkSegmentBuilder` 遇 `\n` cell 就**切一個新的 bbsline span**（`_flushLine`），每個 span 後面

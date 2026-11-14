@@ -833,6 +833,9 @@ export const en_US = {
   "options_mergeSameAuthorComments": {
     "message": "Merge consecutive comments by the same author into one paragraph (easy reading only; shows time and floor range)"
   },
+  "options_mergedCommentEachTime": {
+    "message": "Show each comment's time in merged comments"
+  },
   "options_dimReadArticles": {
     "message": "Dim read articles"
   },

@@ -17,9 +17,14 @@ afterEach(() => unmountAll());
 
 const text = (node) => (node ? node.textContent : "");
 const easy = SCENARIOS.find((s) => s.name === "article_easy_reading");
-const props = (commentCards) => ({
+// eachTime＝pref mergedCommentEachTime（P82）；不給＝預設開。
+const props = (commentCards, eachTime) => ({
   ...easy,
-  enhance: { ...easy.enhance, commentCards },
+  enhance: {
+    ...easy.enhance,
+    commentCards,
+    ...(eachTime === undefined ? null : { mergedCommentEachTime: eachTime }),
+  },
 });
 
 describe("buildCommentCard（單一推文列）", () => {
@@ -128,14 +133,32 @@ describe("ScreenController：只在 enhance.commentCards 時畫卡片", () => {
     expect(mergedBody).toContain("第一則");
     expect(mergedBody).toContain("同一人第二則");
     expect(mergedBody).not.toContain("06/14");
-    // 合併塊只留最後一則的時間（同桌機合併塊的規則）。
-    expect(text(merged.querySelector(".commentCardTime"))).toBe("06/14 12:02");
+    // P82（預設開）：標頭是**第一則**的時間（它就在標頭下面那行），第二則起行右淡灰「時:分」。
+    // 時間畫在 ::before（data-time），不進內容文字。
+    expect(text(merged.querySelector(".commentCardTime"))).toBe("06/14 12:01");
+    expect(
+      [...merged.querySelectorAll(".commentCardLineTime")].map((n) =>
+        n.getAttribute("data-time"),
+      ),
+    ).toEqual(["12:02"]);
+    const lineTime = merged.querySelector(".commentCardLineTime");
+    expect(lineTime.parentElement.textContent).toContain("同一人第二則");
     expect(text(merged.querySelector(".floorBadge[data-floor]"))).toBe("1");
 
     expect(single.getAttribute("data-pusher")).toBe("other");
     expect(text(single.querySelector(".commentCardTag"))).toBe("噓");
     expect(text(single.querySelector(".commentCardTime"))).toBe("06/14 12:04");
     expect(m.container.textContent).not.toContain("黑名單這則");
+  });
+
+  test("合併推文標每則時間關掉：只留最後一則的時間、沒有行右時間", () => {
+    const m = mountScreen(props(true, false));
+    const merged = m.container.querySelector(
+      '.commentCard[data-pusher="gooduser"]',
+    );
+    expect(text(merged.querySelector(".commentCardTime"))).toBe("06/14 12:02");
+    expect(merged.querySelector(".commentCardLineTime")).toBeNull();
+    expect(text(merged.querySelector(".commentCardText"))).not.toContain("06/14");
   });
 
   test("桌機（沒有 commentCards）：一張卡片都沒有", () => {
@@ -192,6 +215,8 @@ describe("commentCardCopyText（長按選單的複製推文）", () => {
     expect(second.count).toBe(2);
     expect(second.line).toContain("同一人第二則");
     expect(second.line).not.toContain("第一則");
+    // 行右的「時:分」（P82）不混進複製的文字。
+    expect(second.all).not.toMatch(/\d\d:\d\d/);
     expect(second.all.split("\n")).toHaveLength(2);
     expect(second.all.split("\n")[0]).toContain("第一則");
     const head = commentCardCopyText(merged.querySelector(".commentCardHead"));

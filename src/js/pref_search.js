@@ -588,6 +588,10 @@ export const PREF_SEARCH_ITEMS = [
       key: "mergeSameAuthorComments",
       titleKey: "options_mergeSameAuthorComments",
     },
+    {
+      key: "mergedCommentEachTime",
+      titleKey: "options_mergedCommentEachTime",
+    },
     { key: "commentBlockSpacing", titleKey: "options_commentBlockSpacing" },
     {
       key: "showMergeCaptionButton",

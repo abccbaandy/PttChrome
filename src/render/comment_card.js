@@ -69,8 +69,22 @@ export function commentCardRegions(chars) {
 }
 
 // 合併推文塊（comment_merge.buildMergedCommentChars 的產物，ann.mergeCommentRun）的區段。
+// P82（pref mergedCommentEachTime）：m.lineTails 有值 ⇒ 每一則的段尾都留在 chars 裡
+// （comment_merge opts.eachTime）。卡片版型：標頭的 IP／時間改用**第一則**的（它就接在
+// 標頭下面那一行），第二則起的段尾從內容裡拿掉、改在那一行右邊畫淡灰「時:分」。
 export function mergedCommentCardRegions(m) {
   if (!m || m.tailStart == null || m.timeStart == null) return null;
+  const lt = m.lineTails;
+  if (lt && lt.length >= 2 && lt.every(Boolean)) {
+    return {
+      contentStart: m.contentStart,
+      contentEnd: m.tailStart,
+      tailStart: lt[0].tailStart,
+      timeStart: lt[0].timeStart,
+      timeEnd: lt[0].timeEnd,
+      lineTails: lt,
+    };
+  }
   return {
     contentStart: m.contentStart,
     contentEnd: m.tailStart,
@@ -78,6 +92,13 @@ export function mergedCommentCardRegions(m) {
     timeStart: m.timeStart,
     timeEnd: m.chars.length,
   };
+}
+
+// 段尾的「時:分」那幾格：時間戳是 "M/DD HH:MM"（月份 1～2 位），取空白之後。
+function hourMinuteStart(chars, timeStart, timeEnd) {
+  for (let i = timeStart; i < timeEnd; ++i)
+    if (chars[i] && chars[i].ch === " ") return i + 1;
+  return timeStart;
 }
 
 export function buildCommentCard({
@@ -159,8 +180,36 @@ export function buildCommentCard({
     bareDomains,
     sizeMode,
   );
-  for (let i = r.contentStart; i < r.contentEnd; ++i)
+  // 每則標時間：第 1～n-1 則的段尾不進內容（末則的段尾本來就在 contentEnd 之後）。
+  const tails = r.lineTails ? r.lineTails.slice(0, -1) : null;
+  let t = 0;
+  for (let i = r.contentStart; i < r.contentEnd; ++i) {
+    if (tails && t < tails.length && i >= tails[t].tailStart) {
+      if (i < tails[t].timeEnd) continue;
+      ++t;
+    }
     builder.readChar(chars[i], i);
+  }
+  const text = builder.build();
+  if (r.lineTails) {
+    // builder 的多行輸出：每行一個 [data-type=bbsline]（依序）。第二行起在行首放一個
+    // 靠右浮動的「時:分」（浮動元素要排在同一行的文字前面才會跟它同一行）。
+    // 字畫在 ::before（data-time）：長按「複製推文」、選取複製都只拿到內容，不夾時間。
+    const lines = [...text.children].filter(
+      (n) => n.getAttribute && n.getAttribute("data-type") === "bbsline",
+    );
+    for (let k = 1; k < r.lineTails.length && k < lines.length; ++k) {
+      const lt = r.lineTails[k];
+      let hm = "";
+      for (let i = hourMinuteStart(chars, lt.timeStart, lt.timeEnd); i < lt.timeEnd; ++i)
+        hm += chars[i] ? chars[i].ch : "";
+      if (!hm) continue;
+      lines[k].insertBefore(
+        el("span", { class: "commentCardLineTime", "data-time": hm }),
+        lines[k].firstChild,
+      );
+    }
+  }
 
   return {
     node: el(
@@ -173,7 +222,7 @@ export function buildCommentCard({
         class: cx("commentCard", { pusherHighlight, mentionsSelf, newCommentsStart, justPushed }),
         "data-new-comments": newCommentsStart ? i18n("new_comments_divider") : undefined,
       },
-      [head, el("span", { class: "commentCardText" }, builder.build())],
+      [head, el("span", { class: "commentCardText" }, text)],
     ),
     slots: builder.slots,
   };

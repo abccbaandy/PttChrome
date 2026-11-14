@@ -195,8 +195,26 @@ describe("整合：78 欄推文列 → 合併 → 接合", () => {
     });
     // 合併塊＝首則前綴(12) + 首則內容(53) → 換行 cell 落在 index 65。
     expect(merged.breaks).toEqual([
-      { index: 65, leftFull: true, leftTime: TIME, rightTime: TIME },
+      { index: 65, leftEnd: 65, leftFull: true, leftTime: TIME, rightTime: TIME },
     ]);
+    expect(detectWrappedUrls(merged.chars, merged.breaks)[0].fixed).toBe(
+      "https://i.imgur.com/Pn3XurX.jpeg",
+    );
+  });
+
+  // P82：每則標時間時換行前隔著左則自己的時間，殘段要從 leftEnd 往左取。
+  test("eachTime（每則標時間）一樣接得回來", () => {
+    const lines = [
+      fullRow("pttuser", "works at DeepMind", "https://i.imgur.c", TIME),
+      shortRow("pttuser", "om/Pn3XurX.jpeg", TIME),
+    ];
+    const merged = buildMergedCommentChars(
+      lines,
+      { userid: "pttuser", rows: [0, 1] },
+      { eachTime: true },
+    );
+    expect(merged.breaks[0].leftEnd).toBe(65);
+    expect(merged.breaks[0].index).toBeGreaterThan(65);
     expect(detectWrappedUrls(merged.chars, merged.breaks)[0].fixed).toBe(
       "https://i.imgur.com/Pn3XurX.jpeg",
     );

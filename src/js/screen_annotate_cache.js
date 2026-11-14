@@ -134,6 +134,8 @@ export function annotationsKey(input) {
     stable(e.easyReading),
     stable(e.enableXMention),
     stable(e.mergeSameAuthorComments),
+    // 合併塊每則標時間（P82）：合併後的 chars 不同 ⇒ 要進 key。
+    stable(e.mergedCommentEachTime),
     stable(e.inListContext),
     stable(e.listEasyReading),
     stable(e.dropHidden),

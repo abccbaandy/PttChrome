@@ -385,6 +385,7 @@ export function TermView() {
   // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
   // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
   this.mergeSameAuthorComments = true;
+  this.mergedCommentEachTime = true;
   // 推文區塊行距（內緊外鬆）：純 CSS，容器 class 由 render/screen.js 掛。
   // Set via App.onPrefChange.
   this.commentBlockSpacing = true;
@@ -1477,6 +1478,7 @@ TermView.prototype = {
           onCommentFilterToggle: this._onCommentFilterToggle,
           showFloorNumbers: this.showFloorNumbers,
           mergeSameAuthorComments: this.mergeSameAuthorComments,
+          mergedCommentEachTime: this.mergedCommentEachTime,
           // 推文區塊行距。**刻意不進 annotationsKey**（js/screen_annotate_cache.js
           // 的白名單）：它只影響容器 class，不改變任何一列的標註。
           commentBlockSpacing: this.commentBlockSpacing,

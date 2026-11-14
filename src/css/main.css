@@ -392,6 +392,17 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 .commentCard .commentCardMeta > * + * {
   margin-left: 0.5em;
 }
+/* 合併推文第二則起每行右邊的「時:分」（P82，pref mergedCommentEachTime）：淡灰、小一號，
+   靠右浮動 ⇒ 短推文不多佔一行，長到碰到時就由文字繞開（不截斷）。 */
+.commentCard .commentCardLineTime {
+  float: right;
+  margin-left: 0.6em;
+  font-size: 0.85em;
+  color: #8a8f9c;
+}
+.commentCard .commentCardLineTime::before {
+  content: attr(data-time);
+}
 /* 推文內容的暗黃（ANSI 33，.q3 #808000）在手機字級下太暗：比照 PTT 網頁版 .f3 的 #990。
    :not() 讓出上班模式與游標列加亮（color.css 的 .work-mode-active／.cursorBrighten .q3）。 */
 .commentCard .commentCardText .q3:not(.work-mode-active *, .cursorBrighten *) {
@@ -950,7 +961,8 @@ span.listCard[data-board-unread="none"]:not(
 /* 樓號徽章不覆寫：沿用一般 .floorBadge 的「零寬盒＋右對齊 id 起始欄向左長」疊字，
    前綴「marker＋空格＋id」照 col 對齊 → 合併塊作者 id 與相鄰單則推文（renderRow）
    同一起始欄，不會被徽章推移。
-   時間戳也不需要樣式：它是最後一則的原始 cell（見 comment_merge.js），配色跟原生
+   時間戳也不需要樣式：它是各則（pref mergedCommentEachTime 關掉時只有最後一則）的原始
+   cell（見 comment_merge.js），配色跟原生
    一致、且是一般文字可被 ^C 選取複製。舊版的 .mergedCommentTime（淡色縮小＋
    user-select:none）已於 2026-08 移除——使用者要求「比照原生、要能複製」。 */
 
