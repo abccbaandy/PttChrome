@@ -1704,6 +1704,16 @@ export const PrefModal = ({
                       {i18n("tooltip_mobileListEndHint")}
                     </Text>
                     <PrefCheckbox
+                      name="mobileFloatToolsInMore"
+                      checked={values.mobileFloatToolsInMore}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobileFloatToolsInMore")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobileFloatToolsInMore")}
+                    </Text>
+                    <PrefCheckbox
                       name="mobileBoardTools"
                       checked={values.mobileBoardTools}
                       onChange={onCheckboxChange}

@@ -913,6 +913,12 @@ export const MobileToolbar = ({
   // 「更多」是 bottom sheet（components/MobileSheet）：開著算 modal、系統返回＝收起。
   // 它畫在 portal 裡，不在工具列的事件攔截範圍內 —— 遮罩／項目的點擊靠 modalShown
   // 擋住 App 的滑鼠入口（MobileSheet 檔頭）。
+  // P76「這篇文章」：右下「⋯」浮動工具收進來（pref mobileFloatToolsInMore；關掉時 Screen 照舊畫
+  // 「⋯」、這裡拿到空清單）。每項就是那顆工具按鈕本身（screen.sheetTools），開面板那一刻現問。
+  const articleTools =
+    panel === "more"
+      ? pttchrome.view?.componentScreen?.sheetTools?.() || []
+      : [];
   const moreSheet = (
     <MobileSheet
       pttchrome={pttchrome}
@@ -921,6 +927,34 @@ export const MobileToolbar = ({
       sheetKey="more"
     >
       <div data-panel="more">
+        {articleTools.length ? (
+          <>
+            <div className="mobileSheetSectionLabel">
+              {i18n("mobileMore_sectionArticle")}
+            </div>
+            {articleTools.map((t) => (
+              <button
+                key={"at-" + t.id}
+                type="button"
+                className={
+                  "nomouse_command mobileSheetItem pttRipple" +
+                  (t.active ? " active" : "")
+                }
+                {...(t.active === null
+                  ? {}
+                  : { "aria-pressed": t.active ? "true" : "false" })}
+                data-key={"__articleTool-" + t.id}
+                onClick={() => {
+                  setPanel(null);
+                  t.run();
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+            <div className="mobileSheetDivider" role="separator" />
+          </>
+        ) : null}
         {quickSearch.items.map((qs) => (
           <button
             key={"qs-" + qs.id}

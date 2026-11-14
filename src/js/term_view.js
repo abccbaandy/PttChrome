@@ -1491,6 +1491,9 @@ TermView.prototype = {
           mergeCaptionButton: this.showMergeCaptionButton,
           lightsButton: this.showLightsOnButton,
           debugRecordButton: this.debugRecordButton,
+          // P76：手機把上面這些浮動工具收進「更多」（不畫「⋯」）。同上不進 annotationsKey。
+          floatToolsInSheet:
+            !!(this.bbscore && this.bbscore.mobile) && !!readEffectivePrefs().mobileFloatToolsInMore,
           isDebugRecording: this.isDebugRecording,
           onDebugRecord: this.onDebugRecord,
           debugSaveButton: this.debugSaveButton,

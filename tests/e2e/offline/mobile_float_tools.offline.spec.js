@@ -7,8 +7,14 @@
 // 拖曳／展開方向的分支邏輯在 tests/unit/float_tools.test.js。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
-const { waitRectStable } = require('../helpers/layout');
+const {
+  bootOffline,
+  feedRaw,
+  waitScreenSettled,
+  findCassettes,
+  replayCassette,
+} = require('../helpers/replay');
+const { waitRectStable, waitDialogSettled } = require('../helpers/layout');
 
 const ESC = '\x1b';
 // 中文測試（Big5）以 fg=bg 隱藏 ⇒ 開燈鈕的軌 A（純 CSS，不送任何鍵給 PTT）。
@@ -30,9 +36,10 @@ function articleFrame() {
   return `${ESC}[H${ESC}[2J` + rows.join('') + `${ESC}[24;80H`;
 }
 
+// 「⋯」那條路＝P76 的開關關掉（預設是收進「更多」，見檔尾 describe）。
 async function bootArticle(page) {
   await bootOffline(page, ptt);
-  await ptt.applyPrefs(page, { enableEasyReading: false });
+  await ptt.applyPrefs(page, { enableEasyReading: false, mobileFloatToolsInMore: false });
   await feedRaw(page, articleFrame());
   await expect(page.locator('#floatTools .floatTools__fab')).toBeVisible({ timeout: 15000 });
 }
@@ -108,6 +115,88 @@ test.describe('手機：文章浮動工具「⋯」', () => {
   });
 });
 
+// P76（預設）：手機不畫「⋯」，同一份工具放在「更多」面板最上面的「這篇文章」。
+test.describe('手機：文章工具收進「更多」', () => {
+  const LIGHTS = '[data-panel="more"] [data-key="__articleTool-lightsOnBtn"]';
+  const isLit = (page) =>
+    page.evaluate(() => document.getElementById('mainContainer').classList.contains('lightsOn'));
+
+  test('沒有「⋯」；更多面板有「這篇文章」，真 tap 開燈 ⇒ 生效、面板收起；再開是「關燈」且標示作用中', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: false });
+    await feedRaw(page, articleFrame());
+    await waitScreenSettled(page);
+    await expect(page.locator('#floatTools')).toHaveCount(0);
+
+    await page.locator('[data-key="__more"]').tap();
+    const item = page.locator(LIGHTS);
+    await expect(item).toBeVisible();
+    await expect(item).toHaveText(await label(page, 'lightsOn_on'));
+    await expect(item).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('[data-panel="more"]')).toContainText(await label(page, 'mobileMore_sectionArticle'));
+    await waitDialogSettled(page, LIGHTS);
+    await item.tap();
+    await expect.poll(() => isLit(page)).toBe(true);
+    await expect(page.locator('[data-panel="more"]')).toBeHidden();
+
+    await page.locator('[data-key="__more"]').tap();
+    await expect(item).toHaveText(await label(page, 'lightsOn_off'));
+    await expect(item).toHaveAttribute('aria-pressed', 'true');
+    await waitDialogSettled(page, LIGHTS);
+    await item.tap();
+    await expect.poll(() => isLit(page)).toBe(false);
+  });
+
+  // 提案原情境：好讀模式的圖文文章，「⋯」原本壓在內文右下。收進去以後從「更多」點「圖文並排」。
+  test('好讀圖文文章：內文上沒有「⋯」，從更多真 tap「圖文並排」⇒ 合併兩欄', async ({ page }) => {
+    test.setTimeout(90000);
+    const cassette = findCassettes('article-caption')[0];
+    test.skip(!cassette, '尚無 article-caption cassette');
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, cassette, { easyReading: true });
+    await waitScreenSettled(page);
+    await expect(page.locator('#floatTools')).toHaveCount(0);
+    await expect(page.locator('.mergedImageBlock')).toHaveCount(0);
+
+    const MERGE = '[data-panel="more"] [data-key="__articleTool-mergeImageCaptionBtn"]';
+    await page.locator('[data-key="__more"]').tap();
+    const item = page.locator(MERGE);
+    await expect(item).toBeVisible();
+    await expect(item).toHaveAttribute('aria-pressed', 'false');
+    await waitDialogSettled(page, MERGE);
+    await item.tap();
+    await expect(page.locator('[data-panel="more"]')).toBeHidden();
+    await expect.poll(() => page.locator('.mergedImageBlock').count()).toBeGreaterThanOrEqual(2);
+    expect(await page.locator('.mergedCaptionCol [data-type="bbsline"]').count()).toBeGreaterThan(0);
+    await expect(page.locator('#floatTools')).toHaveCount(0);
+
+    // 再開面板：同一顆標示作用中。這顆是三段循環（圖在前 → 字在前 → 還原），跟「⋯」裡按一模一樣。
+    for (let i = 0; i < 2; i++) {
+      await page.locator('[data-key="__more"]').tap();
+      await expect(item).toHaveAttribute('aria-pressed', 'true');
+      await waitDialogSettled(page, MERGE);
+      await item.tap();
+      await expect(page.locator('[data-panel="more"]')).toBeHidden();
+    }
+    await expect.poll(() => page.locator('.mergedImageBlock').count()).toBe(0);
+  });
+
+  test('這篇沒有任何工具 ⇒ 更多面板沒有「這篇文章」區', async ({ page }) => {
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: false });
+    await feedRaw(page, `${ESC}[2J${ESC}[H  MOBILE NO TOOLS  `);
+    await waitScreenSettled(page);
+    await page.locator('[data-key="__more"]').tap();
+    await expect(page.locator('[data-panel="more"]')).toBeVisible();
+    await expect(page.locator('[data-panel="more"] [data-key^="__articleTool-"]')).toHaveCount(0);
+    await expect(page.locator('[data-panel="more"]')).not.toContainText(
+      await label(page, 'mobileMore_sectionArticle')
+    );
+    await waitDialogSettled(page, '[data-panel="more"]');
+  });
+});
+
 const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
 // 手機的右鍵／長按選單是 bottom sheet（ContextMenu/ContextSheet.jsx），不是桌機的 .DropdownMenu。
@@ -170,6 +259,7 @@ test('手機：設定頁全螢幕、先列分類清單；點進分類內容佔�
 // 上。現在收進「⋯」：非文章畫面也出現，且不與工具列重疊。
 test('手機：debug 錄製鈕收在「⋯」裡，不與底部工具列重疊', async ({ page }) => {
   await bootOffline(page, ptt);
+  await ptt.applyPrefs(page, { mobileFloatToolsInMore: false });
   await feedRaw(page, `${ESC}[2J${ESC}[H  MOBILE DEBUG RECORD TEST LINE  `);
   await waitScreenSettled(page);
   await openTerminalContextMenu(page);

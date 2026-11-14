@@ -2475,6 +2475,11 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.showLightsOnButton = value;
       this.view.redraw(true);
       break;
+    // P76：term_view 每次 render 直接讀 pref（readEffectivePrefs），這裡只負責「切了就馬上重畫」，
+    // 不然「⋯」要等下一頁才換位置。
+    case 'mobileFloatToolsInMore':
+      this.view.redraw(true);
+      break;
     case 'highlightAuthorComments':
       this.view.highlightAuthorComments = value;
       this.view.redraw(true);
