@@ -15,7 +15,7 @@ import { parseStatusRow } from './string_util';
 import { parseLiveStatusRow } from './live_mode';
 import { serializedOpHint } from './serialized_op_gate';
 import { isEasyReadingLive } from './easy_reading';
-import { PAGE_STATE } from './screen_model';
+import { PAGE_STATE, screenOf } from './screen_model';
 
 export const LIVE_START_KEY = 'v';
 export const LIVE_LEAVE_KEY = 'q';
@@ -39,10 +39,12 @@ export function liveHelperFacts(core) {
   const buf = core && core.buf;
   if (!buf) return { kind: 'unavailable' };
   const busy = !!(serializedOpHint(core) || (core.commandQueue && core.commandQueue.inFlightKind));
+  // 畫面事實讀這一幀的畫面物件（screen_model.js，docs/screen-model.md）。
+  const screen = screenOf(buf);
   return liveHelperView({
-    pageState: buf.pageState,
-    lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
-    cursorOnInputField: typeof buf.isCursorOnInputField === 'function' && buf.isCursorOnInputField(),
+    pageState: screen.pageState,
+    lastRowText: screen.lastRowText,
+    cursorOnInputField: typeof buf.isCursorOnInputField === 'function' && screen.cursorOnInputField,
     busy
   });
 }

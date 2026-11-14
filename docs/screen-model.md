@@ -52,6 +52,8 @@
 | `recent_articles`（離開文章重排、記讀到哪） | `inArticle` |
 | `nav_key_gate`（返回手勢／瀏覽器上一頁送 ←） | `pageState`、`pass`、`cursorOnInputField`、`lastRowText` 事實 |
 | `aid_navigation`（重新整理本篇、本篇是哪一篇） | `inArticle`；重新整理另讀 `lastRowText` |
+| `editor_input`（編輯器輸入框入口） | `pageState`、`editorTyping` 事實 |
+| `live_helper.liveHelperFacts`（文章 live 小幫手） | `pageState`、`lastRowText`、`cursorOnInputField` 事實。例外：小幫手面板開著時 ContextMenu 每半秒輪詢一次，不對齊 notify；落在「寫入了、還沒 notify」那段（debounce 30ms，BSU 最多 250ms）會把半幀快取到下一次 notify，跟舊碼直接讀半幀同一級風險 |
 | `long_push_gate.pushGateFacts`（X 改開長推文輸入框） | `pageState`、`lastRowText`、`cursorOnInputField` 事實（`pagerFromEssence` 照讀 buf） |
 
 搬完的模組列在 `tests/unit/screen_model_consumers.test.js` 的 `MIGRATED`：不准再直接讀 `buf.pageState`（新搬完一個就加進去）。
@@ -61,4 +63,4 @@
 
 ## 下一步（A3 步驟 b～d）
 
-b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信、返回手勢與長推文攔截的守門已搬；還在直接讀 pageState 的送鍵入口：mouse_regions、editor_input、live_helper、image_upload）。下一篇卡片／新推文／最近讀過剩下的直接讀取也已收進模型（`pageState`、`inArticle`）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。
+b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信、返回手勢與長推文攔截的守門已搬；還在直接讀 pageState 的送鍵入口：mouse_regions（純函式吃 pageState 參數，呼叫端在 term_view）、image_upload_controller.insertUrls（上傳完成的 promise 裡讀，不在 notify 之後的時機，先不搬）；editor_input、live_helper 已搬）。下一篇卡片／新推文／最近讀過剩下的直接讀取也已收進模型（`pageState`、`inArticle`）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。

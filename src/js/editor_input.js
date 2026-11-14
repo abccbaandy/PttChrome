@@ -12,6 +12,7 @@
 //      要素都要對上）；認不出 ⇒ 入口不出現、插入不送（已開著的框按插入時再判一次）。
 //   3. 開關 pref enableEditorInput（預設開）；會替使用者送字 ⇒ 在安全模式名單內。
 import { readEffectivePrefs } from './pref_storage';
+import { screenOf } from './screen_model';
 import { stripNonBig5 } from './long_push';
 
 export const EDITOR_INPUT_ID = 'editorInputChip';
@@ -79,11 +80,14 @@ EditorInput.prototype = {
   _available: function() {
     const core = this._core;
     const prefs = readEffectivePrefs();
+    // 畫面事實讀這一幀的畫面物件（screen_model.js，docs/screen-model.md）。
+    const buf = core.buf;
+    const screen = buf ? screenOf(buf) : null;
     return editorInputAvailable({
       enabled: !!prefs.enableEditorInput,
       safeMode: !!prefs.nativeSafeMode,
-      pageState: core.buf ? core.buf.pageState : null,
-      editorNow: !!(core.buf && core.buf.isEditorTypingNow && core.buf.isEditorTypingNow())
+      pageState: screen ? screen.pageState : null,
+      editorNow: !!(screen && buf.isEditorTypingNow && screen.editorTyping)
     });
   },
 

@@ -16,6 +16,8 @@ const MIGRATED = [
   "next_article.js",
   "new_comments.js",
   "recent_articles.js",
+  "editor_input.js",
+  "live_helper.js",
 ];
 
 // 一行的程式碼部分（同 page_state_constants.test.js#codeOf）：逐行判，不跨行剝 ⇒ 字串裡的 `/*` 不會
