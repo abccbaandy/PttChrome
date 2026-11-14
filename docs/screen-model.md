@@ -61,4 +61,4 @@
 
 ## 下一步（A3 步驟 b～d）
 
-b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信、返回手勢與長推文攔截的守門已搬；還在直接讀 pageState 的送鍵入口：mouse_regions、editor_input、live_helper、image_upload）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。
+b 功能逐一改讀它（先只讀不送鍵的浮層，送鍵類排後；推文列、下一篇卡片、文章工具側欄、手機工具列的存檔／寫信、返回手勢與長推文攔截的守門已搬；還在直接讀 pageState 的送鍵入口：mouse_regions、editor_input、live_helper、image_upload）。下一篇卡片／新推文／最近讀過剩下的直接讀取也已收進模型（`pageState`、`inArticle`）；d `parse_failure_degrade` 突變矩陣與 upstream 產畫面 nightly 改對畫面物件驗。

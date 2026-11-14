@@ -270,7 +270,7 @@ NewComments.prototype = {
       armedInst: j.armedInst,
       boundInst: j.boundInst,
       inst: view._articleInstanceId,
-      pageState: inArticle ? 3 : buf ? buf.pageState : null,
+      pageState: buf ? screenOf(buf).pageState : null,
       ageMs: now - j.at,
       userScrolled: !!(j.bound && disp && Math.abs(disp.scrollTop - j.top) > chh * 2),
       row: row,
