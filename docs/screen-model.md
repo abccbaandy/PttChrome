@@ -53,7 +53,7 @@
 | `nav_key_gate`（返回手勢／瀏覽器上一頁送 ←） | `pageState`、`pass`、`cursorOnInputField`、`lastRowText` 事實 |
 | `aid_navigation`（重新整理本篇、本篇是哪一篇） | `inArticle`；重新整理另讀 `lastRowText` |
 | `editor_input`（編輯器輸入框入口） | `pageState`、`editorTyping` 事實 |
-| `live_helper.liveHelperFacts`（文章 live 小幫手） | `pageState`、`lastRowText`、`cursorOnInputField` 事實 |
+| `live_helper.liveHelperFacts`（文章 live 小幫手） | `pageState`、`lastRowText`、`cursorOnInputField` 事實。例外：小幫手面板開著時 ContextMenu 每半秒輪詢一次，不對齊 notify；落在「寫入了、還沒 notify」那段（debounce 30ms，BSU 最多 250ms）會把半幀快取到下一次 notify，跟舊碼直接讀半幀同一級風險 |
 | `long_push_gate.pushGateFacts`（X 改開長推文輸入框） | `pageState`、`lastRowText`、`cursorOnInputField` 事實（`pagerFromEssence` 照讀 buf） |
 
 搬完的模組列在 `tests/unit/screen_model_consumers.test.js` 的 `MIGRATED`：不准再直接讀 `buf.pageState`（新搬完一個就加進去）。
