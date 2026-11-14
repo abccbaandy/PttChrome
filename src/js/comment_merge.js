@@ -163,7 +163,17 @@ export function groupSameAuthorRuns(anns, breakAt) {
 // Object.create 繼承來源空格 cell 的 prototype 再覆寫 ch='\n'（clone 而非
 // mutate——原 cell 屬於 buf，直接改會污染畫面），配合 .mergedCommentBlock 的
 // pre-wrap 渲染成真換行。
-export function buildMergedCommentChars(lines, run) {
+//
+// opts.eachTime（P82，pref mergedCommentEachTime，預設開）：第 1～n-1 則也在換行前
+// 接上**自己那一列**「內容尾 → 時間戳結束」整段（同末行的做法，原 cell 原樣）⇒ 每一行
+// 的時間都落在原生那一欄（桌機），同作者隔幾小時補一句看得出來。這時換行 cell 前面
+// 是時間不是內容 ⇒ breaks[].leftEnd 交出左邊那則內容的 exclusive 尾端（url_wrap／
+// aid_wrap 從那裡往左取殘段）；沒開時 leftEnd === index，行為與舊版逐格相同。
+// lineTails[n]＝第 n 行段尾在 chars 內的 { tailStart, timeStart, timeEnd }（開關關掉時
+// 只有末行有段尾，其餘為 null）——手機推文卡片（render/comment_card.js）靠它把每行的
+// 段尾從內容裡拿掉、改畫成行右的「時:分」。
+export function buildMergedCommentChars(lines, run, opts) {
+  const eachTime = !!(opts && opts.eachTime);
   const infos = [];
   for (const r of run.rows) {
     const info = commentContentCells(lines[r]);
@@ -181,6 +191,20 @@ export function buildMergedCommentChars(lines, run) {
     });
   let lastContentful = -1;
   const breaks = [];
+  const lineTails = [];
+  // 把第 n 則的段尾（padding＋可選 IP＋時間）原樣接到 out，回傳它在 out 內的位置。
+  const pushTail = (n) => {
+    const rowChars = lines[run.rows[n]];
+    const info = infos[n];
+    const tailStart = out.length;
+    const tailEnd = info.timeStart + info.time.length;
+    for (let c = info.end; c < tailEnd; ++c) out.push(rowChars[c]);
+    return {
+      tailStart,
+      timeStart: tailStart + (info.timeStart - info.end),
+      timeEnd: out.length,
+    };
+  };
   // 每一行（＝每一則有內容的推文）內容結尾的**畫面欄號**。懸掛縮排把第 2 則起對齊
   // 首則內容起始欄 ⇒ 第 n 行內容佔 [infos[0].start, infos[0].start + 內容長)，欄位與
   // 原生逐列相同。給滑鼠推文可點區逐行比照（mouse_regions.pusherClickRange）。
@@ -191,8 +215,11 @@ export function buildMergedCommentChars(lines, run) {
     if (info.end <= info.start) continue; // 空內容列：跳過
     if (out.length > prefixLen) {
       const prev = infos[lastContentful];
+      const leftEnd = out.length;
+      lineTails.push(eachTime ? pushTail(lastContentful) : null);
       breaks.push({
         index: out.length, // 換行 cell 即將被放在這一格
+        leftEnd, // 左邊那則內容的 exclusive 尾端（eachTime 時換行前還隔著它的時間）
         // vgetstring 的上限讓 end 落在 fieldEnd-1；容一格是因為推文也可能來自不走
         // vgetstring 的路徑（commentd／官方 App／bot），那邊可以填滿整個欄位。
         leftFull: prev.end >= prev.fieldEnd - 1,
@@ -209,22 +236,21 @@ export function buildMergedCommentChars(lines, run) {
   // 末行接上該列「內容尾 → 時間戳結束」整段（padding＋可選 IP＋時間）**原樣**。
   // run 內必為同 userid ⇒ 各列 info.start 相同 ⇒ 合併末行的左緣偏移等於原列的，
   // 故時間戳落在與原生逐列渲染完全相同的欄（置右對齊），不需任何 CSS 定位。
-  const lastRow = lines[run.rows[lastContentful]];
   const lastInfo = infos[lastContentful];
-  const tailEnd = lastInfo.timeStart + lastInfo.time.length;
-  // tailStart／timeStart：段尾（padding＋可選 IP＋時間）在合併序列裡的位置。手機推文
+  // tailStart／timeStart：末行段尾（padding＋可選 IP＋時間）在合併序列裡的位置。手機推文
   // 卡片（render/comment_card.js）把它們搬到標頭列，內容只畫 [contentStart, tailStart)。
-  const tailStart = out.length;
-  for (let c = lastInfo.end; c < tailEnd; ++c) out.push(lastRow[c]);
+  const lastTail = pushTail(lastContentful);
+  lineTails.push(lastTail);
   return {
     chars: out,
     contentStart: infos[0].start,
     breaks,
-    tailStart,
-    timeStart: tailStart + (lastInfo.timeStart - lastInfo.end),
+    tailStart: lastTail.tailStart,
+    timeStart: lastTail.timeStart,
+    lineTails: eachTime ? lineTails : null,
     lineEnds,
-    // 日期 MM/DD 結尾的畫面欄號（只有末行真的畫出時間；其餘行在同一欄位是空白，
-    // 位置語意相同 ⇒ 全塊共用這一欄）。
+    // 日期 MM/DD 結尾的畫面欄號（eachTime 時每行都在這一欄畫自己的時間；沒開時只有
+    // 末行畫，其餘行在同一欄位是空白，位置語意相同 ⇒ 全塊共用這一欄）。
     dateEnd:
       infos[0].start +
       (lastInfo.timeStart - lastInfo.start) +

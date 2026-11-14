@@ -325,6 +325,9 @@ offline e2e `mobile_select_text.offline.spec.js`（長按以真右鍵代替，�
   `.commentCardMeta`（IP＋時間，`margin-left:auto` 靠右、全字級不淡化））→ `.commentCardText`（block 滿寬；以原欄號餵
   LinkSegmentBuilder，連結／AID／預覽照舊）。不畫冒號。
   builder 的 div 與空預覽 div 在卡片內收成行內；合併塊第二則起以 `div:empty + bbsline::before` 換行。
+  合併塊每則標時間（P82，pref `mergedCommentEachTime`）：標頭的 IP／時間改用**第一則**的，第二則起每行行首插
+  `span.commentCardLineTime[data-time]`（float right，字畫在 `::before` ⇒ 複製推文不夾時間），內容跳過各則段尾
+  （`mergeCommentRun.lineTails`）。
   內容暗黃 `.q3` 在卡片內提亮為 `#990`（＝網頁版 `.f3`），`:not()` 讓出上班模式／游標列加亮。
 - 契約：外層 `span[type=bbsrow][srow][data-pusher][data-pusher-col]`（`.commentSpacing` 直接子選擇器、長按黑名單），
   標頭與內容每行都是 `[data-type=bbsline][data-row]`。

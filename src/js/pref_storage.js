@@ -379,6 +379,8 @@ export const DEFAULT_PREFS = {
   showLightsOnButton: true,
   showFloorNumbers: true,
   mergeSameAuthorComments: true, // 好讀：連續同作者推文合併成一段
+  // 合併塊裡每一則都標自己的時間（P82）：桌機每行在原時間欄、手機第二則起行右「時:分」。
+  mergedCommentEachTime: true,
   // 推文區塊行距（僅文章好讀累積長頁）：推文之間拉開距離，同作者合併塊內部的
   // 間距則比較小 ⇒ 內緊外鬆、同一人的連續推文自成一組。**純 CSS**：只在
   // #mainContainer 上 toggle 一個 class（render/screen.js#_setCommentSpacing），不重建

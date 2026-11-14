@@ -832,6 +832,9 @@
   "options_mergeSameAuthorComments": {
     "message": "合併連續同作者推文成一段 (僅好讀模式，顯示時間與樓層範圍)"
   },
+  "options_mergedCommentEachTime": {
+    "message": "合併推文標出每則時間"
+  },
   "options_dimReadArticles": {
     "message": "已讀文章低亮顯示"
   },

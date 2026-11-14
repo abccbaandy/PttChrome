@@ -75,6 +75,34 @@ describe("detectWrappedAids", () => {
     expect(detectWrappedAids(c, breaks)[0].board).toBe("Browsers");
   });
 
+  // P82：每則標時間 ⇒ 換行前是「padding＋時間」，左殘段的右界是 breaks[].leftEnd，
+  // 看板後綴（parseBoardSuffix）也要跳過那段時間才找得到下一則開頭的 (看板)。
+  test("每則標時間：換行前隔著時間仍接得回來，看板後綴也找得到", () => {
+    const left = "PU aaa: xx #1gU3ww";
+    const tail = "      " + TIME;
+    const c = chars(left + tail + "\n" + "NZ" + "     " + TIME + "\n" + "(Browsers) 看");
+    const i1 = (left + tail).length;
+    const i2 = i1 + 1 + ("NZ     " + TIME).length;
+    const breaks = [
+      { index: i1, leftEnd: left.length, leftFull: true, leftTime: TIME, rightTime: TIME },
+      { index: i2, leftEnd: i1 + 3, leftFull: false, leftTime: TIME, rightTime: TIME },
+    ];
+    const got = detectWrappedAids(c, breaks);
+    expect(got[0]).toEqual({
+      startCol: left.indexOf("#"),
+      endCol: left.length,
+      aid: "1gU3wwNZ",
+      board: "Browsers",
+    });
+  });
+
+  test("AID 後面接自己的時間、看板在下一則開頭 → 看板後綴仍取得", () => {
+    const left = "PU aaa: xx #1gU3ww";
+    const c = chars(left + "\n" + "NZ     " + TIME + "\n" + "(Browsers) 看");
+    const breaks = [{ index: left.length, leftFull: true, leftTime: TIME, rightTime: TIME }];
+    expect(detectWrappedAids(c, breaks)[0].board).toBe("Browsers");
+  });
+
   // ---- 三訊號逐條 ----
   test("上一則沒寫滿內容欄 → 不接（作者只是分兩則講話）", () => {
     const b = block("PU aaa: xx #1gU3ww", "NZ (Browsers)", { leftFull: false });

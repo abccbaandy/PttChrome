@@ -96,11 +96,15 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
     // 一則一行（2026-08 使用者定案，取代舊的 gap 猜續行）：七則＝七個 bbsline。
     const lines = block.rowLines;
     expect(lines).toHaveLength(7);
-    // 作者在第一則行首、時間在**最後一則**行尾（使用者 2026-08 定案），各只一次。
+    // 作者只在第一則行首（使用者 2026-08 定案）。時間：P82（pref mergedCommentEachTime，
+    // 預設開）起每一行行尾都是**自己那一則**的時間（跟沒合併時逐列一致）。
     expect(lines[0]).toContain('rz2x');
     expect(lines.slice(1).some((l) => l.includes('rz2x'))).toBe(false);
-    expect(lines.join('\n').match(/\d{1,2}\/\d{2} \d{2}:\d{2}/g)).toHaveLength(1);
-    expect(lines[lines.length - 1]).toMatch(/\d{1,2}\/\d{2} \d{2}:\d{2}$/);
+    for (const l of lines) expect(l).toMatch(/\d{1,2}\/\d{2} \d{2}:\d{2}$/);
+    const ownTimes = JSON.parse(fs.readFileSync(fixturePath, 'utf8')).golden.comments
+      .filter((s) => /^(推|噓|→)\s+rz2x\s*:/i.test(s))
+      .map((s) => s.match(/(\d{1,2}\/\d{2} \d{2}:\d{2})\s*$/)[1]);
+    expect(lines.map((l) => l.match(/(\d{1,2}\/\d{2} \d{2}:\d{2})$/)[1])).toEqual(ownTimes);
 
     // 內容零遺失：golden 七則 rz2x 的內容子字串皆須在塊內。
     const golden = JSON.parse(fs.readFileSync(fixturePath, 'utf8')).golden;
@@ -133,6 +137,30 @@ test.describe('推文合併 · stock-end 指名斷言（rz2x×7）', () => {
       return sel.toString();
     });
     expect(selected).toMatch(/\d{1,2}\/\d{2} \d{2}:\d{2}/);
+  });
+
+  // P82 開關關掉＝舊版：時間只在最後一則行尾、只出現一次。
+  test('合併推文標每則時間關掉：只有末則時間', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, {
+      enableEasyReading: true,
+      showFloorNumbers: true,
+      mergedCommentEachTime: false,
+    });
+    await replayCassette(page, cassette, { easyReading: true });
+    const lines = await page.evaluate(() => {
+      const el = Array.from(document.querySelectorAll('.mergedCommentBlock')).find((b) => {
+        const row = b.querySelector('span[type="bbsrow"]');
+        return row && row.getAttribute('data-pusher') === 'rz2x';
+      });
+      return el
+        ? Array.from(el.querySelectorAll('[data-type="bbsline"]')).map((n) => n.textContent)
+        : null;
+    });
+    expect(lines).toHaveLength(7);
+    expect(lines.join('\n').match(/\d{1,2}\/\d{2} \d{2}:\d{2}/g)).toHaveLength(1);
+    expect(lines[lines.length - 1]).toMatch(/\d{1,2}\/\d{2} \d{2}:\d{2}$/);
   });
 
   // 使用者 2026-08 回報症狀 2：合併後的第 2 則回到第 0 欄。懸掛縮排是純 CSS

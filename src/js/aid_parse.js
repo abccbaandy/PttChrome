@@ -52,6 +52,21 @@ function isPlainCell(chars, j, ch) {
   return !!chars[j] && !chars[j].isLeadByte && chars[j].ch === ch;
 }
 
+// 合併推文「每則標時間」（P82，comment_merge opts.eachTime）時，換行 cell 前面還接著
+// 那一則自己的段尾「padding＋可選 IP＋MM/DD HH:MM」。從 j 起若到下一個換行 cell 之間
+// 正好是這樣一段，回傳換行 cell 的位置；否則原樣回 j（不是段尾就不跳）。
+const MERGED_TAIL_RE = /^(?:\d{1,3}(?:\.\d{1,3}){3} +)?\d{1,2}\/\d{2} \d{2}:\d{2}$/;
+function skipMergedTail(chars, j) {
+  let k = j;
+  let text = "";
+  while (k < chars.length && chars[k] && !chars[k].isLeadByte && /[\d/:. ]/.test(chars[k].ch)) {
+    text += chars[k].ch;
+    k++;
+  }
+  if (!isPlainCell(chars, k, NEWLINE)) return j;
+  return MERGED_TAIL_RE.test(text.trim()) ? k : j;
+}
+
 // Optional suffix right after the AID (or after one space): "(Board)" or
 // "@Board". Returns the board name or null; never affects the link columns.
 //
@@ -68,6 +83,7 @@ function isPlainCell(chars, j, ch) {
 export function parseBoardSuffix(chars, j) {
   const n = chars.length;
   if (j < n && isPlainCell(chars, j, " ")) j++;
+  j = skipMergedTail(chars, j);
   if (j < n && isPlainCell(chars, j, NEWLINE)) {
     j++;
     if (j < n && isPlainCell(chars, j, " ")) j++;

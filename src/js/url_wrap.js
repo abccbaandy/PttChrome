@@ -43,14 +43,16 @@ export function detectWrappedUrls(chars, breaks) {
     // 右片段必須從**下一則內容的第 0 欄**接續（換行 cell 的下一格就是），
     // 中間有空白就不是續行。
     if (!isUrlCell(chars, br.index + 1)) continue;
+    // 左片段的右界：換行前若接著上一則自己的時間（P82 每則標時間），從內容尾端算。
+    const leftEnd = br.leftEnd != null ? br.leftEnd : br.index;
     let r = br.index + 1;
     while (isUrlCell(chars, r + 1)) ++r;
     // 左片段：緊貼換行 cell 往左取連續 URL 字元。
-    if (!isUrlCell(chars, br.index - 1)) continue;
-    let l = br.index - 1;
+    if (!isUrlCell(chars, leftEnd - 1)) continue;
+    let l = leftEnd - 1;
     while (isUrlCell(chars, l - 1)) --l;
     let left = '';
-    for (let i = l; i < br.index; ++i) left += chars[i].ch;
+    for (let i = l; i < leftEnd; ++i) left += chars[i].ch;
     let right = '';
     for (let i = br.index + 1; i <= r; ++i) right += chars[i].ch;
     // 反向守門：左片段自己就以媒體副檔名收尾 ⇒ 完整網址剛好寫滿，不是殘段。

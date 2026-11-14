@@ -397,6 +397,7 @@ export function computeAnnotations(
     easyReading,
     enableXMention,
     mergeSameAuthorComments,
+    mergedCommentEachTime,
     inListContext,
     listEasyReading,
     onAidClick,
@@ -845,7 +846,10 @@ export function computeAnnotations(
           }
         }
         if (!entry) {
-          const merged = buildMergedCommentChars(lines, run);
+          // P82：合併塊裡每一則都標自己的時間（pref mergedCommentEachTime，預設開）。
+          const merged = buildMergedCommentChars(lines, run, {
+            eachTime: mergedCommentEachTime !== false,
+          });
           const runDomainCands = [];
           const runFixCands = [];
           // 空的 decorated ＝ 任一列切不出邊界 → fail-safe 還原逐列。也一併進快取，
@@ -918,6 +922,7 @@ export function computeAnnotations(
                   contentStart: merged.contentStart,
                   tailStart: merged.tailStart,
                   timeStart: merged.timeStart,
+                  lineTails: merged.lineTails,
                   lineEnds: merged.lineEnds,
                   dateEnd: merged.dateEnd,
                   ...withUrlAi(extras, runDomainCands, runFixCands),

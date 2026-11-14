@@ -226,11 +226,55 @@ describe("buildMergedCommentChars", () => {
     expect(r.breaks).toEqual([
       {
         index: "PU aaa: hello".length,
+        leftEnd: "PU aaa: hello".length,
         leftFull: false, // "hello" 離內容欄右界還很遠
         leftTime: "07/20 14:23",
         rightTime: "07/20 14:31",
       },
     ]);
+  });
+
+  // P82（pref mergedCommentEachTime）：每一行都接上自己那一則的段尾（原 cell），時間落在
+  // 原生那一欄；換行前多了時間 ⇒ leftEnd 指回內容尾端，lineTails 給手機卡片拆用。
+  test("eachTime：每一行都帶自己那則的時間，leftEnd／lineTails 對得上", () => {
+    const lines = [
+      chars("PU aaa: hello        07/20 14:23"),
+      chars("PU aaa: world        07/20 18:31"),
+      chars("PU aaa: again        07/21 09:02"),
+    ];
+    const r = buildMergedCommentChars(
+      lines,
+      { userid: "aaa", rows: [0, 1, 2] },
+      { eachTime: true },
+    );
+    const text = textOf(r.chars);
+    expect(text.split("\n")).toEqual([
+      "PU aaa: hello        07/20 14:23",
+      "world        07/20 18:31",
+      "again        07/21 09:02",
+    ]);
+    // 換行格的位置不變語意：仍是 '\n'；leftEnd＝左則內容尾端。
+    for (const br of r.breaks) {
+      expect(r.chars[br.index].ch).toBe("\n");
+      expect(r.chars[br.leftEnd - 1].ch).toMatch(/[od]/);
+    }
+    expect(r.breaks.map((b) => [b.leftTime, b.rightTime])).toEqual([
+      ["07/20 14:23", "07/20 18:31"],
+      ["07/20 18:31", "07/21 09:02"],
+    ]);
+    // lineTails：每行一筆，時間那幾格讀回來就是該則時間。
+    expect(r.lineTails).toHaveLength(3);
+    expect(
+      r.lineTails.map((t) => textOf(r.chars.slice(t.timeStart, t.timeEnd))),
+    ).toEqual(["07/20 14:23", "07/20 18:31", "07/21 09:02"]);
+    // 末行段尾＝舊欄位 tailStart／timeStart（標頭與桌機末行沿用）。
+    expect(r.lineTails[2].tailStart).toBe(r.tailStart);
+    expect(r.lineTails[2].timeStart).toBe(r.timeStart);
+    // 內容結尾欄、日期欄不受影響。
+    const plain = buildMergedCommentChars(lines, { userid: "aaa", rows: [0, 1, 2] });
+    expect(r.lineEnds).toEqual(plain.lineEnds);
+    expect(r.dateEnd).toBe(plain.dateEnd);
+    expect(plain.lineTails).toBeNull();
   });
 
   test("breaks：空內容列被跳過時不產生多餘的斷點", () => {

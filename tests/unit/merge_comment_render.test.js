@@ -59,15 +59,18 @@ const lines = [
 
 const FORCE_WIDTH = 20;
 
-function renderScreen() {
-  return mountScreen({ lines: lines, forceWidth: FORCE_WIDTH, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: {
+// eachTime＝pref mergedCommentEachTime（P82，預設開）；舊版行為（只有末行有時間）傳 false。
+function renderScreen(eachTime = false) {
+  return mountScreen(renderScreen.props(eachTime));
+}
+renderScreen.props = (eachTime) => ({ lines: lines, forceWidth: FORCE_WIDTH, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: {
         pageState: 3,
         easyReading: true,
         dropHidden: true,
         articleId: 1,
         mergeSameAuthorComments: true,
+        mergedCommentEachTime: eachTime,
       } });
-}
 
 // 一則一行＝一個 bbsline span（每行各自帶自動開圖，見 LinkSegmentBuilder）。
 const blockLines = (c) =>
@@ -118,6 +121,54 @@ describe("Screen 推文合併 render", () => {
     expect(PREFIX_COLS + parts[2].indexOf(LAST_TIME)).toBe(TIME_COL);
     // 已無 React 時間標籤節點（舊 .mergedCommentTime 帶 user-select:none 不可複製）。
     expect(c.querySelector(".mergedCommentTime")).toBeNull();
+  });
+});
+
+// P82：同一人隔很久補一句，合併後只剩末則時間 ⇒ 看起來像同一時間講的。開關開（預設）時
+// 每一行都在原生那一欄畫**自己那一則**的時間（原 cell，可選取複製），跟沒合併時逐列一致。
+describe("Screen 推文合併：每則標出自己的時間（P82）", () => {
+  const TIMES = ["07/20 14:26", "07/20 14:27", LAST_TIME];
+  test("每一行都有自己那則的時間，欄位與原生逐列相同", () => {
+    const { container: c } = renderScreen(true);
+    const parts = blockLines(c);
+    expect(parts.length).toBe(3);
+    expect(parts[0]).toContain("first push line");
+    expect(parts[1].startsWith("x".repeat(TIME_COL - PREFIX_COLS - 1))).toBe(true);
+    expect(parts[2].startsWith("third")).toBe(true);
+    for (let k = 0; k < 3; ++k) {
+      expect(parts[k].endsWith(TIMES[k])).toBe(true);
+      // 第一行從第 0 欄起（帶作者前綴；fixture 的型別符第 2 格是空字串 cell，textContent
+      // 少一個字 ⇒ 補 1），其餘行從懸掛縮排（PREFIX_COLS）起。
+      const lead = k === 0 ? 1 : PREFIX_COLS;
+      expect(lead + parts[k].indexOf(TIMES[k])).toBe(TIME_COL);
+    }
+    // 作者仍只在第一行。
+    expect(parts[1]).not.toContain(ID);
+    expect(parts[2]).not.toContain(ID);
+  });
+
+  test("同一個畫面切開關：馬上重畫，不沿用上一幀的合併結果", () => {
+    const m = renderScreen(true);
+    const count = () =>
+      blockLines(m.container).join("\n").match(/\d{1,2}\/\d{2} \d{2}:\d{2}/g).length;
+    expect(count()).toBe(3);
+    const off = renderScreen.props(false);
+    m.update(off);
+    expect(count()).toBe(1);
+    m.update(renderScreen.props(true));
+    expect(count()).toBe(3);
+  });
+
+  test("開關沒給（undefined）＝預設開", () => {
+    const { container: c } = mountScreen({ lines, forceWidth: FORCE_WIDTH, enableLinkInlinePreview: false, enableLinkHoverPreview: false, enhance: {
+          pageState: 3,
+          easyReading: true,
+          dropHidden: true,
+          articleId: 1,
+          mergeSameAuthorComments: true,
+        } });
+    const times = blockLines(c).join("\n").match(/\d{1,2}\/\d{2} \d{2}:\d{2}/g);
+    expect(times).toEqual(TIMES);
   });
 });
 
