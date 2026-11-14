@@ -265,3 +265,121 @@ describe("一幀一份", () => {
     expect(screenOf(buf)).not.toBe(b);
   });
 });
+
+// A3 步驟 d：upstream 產的**每一幀**都登記 kind（nightly 換 upstream HEAD 重產 fixture 後跑這支 ⇒
+// upstream 改了畫面、kind 跟著變，當晚就紅，不用等某個功能的斷言剛好踩到）。
+// 表上記的是**現在的答案**，不全是理想答案：pageState 會黏（說明選單疊在文章上仍是 article、
+// 水球 prompt 疊在主選單上是 otherMenu），認不出的 prompt 是 unknown（認不出 ⇒ 原生）。改判定讓某格變了
+// ＝刻意的行為改動，逐格看過再改表。重放方式同 app：每幀 feed 完都 notify。
+// 新場景（tools/ptt-src-screens/scenes.mjs）要在這裡補一列，不然紅。
+const ALL_FX = import.meta.glob("./fixtures/ptt_src_screens/*.json", { eager: true, import: "default" });
+const KIND_CENSUS = {
+  activity_denied: "list=list aid-denied=pass aid-back=list search-denied=pass search-back=list",
+  activity_slow: "board-slow=pass list=list read-slow=pass article=article back=list aid-slow=pass aid-after=pass",
+  aid_miss: "list=list prompt=list not-found=pass back=list invalid=pass",
+  article: "list=list list-jumped=list article=article",
+  article_help: "list=list article=article help=article help-2=article help-3=article back=article",
+  article_list: "list=list",
+  article_list_tall: "list=list",
+  article_live: "list=list article=article live-failed=pass",
+  article_pref: "list=list article=article pref=pass pref-cycled=pass pref-closed=article quick=pass back=article",
+  article_prompts: "list=list article=article goto=article landed=article search=article search-typed=article",
+  board_complete: "menu=menu board=menu typed=menu candidates=otherMenu rejected=otherMenu typed-2=otherMenu completed=otherMenu",
+  board_list: "fav=list",
+  board_list_refresh: "fav=list keyword=list reloaded=list",
+  board_list_toggles: "fav=list all=list fav-again=list newflag=list",
+  board_note: "note=pass list=list",
+  board_switch:
+    "list=list article=article prompt=article note=pass notes-list=list test-list=list article-2=article rejected=list note-again=pass notes-list-again=list",
+  class_list: "menu=menu root=otherMenu group=list",
+  digest: "list=list digest=list info=pass article=article back=list plain=list",
+  digest_aid: "list=list at-1=list g-aid=list m-aid=list",
+  editor: "list=list edit=editor save-menu=unknown",
+  editor_prompt: "list=list edit=editor search=editor search-typed=editor case-prompt=editor",
+  essence: "list=list menu=otherMenu article=article back=otherMenu list-again=list",
+  goodbye: "menu=menu confirm=menu pause=pass",
+  help_menu: "list=list help=list",
+  live_countdown: "list=list article=article live-on=live countdown=live countdown-1=live count-up=live live-off=list",
+  live_long: "list=list article=article live-on=live live-1=live live-2=live live-off=list",
+  live_long_read:
+    "list=list article=article page-2=article page-3=article live-on=live " +
+    Array.from({ length: 26 }, (_, i) => `live-${i + 1}=live`).join(" ") +
+    " live-off=list",
+  live_repeat_prompt: "list=list live-prompt=list live-prompt-n=list article=article",
+  live_repeat_yes: "list=list live-prompt=list live-on=live live-off=list",
+  live_short: "list=list article=article live-on=live live-1=live live-2=live live-off=list",
+  mail_list: "menu=menu mail=mailList",
+  mail_read: "menu=menu mail=mailList read=article back=mailList",
+  main_menu: "menu=menu",
+  main_menu_newmail: "menu=menu",
+  mark_read_prompt: "list=list prompt=unknown",
+  menu_search: "menu=menu board=menu",
+  modern_comments: "list=list classic=article simple=article bordered=article",
+  post_flow: "list=list post=unknown",
+  post_info: "list=list info=pass dismissed=list",
+  push: "list=list push-1=list push-2=list",
+  push_again: "list=list done=list too-close=list confirm=list",
+  push_content_denied: "list=list confirm=list denied=pass after=list",
+  push_flow: "list=list menu=list input=list confirm=list done=list article=article",
+  push_owner: "list=list owner=list",
+  push_search: "list=list result=list menu=list input=list",
+  reply_prompt: "list=list article=article reply=article",
+  search_prompts: "list=list title=list author=list push=list board=list",
+  search_refine: "list=list result=list title=list",
+  waterball_default: "menu=menu prompt=otherMenu panel-1=otherMenu panel-2=otherMenu panel-3=otherMenu",
+  waterball_ofo: "menu=menu ofo-1=menu ofo-2=menu ofo-3=menu",
+};
+
+// 每個有名字的幀：{ file, frame, kind, pass }（kind／pass 取該幀 notify 之後的畫面物件）。
+function censusOf(file, fx) {
+  const buf = new TermBuf(fx.cols, fx.rows);
+  buf.setView({ update() {}, updateCursorPos() {}, refreshCursorVisibility() {}, blinkOn: false });
+  buf.useMouseBrowsing = false;
+  const parser = new AnsiParser(buf);
+  const out = [];
+  for (const f of fx.frames) {
+    parser.feed(f.bytes);
+    buf.notify();
+    if (!f.name) continue;
+    const s = screenOf(buf);
+    out.push({ file, frame: f.name, kind: s.kind, pass: s.pass });
+  }
+  clearTimeout(buf.timerUpdate);
+  if (buf._settleTimer) clearTimeout(buf._settleTimer);
+  return out;
+}
+const CENSUS = Object.entries(ALL_FX).flatMap(([p, fx]) => censusOf(p.replace(/^.*\//, "").replace(/\.json$/, ""), fx));
+
+describe("upstream 產的每一幀都登記了 kind（A3 步驟 d）", () => {
+  test("表跟 fixture 一一對應（新場景要登記、拿掉的場景要刪）", () => {
+    const files = [...new Set(CENSUS.map((c) => c.file))].sort();
+    expect(files.length).toBeGreaterThan(40);
+    expect(Object.keys(KIND_CENSUS).sort()).toEqual(files);
+    for (const file of files) {
+      const frames = CENSUS.filter((c) => c.file === file).map((c) => c.frame);
+      const listed = KIND_CENSUS[file].split(" ").map((e) => e.split("=")[0]);
+      expect(listed, file).toEqual(frames);
+    }
+  });
+
+  test.each(Object.keys(KIND_CENSUS))("%s", (file) => {
+    const actual = CENSUS.filter((c) => c.file === file)
+      .map((c) => `${c.frame}=${c.kind}`)
+      .join(" ");
+    expect(actual).toBe(KIND_CENSUS[file]);
+  });
+
+  test("表上的 kind 都是具名常數", () => {
+    const names = new Set(Object.values(SCREEN_KIND));
+    for (const c of Object.values(KIND_CENSUS).flatMap((s) => s.split(" ")))
+      expect(names.has(c.split("=")[1]), c).toBe(true);
+  });
+
+  // pass 事實＝「此刻真的是 pass 畫面」：在 upstream 的每一幀上都要跟 kind 說法一致。
+  // pmore 的狀態列也是「末列中段同色＋游標停右下角」，以前 _isAnsiPassFrame 不排除 ⇒ 每一頁文章都說是
+  // pass（setPageState 先認狀態列所以 pageState 沒事，但直接問 pass 的人會把文章當成按任意鍵畫面）。
+  test("pass 事實只在 pass 畫面為真（文章頁不是）", () => {
+    const mismatch = CENSUS.filter((c) => c.pass !== (c.kind === SCREEN_KIND.PASS)).map((c) => `${c.file}/${c.frame}=${c.kind}`);
+    expect(mismatch).toEqual([]);
+  });
+});

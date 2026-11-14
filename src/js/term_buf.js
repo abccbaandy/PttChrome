@@ -1449,9 +1449,12 @@ TermBuf.prototype = {
   // ansi drawing screen to pass：row0 不是反白標題列、末列中段同色、游標 park 在右下角。
   // 官方推文實況（more.c#live_run）的狀態列中段也是同一底色、游標也停右下角 ⇒ 不排除就被
   // 當成 PASS 畫面（pageState 5）。實況是文章的一種顯示，見 setPageState。
+  // pmore 的文章狀態列（「瀏覽 第 x/y 頁」）也是：setPageState 先認狀態列所以 pageState 沒事，但
+  // isPassScreenNow 直接問這裡 ⇒ 每一頁文章都說是 pass（守護 screen_model.test.js 的 upstream 普查）。
   _isAnsiPassFrame: function() {
     var lastRowNum = this.rows - 1;
-    if (isLiveStatusRow(this.getRowText(lastRowNum, 0, this.cols))) return false;
+    var lastRowText = this.getRowText(lastRowNum, 0, this.cols);
+    if (isLiveStatusRow(lastRowText) || parseStatusRow(lastRowText)) return false;
     return !(this.isUnicolor(0, 0, 29) && this.isUnicolor(0, this.cols-20, this.cols-10)) &&
       this.isUnicolor(lastRowNum, 28, 53) && this.cur_y == lastRowNum && this.cur_x == this.cols-1;
   },
