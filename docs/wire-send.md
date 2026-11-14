@@ -61,4 +61,9 @@ AID 跳文、長推文、登出、略過進板畫面的「佔著線路」由 ses
   送 Ctrl-C 收掉也一樣是插鍵。現在靠「開彈窗時問過＋modal 擋鍵＋`submitSerializedSteps` 在 prompt 開著時不送」沒事；
   要收得先決定「忙的時候背景 prompt 誰收、何時收」。
 - `commandQueue.inFlightKind` 那道在 `App.onFunctionKey` 裡排在 `functionKeyClickPlan` 之後，位置本身有語意，照原樣。
-- 「使用者輸入要不要放行、prompt 是否開著」還在各入口判斷，還沒收進出口。
+- 「使用者輸入要不要放行、prompt 是否開著」還在各入口判斷，還沒收進出口。**刻意不收**：「忙」的判斷多半在功能
+  **開始前**問（先給提示、不開始），收進出口會變成開始了才失敗。
+- `term_view._send`／`_convSend`（真鍵盤出口）在 term_view 以外的呼叫點逐一分類在
+  `tests/unit/view_send_callers.test.js`（USER＝使用者這一下的翻譯、MACHINE＝功能自己挑時機送、AGENT＝外部 agent 代打），
+  新增呼叫點就要在那張表加一列。目前走錯出口的 MACHINE／AGENT 序列（待改 `sendMachineBytes`）：開燈軌 B 的 1/2/3、
+  說明選單整份抓頁的 PgDn 與收尾 Home、agent `collectNative` 的 PgDn 迴圈。改之前要確認它們不需要 `adoptUserBytes` 接手。
