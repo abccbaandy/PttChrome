@@ -49,6 +49,8 @@ f="$(find / -maxdepth 6 -path '*/scripts/cloud-setup.sh' -not -path '*/node_modu
 if [ -n "$f" ]; then bash "$f"; else echo "[setup] 找不到 scripts/cloud-setup.sh"; fi
 ```
 
+**專案 hook 掛到使用者層**（`scripts/cloud-user-hooks.mjs`）：Claude Code 只讀啟動目錄的 `.claude/settings.json`，雲端 session 可能在 repo 的上一層啟動，這時 edit-guard、SessionStart 補裝全部不載入且沒有任何訊息。Setup script 把同一組 hook 包一層「啟動目錄就是 repo 就略過」後寫進 `~/.claude/settings.json`。改 `.claude/settings.json` 的 hook 不必動它，下次 setup 會照抄。確認有沒有掛上：`grep -c pttchrome-project-hook ~/.claude/settings.json`。只對**之後新開**的 session 生效（hook 在 session 啟動時載入）。
+
 Setup script 的輸出記在 `/root/.cache/pttchrome-cloud-setup.log`（第一行是呼叫端工作目錄、各步驟成敗），環境設定頁看不到，在 session 裡 `cat` 它查。
 
 為什麼要第二段：Setup script 的結果被快取，dev 之後升了 `@playwright/test` 時，新 session 拿到的瀏覽器 revision 是舊的，unit-browser 與 e2e 會整批 `Executable doesn't exist`。headless shell 的目錄名是底線（`chromium_headless_shell-<rev>`），只查 chromium 本體會漏報。

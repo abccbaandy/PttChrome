@@ -62,6 +62,10 @@ yarn playwright install --with-deps chromium firefox \
 # 理由與實測見 scripts/cloud-fonts.mjs 檔頭。舊環境（快取）由 SessionStart hook 補做。
 node scripts/cloud-fonts.mjs || echo "[setup] WARN: 字型對齊失敗"
 
+# ── 專案 hook 掛到使用者層：session 在 repo 上一層啟動時專案層 .claude/settings.json 不載入，
+#    edit-guard 與 SessionStart 補裝會靜默失效（理由見該腳本檔頭）──
+node scripts/cloud-user-hooks.mjs || echo "[setup] WARN: 專案 hook 掛到使用者層失敗"
+
 # ── pttbbs 原始碼（.gitignore 忽略，CLAUDE.md「PTT 邏輯不准猜」要讀它）──
 # 之後的更新由 SessionStart hook scripts/sync-3rd-script.mjs 負責。
 mkdir -p 3rd_script
