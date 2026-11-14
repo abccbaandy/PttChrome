@@ -216,7 +216,7 @@ export function createAgentTools(core, opts = {}) {
       if (Date.now() >= limit) return { lines, complete: false };
       assertVisible();
       const sig = statusSignature(s);
-      core.view._send(KEY_PAGE_DOWN);
+      core.sendMachineBytes(KEY_PAGE_DOWN); // 機器翻頁，不走真鍵盤出口（view_send_callers.test.js）
       const moved = await waitUntil(() => {
         const n = status();
         return !!n && statusSignature(n) !== sig;

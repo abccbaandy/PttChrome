@@ -184,7 +184,13 @@ export function HelpMenuController(core, termBuf, opts) {
   this._core = core;
   this._termBuf = termBuf;
   const o = opts || {};
+  // 兩個出口（tests/unit/view_send_callers.test.js）：使用者點了某一項／離開／小天使送的鍵
+  // 是使用者這一下的翻譯 ⇒ 真鍵盤出口；開彈窗後自己去抓下一頁的 PgDn、看原生畫面時收拾補頁的 Home
+  // 是機器序列 ⇒ sendMachineBytes
+  // （不保留使用者懸空的 ESC 態、不經 adoptUserBytes）。測試注入的 send 兩種都收。
   this._send = o.send || ((bytes) => core && core.view && core.view._send(bytes));
+  this._sendMachine =
+    o.send || ((bytes) => core && core.sendMachineBytes && core.sendMachineBytes(bytes));
   this._enabled = o.enabled || (() => helpMenuPopupEnabled(readEffectivePrefs()));
   this._now = o.now || (() => Date.now());
   this._setTimeout = o.setTimeout || ((fn, ms) => setTimeout(fn, ms));
@@ -356,7 +362,7 @@ HelpMenuController.prototype = {
       this._emit();
     }, FETCH_TIMEOUT_MS);
     this._log('fetch', { page: this._fetchPage });
-    this._send(KEY_PGDN);
+    this._sendMachine(KEY_PGDN);
   },
 
   _leave: function(bytes, reason) {
@@ -400,7 +406,8 @@ HelpMenuController.prototype = {
     this._fetchPage = 0;
     this.phase = 'native';
     this._log('native', { reason: 'user' });
-    if (moved) this._send(KEY_HOME);
+    // 收拾自己補頁送的 PgDn（使用者按的是「看原生畫面」，不是 Home）⇒ 機器出口。
+    if (moved) this._sendMachine(KEY_HOME);
     this._emit();
     return true;
   },

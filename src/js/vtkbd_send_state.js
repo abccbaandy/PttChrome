@@ -38,8 +38,8 @@
 // CommandQueue、App.sendData、App.setBBSCmd、**App.sendMachineBytes**
 // （以上機器）＋ term_view 那兩個（真鍵盤／IME）。新增送出路徑時預設就是安全的那一邊。
 //
-// `App.sendMachineBytes`（2026-09-20 補）＝機器狀態機的 byte 出口，目前的消費者是好讀
-// （自動翻頁／gap 自癒／整頁重繪）。它獨立存在的理由**不只是** ESC 守門模式：
+// `App.sendMachineBytes`（2026-09-20 補）＝機器狀態機的 byte 出口，消費者是好讀
+// （自動翻頁／gap 自癒／整頁重繪）、說明選單補頁、agent 翻頁（tests/unit/view_send_callers.test.js）。它獨立存在的理由**不只是** ESC 守門模式：
 // `term_view._send` 上另外掛了一道**使用者按鍵**專用的 cursor-sync 守門
 // （`adoptUserBytes`，見 `list_user_bytes.js` 檔頭）。機器 byte 走那裡會被列表好讀
 // 當成使用者按鍵吞掉／接手 —— 每篇文章開頭卡 620ms、關設定頁被踢到原生鏡像，兩個
@@ -80,7 +80,9 @@
 // 但它**不可達**：VK_ESC 只可能來自使用者按的裸 Escape，而四個 queue owner 與
 // setBBSCmd 的每一個 payload 最後一個位元組都不是 ESC（nextSendState 送完一律回
 // VK_NORMAL，守護 tests/unit/long_push_flow.test.js），長推文送出全程又蓋著真 modal
-// ⇒ term_view 整組噤聲。反過來說，**不化解**的後果是型別選單那一步的 '2' 被吃掉、
+// ⇒ term_view 整組噤聲。**往 vmsg 送可列印鍵的機器序列因此不准走機器模式**：開燈軌 B 在 pmore
+// 快速設定（vmsg）送 1/2/3，使用者在 `\` 之後多按一下 Esc 就可達，所以它刻意留在真鍵盤出口
+// （view_send_callers.test.js 的 keep）。反過來說，**不化解**的後果是型別選單那一步的 '2' 被吃掉、
 // 型別靜默變成「推」而畫面照樣推進 ⇒ 整段用錯的型別送出，使用者完全看不出來。
 //
 // 唯一的例外是 **str 本身就是單獨一個 ESC**：它會被前一個 ESC 吃成 esc_arg 自行

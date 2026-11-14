@@ -8,10 +8,13 @@
 //
 // 第二步刻意不再排一條 queue 命令（會擋掉 easy_reading 的 reenterFromTop）——
 // 理由寫在 pttchrome.jsx#onLightsRawMode 的註解裡，這裡守「第二步是直接 view._send」。
+// 刻意不走 sendMachineBytes：使用者懸空的 Esc 會讓機器模式補 ESC 收掉設定頁、數字落到 pager
+// （view_send_callers.test.js 的 keep 理由）。
 import { App } from "../../src/js/pttchrome";
 import { CommandQueue } from "../../src/js/command_queue";
 import { MFDISP_RAW_PLAIN } from "../../src/js/pmore_pref";
 import { wireFakeSessions } from "./helpers/session_wire";
+import { guardEscSequence, VK_ESC } from "../../src/js/vtkbd_send_state";
 
 // 快速設定頁（pmore.c#pmore_QuickRawModePref，ystart = b_lines-2）：標題／選項列／vmsg。
 const PREF_TITLE_ROW =
@@ -27,8 +30,10 @@ const ARTICLE_STATUS_ROW =
 function makeApp(opts = {}) {
   const sent = []; // queue 送出的（＝第一步）
   const viewSent = []; // view._send 送出的（＝第二步）
+  const machine = []; // sendMachineBytes：這條流程一個都不該有
   const hints = [];
   const app = Object.create(App.prototype);
+  app.sendMachineBytes = (d) => (machine.push(d), true);
   app.modalShown = !!opts.modalShown;
   app.aidNavigation = { active: !!opts.aidActive };
   app.longPush = { active: false };
@@ -47,7 +52,7 @@ function makeApp(opts = {}) {
   };
   app.commandQueue = new CommandQueue({ send: (d) => sent.push(d) });
   wireFakeSessions(app);
-  return { app, sent, viewSent, hints };
+  return { app, sent, viewSent, machine, hints };
 }
 
 // 一次 settle：把 24 列文字餵給 queue 的 expect（形狀同 list_session._collectFacts）。
@@ -75,6 +80,7 @@ describe("App.onLightsRawMode", () => {
     h.app.onLightsRawMode(MFDISP_RAW_PLAIN);
     expect(settle(h, QUICK_PREF)).toBe("done");
     expect(h.viewSent).toEqual(["3"]);
+    expect(h.machine).toEqual([]);
     expect(h.app.easyReading._rawMode).toBe(MFDISP_RAW_PLAIN);
     // 第二步刻意不是 queue 命令：線路必須在文章回來那一幀之前就空出來，
     // 否則 easy_reading._send 的 _wireBusy 閘門會吃掉 reenterFromTop 的 Home。
@@ -147,4 +153,18 @@ describe("App.onLightsRawMode", () => {
     h.app.onLightsRawMode(9);
     expect(h.sent).toEqual([]);
   });
+});
+
+// 為什麼第二步非走真鍵盤出口不可：使用者在 `\` 之後多按一下 Esc ⇒ server 停在 VK_ESC。
+// 真鍵盤模式原樣送 `3` ⇒ 被吃成 esc_arg，設定頁收掉、什麼都沒發生；機器模式補一個 ESC ⇒
+// 補的 ESC 收掉 vmsg 設定頁，真的 `3` 落到 pager ＝「跳至第 3 頁」（pmore.c pmore_QuickRawModePref／
+// pmore_do_goto）。改成 sendMachineBytes 這條就會紅。
+test("懸空 Esc 下：真鍵盤出口不補 ESC，機器出口會補（所以 1/2/3 留在真鍵盤出口）", () => {
+  expect(guardEscSequence(VK_ESC, "3", { userKey: true }).data).toBe("3");
+  expect(guardEscSequence(VK_ESC, "3").data).toBe("\x1b3");
+  const h = makeApp();
+  h.app.onLightsRawMode(MFDISP_RAW_PLAIN);
+  settle(h, QUICK_PREF);
+  expect(h.viewSent).toEqual(["3"]);
+  expect(h.machine).toEqual([]);
 });

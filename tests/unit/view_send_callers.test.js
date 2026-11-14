@@ -6,8 +6,8 @@
 //   USER    ＝使用者這一下（點擊、滾輪、按鈕、方向鍵）的直接翻譯，送的 byte 等同使用者自己按鍵；
 //   MACHINE ＝功能自己決定、在使用者動作之後的某個時機才送（序列中途、背景抓頁）；
 //   AGENT   ＝外部 agent（window.pttAgent／WebMCP）代打。
-// 新增一個呼叫點就要在這裡加一列並想清楚它是哪一類：MACHINE 原則上改走 sendMachineBytes，
-// 留在這裡的要寫理由。表上的列找不到對應程式碼也會紅（改名／刪掉要同步）。
+// 新增一個呼叫點就要在這裡加一列並想清楚它是哪一類：MACHINE 改走 sendMachineBytes，例外見檔尾。
+// 表上的列找不到對應程式碼也會紅（改名／刪掉要同步）。
 //
 // 靜態掃描，風格比照 tests/unit/user_key_send_wiring.test.js。
 import fs from "node:fs";
@@ -26,7 +26,9 @@ const SITES = [
   { file: "js/pttchrome.jsx", match: "this.view._send(bytes);", kind: USER,
     why: "sendNavKeyAsUser：工具列／浮層按鈕替使用者按一個導覽鍵（先問 commandQueue 忙不忙並給提示）" },
   { file: "js/pttchrome.jsx", match: "self.view._send(key);", kind: MACHINE,
-    why: "開燈軌 B：commandQueue 送 `\\` 開 pmore 設定頁、認出設定列後在 onDone 送 1/2/3。待改 sendMachineBytes" },
+    why: "開燈軌 B：commandQueue 送 `\\` 開 pmore 快速設定、認出設定列後在 onDone 送 1/2/3",
+    keep: "送進 vmsg 的可列印鍵：使用者懸空的 Esc 下，機器模式會補 ESC 收掉設定頁、數字落到 pager 跳頁；" +
+      "真鍵盤模式數字被吃成 esc_arg，什麼都不發生（vtkbd_send_state.js 檔頭）" },
   { file: "js/pttchrome.jsx", match: "this.buf.isLiveScreenNow() ? 'q' : '\\x1b[D'", kind: USER,
     why: "點文章左側離開帶＝按 ←（實況是 q）" },
   { file: "js/pttchrome.jsx", match: "this.view._send(LEFT_ARROW);", kind: USER,
@@ -50,11 +52,9 @@ const SITES = [
   { file: "js/live_helper.js", match: "core.view._send(key);", kind: USER,
     why: "實況小幫手的按鈕（v／q）＝使用者按那個鍵" },
   // ── help_menu.js ──
-  { file: "js/help_menu.js", match: "core.view._send(bytes)", kind: MACHINE,
-    why: "說明選單接手：整份抓頁的 PgDn、收尾回第一頁的 Home 是機器；_leave 送的是使用者選的那一項。待把機器那兩種改 sendMachineBytes" },
+  { file: "js/help_menu.js", match: "core.view._send(bytes)", kind: USER,
+    why: "說明選單彈窗：使用者點了某一項／離開／小天使送的鍵。自己抓下一頁的 PgDn、收拾補頁的 Home 走 _sendMachine" },
   // ── agent_tools.js ──
-  { file: "js/agent_tools.js", match: "core.view._send(KEY_PAGE_DOWN);", kind: AGENT,
-    why: "collectNative 翻頁抓全文（PgDn 迴圈）。是機器序列，待改 sendMachineBytes" },
   { file: "js/agent_tools.js", match: "core.view._convSend(p.text);", kind: AGENT,
     why: "send_keys 工具：agent 指定的文字，刻意當成使用者打字（要經 adoptUserBytes）" },
   { file: "js/agent_tools.js", match: "else core.view._send(p.bytes);", kind: AGENT,
@@ -100,10 +100,17 @@ test("表上每一列都還對得到程式碼（改名／刪掉要同步）", ()
   expect(stale).toEqual([]);
 });
 
-test("每一列都有分類與理由；MACHINE 寫明下一步", () => {
+// MACHINE 原則上不准留在真鍵盤出口：機器 byte 走它的後果是靜默的（使用者懸空的 ESC 會把機器鍵吃成
+// 組合鍵、列表好讀的 adoptUserBytes 會把它當使用者輸入接手）。說明選單抓頁的 PgDn／收尾 Home、
+// agent collectNative 的 PgDn 曾經在這裡，已改走 sendMachineBytes。
+// 例外要寫 keep：送進 vmsg（任何鍵都收掉橫幅）的可列印鍵，機器模式補的 ESC 會先收掉畫面、讓原鍵
+// 落到底下 ⇒ 那種情況留在真鍵盤出口反而安全。目前只准開燈軌 B 這一列，加新的例外要先想清楚。
+test("每一列都有分類與理由；MACHINE 只准有 keep 理由的例外", () => {
   for (const s of SITES) {
     expect([USER, MACHINE, AGENT]).toContain(s.kind);
     expect(s.why.length).toBeGreaterThan(5);
-    if (s.kind === MACHINE) expect(s.why).toMatch(/sendMachineBytes/);
   }
+  const kept = SITES.filter((s) => s.kind === MACHINE);
+  for (const s of kept) expect(s.keep || "").toMatch(/vmsg/);
+  expect(kept.map((s) => s.match)).toEqual(["self.view._send(key);"]);
 });

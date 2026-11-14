@@ -30,7 +30,7 @@
 // 送出身分（步驟 b 的使用權會以它為準）。新增送鍵入口就在這裡加一個。
 export const WIRE_SOURCE = Object.freeze({
   QUEUE: 'queue', // CommandQueue（列表好讀、長推文、AID 跳文…的序列化指令）
-  MACHINE: 'machine', // App.sendMachineBytes（好讀自動翻頁、整頁重繪）
+  MACHINE: 'machine', // App.sendMachineBytes（好讀自動翻頁、整頁重繪、說明選單補頁、agent 翻頁）
   APP_TEXT: 'appText', // App.sendData（設定頁、選單送的文字）
   BBS_CMD: 'bbsCmd', // App.setBBSCmd（滑鼠、滾輪、手勢的方向鍵／翻頁／Enter）
   INPUT_HELPER: 'inputHelper', // 輸入小幫手（色碼、文字）

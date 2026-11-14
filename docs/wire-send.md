@@ -20,7 +20,7 @@
 | `WIRE_SOURCE` | 呼叫點 | 自己的閘門 |
 |---|---|---|
 | `QUEUE` | `App` 的 `CommandQueue.send` | 連線中才送 |
-| `MACHINE` | `App.sendMachineBytes`（好讀自動翻頁、整頁重繪） | 連線中才送，回傳有沒有上線 |
+| `MACHINE` | `App.sendMachineBytes`（好讀自動翻頁、整頁重繪、說明選單補頁、agent 翻頁） | 連線中才送，回傳有沒有上線 |
 | `APP_TEXT` | `App.sendData` | `connectState == 1` |
 | `BBS_CMD` | `App.setBBSCmd`（滑鼠、滾輪、手勢） | 上游 `_mouseSendBlocked`、prompt 判斷 |
 | `INPUT_HELPER` | 輸入小幫手的色碼／文字（`ContextMenu/index.jsx`） | `inputHelperBlocked` |
@@ -65,5 +65,9 @@ AID 跳文、長推文、登出、略過進板畫面的「佔著線路」由 ses
   **開始前**問（先給提示、不開始），收進出口會變成開始了才失敗。
 - `term_view._send`／`_convSend`（真鍵盤出口）在 term_view 以外的呼叫點逐一分類在
   `tests/unit/view_send_callers.test.js`（USER＝使用者這一下的翻譯、MACHINE＝功能自己挑時機送、AGENT＝外部 agent 代打），
-  新增呼叫點就要在那張表加一列。目前走錯出口的 MACHINE／AGENT 序列（待改 `sendMachineBytes`）：開燈軌 B 的 1/2/3、
-  說明選單整份抓頁的 PgDn 與收尾 Home、agent `collectNative` 的 PgDn 迴圈。改之前要確認它們不需要 `adoptUserBytes` 接手。
+  新增呼叫點就要在那張表加一列，**MACHINE 改走 `sendMachineBytes`**。說明選單自己抓下一頁的 PgDn／看原生畫面時收拾的
+  Home、agent `collectNative` 的 PgDn 迴圈已改過去（送的時候在說明選單／文章，列表好讀正常情況是 native、
+  `adoptUserBytes` 不接手；萬一接手，舊路徑是吞鍵等逾時）。
+  **例外：開燈軌 B 的 1/2/3 刻意留在真鍵盤出口**（表上帶 `keep`）：它送進 pmore 快速設定的 vmsg。使用者在 `\` 之後多按
+  一下 Esc 時，機器模式補的 ESC 會先收掉設定頁、真的數字落到 pager＝跳頁；真鍵盤模式數字被吃成 esc_arg，什麼都不發生。
+  `vtkbd_send_state.js` 檔頭「vmsg 橫幅不可達」的論證只對機器出口成立，往 vmsg 送可列印鍵的機器序列都要照這條。

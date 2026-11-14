@@ -860,8 +860,9 @@ App.prototype.sendData = function(str) {
     wire.sendText(WIRE_SOURCE.APP_TEXT, this.conn, str);
 };
 
-// 機器狀態機的 byte 出口（第五條機器路徑，2026-09-20）。目前的消費者是好讀
-// （自動翻頁／gap 自癒／整頁重繪）。
+// 機器狀態機的 byte 出口（第五條機器路徑，2026-09-20）。消費者：好讀（自動翻頁／gap 自癒／
+// 整頁重繪）、說明選單補頁的 PgDn／收尾 Home、agent collectNative 的 PgDn
+// （tests/unit/view_send_callers.test.js）。
 //
 // **為什麼不能沿用 `view._send`**：那是真鍵盤／IME 的出口，78c276a 起在它上面掛了
 // 一道**使用者按鍵**的 fail-closed cursor-sync 守門（`adoptUserBytes`，推導見
@@ -1606,6 +1607,10 @@ App.prototype.onLightsRawMode = function(mode) {
     },
     onDone: function() {
       // pmore.c 的 case '1'/'2'/'3' 直選並立即 return —— **不需要 Enter**。
+      // **刻意留在真鍵盤出口**（tests/unit/view_send_callers.test.js 的 keep）：使用者在 `\` 之後
+      // 多按一下 Esc ⇒ server 停在 VK_ESC。真鍵盤模式不補 ESC，數字被吃成 esc_arg ⇒ 設定頁收掉、
+      // 什麼都沒發生；機器模式會補一個 ESC ⇒ 補的 ESC 收掉設定頁（vmsg 任何鍵都收），真的 `3`
+      // 落到 pager ＝「跳至第 3 頁」，正是這條流程要避免的。
       self.view._send(key);
       // 選項列在直選時不會被重畫，parseRawModeFromPrefRow 讀到的仍是切換前的值，
       // 所以程式化切換要自己記下目標（見 easy_reading.js 的 _rawMode 註解）。
