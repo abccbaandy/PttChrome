@@ -19,6 +19,7 @@
 // pass 畫面 ⇒ 5 是殘留，不擋。真的 pass 畫面照舊擋（逃生門語意不變）。
 
 import { classifyPushScreen } from './push_screen';
+import { PAGE_STATE, screenOf } from './screen_model';
 
 // 回傳擋下的原因（null＝可送）；history_back_guard 擋下時寫進 debugRecorder，
 // 下一次「有時失效」的錄製檔可以直接看出是哪一道。
@@ -28,19 +29,21 @@ export function navKeyBlockReason(core) {
   if (!core.conn || !core.conn.isConnected) return 'disconnected';
   const buf = core.buf;
   if (!buf) return 'noBuf';
-  const st = buf.pageState;
-  const staleFive = st === 5 &&
-    typeof buf.isPassScreenNow === 'function' && !buf.isPassScreenNow();
-  if (!(st === 1 || st === 2 || st === 3 || st === 4 || staleFive))
+  // 畫面事實一律讀這一幀的畫面物件（screen_model.js，docs/screen-model.md）：與長推文攔截
+  // （long_push_gate.pushGateFacts）同一幀讀到同一份底列／輸入框事實。
+  const screen = screenOf(buf);
+  const st = screen.pageState;
+  const staleFive = st === PAGE_STATE.PASS && !screen.pass;
+  if (!(st === PAGE_STATE.MENU || st === PAGE_STATE.LIST || st === PAGE_STATE.READING ||
+        st === PAGE_STATE.LEGACY_4 || staleFive))
     return 'pageState:' + st;
   // PTT 正開著輸入框（vgetstring 的反白輸入欄）：左方向鍵只會被輸入框吃掉，
   // 使用者的手勢等於石沉大海。同一個事實也關掉滑鼠的可點區（見 docs/mouse.md）。
-  if (buf.isCursorOnInputField && buf.isCursorOnInputField()) return 'inputField';
+  if (screen.cursorOnInputField) return 'inputField';
   // 推文型別選單（bbs.c#recommend 的 vkey()）：不是輸入框、pageState 黏在 2／3，但收到非數字
   // 一律當預設的「推」並前進到內容輸入列 ⇒ 返回手勢的 ←、邊緣翻頁的 PgUp 都會變成「選了推」。
   // 這個選單沒有「取消」鍵，所以不送（同輸入框：這一下我們用不到）。
-  if (typeof buf.getRowText === 'function' &&
-      classifyPushScreen([buf.getRowText(buf.rows - 1, 0, buf.cols)], 1).kind === 'typeMenu')
+  if (classifyPushScreen([screen.lastRowText], 1).kind === 'typeMenu')
     return 'pushTypeMenu';
   return null;
 }
