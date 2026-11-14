@@ -16,7 +16,7 @@
 
 import { parsePagerFooterContext, parseStatusRow } from './string_util';
 import { isLiveStatusRow } from './live_mode';
-import { PAGE_STATE } from './screen_model';
+import { PAGE_STATE, screenOf } from './screen_model';
 
 // CONFIRMED（pttbbs mbbsd/more.c:90-93）：pager 的 key handler 只有這兩個 case 回
 // RET_DORECOMMEND ⇒ 只有它們是「推文鍵」。**小寫 x 不是**（pager 完全沒綁，列表
@@ -87,10 +87,12 @@ export function shouldInterceptPushKey(opts) {
 export function pushGateFacts(core) {
   const buf = core && core.buf;
   if (!buf || typeof buf.getRowText !== 'function') return null;
+  // 這一幀的畫面物件（screen_model.js）：與返回手勢的守門（nav_key_gate）讀同一份事實。
+  const screen = screenOf(buf);
   return {
-    pageState: buf.pageState,
-    lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
-    cursorOnInputField: typeof buf.isCursorOnInputField === 'function' && buf.isCursorOnInputField(),
+    pageState: screen.pageState,
+    lastRowText: screen.lastRowText,
+    cursorOnInputField: screen.cursorOnInputField,
     pagerFromEssence: !!buf.pagerFromEssence
   };
 }

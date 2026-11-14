@@ -197,6 +197,7 @@ describe("pushGateFacts", () => {
       rows: 24,
       cols: 80,
       getRowText: vi.fn(() => READ_ROW),
+      isCursorOnInputField: () => false,
     };
     expect(pushGateFacts({ buf })).toEqual({
       pageState: 3,

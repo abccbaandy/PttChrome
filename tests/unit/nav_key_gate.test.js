@@ -4,18 +4,30 @@
 // 所以「什麼畫面不可以送」全靠這支。送錯的代價是真的：PTT 開著輸入框時左方向鍵
 // 只會被 vgetstring 吃掉（使用者的手勢石沉大海），編輯器裡則是把游標移到別處。
 import { navKeyAllowed, navKeyBlockReason } from "../../src/js/nav_key_gate";
+import { pushGateFacts } from "../../src/js/long_push_gate";
+
+// 假 buf 補齊畫面物件（screen_model.screenOf）會讀到的判定（docs/screen-model.md：模型不替缺的函式找藉口）。
+const fake = (over) => ({
+  rows: 24,
+  cols: 80,
+  getRowText: () => "",
+  // pageState 5 的假 buf 預設是「這一幀真的是 pass 畫面」（黏住的 5 那組自己給 false）。
+  isPassScreenNow: () => true,
+  isCursorOnInputField: () => false,
+  ...over,
+});
 
 const core = (over = {}) => ({
   modalShown: false,
   conn: { isConnected: true },
-  buf: { pageState: 3, isCursorOnInputField: () => false },
+  buf: fake({ pageState: 3, isCursorOnInputField: () => false }),
   ...over,
 });
 
 test("文章／列表／選單可以送", () => {
   [1, 2, 3, 4].forEach((pageState) =>
     expect(
-      navKeyAllowed(core({ buf: { pageState, isCursorOnInputField: () => false } })),
+      navKeyAllowed(core({ buf: fake({ pageState, isCursorOnInputField: () => false }) })),
     ).toBe(true),
   );
 });
@@ -23,14 +35,14 @@ test("文章／列表／選單可以送", () => {
 test("NORMAL(0)／密碼(5)／編輯器(6) 不送", () => {
   [0, 5, 6].forEach((pageState) =>
     expect(
-      navKeyAllowed(core({ buf: { pageState, isCursorOnInputField: () => false } })),
+      navKeyAllowed(core({ buf: fake({ pageState, isCursorOnInputField: () => false }) })),
     ).toBe(false),
   );
 });
 
 test("PTT 開著輸入框時不送（左方向鍵只會被輸入框吃掉）", () => {
   expect(
-    navKeyAllowed(core({ buf: { pageState: 2, isCursorOnInputField: () => true } })),
+    navKeyAllowed(core({ buf: fake({ pageState: 2, isCursorOnInputField: () => true }) })),
   ).toBe(false);
 });
 
@@ -53,7 +65,7 @@ test("缺值一律當不可送，不會意外發鍵", () => {
 // 進任一篇文章後恢復。根因是 setPageState 沒有 reset 分支 ⇒ pressanykey(5) 之後落在
 // 判不出的畫面時 pageState **黏在 5**。這一幀根本不是 pass 畫面 ⇒ 5 是殘留，不可擋。
 describe("黏住的 pageState 5", () => {
-  const buf5 = (passNow) => ({
+  const buf5 = (passNow) => fake({
     pageState: 5,
     isCursorOnInputField: () => false,
     isPassScreenNow: () => passNow,
@@ -75,7 +87,7 @@ describe("黏住的 pageState 5", () => {
 // 「推」並前進到內容輸入列：返回手勢／邊緣翻頁本來要「離開」，結果是選了推。
 describe("推文型別選單", () => {
   const TYPE_MENU = "您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ";
-  const bufWithLast = (pageState, last) => ({
+  const bufWithLast = (pageState, last) => fake({
     pageState,
     rows: 24,
     cols: 80,
@@ -106,11 +118,40 @@ describe("navKeyBlockReason（debug log 用：擋下時說得出是哪一道）"
     expect(navKeyBlockReason(core({ conn: null }))).toBe("disconnected");
     expect(navKeyBlockReason(core({ buf: null }))).toBe("noBuf");
     expect(
-      navKeyBlockReason(core({ buf: { pageState: 0, isCursorOnInputField: () => false } })),
+      navKeyBlockReason(core({ buf: fake({ pageState: 0, isCursorOnInputField: () => false }) })),
     ).toBe("pageState:0");
     expect(
-      navKeyBlockReason(core({ buf: { pageState: 2, isCursorOnInputField: () => true } })),
+      navKeyBlockReason(core({ buf: fake({ pageState: 2, isCursorOnInputField: () => true }) })),
     ).toBe("inputField");
     expect(navKeyBlockReason(core())).toBe(null);
+  });
+});
+
+// A3（docs/screen-model.md）：返回手勢守門與長推文攔截在同一幀讀**同一份**畫面事實。
+// 鎖的是「同一幀裡底列只讀一次」：兩邊各自直接讀 buf 時，中間 buffer 被改寫就會一個說
+// 型別選單、一個說 pager 狀態列。
+describe("跟長推文攔截讀同一份畫面事實", () => {
+  const PAGER = "  瀏覽 第 1/3 頁 ( 33%)  目前顯示: 第 01~22 行  (y)回應(X%)推文(h)說明(←)離開 ";
+  const frameBuf = () => {
+    const buf = fake({ pageState: 3, frameSeq: 7, cur_x: 0, cur_y: 23 });
+    buf.getRowText = vi.fn((r) => (r === 23 ? PAGER : ""));
+    buf.isCursorOnInputField = vi.fn(() => false);
+    return buf;
+  };
+
+  test("同一幀：底列與輸入框各只讀一次", () => {
+    const buf = frameBuf();
+    expect(navKeyBlockReason(core({ buf }))).toBe(null);
+    expect(pushGateFacts({ buf }).lastRowText).toBe(PAGER);
+    expect(buf.getRowText).toHaveBeenCalledTimes(1);
+    expect(buf.isCursorOnInputField).toHaveBeenCalledTimes(1);
+  });
+
+  test("換幀（frameSeq 變）⇒ 重讀", () => {
+    const buf = frameBuf();
+    navKeyBlockReason(core({ buf }));
+    buf.frameSeq = 8;
+    pushGateFacts({ buf });
+    expect(buf.getRowText).toHaveBeenCalledTimes(2);
   });
 });
