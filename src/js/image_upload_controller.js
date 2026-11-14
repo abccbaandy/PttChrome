@@ -284,14 +284,17 @@ ImageUploadController.prototype.copyUrl = function(url) {
   this._notify({ type: 'success', mode: 'clipboard', urls: [url], failures: [] });
 };
 
+// 寫回前一律以 storage 現值為準（readHistory），不拿記憶體裡的快照：_state.history 只在
+// 建構與開面板時讀，別的分頁在那之後上傳／刪除的紀錄會被舊快照整份蓋掉。
+// 守護 tests/unit/upload_history_cross_tab.test.js。
 ImageUploadController.prototype._pushHistory = function(entry) {
-  const next = addHistoryEntry(this._state.history, entry);
+  const next = addHistoryEntry(readHistory(), entry);
   writeHistory(next);
   this._setState({ history: next });
 };
 
 ImageUploadController.prototype.removeHistory = function(url) {
-  const next = removeHistoryEntry(this._state.history, url);
+  const next = removeHistoryEntry(readHistory(), url);
   writeHistory(next);
   this._setState({ history: next });
 };
