@@ -198,6 +198,26 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(core.view.sendKeyAsUser).toHaveBeenCalledTimes(1);
   });
 
+  // P59：信件列表第 2 格「寫信」送 Alt+P（^P）。按下去那一刻再看本幀（screenOf 的 mailList／
+  // promptPending）：已經不是信件列表、或列表上開著 prompt（工具列 context 還沒更新）⇒ 不送，
+  // 免得 ^P 打進別的畫面或 prompt。
+  test("信件列表：寫信送 Alt+P；按下時不是信件列表或 prompt 開著就不送", () => {
+    const core = makeCore({ context: { mailList: true, search: [] } });
+    let mailList = true;
+    let prompt = false;
+    core.buf = { isMailListScreen: () => mailList, isPromptPending: () => prompt };
+    renderBar(core);
+    expect(byKey("__mailCompose").textContent).toBe(i18n("mobileToolbar_mailCompose"));
+    fireEvent.click(byKey("__mailCompose"));
+    expect(core.view.sendKeyAsUser).toHaveBeenLastCalledWith("p", { altKey: true });
+    prompt = true;
+    fireEvent.click(byKey("__mailCompose"));
+    mailList = false;
+    prompt = false;
+    fireEvent.click(byKey("__mailCompose"));
+    expect(core.view.sendKeyAsUser).toHaveBeenCalledTimes(1);
+  });
+
   test("信件 pager：只有回信（label 換成回信），沒有推／分享", () => {
     renderBar(makeCore({ context: { ...ARTICLE, push: false, share: false, threadNav: false, mail: true } }));
     expect(byKey("__reply").textContent).toBe(i18n("mobileToolbar_replyMail"));
