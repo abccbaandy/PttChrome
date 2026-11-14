@@ -71,6 +71,9 @@ export const en_US = {
   "mobileMoreShort_select": {
     "message": "Select"
   },
+  "mobileMoreShort_selectText": {
+    "message": "Text"
+  },
   "mobileMoreShort_selectAll": {
     "message": "Select all"
   },
@@ -2751,6 +2754,30 @@ export const en_US = {
   },
   "saved_action": {
     "message": "Save on this device"
+  },
+  "selectText_title": {
+    "message": "Select text"
+  },
+  "selectText_hint": {
+    "message": "Press and drag to select"
+  },
+  "selectText_close": {
+    "message": "Close"
+  },
+  "selectText_selectAll": {
+    "message": "Select all"
+  },
+  "selectText_copy": {
+    "message": "Copy selection"
+  },
+  "selectText_copied": {
+    "message": "Copied"
+  },
+  "options_mobileSelectTextPage": {
+    "message": "Mobile select-text page"
+  },
+  "tooltip_mobileSelectTextPage": {
+    "message": "Adds \"Select text\" to the More sheet and long-press menu of mobile easy-reading articles: opens the article text as a padded, wrapped page where the system selection handles work for selecting and copying. No keys are sent."
   },
   "saved_section": {
     "message": "Saved on this device"

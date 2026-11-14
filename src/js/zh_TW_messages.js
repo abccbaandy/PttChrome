@@ -71,6 +71,9 @@
   "mobileMoreShort_select": {
     "message": "選取模式"
   },
+  "mobileMoreShort_selectText": {
+    "message": "選取文字"
+  },
   "mobileMoreShort_selectAll": {
     "message": "全選"
   },
@@ -2750,6 +2753,30 @@
   },
   "saved_action": {
     "message": "存到本機"
+  },
+  "selectText_title": {
+    "message": "選取文字"
+  },
+  "selectText_hint": {
+    "message": "按住拖曳選取"
+  },
+  "selectText_close": {
+    "message": "關閉"
+  },
+  "selectText_selectAll": {
+    "message": "全選"
+  },
+  "selectText_copy": {
+    "message": "複製選取的字"
+  },
+  "selectText_copied": {
+    "message": "已複製"
+  },
+  "options_mobileSelectTextPage": {
+    "message": "手機選取文字頁"
+  },
+  "tooltip_mobileSelectTextPage": {
+    "message": "手機好讀文章的「更多」與長按選單多一項「選取文字」：把這篇文字開成留邊、自動換行的一頁，用系統的選取把手選字、複製。不會送任何按鍵。"
   },
   "saved_section": {
     "message": "本機收藏"

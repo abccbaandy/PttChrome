@@ -39,6 +39,7 @@ import WhatsNewCard from "../WhatsNew";
 import CommentFilterBar from "../CommentFilterBar";
 import SplitReader from "../SplitReader";
 import ArticleTools from "../ArticleTools";
+import SelectTextPage from "../SelectTextPage";
 import CommentBar from "../CommentBar";
 import ArticleNav from "../ArticleNav";
 import BoardTabs from "../BoardTabs";
@@ -242,6 +243,9 @@ const menuHandlerByEventKey = {
   },
   // 存到本機（P64，js/saved_articles.js）：只讀好讀累積頁，一個 byte 都不送。
   saveLocal: (pttchrome) => pttchrome.savedArticles?.saveCurrent?.(),
+  // 手機「選取文字」頁（P81，js/select_text_page.js）：開到長按的那一行，一個 byte 都不送。
+  selectText: (pttchrome, { selectTextTarget: t }) =>
+    t && pttchrome.selectTextPage?.open(t.row),
   selectAll: (pttchrome) => pttchrome.doSelectAll(),
   // 圖片上傳（urusai）：開檔案選擇器／開上傳紀錄面板。實作在
   // js/image_upload_controller.js，App 在建構時掛成 pttchrome.imageUpload。
@@ -357,6 +361,17 @@ function commentFilterTargetOf(pttchrome, prefs, normalEnabled, rowElement) {
   };
 }
 
+// 手機「選取文字」頁（P81）的長按目標：長按的那一列的 data-row（＝畫面那一份 lines 的索引，
+// 好讀累積頁的分塊裡也一樣）。頁面不能開（不是手機、開關關著、不是好讀文章／唯讀頁）⇒ null。
+export function selectTextTargetOf(pttchrome, normalEnabled, target) {
+  const page = pttchrome.selectTextPage;
+  if (!normalEnabled || !pttchrome.mobile || !page || !page.available())
+    return null;
+  const rowEl =
+    target && target.closest ? target.closest('[data-type="bbsline"]') : null;
+  return { row: page.rowOfElement(rowEl) };
+}
+
 const initialState = {
   // --- Menu state ---
   open: false,
@@ -386,6 +401,7 @@ const initialState = {
   readLaterTarget: null,
   // 存到本機（P64）：這一刻 savedArticles.canSave()。
   saveLocalEnabled: false,
+  selectTextTarget: null,
   blacklistTitleTarget: null,
   // 長按／右鍵的推文是誰推的（「回覆這則」；推文列沒出現或開關關掉 ⇒ null）。
   replyCommentTarget: null,
@@ -838,6 +854,7 @@ export const ContextMenu = ({ pttchrome }) => {
         ),
         saveLocalEnabled:
           !!normalEnabled && !!pttchrome.savedArticles?.canSave?.(),
+        selectTextTarget: selectTextTargetOf(pttchrome, normalEnabled, target),
         markReadTarget,
         boardMarkReadTarget:
           (normalEnabled &&
@@ -1666,6 +1683,7 @@ export const ContextMenu = ({ pttchrome }) => {
     commentFilterTarget,
     readLaterTarget,
     saveLocalEnabled,
+    selectTextTarget,
     articleLinkEnabled,
     contextArticle,
     previews,
@@ -1725,6 +1743,7 @@ export const ContextMenu = ({ pttchrome }) => {
         commentFilterTarget={commentFilterTarget}
         readLaterTarget={readLaterTarget}
         saveLocalEnabled={saveLocalEnabled}
+        selectTextTarget={selectTextTarget}
         markReadTarget={markReadTarget}
         markAllReadEnabled={markAllReadEnabled}
         boardMarkReadTarget={boardMarkReadTarget}
@@ -1859,6 +1878,7 @@ export const ContextMenu = ({ pttchrome }) => {
         onOpenSearch={onToolbarSearch}
         onOpenSettings={onToolbarSettings}
       />
+      <SelectTextPage pttchrome={pttchrome} />
     </Fragment>
   );
 };

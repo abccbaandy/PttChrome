@@ -281,6 +281,16 @@ Chromium 長按**先選字、後發 contextmenu** ⇒ 事件到時選取必不�
   - 真長按序列＋拖把手＋原生 Copy 工具列：Android 模擬器 e2e `tests/e2e/android/select_mode.android.spec.js`
     （`yarn test:e2e:android`，`docs/android-e2e.md`）。補發事件形狀在真 Android Chrome 上 CONFIRMED，替身前提成立。
 
+### 選取文字頁（P81，`select_text_page.js`、`components/SelectTextPage`）
+
+終端機 80 欄塞滿螢幕寬，每行第一個字貼著左緣：選取模式下把手只剩半個在畫面上、往左拉會觸發系統返回。
+選取文字頁把**畫面那一份 lines**（`view._renderedLines`：好讀累積頁 `buf.pageLines` 或唯讀頁 `_staticRows`，
+其他畫面不給入口）轉成留邊 20px、自動換行的純文字，選取完全交給系統。入口：好讀文章「更多」（開在畫面上方
+1/3 那一列）、長按選單（開在長按的那一列，`data-row`）。畫面上被藏的列（黑名單、篩選收起）照
+ScreenController 上一幀的標註也不放。頁面是 body 底下的 portal ⇒ 不在 `#BBSWindow`，長按不會開我們的選單。
+開關 `mobileSelectTextPage`（預設開）。一個 byte 都不送。守護 `tests/unit/select_text_page.test.js`、
+offline e2e `mobile_select_text.offline.spec.js`（長按以真右鍵代替，理由同上）。
+
 ## 一鍵登出（`logout_session.js`）
 
 **不可以 `conn.close()`**：server 端 utmp 不會當下清掉，帳號卡在線上。走 PTT 正常流程，server 自己關線。

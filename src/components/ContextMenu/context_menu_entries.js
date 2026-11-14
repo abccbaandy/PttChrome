@@ -197,6 +197,9 @@ export function buildContextMenuEntries(p) {
   }
   if (p.saveLocalEnabled)
     item("saveLocal", i18n("saved_action"), (e) => p.onMenuSelect("saveLocal", e));
+  // 手機「選取文字」頁（P81）：只有手機長按選單（ContextSheet）有。
+  if (p.mobile && p.selectTextTarget)
+    item("selectText", i18n("selectText_title"), (e) => p.onMenuSelect("selectText", e));
   divider("d-main");
   if (p.normalEnabled) {
     // 全選、圖片上傳兩項：手機搬到工具列「更多」（p.mobile ＝ ContextSheet 畫的）。
