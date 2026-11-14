@@ -305,3 +305,42 @@ describe("開關：好讀總開關＋說明選單自己的子開關", () => {
     }
   });
 });
+
+// 出口分兩種（tests/unit/view_send_callers.test.js）：開彈窗後自己去抓第 2 頁的 PgDn、看原生畫面時
+// 收拾補頁的 Home 是機器序列，走 core.sendMachineBytes；使用者點了某一項（_leave）是使用者這一下的
+// 翻譯，走真鍵盤出口 view._send。
+test("預設出口：抓頁 PgDn 走 sendMachineBytes，點項目走 view._send", () => {
+  const machine = [];
+  const user = [];
+  const core = {
+    commandQueue: { inFlightKind: null },
+    view: { _send: (b) => user.push(b) },
+    sendMachineBytes: (b) => (machine.push(b), true),
+  };
+  const ctrl = new HelpMenuController(core, { addEventListener() {} }, {
+    enabled: () => true,
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  });
+  ctrl.noteScreen(parseHelpMenuScreen(HELP_FAV_PAGE1));
+  expect(machine).toEqual([KEY_PGDN]);
+  expect(user).toEqual([]);
+  ctrl.noteScreen(parseHelpMenuScreen(HELP_FAV_PAGE2));
+  expect(ctrl.select(0)).toBe(true);
+  expect(user).toEqual([KEY_HOME + "\r"]);
+  expect(machine).toEqual([KEY_PGDN]);
+
+  // 看原生畫面：收拾補頁的 Home 是機器（使用者按的不是 Home）。
+  machine.length = 0;
+  user.length = 0;
+  const ctrl2 = new HelpMenuController(core, { addEventListener() {} }, {
+    enabled: () => true,
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  });
+  ctrl2.noteScreen(parseHelpMenuScreen(HELP_FAV_PAGE1));
+  ctrl2.noteScreen(parseHelpMenuScreen(HELP_FAV_PAGE2));
+  ctrl2.showNative();
+  expect(machine).toEqual([KEY_PGDN, KEY_HOME]);
+  expect(user).toEqual([]);
+});

@@ -285,10 +285,14 @@ describe('ptt_read_article', () => {
       core.buf.pageState = 3;
     };
     core.aidNavigation.onStart = show;
-    core.view._send = (b) => {
+    // collectNative 的 PgDn 是機器序列 ⇒ 走 sendMachineBytes，不走真鍵盤出口 view._send
+    // （那條保留懸空 ESC 態、會先問 adoptUserBytes；見 tests/unit/view_send_callers.test.js）。
+    core.view._send = (b) => core.sent.push(['userKey', b]);
+    core.sendMachineBytes = (b) => {
       core.sent.push(['bytes', b]);
       page++;
       setTimeout(show, 10);
+      return true;
     };
     const r = await tool(core, 'ptt_read_article').execute({ board: 'Gossiping', num: 780297 });
     expect(core.aidNavigation.calls).toEqual([['startNum', 'Gossiping', 780297]]);
