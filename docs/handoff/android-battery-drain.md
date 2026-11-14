@@ -15,6 +15,14 @@
 | 10-03，reset 後 15h39m（閃爍修正已上 Pages） | 25m14s | 102（75.0／26.4） | 63% 核心 | 29% |
 | 10-04 減 10-03 的增量（PttChrome 程式無耗電相關改動） | 30m30s | 108 | 64% 核心 | — |
 | 11-12，自動 reset 後 18h50m（`957e278` 已部署一個多月） | 55m39s | 265（181／72.7） | 79% 核心（扣掉 cached 段約 64%） | — |
+| 11-15，自動 reset 後 12h58m（11-14 12:11 起，整段在 #395 上 Pages 之後；APK 1.6.0） | 1h06m27s | 219（160／52.9） | 60% 核心（只算 fg 約 51%） | — |
+- 11-15 快照（提案第 1、2 項驗收）：CPU／top 79%→60%（同口徑 −24%）、扣背景後約 64%→51%；
+  每小時前景 CPU 電量 78→48 mAh（−39%）⇒ **#395 有降前景 CPU（CONFIRMED，實機；使用內容未控制，捲動佔比不同會影響幅度）**。
+  - 拆程序（÷top）：renderer 20m21s＝31%（11-12 為 44%），主程序 19m13s＝29%（11-12 為 35%，kernel 7m17s）
+    ⇒ 降幅集中在 renderer，與「修的是 renderer 主執行緒每幀工作」一致。
+  - 「只算 fg」口徑：Total cpu time 39m46s × 螢幕開比例 0.898（per-freq 加總）× cpu:fg／screen-on cpu（43.9／45.9）。
+  - 流量 66 分鐘 Wi-Fi 收 144.9 MB＋行動 8.1 MB（11-12 只有 27.7 MB）：量又變大，來源未驗（U7）；CPU 照樣降 ⇒ 仍與下載量無關。
+  - bg／fgs／cached 合計 12.4 mAh（cached 8.18、fgs 3.72），維持小項。
 - 10-04 增量的使用時段在 `957e278`（延遲載入 observer root 改 `.main`，卸載遲滯邊界之前失效）部署**之前**。
 - 11-12 快照：前景 CPU／top 仍約 64% 核心 ⇒ **`957e278` 沒有降低前景 CPU（CONFIRMED，實機）**，主成本不在延遲載入卸載失效。
   - CPU 時間拆程序：renderer（`sandboxed_process0`）24m18s、App 主程序 19m22s（其中 kernel 7m09s）。主程序佔 44%，
@@ -87,7 +95,7 @@ renderer 主執行緒 556 ms/s（其餘 thread：Compositor 65、VizWebView 59�
   （拿掉寬度內容會變寬，見 `main.css` 該段註解）；桌機是否同樣每幀重畫未量（unknown）。
 - 兩項都修的預估：每幀 5.97 → 約 2.2 ms（導覽軸 −2.5、捲軸 −1.3～2.1），renderer 主執行緒可跟上 165Hz。
 
-## 提案（第 1、2 項已實作，待新的 batterystats 驗收；第 3、4 項使用者決定先不做）
+## 提案（第 1、2 項已實作，batterystats 驗收過（11-15 快照）；trace 實驗未重跑；第 3、4 項使用者決定先不做）
 結論：前景耗電的主成本＝好讀文章**捲動**時 renderer 主執行緒每幀 5.97 ms（165Hz 預算 6.06 ms），其中兩項是白做的：
 導覽軸每幀 2.5 ms（U8）、自訂捲軸逼出的每幀 Paint 1.3～2.1 ms（U9）。閒置、背景、下載量都已排除。
 | # | 改什麼 | 位置指示怎麼辦 | 狀態 |
@@ -107,7 +115,7 @@ renderer 主執行緒 556 ms/s（其餘 thread：Compositor 65、VizWebView 59�
 ## 尚未確認（依優先序）
 | # | 項目 | 怎麼驗 |
 |---|---|---|
-| U8 | 導覽軸每幀 2.5 ms（成因 CONFIRMED，見「實機捲動 trace」） | 已修（提案第 1 項），待實機驗收 |
+| U8 | 導覽軸每幀 2.5 ms（成因 CONFIRMED，見「實機捲動 trace」） | 已修（提案第 1 項）；batterystats 前景 CPU 已降（11-15）；每幀 ms 待同一套 trace 實驗確認 |
 | U9 | `.main` 自訂捲軸使每幀 Paint（成因 CONFIRMED，見「每幀 Paint 的成因」） | 導覽軸開時已修（提案第 2 項），待用同一套 `synthesizeScrollGesture` 實驗確認 Paint 次數掉到個位數／秒；導覽軸關時照舊（第 3 項） |
 | U7 | 前景 70 分鐘 216 MB 流量來源（預覽圖、tenor 動圖、`video`） | CDP `Network` 或 `performance.getEntriesByType('resource')` 量一篇文章的位元組數 |
 | U3 | tenor 動圖（`ImagePreviewer.jsx` `InlineVideo`，`video autoplay loop`）持續解碼；165Hz 下權重上調 | 實機開含動圖文章量 renderer CPU，確認捲出可視範圍會卸載（`inline_preview_slot.js` `LAZY_UNMOUNT_MARGIN_PX`） |
