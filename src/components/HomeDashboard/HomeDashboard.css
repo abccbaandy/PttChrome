@@ -78,6 +78,76 @@
   margin-bottom: 20px;
 }
 
+/* 「這次更新」（P71）：儀表板最上面一塊帶框的區塊，跟下面的我的最愛分得開。 */
+.homeWhatsNew {
+  padding: 10px 12px;
+  border: 1px solid #2f4a6e;
+  border-radius: 8px;
+  background: #151c28;
+}
+
+.homeWhatsNewCount {
+  font-size: 12px;
+  color: #dce9ff;
+  background: #2a5ea8;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.homeWhatsNewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.homeWhatsNewItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid #253248;
+}
+
+.homeWhatsNewText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.homeWhatsNewText b {
+  color: #fff;
+  font-weight: 600;
+}
+
+.homeWhatsNewText span {
+  font-size: 13px;
+  color: #a8b0bc;
+}
+
+/* 手機：說明最多兩行，完整的看設定頁說明。 */
+.homeDashboard[data-mobile] .homeWhatsNewText span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.homeWhatsNewSetting {
+  flex: none;
+  white-space: nowrap;
+}
+
+.homeWhatsNewAll {
+  margin-top: 4px;
+  border-color: transparent;
+  background: none;
+  color: #7cb4ff;
+  padding-left: 0;
+}
+
 .homeSectionHead {
   display: flex;
   align-items: center;

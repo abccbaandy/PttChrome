@@ -316,7 +316,7 @@ export const App = function() {
   // 首頁儀表板（主功能表上的我的最愛／最近看板面板，home_dashboard.js）。要在 inputArea 之後
   // （聽 #t 的按鍵收起面板），screenSettled 監聽也排在 deep link／斷線回到原處之後。
   this.homeDashboard = new HomeDashboard(this);
-  // 更新後的新功能小卡（主功能表右下角，whats_new.js）。
+  // 更新後的新功能介紹（首頁儀表板最上面／右下角小卡，whats_new.js）。
   this.whatsNew = new WhatsNew(this);
   // 最近讀過的文章＋稍後再讀（儀表板／指令面板／右鍵選單共用的清單，recent_articles.js）。
   this.recentArticles = new RecentArticles(this);
@@ -2524,7 +2524,7 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.redraw(true);
       break;
     // 關注名單（P33）：只改顯示（列表標色、推文 id 上色），不送任何鍵。
-    // 更新後的新功能小卡：關掉時正在顯示的那張一起收起。
+    // 更新後的新功能介紹：關掉時正在顯示的一起收起（不記成看過）。
     // 推文篩選：關掉時正在生效的篩選一起取消（推文全部回來）。
     case 'enableCommentFilter':
       if (!value && this.view.clearCommentFilter) this.view.clearCommentFilter();

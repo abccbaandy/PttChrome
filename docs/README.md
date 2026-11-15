@@ -51,7 +51,7 @@
 - [`recent-articles.md`](recent-articles.md)：最近讀過＋稍後再讀：只讀文末網址列記、開回去走 deep link、儀表板／指令面板／右鍵三個入口；動 recent_articles.js 前先讀
 - [`comment-filter.md`](comment-filter.md)：推文篩選：只看這個人／只看原 PO、「略過 N 則」的跨列標註與前沿；動 comment_filter.js 或篩選相關標註前先讀
 - [`feature-isolation.md`](feature-isolation.md)：功能故障隔離：TermBuf settle 監聽者各自 try/catch、正式版停用登記過的功能／dev 與測試照樣丟出；動 event.js 或在 TermBuf 掛新的監聽者前先讀
-- [`whats-new.md`](whats-new.md)：更新後的新功能小卡：清單取自 README 功能列表／第一次用默默記下／出現一次就記；動 whats_new.js 或 README 功能列表格式前先讀
+- [`whats-new.md`](whats-new.md)：更新後的新功能介紹：清單取自 README 功能列表／第一次用默默記下／按「知道了」才記／功能→設定對應表；動 whats_new.js 或 README 功能列表格式前先讀
 - [`editor-input.md`](editor-input.md)：編輯器輸入框：送法＝貼上漏斗、stripNonBig5、只在 pageState 6；動 editor_input.js 前先讀
 - [`open-cache.md`](open-cache.md)：開站快取 Service Worker：只快取帶 hash 檔、網頁 network-first、ignoreVary、換 build 才清、開關移除；動 public/sw.js 或 open_cache.js 前先讀
 - [`ssh.md`](ssh.md)：SSH 連線：載體依 scheme 選／瀏覽器端自寫 SSH client（WebCrypto、host key 指紋表）／relay 合約與目的地寫死 ptt.cc:22／協議 pref 本機專屬／失敗時改用另一協議／APK /ssh 管線；動 transport.js、src/js/ssh/**、tools/ssh-relay、proxy/ssh-relay-worker 前先讀
