@@ -351,6 +351,8 @@ offline e2e `mobile_select_text.offline.spec.js`（長按以真右鍵代替，�
 - `screen.js#_renderRow` 走到 buildRow 的內文列：`hang_indent.hangIndentOf(rowToText)` 數行首半形／全形空白，`applyHangIndent`
   寫 `.hangIndent`＋`--hangHalf`／`--hangFull`。CSS：列 `padding-left`＝半形×`1ch`＋全形×`1em`，內層 div（行盒所在）負 `text-indent`，
   更裡層歸零（text-indent 會繼承到 `.wpadding` inline-block）。文字不動 ⇒ 複製不變。
+- 縮排只給文字：bbsline 後面的預覽 div／`.fixedUrlLine`（`> div > div`）用負 margin 拉回列左緣，圖片照舊滿寬；
+  圖文並排的說明欄（`.mergedCaptionCol`）不縮。
 - 不套：行首沒空白、整列空白、超過 `HANG_MAX_CELLS`（20 格，置中標題／ANSI 圖）。推文、檔頭、合併塊走各自分支不經這裡。
 - 守護：unit `hang_indent.test.js`（真 main.css 量續行左緣）。
 

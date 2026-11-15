@@ -7,7 +7,8 @@
 import mainCss from "../../src/css/main.css?raw";
 import { hangIndentOf, HANG_MAX_CELLS } from "../../src/js/hang_indent";
 import { mountScreen, unmountAll } from "./helpers/mount_screen";
-import { row, seg, SCENARIOS } from "./helpers/screen_fixtures";
+import { row, seg, link, SCENARIOS } from "./helpers/screen_fixtures";
+import { annotationsKey, sameKey } from "../../src/js/screen_annotate_cache";
 
 let style;
 beforeAll(() => {
@@ -138,6 +139,30 @@ describe("換行版面的真樣式", () => {
     const { starts } = lineStarts(node);
     expect(starts.length).toBeGreaterThan(1);
     expect(starts[1]).toBeLessThan(1);
+  });
+
+  test("縮排列裡的圖片預覽盒拉回列的左緣、用滿寬（縮排只給文字）", () => {
+    const m = mountScreen({
+      ...easy,
+      lines: [...LINES.slice(0, 4), row(seg("    "), link("https://i.imgur.com/abcdefg.jpg"))],
+      enhance: { ...easy.enhance, commentCards: true, hangIndent: true },
+    });
+    m.root.classList.add("mobileReflow");
+    m.root.style.width = "320px";
+    m.root.style.fontSize = "20px";
+    const node = rowNode(m, 4);
+    expect(node.classList.contains("hangIndent")).toBe(true);
+    const slot = node.querySelector(".inlinePreviewSlot");
+    expect(slot).not.toBeNull();    const r = node.getBoundingClientRect();
+    const s = slot.getBoundingClientRect();
+    expect(Math.abs(s.left - r.left)).toBeLessThan(1);
+    expect(Math.abs(s.width - r.width)).toBeLessThan(1);
+  });
+
+  test("切開關會換 annotationsKey（整批重畫）", () => {
+    const k = (on) =>
+      annotationsKey({ lines: LINES, enhance: { ...easy.enhance, commentCards: true, hangIndent: on } });
+    expect(sameKey(k(true), k(false))).toBe(false);
   });
 
   test("不在換行版面（commentCards 關，桌機）：就算開關開著也不加", () => {
