@@ -1019,6 +1019,10 @@ LongPushSession.prototype = {
   // 在列表上做任何「對游標所指文章動手」的事之前都要先過這裡。
   // 決策表見 docs/long-push.md「游標錨定」。
   _gate: function(facts, proceed) {
+    // 從列表接手（P90）沒有「人還在文章裡」這回事：認不出是乾淨列表（被水球蓋住、
+    // footer 對不上…）就沒有東西能證明游標還在原篇 ⇒ 停手，不盲按 X。
+    if (this._fromList && (!facts || facts.kind !== 'clean-list'))
+      return this._fail(MSG.unknownScreen);
     // 不在列表上（還在文章／其他畫面）⇒ X 推的就是當前這篇，沒有歧義。
     if (!facts || facts.kind !== 'clean-list') return proceed();
 

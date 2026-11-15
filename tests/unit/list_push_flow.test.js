@@ -109,6 +109,23 @@ describe("從列表的類型選單接手", () => {
     expect(h.results[0].rest).toBeTruthy();
   });
 
+  test.each([
+    ["被水球／訊息蓋住（transient）", "transient"],
+    ["看起來像文章", "article"],
+  ])("REGRESSION 第二則前落地畫面不是乾淨列表（%s）⇒ 不比對身分就不按 X、停手", (_name, kind) => {
+    const { h, target } = setup();
+    h.session.startFromList({ text: "一二三四五六七八九十一二三四五六七八九十", type: "push", target, maxBytes: 30 });
+    h.settle(PROMPT);
+    h.settle(CONFIRM);
+    const sentBefore = h.sent.length;
+    // 列表流程沒有「人還在文章裡」這回事：認不出是列表就沒有東西能證明游標還在原篇。
+    h.settle("", { kind });
+    expect(h.sent.slice(sentBefore)).not.toContain("X");
+    expect(h.session.active).toBe(false);
+    expect(h.results).toHaveLength(1);
+    expect(h.results[0]).toMatchObject({ sent: 1, fromList: true });
+  });
+
   test("閱讀紀錄：開頭 begin('list-push')、收尾 end", () => {
     const { h, target } = setup();
     const rr = recordFor(h.core);

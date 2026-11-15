@@ -90,6 +90,23 @@ export const CommentBar = ({ pttchrome }) => {
     return () => root.classList.remove("commentBarShown");
   }, [visible, listMode]);
 
+  // 換模式（文章 ↔ 列表）或列表換了一篇：輸入框的字與類型是給上一個目標的，清掉。
+  // 列收起時元件只 return null、state 留著 ⇒ 不清就會把 A 篇打到一半的字按 Enter 推到 B 篇。
+  const listTarget = state && state.listTarget;
+  const targetKey = listMode
+    ? "list:" +
+      (listTarget
+        ? [listTarget.board, listTarget.num, listTarget.author, listTarget.date, listTarget.subject].join("\u0001")
+        : "")
+    : "article";
+  const lastTargetKey = useRef(targetKey);
+  useEffect(() => {
+    if (lastTargetKey.current === targetKey) return;
+    lastTargetKey.current = targetKey;
+    setText("");
+    setType("push");
+  }, [targetKey]);
+
   // 禁噓板（列表模式讀到的類型選單沒有 2.）：選著噓就改回推。
   useEffect(() => {
     if (!booAllowed && type === "boo") setType("push");

@@ -228,6 +228,29 @@ describe("CommentBar UI", () => {
     expect(isCommentBarTarget(input())).toBe(true);
     expect(isCommentBarTarget(document.body)).toBe(false);
   });
+
+  // REGRESSION（P90）：列收起時元件只 return null、字與類型的 state 留著 ⇒ A 篇好讀文章打到一半
+  // 沒送、回列表在 B 篇按 X，列表推文列裡帶著 A 的字，按 Enter 就推到 B。
+  test("換模式（文章 → 列表）或列表換一篇 ⇒ 字清空、類型回到推", () => {
+    const B = { board: "Test", num: 102, author: "bob", date: "9/02", subject: "[閒聊] B" };
+    const C = { ...B, num: 103, author: "carol", subject: "[閒聊] C" };
+    const { root, input, bar } = setup();
+    const checked = () => root().querySelector('[aria-checked="true"]').getAttribute("data-comment-type");
+    fireEvent.click(root().querySelector('[data-comment-type="boo"]'));
+    fireEvent.change(input(), { target: { value: "給 A 的字" } });
+    act(() => bar.emit({ visible: false }));
+    act(() => bar.emit({ visible: true, mode: "list", listTarget: B, booAllowed: true }));
+    expect(input().value).toBe("");
+    expect(checked()).toBe("push");
+    fireEvent.change(input(), { target: { value: "給 B 的字" } });
+    act(() => bar.emit({ visible: false, mode: "article", listTarget: null }));
+    act(() => bar.emit({ visible: true, mode: "list", listTarget: C }));
+    expect(input().value).toBe("");
+    // 同一篇的 state 重送（例如重算位置）不清。
+    fireEvent.change(input(), { target: { value: "給 C 的字" } });
+    act(() => bar.emit({ left: 20, listTarget: { ...C } }));
+    expect(input().value).toBe("給 C 的字");
+  });
 });
 
 // 症狀：推文列只有一行，長推文打到後面前面就捲出框外，看不到自己打了什麼（手機尤其短：
