@@ -7,7 +7,8 @@
 //            檔頭只在第一頁 ⇒ 由 term_view 跟著 _articleAuthor 一起記（_articleTitle）。
 //            detail＝「作者 · 看板 · 發文時間」（P58，_articleByline）：元件在檔頭卡片捲出
 //            畫面後拿它當副標（標題看得到時只寫看板），見 components/MobileAppBar。
-//   list     文章列表（《看板》＋文章列表 footer，或列表好讀 session 持有）：標題＝看板名。
+//   list     文章列表（《看板》＋文章列表 footer，或列表好讀 session 持有，或 row 0 左段是
+//            readtitle 的【板主:x】／【徵求中】——底列換成 prompt 時 footer 不在）：標題＝看板名。
 //            row 0 也是 `【板主:xxx】` 形狀 ⇒ 必須先於 menu 判。
 //   boards   看板列表（我的最愛／分類／全部看板）：標題＝row 0 的【X】。
 //   menu     其他 row 0 是【X】的畫面（主功能表、所有 domenu 子選單、精華區…）。
@@ -19,7 +20,7 @@
 
 import { boardListContextKind } from './board_list_parse';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
-import { parseBoardName, parseHeaderTitle } from './screen_titles';
+import { hasArticleListBmPrefix, parseBoardName, parseHeaderTitle } from './screen_titles';
 import { PAGE_STATE } from './screen_model';
 
 export const NEW_MAIL_MARK = '你有新信件';
@@ -56,7 +57,9 @@ export function appBarFromFacts(facts, opts) {
   }
   if (o.pageState === PAGE_STATE.EDITOR && o.editorTitle) return bar('editor', '', '', false);
   const ctx = boardListContextKind(facts);
-  if (facts.listOwner === OWNER_ARTICLE_LIST || ctx === 'article-list') {
+  // 底列換成 prompt（推文、搜尋…）時 footer 認不出，但 row 0 仍是 readtitle 的【板主:x】⇒ 還是列表，
+  // 不能落到下面的 menu 把標題換成「板主:x」。
+  if (facts.listOwner === OWNER_ARTICLE_LIST || ctx === 'article-list' || hasArticleListBmPrefix(row0)) {
     const board = parseBoardName(row0) || (prev.kind === 'list' ? prev.title : '');
     return bar('list', board, '', newMail);
   }
