@@ -247,7 +247,7 @@ BBS 畫面每收到一頁就整份重畫，React 在這裡只剩成本（實錄�
   `App.setModalOpen(source, open)`（具名來源集合）。React 側由 `components/ContextMenu/index.jsx`
   的 `useEffect` 依 render state 推導後呼叫。手動兩邊維護時，只要關閉路徑中途 throw 就會「畫面上有對話框、
   app 卻以為沒有」→ 焦點永久被搶回隱藏 input `#t`，整頁只能重整才能打字。
-  守護：`tests/unit/modal_shown_sources.test.js`、`tests/e2e/offline/connect_failure.offline.spec.js`。
+  守護：lint 規則 `pttchrome/no-modal-shown-assign`、`tests/unit/modal_shown_sources.test.js`、`tests/e2e/offline/connect_failure.offline.spec.js`。
   界線：`showsInputHelper`／`showsLiveArticleHelper` 刻意**不算** modal（終端機仍收鍵盤），勿順手納入。
 - **`view.conn` 只在 `App.onConnect` 被設**：連線從未成功時是 `undefined`。送資料一律走
   `view._send()`／`_convSend()`（內含 `if (this.conn)`），禁止直接 `this.view.conn.send(...)`。

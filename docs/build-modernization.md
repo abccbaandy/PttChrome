@@ -145,7 +145,20 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
   `ENOENT … typescript/lib/_tsc.js`），所以停在 6.x。Yarn 修好或拿掉那個 patch 再升。
 - 「重大技術升級」（關於頁）不列：只是加一個檢查器。
 
-lint 與型別檢查之後（A5 步驟 c，低優先）：適合的 regex 靜態守護改寫成 lint 規則。
+### 專案自己的 lint 規則（2026-11，oxlint JS plugin，架構 review A5 步驟 c）
+
+`tools/lint/pttchrome_rules.mjs`，`.oxlintrc.json` 的 `jsPlugins` 載入，只對 `src/**` 開、豁免檔也寫在設定檔：
+
+- `pttchrome/no-magic-page-state`：pageState 不跟數字比／不被賦數字／switch 不 case 數字（原
+  `page_state_constants.test.js` 的 regex；改 AST 後抓到 regex 漏掉的 `switch (pageState) { case 3: }` 八處，footer_keys／mouse_regions）。
+- `pttchrome/no-direct-conn-send`：傳輸層以外不直接叫 `conn.send` 這類（原 `wire_send.test.js` 第一條；
+  `conn['send']`、`.call`／`.apply` 也算）。
+- `pttchrome/no-modal-shown-assign`：`modalShown` 只在 `App.setModalOpen` 寫（CLAUDE.md 的規則，原本沒守護）。
+
+規則的守護自證與「設定沒被關掉、豁免沒變多」在 `tests/unit/lint_rules.test.js`（oxlint 的 `RuleTester`）。
+加 plugin 後 `yarn lint` 從約 0.35 秒變約 1 秒。**適合改成 lint 的**：判準只看一段程式碼本身的語法
+（某種呼叫、比較、賦值）。**不適合、留在 unit 的**：要跨檔對照（「用了 A 的模組必須 import B」、「每個身分都有人用」）、
+要讀非 JS 檔（CSS、README、設定檔）、或要算數量的。
 
 ## 主 bundle 拆檔
 

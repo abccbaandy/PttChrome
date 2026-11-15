@@ -20,7 +20,7 @@ const MIGRATED = [
   "live_helper.js",
 ];
 
-// 一行的程式碼部分（同 page_state_constants.test.js#codeOf）：逐行判，不跨行剝 ⇒ 字串裡的 `/*` 不會
+// 一行的程式碼部分（跟 lint 規則接手前的 page_state_constants.test.js#codeOf 同一套）：逐行判，不跨行剝 ⇒ 字串裡的 `/*` 不會
 // 吃掉後面整段程式碼造成假綠，行號也跟原檔一致。
 function codeOf(line) {
   const t = line.trimStart();

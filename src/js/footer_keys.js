@@ -35,6 +35,7 @@
 import { b2u, unescapeStr } from './string_util';
 import { cellText } from './unicode_cells';
 import { KeyMap } from './term_keyboard';
+import { PAGE_STATE } from './screen_model';
 
 // 具名鍵 → 送出的 byte 序列。**一律轉接 KeyMap**（term_keyboard 的同一份表），
 // 不另抄第三份，否則哪天改了跳脫序列這裡會靜默對不上。
@@ -288,13 +289,13 @@ export function functionKeyRows(pageState, rows, menuScreen) {
   switch (pageState) {
     // 1 MENU（看板列表／信件列表／精華區；選單見上）、2 LIST（文章列表）、4 LIST 變體：
     // 提示列在 row 1（bbs.c:663 / board.c:1330），vs_footer 在最後一列。
-    case 1:
+    case PAGE_STATE.MENU:
       return menuScreen ? [rows - 1] : [1, rows - 1];
-    case 2:
-    case 4:
+    case PAGE_STATE.LIST:
+    case PAGE_STATE.LEGACY_4:
       return [1, rows - 1];
     // 3 READING：pmore 只有底部 footer。
-    case 3:
+    case PAGE_STATE.READING:
       return [rows - 1];
     default:
       return null;

@@ -1,6 +1,7 @@
 // 守護「送給 PTT 的唯一出口」（src/js/wire_send.js，架構 review A2 步驟 a，docs/wire-send.md）。
 //   1. 靜態：傳輸層（telnet.js／websocket.js／ssh/）與 wire_send.js 以外，沒有任何地方直接叫連線物件的
-//      送出方法。新增送鍵入口時漏了這層會在這裡紅，而不是等判斷邏輯 review 抓到。
+//      送出方法 ⇒ lint 規則 pttchrome/no-direct-conn-send（tools/lint/pttchrome_rules.mjs，自證在
+//      lint_rules.test.js）。這裡只剩 _sendRaw 的掃描。
 //   2. 每支函式就是原本那一行 conn 呼叫（行為不變），身分不認得就丟。
 //   3. 每個身分都真的有人用（新增入口時順手登記，不留空殼）。
 import fs from 'node:fs';
@@ -30,41 +31,12 @@ const FILES = fs
 const TRANSPORT = new Set(['js/wire_send.js', 'js/telnet.js', 'js/websocket.js']);
 const isTransport = (name) => TRANSPORT.has(name) || name === 'js/ssh/ssh_transport.js';
 
-const SEND_METHODS = 'send|convSend|sendUserKey|convSendUserKey|sendNaws|sendWillNaws|sendTimingMark';
-// 收件者叫 conn／_conn（this.conn、pttchrome.conn、core.conn、captured conn 都算），含 `?.`。
-// regex 的盲點（別名 `const c = this.conn`、`conn['send']`、解構、`.call`）目前 src 都沒有；
-// 寫成那樣等於繞過出口，review 時當違規看。
-const DIRECT_CALL = new RegExp(`\\b_?conn\\s*\\??\\.\\s*(?:${SEND_METHODS})\\s*\\(`);
-
 describe('送出只有 wire_send 一個出口', () => {
-  test('傳輸層以外沒有人直接叫 conn 的送出方法', () => {
-    const offenders = FILES.filter((f) => !isTransport(f.name) && DIRECT_CALL.test(f.code)).map((f) => {
-      const line = f.code.split('\n').find((l) => DIRECT_CALL.test(l));
-      return `${f.name}: ${line.trim()}`;
-    });
-    expect(offenders).toEqual([]);
-  });
-
   test('_sendRaw 只有傳輸層與 debug 錄製（包一層記錄）碰', () => {
     const offenders = FILES.filter(
       (f) => !isTransport(f.name) && f.name !== 'js/debug_recorder.js' && /_sendRaw\b/.test(f.code),
     ).map((f) => f.name);
     expect(offenders).toEqual([]);
-  });
-
-  test('守護本身認得出違規（不是永遠綠）', () => {
-    for (const bad of [
-      'this.conn.send("x")',
-      'pttchrome.conn.convSend(v)',
-      'conn.sendNaws(1, 2)',
-      'this.conn.sendUserKey(d)',
-      'core.conn . sendTimingMark()',
-      'this.conn?.send(x)',
-      'pttchrome.conn?.convSend(v)',
-    ])
-      expect(DIRECT_CALL.test(bad), bad).toBe(true);
-    for (const ok of ['wire.sendBytes(WIRE_SOURCE.QUEUE, this.conn, d)', 'this.conn.isConnected', 'conn.abort()'])
-      expect(DIRECT_CALL.test(ok), ok).toBe(false);
   });
 
   test('呼叫點寫的每個 WIRE_SOURCE.X 都存在（拼錯不會等到送鍵才爆）', () => {

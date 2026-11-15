@@ -351,8 +351,8 @@ export function resolveMouseRegion(input) {
   switch (o.pageState) {
     // 2 = 文章列表（setPageState 產生）；4 = LIST 變體（setPageState 不產生，
     // 只有舊 onMouse_move 用到，保留以免有呼叫端仍手動設定）。差別只在正文列範圍。
-    case 2:
-    case 4: {
+    case PAGE_STATE.LIST:
+    case PAGE_STATE.LEGACY_4: {
       const top = o.pageState === PAGE_STATE.LIST ? 2 : 1;
       const bottom = o.pageState === PAGE_STATE.LIST ? rows - 1 : rows - 2;
       // 內文列以外（頂列 Home／底列 End／整列上一頁）：排在 lineEmpty 之前 ——
@@ -394,7 +394,7 @@ export function resolveMouseRegion(input) {
       };
     }
 
-    case 1: {
+    case PAGE_STATE.MENU: {
       if (!(row > 0 && row < rows - 1))
         return (edgeOn && listEdgeRegion(row, col, rows, cols, 0, rows - 1)) || NONE;
       // 選單（主功能表與子選單）：上半是 adbanner 的 ANSI 圖／心情點播，不是選單項
@@ -435,7 +435,7 @@ export function resolveMouseRegion(input) {
     // 舊版在 row 0/1/2/23 另有 `[`/`]`/`=`/重新整理/End 等特例，全部移除 ——
     // 好讀模式是可捲動長頁，clientToPos 仍把 row clamp 進 0..rows-1，那些「頂列
     // 底列」指的是**視窗**頂底而非文章頂底，語意本來就對不上。
-    case 3: {
+    case PAGE_STATE.READING: {
       // 推文列的可點區（推文者高亮）。排在退出帶與上下頁之前，與 App.mouse_click 的
       // 優先權同序 ⇒ 「指標＝點下去會發生的事」。
       const pr = o.pusherRange;

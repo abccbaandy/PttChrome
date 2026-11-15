@@ -34,7 +34,28 @@
     "react/refs": "off",
     "react-hooks/exhaustive-deps": "off"
   },
+  "jsPlugins": ["./tools/lint/pttchrome_rules.mjs"],
   "overrides": [
+    {
+      "files": ["src/**"],
+      "rules": {
+        "pttchrome/no-magic-page-state": "error",
+        "pttchrome/no-direct-conn-send": "error",
+        "pttchrome/no-modal-shown-assign": "error"
+      }
+    },
+    {
+      "files": ["src/js/screen_model.js"],
+      "rules": {
+        "pttchrome/no-magic-page-state": "off"
+      }
+    },
+    {
+      "files": ["src/js/wire_send.js", "src/js/telnet.js", "src/js/websocket.js", "src/js/ssh/ssh_transport.js"],
+      "rules": {
+        "pttchrome/no-direct-conn-send": "off"
+      }
+    },
     {
       "files": ["tests/e2e/**"],
       "rules": {

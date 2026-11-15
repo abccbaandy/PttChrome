@@ -6,7 +6,8 @@
 
 - **所有上線的 byte 都經過 `wire_send.js`**。傳輸層（`telnet.js`、`websocket.js`、`ssh/`）以外不准直接叫
   `conn.send`／`convSend`／`sendUserKey`／`convSendUserKey`／`sendNaws`／`sendWillNaws`／`sendTimingMark`。
-  守護 `tests/unit/wire_send.test.js`（靜態掃整個 `src`）。
+  守護 lint 規則 `pttchrome/no-direct-conn-send`（`yarn lint`，AST 判，`conn['send']`、`.call` 也算；
+  規則在 `tools/lint/pttchrome_rules.mjs`，傳輸層的豁免寫在 `.oxlintrc.json`）。
 - **機器送出要說明身分**：`sendBytes(source, conn, bytes)`／`sendText(source, conn, text)`，`source` 取自
   `WIRE_SOURCE`；不認得就丟。新入口先在 `WIRE_SOURCE` 加一個身分（守護也要求每個身分都有人用）。
 - **兩種變體的界線是入口不是內容**：機器用 `sendBytes`／`sendText`（懸空 ESC 一律化解）；真鍵盤／IME 用
