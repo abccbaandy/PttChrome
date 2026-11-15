@@ -140,6 +140,19 @@ describe("推／搜尋", () => {
     expect(core.view.sendKeyAsUser).toHaveBeenCalledTimes(2);
   });
 
+  // REGRESSION（P90 W4）：列表上的類型選單已經換成推文列，工具列「推」照送 X 會落到 PTT 的選單上。
+  test("列表推文列開著 ⇒ 推＝聚焦推文列，不送 X；列沒開 ⇒ 照送 X", () => {
+    const core = makeCore({ context: { push: true, search: [] } });
+    core.commentBar = { state: { available: true, folded: false, mode: "list" }, expand: vi.fn(), focusList: vi.fn(() => true) };
+    renderBar(core);
+    fireEvent.click(byKey("X"));
+    expect(core.commentBar.focusList).toHaveBeenCalledTimes(1);
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+    core.commentBar.focusList.mockReturnValue(false);
+    fireEvent.click(byKey("X"));
+    expect(core.view.sendKeyAsUser).toHaveBeenCalledWith("X");
+  });
+
   // 使用者定案：不要子選單，直接開彈窗（種類在彈窗上方切）。
   test("搜尋直接開彈窗：文章列表預設標題，不出現子選單", () => {
     const core = makeCore({ context: { push: false, search: ["title", "author", "push", "board"] } });

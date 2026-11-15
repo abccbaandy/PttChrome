@@ -527,6 +527,64 @@ describe("CommentBar 列表模式（P90）", () => {
     expect(h.bar.state.visible).toBe(false);
   });
 
+  // REGRESSION（W4）：推文列出現到輸入框聚焦之間隔一次 render＋rAF，這段時間打的字落到終端機 #t
+  // 照送 PTT ⇒ 底下的類型選單把「2」當噓。認出選單那一刻就要擋住終端機收鍵，聚焦時把字接過去。
+  test("認出選單那一刻擋終端機收鍵；聚焦時解除並接走 #t 裡的字", () => {
+    const h = makeListCore();
+    const modals = new Set();
+    h.core.setModalOpen = vi.fn((src, on) => (on ? modals.add(src) : modals.delete(src)));
+    h.core.view.input = { value: "" };
+    h.settle();
+    expect(modals.has("commentBarPending")).toBe(true);
+    h.core.view.input.value = "2好文";
+    expect(h.bar.takePendingInput()).toBe("2好文");
+    expect(h.core.view.input.value).toBe("");
+    expect(modals.size).toBe(0);
+    expect(h.bar.takePendingInput()).toBe(""); // 第二次（focus 與聚焦請求都收一次）不重複
+  });
+
+  test.each([
+    ["選單收了", (h) => { h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 "); h.settle(); }],
+    ["取消", (h) => h.bar.cancelList()],
+    ["送出", (h) => h.bar.submitList({ text: "推推", type: "push" })],
+  ])("還沒聚焦就%s ⇒ 擋鍵一定解除", (_n, act) => {
+    const h = makeListCore();
+    const modals = new Set();
+    h.core.setModalOpen = (src, on) => (on ? modals.add(src) : modals.delete(src));
+    h.core.view.input = { value: "" };
+    h.settle();
+    expect(modals.has("commentBarPending")).toBe(true);
+    h.core.view.input.value = "2";
+    act(h);
+    expect(modals.has("commentBarPending")).toBe(false);
+    // 擋鍵期間打的字不可以留在 #t：下一次打字時會一起送到（已經不是選單的）畫面。
+    expect(h.core.view.input.value).toBe("");
+  });
+
+  test("聚焦失敗 ⇒ releasePendingInput 解除擋鍵、丟掉 #t 的字", () => {
+    const h = makeListCore();
+    const modals = new Set();
+    h.core.setModalOpen = (src, on) => (on ? modals.add(src) : modals.delete(src));
+    h.core.view.input = { value: "" };
+    h.settle();
+    h.core.view.input.value = "2";
+    h.bar.releasePendingInput();
+    expect(modals.size).toBe(0);
+    expect(h.core.view.input.value).toBe("");
+    expect(h.bar.state.visible).toBe(true);
+  });
+
+  test("focusList：列表推文列開著才聚焦（手機工具列「推文」不送 X）", () => {
+    const h = makeListCore({ last: " 文章選讀  (y)回應(X)推文(^X)轉錄 " });
+    h.settle();
+    expect(h.bar.focusList()).toBe(false);
+    h.paint(MENU);
+    h.settle();
+    const n = h.bar.state.focusN;
+    expect(h.bar.focusList()).toBe(true);
+    expect(h.bar.state.focusN).toBe(n + 1);
+  });
+
   test("長推文還握著畫面（我們自己按出來的類型選單）⇒ 不出現", () => {
     const h = makeListCore();
     h.session.busy = true;

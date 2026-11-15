@@ -327,7 +327,9 @@ describe("CommentBar：長推文看得到全文", () => {
     const grown = Math.round(h(document.getElementById(COMMENT_BAR_ID)));
     expect(grown).toBeGreaterThan(COMMENT_BAR_HEIGHT);
     await vi.waitFor(() => expect(bar.state.height).toBe(grown));
-    expect(varH()).toBe(grown + "px");
+    // --comment-bar-h 是元件收到新 state、重畫之後的 useEffect 才寫 ⇒ 跟 bar.state 不同一刻，要另外等
+    //（機器忙時同步讀會讀到舊的 40px）。
+    await vi.waitFor(() => expect(varH()).toBe(grown + "px"));
     act(() => bar.emit({ visible: false }));
     expect(bar.setHeight).toHaveBeenLastCalledWith(COMMENT_BAR_HEIGHT);
   });

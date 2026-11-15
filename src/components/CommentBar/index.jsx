@@ -186,6 +186,14 @@ export const CommentBar = ({ pttchrome }) => {
     // 只看請求序號：同一個請求不重填（使用者改了字之後重畫不可以被蓋回去）。
   }, [prefillN]);
 
+  // 列表模式（P90）：列出現到聚焦之間打的字被擋在終端機的 #t（comment_bar.js#_holdTerminalKeys），
+  // 聚焦時接過來接在輸入框後面。已經聚焦著（換了一篇）不會再有 focus 事件 ⇒ 聚焦請求那邊也收一次。
+  const takePending = useCallback(() => {
+    if (!bar || typeof bar.takePendingInput !== "function") return;
+    const pending = bar.takePendingInput();
+    if (pending) setText((cur) => commentBarText(cur + pending));
+  }, [bar]);
+
   // 展開時聚焦（等一幀：列這一幀才 mount）。手機會叫出鍵盤。
   const focusN = state ? state.focusN : 0;
   useEffect(() => {
@@ -193,6 +201,9 @@ export const CommentBar = ({ pttchrome }) => {
     const id = requestAnimationFrame(() => {
       const el = inputRef.current;
       if (el) el.focus();
+      if (el && document.activeElement === el) takePending();
+      else if (bar && typeof bar.releasePendingInput === "function")
+        bar.releasePendingInput();
     });
     return () => cancelAnimationFrame(id);
   }, [focusN]);
@@ -338,6 +349,7 @@ export const CommentBar = ({ pttchrome }) => {
         onFocus={() => {
           setFocused(true);
           setFocusedState(true);
+          takePending();
         }}
         onBlur={() => {
           setFocused(false);

@@ -254,7 +254,49 @@ CommentBar.prototype = {
     if (off) off();
   },
 
+  // P90：列表推文列剛出現到輸入框真的拿到焦點之間（React 下一次 render＋一個 rAF），使用者接著打的字
+  // 會落在終端機的 #t ⇒ 照送 PTT，底下的類型選單把數字當類型（「2」＝噓）、其他字當取消。
+  // 認出選單的那一刻就登記一個 modal 來源擋住終端機收鍵（字留在 #t 的 value 裡），
+  // 輸入框聚焦時（takePendingInput）解除並把那些字接過去。收起時一定解除。
+  _holdTerminalKeys: function(on) {
+    if (!!this._keysHeld === on) return;
+    this._keysHeld = on;
+    const core = this._core;
+    if (core.setModalOpen) core.setModalOpen('commentBarPending', on);
+  },
+
+  // 元件：列表模式的輸入框拿到焦點。解除擋鍵，回傳擋鍵期間落在 #t 的字（並清掉，免得之後送給 PTT）。
+  takePendingInput: function() {
+    if (!this._keysHeld) return '';
+    const text = this._clearPendingInput();
+    this._holdTerminalKeys(false);
+    return text;
+  },
+
+  // 元件：聚焦失敗（輸入框沒拿到焦點）⇒ 解除擋鍵退回終端機，不然鍵盤與點擊都被 modal 擋著。
+  // 擋鍵期間落在 #t 的字丟掉：那時畫面是推文類型選單，留著會在下一次打字時一起送到別的畫面。
+  releasePendingInput: function() {
+    if (!this._keysHeld) return;
+    this._clearPendingInput();
+    this._holdTerminalKeys(false);
+  },
+
+  _clearPendingInput: function() {
+    const input = this._core.view && this._core.view.input;
+    const text = (input && input.value) || '';
+    if (input) input.value = '';
+    return text;
+  },
+
+  // 列表模式：聚焦輸入框（手機工具列「推文」在類型選單上按 ⇒ 不送 X，叫出這一列）。不在列表模式回 false。
+  focusList: function() {
+    if (this._state.mode !== 'list' || !this._state.visible) return false;
+    this._set({ focusN: this._state.focusN + 1 });
+    return true;
+  },
+
   _hide: function() {
+    this.releasePendingInput();
     this._releaseBack();
     if (this._state.visible || this._state.available || this._state.expanded || this._state.mode !== 'article')
       this._set({ visible: false, available: false, expanded: false, mode: 'article', listTarget: null, booAllowed: true });
@@ -344,6 +386,7 @@ CommentBar.prototype = {
     // 新出現（或換了一篇）⇒ 聚焦輸入框（使用者剛按 X，就是要打字），系統返回＝取消。
     const entering = prev.mode !== 'list' || !prev.visible || !sameListPushTarget(prev.listTarget, target);
     if (entering) {
+      this._holdTerminalKeys(true);
       this._releaseBack();
       if (core.registerSheetDismiss) this._unregisterBack = core.registerSheetDismiss(() => this.cancelList());
     }
