@@ -176,6 +176,7 @@ export function CommentBar(core) {
   this._core = core;
   this._listeners = new Set();
   this._state = Object.assign({}, HIDDEN);
+  this._listSuppressed = false;
   const self = this;
   if (core.buf && core.buf.addEventListener)
     core.buf.addEventListener('screenSettled', function() {
@@ -308,11 +309,21 @@ CommentBar.prototype = {
 
   // P90：列表上 PTT 畫著推文類型選單、而且認得出要推哪一篇 ⇒ 那一篇（listPushTarget）。
   // 長推文還握著畫面（送出中、取消收尾中）時不出現：那時的類型選單是我們自己按出來的。
+  // 送出／取消之後（或握著畫面期間看過選單）立 _listSuppressed：失敗、收尾沒成功時畫面可能還停在
+  // 那個選單，列再跳出來會把焦點從錯誤框搶走 ⇒ 要等畫面離開選單一次（使用者自己再按 X）才解除。
   _listMenuTarget: function(prefs) {
     if (!listPushEnabled(prefs)) return null;
     const session = this._core.longPush;
-    if (session && session.busy) return null;
-    return listPushTarget(listPushFactsOf(this._core.buf));
+    if (session && session.busy) {
+      this._listSuppressed = true;
+      return null;
+    }
+    const target = listPushTarget(listPushFactsOf(this._core.buf));
+    if (this._listSuppressed) {
+      if (!target) this._listSuppressed = false;
+      return null;
+    }
+    return target;
   },
 
   _refreshList: function(prefs, target) {
@@ -375,6 +386,7 @@ CommentBar.prototype = {
       maxBytes: maxBytes,
     });
     if (!started) return { ok: false, reason: 'gone' };
+    this._listSuppressed = true;
     this._hide();
     return { ok: true, reason: 'ok', text: plan.text };
   },
@@ -383,6 +395,7 @@ CommentBar.prototype = {
   cancelList: function() {
     if (this._state.mode !== 'list') return false;
     const session = this._core.longPush;
+    this._listSuppressed = true;
     this._hide();
     return !!(session && session.dismissListMenu && session.dismissListMenu());
   },
