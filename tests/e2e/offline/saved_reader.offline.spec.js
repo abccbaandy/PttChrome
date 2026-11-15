@@ -120,7 +120,8 @@ test.describe('離線文章', () => {
     await firstRow.click();
     await page.keyboard.press('Escape');
     await expect(overlay).toHaveCount(0);
-    expect(await page.evaluate(() => window.__app.modalShown)).toBe(false);
+    // modal 來源在 useEffect cleanup 才解除（DOM 先移除、passive effect 晚一拍）⇒ 要等，不能判一次。
+    await expect.poll(() => page.evaluate(() => window.__app.modalShown)).toBe(false);
 
     // 再開一次，按「前往線上版本」⇒ 唯讀頁收起、用這條連線開那篇（deep link，AID 跳文）。
     await page.keyboard.press('F4');
@@ -186,7 +187,8 @@ test.describe('離線文章', () => {
 
     await page.locator('[data-key="__savedReaderClose"]').click();
     await expect(overlay).toHaveCount(0);
-    expect(await page.evaluate(() => window.__app.modalShown)).toBe(false);
+    // modal 來源在 useEffect cleanup 才解除（DOM 先移除、passive effect 晚一拍）⇒ 要等，不能判一次。
+    await expect.poll(() => page.evaluate(() => window.__app.modalShown)).toBe(false);
 
     // 系統返回（真 popstate）＝關掉唯讀頁，不送 ←。
     await openFromPalette();
