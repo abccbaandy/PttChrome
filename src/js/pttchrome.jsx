@@ -85,6 +85,7 @@ import { SplitReader, isSplitReaderTarget } from './split_reader';
 import { filterSummary } from './list_row_filter';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { SelectTextPage } from './select_text_page';
+import { ArticleFind } from './article_find';
 import { NextArticle, isNextArticleTarget } from './next_article';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
 import { ArticleNav, isArticleNavTarget } from './article_nav';
@@ -333,6 +334,8 @@ export const App = function() {
   this.articleTools = new ArticleTools(this);
   // 手機「選取文字」頁（P81，select_text_page.js）：好讀文章的文字開成可原生選取的全螢幕頁。
   this.selectTextPage = new SelectTextPage(this);
+  // 手機文章內找字（P75，article_find.js）：好讀文章「更多」→ 找字，標亮並逐一跳到每一處。
+  this.articleFind = new ArticleFind(this);
   // 好讀文章底部常駐推文列（comment_bar.js；送出走長推文管線，App.openQuickPush）。
   this.commentBar = new CommentBar(this);
   this.searchStatus = new SearchStatus(this);
@@ -2534,6 +2537,10 @@ App.prototype.onPrefChange = function(name, value) {
       break;
     case 'showWhatsNew':
       if (!value && this.whatsNew) this.whatsNew.dismiss();
+      break;
+    // 手機文章內找字：關掉時開著的找字列一起收起、標亮清掉。
+    case 'mobileFindInArticle':
+      if (!value && this.articleFind) this.articleFind.close();
       break;
     case 'followList':
       this.view.followAuthors = parseBlacklist(value);

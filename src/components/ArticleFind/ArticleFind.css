@@ -1,0 +1,95 @@
+/* 手機文章內找字（components/ArticleFind，P75）：App Bar（48px＋safe-area）正下方一條，恆為暗色。
+   z-index 高於 App Bar（150），低於 MobileSheet（3000）：開「更多」時 sheet 蓋得過它。 */
+.articleFindBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: calc(48px + var(--safe-top, 0px));
+  z-index: 160;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 52px;
+  padding: 6px 4px 6px 10px;
+  background: #1a1b1e;
+  border-bottom: 1px solid #2c2e33;
+  color: #dee2e6;
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.articleFindInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  background: #101114;
+  color: #f1f3f5;
+  font-size: 16px; /* 低於 16px 時 Android Chrome 聚焦會自動放大頁面 */
+  outline: none;
+}
+
+/* 原生的清除鈕跟右邊的 ✕ 長得一樣，藏掉。 */
+.articleFindInput::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+.articleFindInput:focus {
+  border-color: #4a7fd4;
+}
+
+.articleFindCount {
+  flex: none;
+  min-width: 3.5em;
+  text-align: center;
+  font-size: 14px;
+  color: #a6a7ab;
+  font-variant-numeric: tabular-nums;
+}
+
+.articleFindBtn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #dee2e6;
+  touch-action: manipulation;
+}
+
+.articleFindBtn:disabled {
+  color: #5c5f66;
+}
+
+.articleFindBtn:active:not(:disabled) {
+  background: #2c2e33;
+}
+
+/* 找字列開著時，好讀捲動容器最上面讓出找字列的高度（js/article_find.js 檔頭）。 */
+.main.articleFindSpace::before {
+  content: "";
+  display: block;
+  height: 52px;
+}
+
+/* 標亮（CSS Custom Highlight API，js/article_find.js）：全部＝暗黃底，目前這個＝橘底黑字。 */
+::highlight(pttFind) {
+  background-color: #8a6d00;
+  color: #fff;
+}
+
+::highlight(pttFindCurrent) {
+  background-color: #ff9800;
+  color: #000;
+}
