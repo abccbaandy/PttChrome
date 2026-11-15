@@ -1552,6 +1552,7 @@ TermView.prototype = {
             menuCards: this.menuCards && !(this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen()),
             prefOn: !!readEffectivePrefs().mobileMenuBannerCollapse,
             expanded: readMenuBannerExpanded(),
+            promptPending: !!(this.buf && this.buf.isPromptPending && this.buf.isPromptPending()),
           }),
           onMenuBannerToggle: this.onMenuBannerToggle,
           // 「開燈」的軌 B：目前的 pmore 色彩顯示模式（0/1/2，null＝還沒看過設定

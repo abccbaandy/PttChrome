@@ -97,6 +97,14 @@ describe("純函式", () => {
     expect(menuBannerMode({ menuCards: false, prefOn: true, expanded: false })).toBeUndefined();
   });
 
+  // 選單上按 s：board.c#Select 只 vs_hdr「選擇看板」＋在 row 1 開輸入欄，下面的選單殘影不清；空白鍵自動
+  // 搜尋的候選也畫在 row 2 起。這些列落在動態看板區，收起來就看不到自己打的字與候選。
+  test("menuBannerMode：PTT 在問東西（輸入欄開著）時不收", () => {
+    expect(menuBannerMode({ menuCards: true, prefOn: true, expanded: false, promptPending: true })).toBeUndefined();
+    expect(menuBannerMode({ menuCards: true, prefOn: true, expanded: true, promptPending: true })).toBeUndefined();
+    expect(menuBannerMode({ menuCards: true, prefOn: true, expanded: false, promptPending: false })).toBe("collapsed");
+  });
+
   test("展開的選擇存本機", () => {
     const mem = new Map();
     const storage = {
