@@ -9,7 +9,8 @@
 //   - connect-src：使用者能自填 proxy／relay 網址、圖片預覽打各家 oEmbed API、APK 連 127.0.0.1
 //     的本機 proxy ⇒ 只能限協定。ws: 留給自架在 http 的人（https 頁面本來就被 mixed content 擋）。
 //   - img-src／media-src：PTT 文章裡的圖可以是任何網站。
-//   - frame-src：圖片預覽內嵌 YouTube 等 iframe、Firebase 登入的 auth handler iframe。
+//   - frame-src：圖片預覽內嵌 YouTube 等 iframe、Firebase 登入的 auth handler iframe；'self' ＝APK 的
+//     頁內唯讀頁（components/SavedReaderOverlay，本站 ?saved=，APK dev server 模式／e2e 是 http）。
 //   - style-src 'unsafe-inline'：Mantine 與 index.html 的 style 屬性。
 // 行內 <script> 不用 'unsafe-inline'，改成建置時算 sha256 放行（加了新的行內 script 自動跟上）。
 // 行內事件屬性（onclick= 之類）hash 救不了，守護 tests/unit/csp.test.js 直接禁止。
@@ -31,7 +32,7 @@ export function cspDirectives(inlineScriptHashes = []) {
     'media-src': ['*', 'data:', 'blob:'],
     'font-src': ["'self'", 'data:'],
     'connect-src': ["'self'", 'https:', 'wss:', 'ws:'],
-    'frame-src': ['https:'],
+    'frame-src': ["'self'", 'https:'],
     'worker-src': ["'self'"],
     'manifest-src': ["'self'"],
     'object-src': ["'none'"],
