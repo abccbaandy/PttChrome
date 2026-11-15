@@ -386,6 +386,7 @@ export const App = function() {
   this.inputAreaFocusTimer = null;
   // 目前開著的 modal 來源名稱集合；modalShown = size > 0（見 setModalOpen）。
   this._openModals = new Set();
+  // oxlint-disable-next-line pttchrome/no-modal-shown-assign -- 初值，之後只由 setModalOpen 寫
   this.modalShown = false;
   // 最後一個 modal 關閉的時間（performance.now() 基準）。term_view 用它擋掉「關框
   // 的那一下」按鍵（modal_key_gate.js）。
@@ -1218,6 +1219,7 @@ App.prototype.setModalOpen = function(source, open) {
   var shown = this._openModals.size > 0;
   if (shown === this.modalShown)
     return;
+  // oxlint-disable-next-line pttchrome/no-modal-shown-assign -- 唯一寫入點
   this.modalShown = shown;
   if (!shown && typeof performance !== 'undefined')
     this.modalClosedAt = performance.now();

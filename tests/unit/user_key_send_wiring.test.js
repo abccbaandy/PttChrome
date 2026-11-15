@@ -4,7 +4,7 @@
 //   wire.sendBytes / wire.sendText             機器送出 → 懸空的 ESC 態一律化解（conn.send / convSend）
 //   wire.sendUserKey / wire.sendUserText       真鍵盤／IME → 保留 ESC 組合鍵（conn.sendUserKey / convSendUserKey）
 //
-// 全部經過唯一出口 src/js/wire_send.js（tests/unit/wire_send.test.js 守「沒人繞過它」）。
+// 全部經過唯一出口 src/js/wire_send.js（lint 規則 pttchrome/no-direct-conn-send 守「沒人繞過它」）。
 // 後者**只有 term_view._send / _convSend 可以叫**。這條沒有 runtime 守得住
 // （new App() 在 unit 起不來），而用錯的後果是靜默的：機器鍵誤用 userKey ⇒
 // 使用者漏一個 Esc 之後那個鍵被吃成 esc_arg、**畫面不動零輸出**，看起來像 PTT

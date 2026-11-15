@@ -3,7 +3,7 @@
 //
 // 所有上線的 byte 都經過這裡：呼叫端不准直接碰 `conn.send`／`convSend`／`sendUserKey`／
 // `convSendUserKey`／`sendNaws`／`sendWillNaws`／`sendTimingMark`（守護
-// tests/unit/wire_send.test.js，靜態掃整個 src）。這一步**行為不變**：每支函式就是原本那一行
+// lint 規則 pttchrome/no-direct-conn-send，tools/lint/pttchrome_rules.mjs）。這一步**行為不變**：每支函式就是原本那一行
 // `conn.xxx(...)`，閘門（prompt 開著不送、列表 cursor-sync、serializedOpHint…）全部留在原呼叫點。
 // 步驟 b 再把「線路上有沒有別人在跑」的使用權收進來，所以現在先要求每次送出說明身分。
 //
