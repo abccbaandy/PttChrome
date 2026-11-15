@@ -280,11 +280,16 @@ export const MobileToolbar = ({
   );
 
   // 推文：推文列收進底部導覽（js/comment_bar.js 收合模式）時展開它並叫出鍵盤，不送 X；
-  // 其他情況（不在好讀文章、收合關掉）照原生送 X。
+  // 列表推文列開著時聚焦它；其他情況（不在好讀文章、收合關掉）照原生送 X。
   const pushAction = useCallback(() => {
     const bar = pttchrome.commentBar;
     const s = bar && bar.state;
     if (s && s.available && s.folded && bar.expand()) {
+      setPanel(null);
+      return;
+    }
+    // 列表上的推文類型選單已經換成推文列（P90）：再送 X 給 PTT 會被選單當成取消 ⇒ 改成聚焦那一列。
+    if (bar && typeof bar.focusList === "function" && bar.focusList()) {
       setPanel(null);
       return;
     }
