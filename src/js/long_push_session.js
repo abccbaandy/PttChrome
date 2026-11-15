@@ -497,13 +497,25 @@ LongPushSession.prototype = {
     const now = listPushTarget(listPushFactsOf(this._termBuf));
     if (!now || !sameListPushTarget(now, o.target)) return false;
     if (o.type === 'boo' && !now.booAllowed) return false;
+    // P91：PTT 已經直接進 → 輸入列（作者本人／90 秒內連推）⇒ 只能 →，不送類型鍵。
+    if (now.arrowOnly && o.type && o.type !== 'arrow') return false;
+    let arrowScreen = null;
+    if (now.arrowOnly) {
+      const rows = this._termBuf.rows;
+      const rowTexts = [];
+      for (let r = 0; r < rows; ++r) rowTexts.push(this._termBuf.getRowText(r, 0, this._termBuf.cols));
+      const screen = classifyPushScreen(rowTexts, rows);
+      if (screen.kind !== 'inputPrompt' || screen.type !== '→') return false;
+      arrowScreen = { screen: screen, result: { fieldWidth: this._measureField(), rowTexts: rowTexts } };
+    }
     const text = String(o.text || '');
     this._reset();
     this._text = text;
     this._maxBytes = o.maxBytes || pushMaxBytes({});
     this._recount();
     if (!this._total) return false;
-    this._typeKey = PUSH_TYPE_KEY[o.type] || PUSH_TYPE_KEY.push;
+    // 只有 → 時之後的分段也是 →（過了 90 秒 PTT 改給類型選單，也要選 →，不可以變成推）。
+    this._typeKey = now.arrowOnly ? PUSH_TYPE_KEY.arrow : PUSH_TYPE_KEY[o.type] || PUSH_TYPE_KEY.push;
     this._phase = 'sending';
     this.active = true;
     this._sendStartedAt = Date.now();
@@ -512,13 +524,17 @@ LongPushSession.prototype = {
     this._bookmark = recordFor(this._core).begin('list-push', { view: this._view, buf: this._termBuf });
     this._listPrologue();
     this._emit({});
-    this._enqueueType();
+    // P91：畫面已經是內容輸入列（listPushTarget 認的就是空的 → 欄）⇒ 直接從內容開始，欄寬量這一幀。
+    // 之後的分段照常在列表重按 X（90 秒內 PTT 一樣直接給 → 輸入列，_enqueueType 之後的流程本來就吃）。
+    if (arrowScreen) this._enqueueContent(arrowScreen.screen, arrowScreen.result);
+    else this._enqueueType();
     return true;
   },
 
   // P90：收起推文列＝替使用者取消。類型選單沒有取消鍵（vkey 收到非數字一律當「推」進內容列），
   // 所以跟長推文的取消同一條收尾：Ctrl-C 進內容列、再 Ctrl-C 放棄（什麼都不寫）回列表。
   // 只在底列還是整句類型選單時動手；回 true ＝ 有送收尾鍵。
+  // P91 只有 → 的輸入列：同一個收尾迴圈，Ctrl-C 一次就放棄回列表（迴圈看畫面決定送幾次）。
   dismissListMenu: function() {
     if (this.busy) return false;
     if (!listPushTarget(listPushFactsOf(this._termBuf))) return false;

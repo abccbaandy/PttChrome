@@ -181,3 +181,75 @@ describe("類型選單要整句對上（parseListPushMenu）", () => {
     expect(ROWS).toBe(24);
   });
 });
+
+// P91：90 秒內再推、或推自己的文章，PTT 不給類型選單、直接給 → 輸入列（bbs.c#comment）。
+describe("從列表上只有 → 的輸入列接手（P91）", () => {
+  const TOO_CLOSE = "時間太近, 使用 → 加註方式";
+  const OWNER = "作者本人, 使用 → 加註方式";
+  function setupArrow(notice = TOO_CLOSE, prompt = ARROW_PROMPT) {
+    const h = harness({ pageState: 2, articleRows: [] });
+    h.paintListMenu(PAGE(), prompt, notice);
+    const target = listPushTarget(listPushFactsOf(h.session._termBuf));
+    return { h, target };
+  }
+
+  test.each([["時間太近", TOO_CLOSE], ["作者本人", OWNER]])("%s ⇒ 認得出、只能 →，帶 PTT 原話", (_n, notice) => {
+    const { target } = setupArrow(notice);
+    expect(target).toMatchObject({ author: "abcuser", num: 101, arrowOnly: true, booAllowed: false, notice });
+  });
+
+  test("不送類型鍵：第一個鍵就是內容 → y，送完停在列表", () => {
+    const { h, target } = setupArrow();
+    expect(h.session.startFromList({ text: "hello", type: "arrow", target })).toBe(true);
+    expect(h.sent).toEqual([u2b("hello") + "\r"]);
+    h.settle(CONFIRM);
+    expect(h.sent).toEqual([u2b("hello") + "\r", "y\r"]);
+    h.settleList(PAGE(), 1);
+    expect(h.session.active).toBe(false);
+    expect(h.results).toEqual([]);
+  });
+
+  test("要推／噓 ⇒ 不接手（PTT 這時只收 →）", () => {
+    const { h, target } = setupArrow();
+    expect(h.session.startFromList({ text: "x", type: "push", target })).toBe(false);
+    expect(h.session.startFromList({ text: "x", type: "boo", target })).toBe(false);
+    expect(h.sent).toEqual([]);
+  });
+
+  // 推文列出現前使用者已經在原生輸入列打了字：接手會把兩段字接在一起送出。
+  test("輸入列已經有字 ⇒ 認不出（照原生）", () => {
+    const { target } = setupArrow(TOO_CLOSE, ARROW_PROMPT + "abc");
+    expect(target).toBeNull();
+  });
+
+  test("第二則 90 秒內：重按 X 又直接給 → 輸入列 ⇒ 不送類型鍵、直接送內容", () => {
+    const { h, target } = setupArrow();
+    h.session.startFromList({ text: "一二三四五六七八九十一二三四五六七八九十", type: "arrow", target, maxBytes: 30 });
+    h.settle(CONFIRM);
+    h.settleList(PAGE(), 1);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+    h.settle(ARROW_PROMPT);
+    expect(h.sent[h.sent.length - 1]).toMatch(/\r$/);
+    expect(h.sent).not.toContain("3");
+    h.settle(CONFIRM);
+    h.settleList(PAGE(), 1);
+    expect(h.session.active).toBe(false);
+    expect(h.results).toEqual([]);
+  });
+
+  test("第二則過了 90 秒、PTT 改給類型選單 ⇒ 選 →（不是推）", () => {
+    const { h, target } = setupArrow();
+    h.session.startFromList({ text: "一二三四五六七八九十一二三四五六七八九十", type: "arrow", target, maxBytes: 30 });
+    h.settle(CONFIRM);
+    h.settleList(PAGE(), 1);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+    h.settle(TYPE_MENU);
+    expect(h.sent[h.sent.length - 1]).toBe("3");
+  });
+
+  test("收起 ⇒ dismissListMenu 照樣替你取消", () => {
+    const { h } = setupArrow();
+    expect(h.session.dismissListMenu()).toBe(true);
+    expect(h.sent).toHaveLength(1);
+  });
+});

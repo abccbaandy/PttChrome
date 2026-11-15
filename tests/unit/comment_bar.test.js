@@ -227,6 +227,9 @@ describe("CommentBar：何時出現、畫在哪", () => {
       mode: "article",
       listTarget: null,
       booAllowed: true,
+      arrowOnly: false,
+      notice: null,
+      coverExtra: 0,
     });
   });
   test("手機收合關掉 ⇒ 手機也常駐（底部導覽上方）", () => {
@@ -445,12 +448,13 @@ describe("CommentBar 列表模式（P90）", () => {
   function makeListCore(opts = {}) {
     const listeners = {};
     let rows = [];
-    const paint = (last) => {
+    const paint = (last, notice) => {
       rows = new Array(24).fill("");
       rows[0] = TITLE;
       rows[2] = HEADER;
       rows[3] = row(100, "someone", "[公告] 別篇", false);
       rows[4] = row(101, "abcUser", "[閒聊] 原本那篇", true);
+      if (notice) rows[22] = notice;
       rows[23] = last;
     };
     paint(opts.last === undefined ? MENU : opts.last);
@@ -583,6 +587,34 @@ describe("CommentBar 列表模式（P90）", () => {
     const n = h.bar.state.focusN;
     expect(h.bar.focusList()).toBe(true);
     expect(h.bar.state.focusN).toBe(n + 1);
+  });
+
+  // P91：90 秒內連推／推自己的文，PTT 直接給 → 輸入列。
+  test("只有 → 的輸入列 ⇒ 列表模式出現、只能 →、帶 PTT 原話；送出一律當 →", () => {
+    const h = makeListCore();
+    h.paint("→ testuser:                    ", "時間太近, 使用 → 加註方式");
+    h.settle();
+    expect(h.bar.state).toMatchObject({ visible: true, mode: "list", arrowOnly: true, booAllowed: false, notice: "時間太近, 使用 → 加註方式" });
+    expect(h.bar.submitList({ text: "補充", type: "push" }).ok).toBe(true);
+    expect(h.session.startFromList).toHaveBeenCalledWith(expect.objectContaining({ type: "arrow" }));
+    expect(h.bar.state).toMatchObject({ visible: false, arrowOnly: false, notice: null });
+  });
+
+  test("takesOverListPrompt：推文列接手的那一幀才是 true（手機工具列靠它讓位）", () => {
+    const h = makeListCore();
+    expect(h.bar.takesOverListPrompt()).toBe(true);
+    h.session.busy = true;
+    expect(h.bar.takesOverListPrompt()).toBe(false);
+    h.session.busy = false;
+    prefOverride.pushKeyOpensLongPush = false;
+    expect(h.bar.takesOverListPrompt()).toBe(false);
+    delete prefOverride.pushKeyOpensLongPush;
+    h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 ");
+    expect(h.bar.takesOverListPrompt()).toBe(false);
+    // 量不到版面（推文列出不來）⇒ 工具列的面板照出。
+    h.paint(MENU);
+    h.core.view.mainDisplay = null;
+    expect(h.bar.takesOverListPrompt()).toBe(false);
   });
 
   test("長推文還握著畫面（我們自己按出來的類型選單）⇒ 不出現", () => {

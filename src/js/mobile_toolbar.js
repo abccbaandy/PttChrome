@@ -224,7 +224,11 @@ export function mobileToolbarContext(core) {
     home: homeDashboardShown(core),
     editorSave: editorSave,
     boardTools: !!readEffectivePrefs().mobileBoardTools,
-    choices: core && core.buf ? promptPanelFromBuf(core.buf, readEffectivePrefs()) : null
+    // 推文提問由推文列接手（P90／P91）時不出提問選項：兩個疊在一起，點面板會繞過推文列送鍵。
+    choices:
+      core && core.buf && !(core.commentBar && core.commentBar.takesOverListPrompt && core.commentBar.takesOverListPrompt())
+        ? promptPanelFromBuf(core.buf, readEffectivePrefs())
+        : null
   });
 }
 

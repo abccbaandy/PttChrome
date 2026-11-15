@@ -64,6 +64,9 @@ export const CommentBar = ({ pttchrome }) => {
   const visible = !!(state && state.visible);
   const listMode = !!(state && state.mode === "list");
   const booAllowed = !state || state.booAllowed !== false;
+  // P91：PTT 已經直接給 → 輸入列（作者本人／90 秒內連推）⇒ 類型只剩 →，提示照 PTT 原話。
+  const arrowOnly = !!(state && state.arrowOnly);
+  const notice = (state && state.notice) || "";
   const prefill = state && state.prefill;
   const foldedOpen = !!(state && state.folded && state.expanded);
   // 正在打字：輸入框長高；手機改上下兩層。收合展開中焦點下一幀才到，先排好版面不跳一下。
@@ -96,7 +99,13 @@ export const CommentBar = ({ pttchrome }) => {
   const targetKey = listMode
     ? "list:" +
       (listTarget
-        ? [listTarget.board, listTarget.num, listTarget.author, listTarget.date, listTarget.subject].join("\u0001")
+        ? [
+            listTarget.board,
+            listTarget.num,
+            listTarget.author,
+            listTarget.date,
+            listTarget.subject,
+          ].join("\u0001")
         : "")
     : "article";
   const lastTargetKey = useRef(targetKey);
@@ -109,8 +118,9 @@ export const CommentBar = ({ pttchrome }) => {
 
   // 禁噓板（列表模式讀到的類型選單沒有 2.）：選著噓就改回推。
   useEffect(() => {
-    if (!booAllowed && type === "boo") setType("push");
-  }, [booAllowed, type]);
+    if (arrowOnly && type !== "arrow") setType("arrow");
+    else if (!booAllowed && type === "boo") setType("push");
+  }, [booAllowed, arrowOnly, type]);
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--comment-bar-h",
@@ -219,7 +229,8 @@ export const CommentBar = ({ pttchrome }) => {
     const root = document.documentElement;
     let seen = false;
     const onResize = () => {
-      const inset = parseFloat(root.style.getPropertyValue("--vv-kb-inset")) || 0;
+      const inset =
+        parseFloat(root.style.getPropertyValue("--vv-kb-inset")) || 0;
       if (inset > 0) seen = true;
       else if (seen) collapse();
     };
@@ -290,7 +301,8 @@ export const CommentBar = ({ pttchrome }) => {
         (foldedOpen ? " commentBar--unfolded" : "") +
         (active ? " commentBar--active" : "") +
         (stacked ? " commentBar--stacked" : "") +
-        (listMode ? " commentBar--list" : "")
+        (listMode ? " commentBar--list" : "") +
+        (state.coverExtra ? " commentBar--cover" : "")
       }
       data-comment-mode={listMode ? "list" : "article"}
       style={{
@@ -300,7 +312,7 @@ export const CommentBar = ({ pttchrome }) => {
         // App._onVisualViewport 寫，不碰終端機幾何）。
         bottom: `max(${state.bottom}px, var(--vv-kb-inset, 0px))`,
         // 釘下緣、高度隨內容：打字中輸入框長高時列往上長。
-        minHeight: COMMENT_BAR_HEIGHT,
+        minHeight: COMMENT_BAR_HEIGHT + ((state && state.coverExtra) || 0),
       }}
       onMouseDown={swallow}
       onMouseUp={swallow}
@@ -312,7 +324,9 @@ export const CommentBar = ({ pttchrome }) => {
         role="radiogroup"
         aria-label={i18n("commentBar_type")}
       >
-        {TYPES.filter((t) => booAllowed || t.value !== "boo").map((t) => (
+        {TYPES.filter((t) =>
+          arrowOnly ? t.value === "arrow" : booAllowed || t.value !== "boo",
+        ).map((t) => (
           <button
             key={t.value}
             type="button"
@@ -334,6 +348,11 @@ export const CommentBar = ({ pttchrome }) => {
           </button>
         ))}
       </div>
+      {arrowOnly && notice ? (
+        <span className="commentBarNotice" data-comment-notice="">
+          {notice}
+        </span>
+      ) : null}
       <textarea
         ref={inputRef}
         className="commentBarInput"

@@ -89,6 +89,27 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* P91 列往上多蓋一列（PTT 的說明列）：按鈕與輸入框貼在下緣，對齊原本的輸入列。 */
+.commentBar--cover {
+  align-items: flex-end;
+  padding-bottom: 4px;
+}
+/* P91 只有 → 時 PTT 的說明（「時間太近, 使用 → 加註方式」）：原本那一列被推文列蓋住，改排在 → 旁邊。 */
+.commentBarNotice {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: #9a9aa6;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.commentBar--stacked .commentBarTypes:has(+ .commentBarNotice) {
+  margin-right: 0;
+}
+.commentBar--stacked .commentBarNotice {
+  margin-right: auto;
+}
 .commentBarCounter--split {
   color: #f0b45a;
 }

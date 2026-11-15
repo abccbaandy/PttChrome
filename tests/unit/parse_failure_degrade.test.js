@@ -54,6 +54,7 @@ import { listPushTarget, listPushFactsOf } from "../../src/js/list_push";
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import pushFx from "./fixtures/ptt_src_screens/push.json";
+import pushAgainFx from "./fixtures/ptt_src_screens/push_again.json";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 const LISTS = {
@@ -713,6 +714,46 @@ describe("列表推文列（P90）：認不出 ⇒ 類型選單照原生", () =>
     ["兩列都有游標記號", () => withRow(cursorRow === 3 ? 4 : 3, ">" + real.rowTexts[cursorRow === 3 ? 4 : 3].slice(1))],
     ["游標列的作者欄讀不出", () => withRow(cursorRow, real.rowTexts[cursorRow].slice(0, 17) + "           ")],
     ["游標列的日期欄讀不出", () => withRow(cursorRow, real.rowTexts[cursorRow].slice(0, 11) + "  -  " + real.rowTexts[cursorRow].slice(16))],
+  ])("%s → 不接手", (_n, make) => {
+    expect(listPushTarget(make())).toBeNull();
+  });
+});
+
+// P91 列表連推（90 秒內再按 X）：PTT 直接給 → 輸入列，倒數第二列「時間太近, 使用 → 加註方式」。
+// 真實畫面＝upstream 產的 push_again.json too-close 那一幀。要素缺一 ⇒ 照原生輸入列。
+describe("列表推文列只有 →（P91）：認不出 ⇒ 原生輸入列", () => {
+  const real = (() => {
+    loadBig5Tables();
+    const buf = new TermBuf(pushAgainFx.cols, pushAgainFx.rows);
+    buf.setView({ update() {}, updateCursorPos() {}, refreshCursorVisibility() {}, blinkOn: false });
+    buf.useMouseBrowsing = false;
+    const p = new AnsiParser(buf);
+    for (let i = 0; i <= pushAgainFx.frames.findIndex((f) => f.name === "too-close"); ++i) p.feed(pushAgainFx.frames[i].bytes);
+    buf.notify();
+    clearTimeout(buf.timerUpdate);
+    if (buf._settleTimer) clearTimeout(buf._settleTimer);
+    return listPushFactsOf(buf);
+  })();
+  const last = real.rows - 1;
+  const notice = real.rows - 2;
+  const cursorRow = real.rowTexts.findIndex((t, i) => i >= 3 && i < notice && t.charAt(0) === ">");
+  const withRow = (i, text) => ({ ...real, rowTexts: real.rowTexts.map((r, j) => (j === i ? text : r)) });
+
+  test("對照組：upstream 產的畫面認得出、只能 →", () => {
+    expect(cursorRow).toBeGreaterThanOrEqual(3);
+    expect(listPushTarget(real)).toMatchObject({ arrowOnly: true });
+  });
+
+  test.each([
+    ["說明列不見", () => withRow(notice, " ".repeat(80))],
+    ["說明列改字", () => withRow(notice, "時間太近, 請稍候再推                ")],
+    ["輸入列不是 →（推）", () => withRow(last, real.rowTexts[last].replace("→", "推"))],
+    ["輸入列已經有字", () => withRow(last, real.rowTexts[last].replace(/: +$/, ": abc"))],
+    ["輸入列不見", () => withRow(last, " ".repeat(80))],
+    ["標題列不是反白", () => ({ ...real, row0Reversed: false })],
+    ["欄位表頭不見", () => withRow(2, " ".repeat(80))],
+    ["游標記號不見", () => withRow(cursorRow, " " + real.rowTexts[cursorRow].slice(1))],
+    ["兩列都有游標記號", () => withRow(cursorRow === 3 ? 4 : 3, ">" + real.rowTexts[cursorRow === 3 ? 4 : 3].slice(1))],
   ])("%s → 不接手", (_n, make) => {
     expect(listPushTarget(make())).toBeNull();
   });
