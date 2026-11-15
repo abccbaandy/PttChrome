@@ -14,6 +14,7 @@ import { AnsiParser } from "../../src/js/ansi_parser";
 import {
   essenceCrumb,
   essenceHeaderRow,
+  essenceCursorRowOk,
   isEssenceListFooter,
   parseEssenceRow,
 } from "../../src/js/essence_list";
@@ -111,6 +112,24 @@ describe("parseEssenceRow", () => {
     ["不是字串", null],
   ])("%s → null", (_n, row) => {
     expect(parseEssenceRow(row)).toBeNull();
+  });
+});
+
+// 點卡片前的游標檢查（pttchrome.jsx 的 menu-card 分支）：游標列要是帶游標記號的項目列。
+describe("essenceCursorRowOk", () => {
+  test("新版 > 與舊版 ● 都算", () => {
+    expect(essenceCursorRowOk(ESSENCE_ROWS[3])).toBe(true);
+    expect(essenceCursorRowOk(ESSENCE_ROWS_OLD[2])).toBe(true);
+  });
+  test.each([
+    ["沒有游標記號的項目列", ESSENCE_ROWS_OLD[3]],
+    ["按鍵說明列", ESSENCE_ROWS[1]],
+    ["欄位標題列", ESSENCE_ROWS[2]],
+    ["空白列", " ".repeat(80)],
+    ["底列", ESSENCE_ROWS[ESSENCE_ROWS.length - 1]],
+    ["不是字串", undefined],
+  ])("%s → 不送", (_n, row) => {
+    expect(essenceCursorRowOk(row)).toBe(false);
   });
 });
 

@@ -19,6 +19,7 @@ import {
   mobileMenuLayout,
 } from "../../src/js/mobile_layout";
 import { App } from "../../src/js/pttchrome";
+import { acquireWire } from "../../src/js/wire_lease";
 import mainCss from "../../src/css/main.css?raw";
 import {
   MAIN_MENU_ROWS,
@@ -246,10 +247,11 @@ function makeApp({ cur_y = MAIN_MENU_CURSOR_ROW, leftClick = true } = {}) {
     cur_y,
     onMouse_move: vi.fn(),
     dismissTarget: vi.fn(() => null),
+    isPromptPending: vi.fn(() => false),
     mouseAction: "none",
     mouseActionRow: -1,
   };
-  app.view = { _send: vi.fn(), menuCards: true, flashListHint: vi.fn() };
+  app.view = { _send: vi.fn(), menuCards: true, flashListHint: vi.fn(), _essenceCardsNow: () => false };
   app.conn = { isConnected: true };
   app.mouseButtons = {
     onMouseDown: vi.fn(),
@@ -315,5 +317,27 @@ describe("App.mouse_click：手機主選單按鈕", () => {
     expect(app.view._send).not.toHaveBeenCalled();
     expect(app.onMouse_click).not.toHaveBeenCalled();
     art.remove();
+  });
+
+  // 輸入欄已到、卡片還沒重畫的那一下：↑↓⏎ 會打進 PTT 的輸入欄。
+  test("PTT 在問東西（isPromptPending）⇒ 點按鈕什麼都不送", () => {
+    const app = makeApp();
+    app.buf.isPromptPending = vi.fn(() => true);
+    const card = buildMenuCard({ chars: LINES[16], row: 16 }).node;
+    document.body.appendChild(card);
+    app.mouse_click(click(card.querySelector(".menuCardName")));
+    expect(app.view._send).not.toHaveBeenCalled();
+    card.remove();
+  });
+
+  test("序列化操作在途（佔著線路）⇒ 點按鈕不插鍵、出提示", () => {
+    const app = makeApp();
+    acquireWire(app, "menuCardTest", "處理中，請稍候…", 0);
+    const card = buildMenuCard({ chars: LINES[16], row: 16 }).node;
+    document.body.appendChild(card);
+    app.mouse_click(click(card.querySelector(".menuCardName")));
+    expect(app.view._send).not.toHaveBeenCalled();
+    expect(app.view.flashListHint).toHaveBeenCalled();
+    card.remove();
   });
 });

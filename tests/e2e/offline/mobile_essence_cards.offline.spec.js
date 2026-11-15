@@ -25,7 +25,8 @@ const FOOTER = ' 精華列表  (F)寄回信箱 (c)複製項目 (→)讀取資料
 const CURSOR_ROW = 5;
 
 // prompt：在底列上一列開 getdata 輸入欄（反白、游標停在欄裡），底列 caption 留著。
-async function drawEssence(page, { footer = FOOTER, prompt = false } = {}) {
+// cursorRow：游標停在哪一列（0 起算；預設停在第 3 項＝有 `>` 的那列）。
+async function drawEssence(page, { footer = FOOTER, prompt = false, cursorRow = CURSOR_ROW } = {}) {
   await page.evaluate(
     ({ TITLE, BODY, footer, CURSOR_ROW, prompt }) => {
       const u2b = (str) =>
@@ -57,7 +58,7 @@ async function drawEssence(page, { footer = FOOTER, prompt = false } = {}) {
       }
       window.__app.onData(d);
     },
-    { TITLE, BODY, footer, CURSOR_ROW, prompt }
+    { TITLE, BODY, footer, CURSOR_ROW: cursorRow, prompt }
   );
   await waitScreenSettled(page, { 3: '板規', 5: '爆卦' });
   // 柵欄：這一幀的 surface 對帳已跑過，再判「有／沒有」卡片。
@@ -104,6 +105,26 @@ test.describe('手機精華區卡片', () => {
       },
       '\x1b[A\x1b[A\r',
       'tap 第一項'
+    );
+  });
+
+  // _sendRowEnter 用 cur_y 算 ↑↓ 次數：游標不在項目列上（PTT 還沒把游標移回項目）時送出去，
+  // ⏎ 會開到別項。這時 tap 一個 byte 都不送；游標回到項目列後同一下 tap 照常。
+  test('游標不在項目列上 ⇒ tap 不送；回到項目列 ⇒ 照常', async ({ page }) => {
+    await drawEssence(page, { cursorRow: 1 });
+    await page.waitForFunction(() => document.querySelectorAll('#mainContainer .essenceCard').length === 3);
+    await startCapture(page);
+    const b = await scrollIntoViewStable(page, '#mainContainer [data-menu-row="3"]');
+    await page.touchscreen.tap(b.left + b.width / 2, b.top + b.height / 2);
+    await drawEssence(page);
+    await expectOnlyFence(
+      page,
+      async () => {
+        const b2 = await scrollIntoViewStable(page, '#mainContainer [data-menu-row="3"]');
+        await page.touchscreen.tap(b2.left + b2.width / 2, b2.top + b2.height / 2);
+      },
+      '\x1b[A\x1b[A\r',
+      '游標回到項目列後 tap 第一項'
     );
   });
 

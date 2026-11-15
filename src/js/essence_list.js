@@ -24,10 +24,11 @@ const NEW_CAPTION_RE = /^\s*(精華列表|精華管理)\s/;
 const OLD_CAPTION_RE = /^\s*【\s*(功\s*能\s*鍵|板\s*主)\s*】/;
 
 const ROW_RE = /^([>●])?\s*(\d+)([.X)])(c?)\s+(\S.*?)\s+(\S+)\s+\[(\d{2}\/\d{2}\/\d{2})\]\s*$/;
-const KIND_OF = { '◆': 'dir', '◇': 'file', '◎': 'file' };
+// ◎（複製來的，announce.c#a_pasteitem 的 copyowner 分支）可能是目錄也可能是文章 ⇒ 'other'（中性圖示）。
+const KIND_OF = { '◆': 'dir', '◇': 'file', '◎': 'other' };
 
 // 一列精華區項目 → { num, kind, title, editor, date, cursor, hidden, bmOnly }；不是項目列回 null。
-// kind：'dir'（◆）｜'file'（◇／◎）｜'other'（沒有已知前綴）；title 已去掉前綴。
+// kind：'dir'（◆）｜'file'（◇）｜'other'（◎ 或沒有已知前綴）；title 已去掉前綴。
 export function parseEssenceRow(text) {
   if (typeof text !== 'string') return null;
   const m = ROW_RE.exec(text);
@@ -50,6 +51,13 @@ export function parseEssenceRow(text) {
     hidden: m[3] === ')',
     bmOnly: m[3] === 'X',
   };
+}
+
+// 點卡片前的游標檢查：游標列本身是項目列、而且畫著游標記號（`>`／`●`）。不是 ⇒ 不送
+// （_sendRowEnter 用 cur_y 算 ↑↓ 次數，游標不在項目上就會開到別項）。
+export function essenceCursorRowOk(cursorRowText) {
+  const m = parseEssenceRow(typeof cursorRowText === 'string' ? cursorRowText.replace(/\s+$/, '') : null);
+  return !!(m && m.cursor);
 }
 
 // 底列是不是精華區一般瀏覽的 caption（便宜的第一關）。
@@ -76,7 +84,7 @@ export function isEssenceListRows(rowTexts) {
 // board 取右邊《》，title 是中間那段（目前這一層的名稱）；跟板名一樣（最上層）就不重複。
 export function essenceCrumb(row0Text) {
   const t = typeof row0Text === 'string' ? row0Text : '';
-  const bm = /《([^》]+)》\s*$/.exec(t.replace(/\s+$/, '') ) || /《([^》]+)》/.exec(t);
+  const bm = /《([^》]+)》\s*$/.exec(t.replace(/\s+$/, '')) || /《([^》]+)》/.exec(t);
   const board = bm ? bm[1].trim() : '';
   let mid = t.replace(/^\s*【[^】]*】/, '');
   if (bm) mid = mid.slice(0, mid.lastIndexOf('《'));

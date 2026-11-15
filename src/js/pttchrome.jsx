@@ -95,6 +95,7 @@ import { FollowOnly, isFollowOnlyTarget } from './follow_only';
 import { ListFastScroll, isListFastScrollTarget } from './list_fast_scroll';
 import { EditorInput, isEditorInputTarget } from './editor_input';
 import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
+import { essenceCursorRowOk } from './essence_list';
 import { readMenuBannerExpanded, writeMenuBannerExpanded } from './menu_banner';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
@@ -2811,6 +2812,14 @@ App.prototype.mouse_click = function(e) {
           this.view.flashListHint('AID 跳文中，請稍候…');
           return;
         }
+        // 跟滑鼠／鍵盤同一道：序列化操作在途（長推文、AID 跳文…）不插鍵；PTT 在問東西時
+        // （輸入欄已到、卡片還沒重畫的那一下）↑↓⏎ 會打進輸入欄。
+        if (this._mouseSendBlocked() || this.buf.isPromptPending()) return;
+        // 精華區卡片（P88）：↑↓ 次數用 cur_y 算 ⇒ 游標要真的停在項目列上（帶 `>`／`●`）才送，
+        // 不然 ⏎ 開到別項（#278 同類）。
+        if (this.view._essenceCardsNow() &&
+            !essenceCursorRowOk(this.buf.getRowText(this.buf.cur_y, 0, this.buf.cols)))
+          return;
         this.noteUserAction();
         this._sendRowEnter(menuCardTargetRow(e.target));
         this.setInputAreaFocus();
