@@ -555,6 +555,44 @@ describe("CommentBar 列表模式（P90）", () => {
     expect(h.bar.state).toMatchObject({ visible: true, mode: "list" });
   });
 
+  // REGRESSION（W4）：長推文在 timer／點擊裡放手（冷卻倒數中取消、逾時），畫面已經是乾淨列表、
+  // 之後沒有新的一幀 ⇒ 旗標沒機會清，使用者下一次按 X 推文列出不來。放手當下用現在的畫面判一次。
+  test("放手時畫面已經不是選單（沒有新的一幀）⇒ 下一次按 X 照常出現", () => {
+    const h = makeListCore();
+    h.settle();
+    h.bar.submitList({ text: "推推", type: "push" });
+    h.session.busy = true;
+    h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 ");
+    h.settle(); // 握著畫面期間的列表幀
+    h.session.busy = false;
+    h.bar.onWireReleased(); // 在 timer 裡放手，沒有 settle
+    h.paint(MENU);
+    h.settle();
+    expect(h.bar.state).toMatchObject({ visible: true, mode: "list" });
+  });
+
+  test("放手時畫面還是選單 ⇒ 照樣壓著", () => {
+    const h = makeListCore();
+    h.settle();
+    h.bar.submitList({ text: "推推", type: "push" });
+    h.bar.onWireReleased();
+    h.settle();
+    expect(h.bar.state.visible).toBe(false);
+  });
+
+  test("列表推文關掉期間經過非選單畫面 ⇒ 重新打開後第一次按 X 就出現", () => {
+    const h = makeListCore();
+    h.settle();
+    h.bar.submitList({ text: "推推", type: "push" });
+    prefOverride.pushKeyOpensLongPush = false;
+    h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 ");
+    h.settle();
+    delete prefOverride.pushKeyOpensLongPush;
+    h.paint(MENU);
+    h.settle();
+    expect(h.bar.state).toMatchObject({ visible: true, mode: "list" });
+  });
+
   test("長推文握著畫面期間看到的選單 ⇒ 放手後選單還在也不出現", () => {
     const h = makeListCore();
     h.session.busy = true;

@@ -89,6 +89,16 @@ describe("busy 翻 false 時要通知好讀", () => {
     expect(h.wireIdle).toEqual([]);
   });
 
+  // P90：列表推文列在送出／取消後壓著不出現，要靠放手這一刻用當下畫面判一次才解除
+  // （放手常發生在 timer／點擊裡，之後不一定還有新的一幀）。
+  test("放手也通知推文列（commentBar.onWireReleased）", () => {
+    const h = armed(harness());
+    const released = vi.fn();
+    h.core.commentBar = { onWireReleased: released };
+    h.session.disarm();
+    expect(released).toHaveBeenCalledTimes(1);
+  });
+
   test("core 沒有 easyReading（測試替身／早期 boot）時不得爆炸", () => {
     const h = armed(harness());
     delete h.core.easyReading;

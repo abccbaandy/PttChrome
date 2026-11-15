@@ -309,10 +309,14 @@ CommentBar.prototype = {
 
   // P90：列表上 PTT 畫著推文類型選單、而且認得出要推哪一篇 ⇒ 那一篇（listPushTarget）。
   // 長推文還握著畫面（送出中、取消收尾中）時不出現：那時的類型選單是我們自己按出來的。
-  // 送出／取消之後（或握著畫面期間看過選單）立 _listSuppressed：失敗、收尾沒成功時畫面可能還停在
-  // 那個選單，列再跳出來會把焦點從錯誤框搶走 ⇒ 要等畫面離開選單一次（使用者自己再按 X）才解除。
+  // 送出／取消之後（或長推文握著畫面期間的任何一幀）立 _listSuppressed：失敗、收尾沒成功時畫面可能
+  // 還停在那個選單，列再跳出來會把焦點從錯誤框搶走 ⇒ 要看到一幀不是選單（使用者自己再按 X）才解除。
+  // 長推文常在 timer／點擊裡放手、之後不一定再來一幀 ⇒ 放手那一刻另由 onWireReleased 判一次。
   _listMenuTarget: function(prefs) {
-    if (!listPushEnabled(prefs)) return null;
+    if (!listPushEnabled(prefs)) {
+      this._listSuppressed = false;
+      return null;
+    }
     const session = this._core.longPush;
     if (session && session.busy) {
       this._listSuppressed = true;
@@ -368,6 +372,11 @@ CommentBar.prototype = {
     if (!el || typeof el.getBoundingClientRect !== 'function') return null;
     const r = el.getBoundingClientRect();
     return r && r.height ? r.top : null;
+  },
+
+  // 長推文放手（LongPushSession._releaseWire，busy 翻 false 的每一條路）：當下畫面已經不是類型選單 ⇒ 解除壓制。
+  onWireReleased: function() {
+    if (this._listSuppressed && !listPushTarget(listPushFactsOf(this._core.buf))) this._listSuppressed = false;
   },
 
   // 列表模式按送出（components/CommentBar）。回 { ok, reason }：ok ＝長推文狀態機接手了。
