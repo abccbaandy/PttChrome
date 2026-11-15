@@ -20,6 +20,7 @@ import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage"
 import {
   RecentArticles,
   RECENT_ARTICLES_KEY,
+  READ_LATER_KEY,
   RECENT_ARTICLES_LIMIT,
   parseRecentArticles,
   pushEntry,
@@ -162,7 +163,11 @@ describe("控制器", () => {
     expect(ra.isLater(k)).toBe(false);
     expect(ra.toggleLater({ board: "bad board", aid: "x" })).toBeNull();
 
-    st.setItem(RECENT_ARTICLES_KEY, JSON.stringify({ recent: [], later: [A2] }));
+    // 別的分頁寫的讀得到（稍後閱讀存在 READ_LATER_KEY，read_later_sync 的 map）。
+    st.setItem(
+      READ_LATER_KEY,
+      JSON.stringify({ [A2.board.toLowerCase() + ":" + A2.aid]: { ...A2, mt: A2.at } }),
+    );
     expect(ra.isLater(recentKey(A2.board, A2.aid))).toBe(true);
     expect(ra.removeLater(recentKey(A2.board, A2.aid))).toBe(true);
     expect(ra.state.later).toEqual([]);
@@ -179,6 +184,97 @@ describe("控制器", () => {
     );
     core.deepLinkController.request.mockReturnValueOnce(null);
     expect(ra.open(A2)).toBe(false);
+  });
+});
+
+// 稍後閱讀跨裝置同步（read_later_sync.js）：兩台裝置（各自的 storage）接同一份假雲端。
+// 純規則在 tests/unit/read_later_sync.test.js；這裡守接線：加／刪即時上傳、別台的變動合併進本機、
+// 舊版 later 陣列遷移、開關關掉／沒登入不上傳。
+describe("稍後閱讀同步", () => {
+  function fakeCloud() {
+    const subs = [];
+    let doc = {};
+    const push = () => subs.forEach((cb) => cb(doc));
+    return {
+      doc: () => doc,
+      uploads: [],
+      device(signedIn = () => true) {
+        const self = this;
+        return {
+          signedIn,
+          upload(plan) {
+            self.uploads.push(plan);
+            doc = { ...doc, ...plan.set };
+            plan.del.forEach((key) => delete doc[key]);
+            push();
+            return Promise.resolve(true);
+          },
+          subscribe: (cb) => subs.push(cb),
+        };
+      },
+      push,
+    };
+  }
+  let t = 1000;
+  const clock = () => ++t;
+
+  test("A 加 ⇒ B 看得到；B 刪 ⇒ A 也消失，A 之後的同步不會把它加回來", () => {
+    const cloud = fakeCloud();
+    const a = new RecentArticles(fakeCore(), memStorage(), cloud.device(), clock);
+    const b = new RecentArticles(fakeCore(), memStorage(), cloud.device(), clock);
+    cloud.push(); // 伺服器確定過的第一個 snapshot（空的）
+    const k = recentKey(A1.board, A1.aid);
+    expect(a.toggleLater(A1)).toBe(true);
+    expect(b.isLater(k)).toBe(true);
+    expect(b.state.later[0].title).toBe(A1.title);
+
+    expect(b.removeLater(k)).toBe(true);
+    expect(a.isLater(k)).toBe(false);
+    expect(cloud.doc()["gossiping:" + A1.aid].del).toBe(true);
+    // A 再同步一次（例：加別篇）也不會把 A1 傳回去。
+    a.toggleLater(A2);
+    expect(a.isLater(k)).toBe(false);
+    expect(b.isLater(k)).toBe(false);
+    expect(b.isLater(recentKey(A2.board, A2.aid))).toBe(true);
+  });
+
+  test("還沒收到雲端狀態 ⇒ 不上傳；收到後本機的補上去", () => {
+    const cloud = fakeCloud();
+    const a = new RecentArticles(fakeCore(), memStorage(), cloud.device(), clock);
+    a.toggleLater(A1);
+    expect(cloud.uploads).toEqual([]);
+    cloud.push();
+    expect(Object.keys(cloud.doc())).toEqual(["gossiping:" + A1.aid]);
+  });
+
+  test("開關關掉、或沒登入 ⇒ 只留在這台", () => {
+    const cloud = fakeCloud();
+    prefOverride.syncReadLater = false;
+    const a = new RecentArticles(fakeCore(), memStorage(), cloud.device(), clock);
+    cloud.push();
+    a.toggleLater(A1);
+    expect(cloud.uploads).toEqual([]);
+    delete prefOverride.syncReadLater;
+    const cloud2 = fakeCloud();
+    const b = new RecentArticles(fakeCore(), memStorage(), cloud2.device(() => false), clock);
+    cloud2.push();
+    b.toggleLater(A2);
+    expect(cloud2.uploads).toEqual([]);
+    expect(b.isLater(recentKey(A2.board, A2.aid))).toBe(true);
+  });
+
+  test("舊版 later 陣列遷移到稍後閱讀（只搬一次），最近讀過不動；登入後跟著上雲", () => {
+    const st = memStorage({
+      [RECENT_ARTICLES_KEY]: JSON.stringify({ recent: [A1], later: [{ ...A2, at: 5 }] }),
+    });
+    const cloud = fakeCloud();
+    const ra = new RecentArticles(fakeCore(), st, cloud.device(), clock);
+    expect(ra.state.later.map((x) => x.aid)).toEqual([A2.aid]);
+    expect(ra.state.recent.map((x) => x.aid)).toEqual([A1.aid]);
+    expect(JSON.parse(st.getItem(RECENT_ARTICLES_KEY)).later).toBeUndefined();
+    expect(JSON.parse(st.getItem(READ_LATER_KEY))["stock:" + A2.aid].mt).toBe(5);
+    cloud.push();
+    expect(Object.keys(cloud.doc())).toEqual(["stock:" + A2.aid]);
   });
 });
 

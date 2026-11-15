@@ -48,7 +48,7 @@
 - [`android-e2e.md`](android-e2e.md)：真 Android Chrome 模擬器 e2e：`yarn test:e2e:android`／exit 0/1/2／本機 WHPX＋SDK 設定／模擬器踩坑表；寫 android spec 或動 tests/e2e/android 前先讀
 - [`ci-troubleshooting.md`](ci-troubleshooting.md)：CI 紅了但與被測 code 無關、新增 CI job 的步驟順序與 required checks
 - [`ptt-src-screens.md`](ptt-src-screens.md)：upstream pttbbs 原始碼直接產畫面餵解析器：driver 入口／場景表／build 踩坑／nightly issue 與 routine；動 tools/ptt-src-screens 或加畫面場景前先讀
-- [`recent-articles.md`](recent-articles.md)：最近讀過＋稍後再讀：只讀文末網址列記、開回去走 deep link、儀表板／指令面板／右鍵三個入口；動 recent_articles.js 前先讀
+- [`recent-articles.md`](recent-articles.md)：最近讀過＋稍後閱讀：只讀文末網址列記、開回去走 deep link、儀表板／指令面板／右鍵三個入口、稍後閱讀跨裝置同步；動 recent_articles.js、read_later_sync.js 前先讀
 - [`comment-filter.md`](comment-filter.md)：推文篩選：只看這個人／只看原 PO、「略過 N 則」的跨列標註與前沿；動 comment_filter.js 或篩選相關標註前先讀
 - [`feature-isolation.md`](feature-isolation.md)：功能故障隔離：TermBuf settle 監聽者各自 try/catch、正式版停用登記過的功能／dev 與測試照樣丟出；動 event.js 或在 TermBuf 掛新的監聽者前先讀
 - [`whats-new.md`](whats-new.md)：更新後的新功能介紹：清單取自 README 功能列表／第一次用默默記下／按「知道了」才記／功能→設定對應表；動 whats_new.js 或 README 功能列表格式前先讀
@@ -58,4 +58,4 @@
 - [`board-tabs.md`](board-tabs.md)：看板分頁；動 board_tabs.js、components/BoardTabs 前先讀
 - [`local-env-troubleshooting.md`](local-env-troubleshooting.md)：本機 e2e 環境問題對照表（整批秒掛、零 AssertionError 時先查）
 - [`debugging-techniques.md`](debugging-techniques.md)：查 bug／重現偶發紅（整批紅單跑綠、CI 紅本機綠）／手機 tap 沒反應／量效能與 CI 時間的實證做法；找不到根因或要量測前先讀
-- [`saved-articles.md`](saved-articles.md)：存到本機（離線閱讀已存文章）；動 saved_article*.js、saved_articles*.js、term_view.showStaticArticle 前先讀
+- [`saved-articles.md`](saved-articles.md)：離線文章（原「存到本機」，只存這台、頁內唯讀頁、前往線上版本）；動 saved_article*.js、saved_articles*.js、SavedReaderOverlay、term_view.showStaticArticle 前先讀

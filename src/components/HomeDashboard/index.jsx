@@ -99,82 +99,40 @@ function ArticleSection({ titleKey, list, source, recent, onFail }) {
   );
 }
 
-// 存到本機（P64，js/saved_articles.js）的一區。點一列＝新分頁打開唯讀頁（不連線）；✕＝刪掉本機存檔。
-// 下面「其他裝置存的」（P70，saved.others()：清單跟著雲端同步、這台沒存的）：點一列＝deep link
-// 開真文章（要連線）；✕＝只從雲端清單拿掉，那台的存檔不動。
-function SavedSection({ list, others, saved, onOtherFail }) {
-  const hasLocal = !!(list && list.length);
-  const hasOthers = !!(others && others.length);
-  if (!hasLocal && !hasOthers) return null;
+// 離線文章（P64，js/saved_articles.js）的一區。點一列＝在這一頁疊唯讀頁（不連線）；✕＝刪掉這台的存檔。
+function SavedSection({ list, saved }) {
+  if (!list || !list.length) return null;
   return (
     <section className="homeSection">
       <div className="homeSectionHead">
         <h3>{i18n("saved_section")}</h3>
       </div>
-      {hasLocal && (
-        <div className="homeArticles" data-home-articles="saved">
-          {list.slice(0, HOME_ARTICLE_LIMIT).map((e) => (
-            <div key={e.key} className="homeArticleRow">
-              <Button
-                className="homeArticle"
-                data-home-saved={e.key}
-                title={e.title || "#" + e.aid}
-                onClick={() => saved.open(e.key)}
-              >
-                <span className="homeArticleTitle">
-                  {e.title || "#" + e.aid}
-                </span>
-                <span className="homeArticleBoard">{e.board}</span>
-              </Button>
-              <Button
-                className="homeArticleRemove"
-                data-home-saved-remove={e.key}
-                aria-label={i18n("saved_remove")}
-                title={i18n("saved_remove")}
-                onClick={() => saved.remove(e.key)}
-              >
-                ✕
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-      {hasOthers && (
-        <>
-          <h4 className="homeSubhead">{i18n("saved_others")}</h4>
-          <div className="homeArticles" data-home-articles="saved-others">
-            {others.slice(0, HOME_ARTICLE_LIMIT).map((e) => {
-              const key = e.board + "/" + e.aid;
-              return (
-                <div key={key} className="homeArticleRow">
-                  <Button
-                    className="homeArticle"
-                    data-home-saved-other={key}
-                    title={e.title || "#" + e.aid}
-                    onClick={() => {
-                      if (!saved.openOther(e)) onOtherFail();
-                    }}
-                  >
-                    <span className="homeArticleTitle">
-                      {e.title || "#" + e.aid}
-                    </span>
-                    <span className="homeArticleBoard">{e.board}</span>
-                  </Button>
-                  <Button
-                    className="homeArticleRemove"
-                    data-home-saved-other-remove={key}
-                    aria-label={i18n("saved_others_remove")}
-                    title={i18n("saved_others_remove")}
-                    onClick={() => saved.removeOther(e)}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              );
-            })}
+      <div className="homeArticles" data-home-articles="saved">
+        {list.slice(0, HOME_ARTICLE_LIMIT).map((e) => (
+          <div key={e.key} className="homeArticleRow">
+            <Button
+              className="homeArticle"
+              data-home-saved={e.key}
+              title={e.title || "#" + e.aid}
+              onClick={() => saved.open(e.key)}
+            >
+              <span className="homeArticleTitle">
+                {e.title || "#" + e.aid}
+              </span>
+              <span className="homeArticleBoard">{e.board}</span>
+            </Button>
+            <Button
+              className="homeArticleRemove"
+              data-home-saved-remove={e.key}
+              aria-label={i18n("saved_remove")}
+              title={i18n("saved_remove")}
+              onClick={() => saved.remove(e.key)}
+            >
+              ✕
+            </Button>
           </div>
-        </>
-      )}
+        ))}
+      </div>
     </section>
   );
 }
@@ -262,7 +220,7 @@ export const HomeDashboard = ({ pttchrome, onOpenSetting }) => {
     if (!recent || typeof recent.onChange !== "function") return undefined;
     return recent.onChange((s) => setArticles(s));
   }, [recent]);
-  // 本機收藏：面板出現時重讀一次（IndexedDB 是非同步的，別的分頁存的也跟得上）。
+  // 離線文章：面板出現時重讀一次（IndexedDB 是非同步的，別的分頁存的也跟得上）。
   const visible = !!(state && state.visible);
   useEffect(() => {
     if (!saved || typeof saved.onChange !== "function") return undefined;
@@ -416,14 +374,7 @@ export const HomeDashboard = ({ pttchrome, onOpenSetting }) => {
           />
         )}
         {saved && saved.enabled() && (
-          <SavedSection
-            list={savedList}
-            others={saved.others()}
-            saved={saved}
-            onOtherFail={() =>
-              pttchrome.view?.flashListHint?.(i18n("saved_others_failed"), 3000)
-            }
-          />
+          <SavedSection list={savedList} saved={saved} />
         )}
         {showArticles && (
           <ArticleSection

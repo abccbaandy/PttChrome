@@ -1,4 +1,4 @@
-// 存到本機（P64，docs/saved-articles.md）的整合守門（真瀏覽器、離線）。
+// 離線文章（原「存到本機」，P64，docs/saved-articles.md）的整合守門（真瀏覽器、離線）。
 //
 // 守 unit 摸不到的接線：
 //   1. 好讀讀完一篇（stock-huang，有文末網址列）→ savedArticles.saveCurrent() 存進真 IndexedDB；
@@ -37,7 +37,7 @@ async function watchSockets(page) {
   });
 }
 
-test.describe('存到本機', () => {
+test.describe('離線文章', () => {
   test('好讀文章存起來 → 唯讀頁不連線、畫出同一篇', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
@@ -64,7 +64,7 @@ test.describe('存到本機', () => {
     expect(await renderedTexts(page)).toEqual(before);
     // 畫的是好讀累積頁的版本：列數＝存檔列數，第一列是檔頭。
     await expect(page.locator('#mainContainer [data-type="bbsline"]').first()).toContainText('作者');
-    expect(await page.evaluate(() => document.title)).toContain('本機收藏');
+    expect(await page.evaluate(() => document.title)).toContain('離線文章');
     expect(await page.evaluate(() => window.__wsOpened)).toBe(0);
     expect(await page.evaluate(() => window.__app.view.conn)).toBeUndefined();
 
@@ -81,9 +81,9 @@ test.describe('存到本機', () => {
     await expect.poll(async () => (await scroll()).top).toBe(0);
   });
 
-  // 指令面板（F4）：好讀文章裡有「存到本機」；存了之後清單（IndexedDB，非同步）補進面板，
-  // 點一下在新分頁開唯讀頁。
-  test('指令面板：存到本機 → 列出存檔 → 點一下開唯讀頁', async ({ page }) => {
+  // 指令面板（F4）：好讀文章裡有「存成離線文章」；存了之後清單（IndexedDB，非同步）補進面板，
+  // 點一下在同一頁疊唯讀頁（不開新分頁）；Esc（焦點在唯讀頁裡）關掉；「前往線上版本」用後面的連線開那篇。
+  test('指令面板：存成離線文章 → 列出 → 點一下開唯讀頁；Esc 關、前往線上版本走 deep link', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true });
@@ -93,7 +93,7 @@ test.describe('存到本機', () => {
     const input = page.locator('input[name="commandPaletteQuery"]');
     await page.keyboard.press('F4');
     await expect(input).toBeFocused();
-    await input.fill('存到本機');
+    await input.fill('離線文章');
     await expect(palette.locator('[data-palette-item]').first()).toHaveAttribute(
       'data-palette-item',
       'action:saveArticle'
@@ -107,18 +107,45 @@ test.describe('存到本機', () => {
     await expect(input).toBeFocused();
     const item = palette.locator(`[data-palette-item="saved:${KEY}"]`);
     await expect(item).toBeVisible();
-    await expect(item).toContainText('本機收藏');
-    const popup = page.context().waitForEvent('page');
+    await expect(item).toContainText('離線文章');
+    let popups = 0;
+    page.context().on('page', () => popups++);
     await item.click();
-    const reader = await popup;
-    await expect(reader).toHaveURL(new RegExp('[?&]saved=' + encodeURIComponent(KEY)));
-    await expect
-      .poll(() => reader.evaluate(() => !!(window.__app && window.__app.view._staticRows)))
-      .toBe(true);
+    const overlay = page.locator('[data-saved-reader]');
+    await expect(overlay).toBeVisible();
+    const frame = page.frameLocator('[data-saved-reader] iframe');
+    const firstRow = frame.locator('#mainContainer [data-type="bbsline"]').first();
+    await expect(firstRow).toContainText('作者');
+    // 焦點進唯讀頁（真點擊）再按 Esc：唯讀頁吞掉按鍵，靠 postMessage 請外面關掉。
+    await firstRow.click();
+    await page.keyboard.press('Escape');
+    await expect(overlay).toHaveCount(0);
+    expect(await page.evaluate(() => window.__app.modalShown)).toBe(false);
+
+    // 再開一次，按「前往線上版本」⇒ 唯讀頁收起、用這條連線開那篇（deep link，AID 跳文）。
+    await page.keyboard.press('F4');
+    await expect(input).toBeFocused();
+    await palette.locator(`[data-palette-item="saved:${KEY}"]`).click();
+    await expect(overlay).toBeVisible();
+    const requested = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const dl = window.__app.deepLinkController;
+          const orig = dl.request.bind(dl);
+          dl.request = (t, o) => {
+            resolve({ board: t.board, aid: t.aid });
+            return orig(t, o);
+          };
+        })
+    );
+    await page.locator('[data-key="__savedReaderOnline"]').click();
+    expect(await requested).toEqual({ board: 'Stock', aid: '1g8znzQ3' });
+    await expect(overlay).toHaveCount(0);
+    expect(popups).toBe(0);
   });
 
   // 回歸：APK 的 WebView 開不了新分頁（window.open 被原生轉交外部瀏覽器、本站網址又被 App Link
-  // 解析回 App ⇒ 點了沒反應）。APK 改在同一頁疊全螢幕 iframe：不開新分頁、活連線不動，關掉／系統返回回原畫面。
+  // 解析回 App ⇒ 點了沒反應）。唯讀頁一律在同一頁疊全螢幕 iframe：不開新分頁、活連線不動，關掉／系統返回回原畫面。
   test('APK：點存檔 ⇒ 同一頁開唯讀頁（不開新分頁），關閉與返回都回原畫面', async ({ page }) => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
@@ -203,7 +230,7 @@ test.describe('存到本機', () => {
     await bootOffline(page, ptt);
     await watchSockets(page);
     await page.goto('/?saved=' + encodeURIComponent('test/1aaaaaaa'));
-    await expect(page.locator('body')).toContainText('找不到這篇本機存檔');
+    await expect(page.locator('body')).toContainText('找不到這篇離線文章');
     expect(await page.evaluate(() => window.__wsOpened)).toBe(0);
     // 對照組：一般開站真的會被數到（不然上面的 0 什麼都沒證明）。
     await page.goto('/');

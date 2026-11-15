@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconX } from "@tabler/icons-react";
+import { IconX, IconWorld } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
+import { SAVED_READER_CLOSE_MESSAGE } from "../../js/saved_articles";
 import "./SavedReaderOverlay.css";
 
-// 頁內唯讀頁（APK，js/saved_articles.js#open）：全螢幕 iframe 載 `?saved=<key>`。
-// APK 的 WebView 開不了新分頁（window.open 一律被原生轉交外部瀏覽器，本站網址又被 App Link
-// 解析回 App ⇒ 點了沒反應），改在同一頁疊一層。iframe 同源（同一個 IndexedDB）、唯讀頁不
-// connect() ⇒ 後面的活連線原封不動，關掉就回到原本的畫面。
+// 離線文章的唯讀頁（js/saved_articles.js#open）：全螢幕 iframe 載 `?saved=<key>`。
+// 不另開分頁：APK 的 WebView 開不了新分頁（window.open 一律被原生轉交外部瀏覽器，本站網址又被
+// App Link 解析回 App ⇒ 點了沒反應）。iframe 同源（同一個 IndexedDB）、唯讀頁不 connect()
+// ⇒ 後面的活連線原封不動，關掉就回到原本的畫面；「前往線上版本」用這條連線開那一篇。
 // 規則同 SelectTextPage：開著＝modal（App.setModalOpen 具名來源，終端機鍵盤／焦點讓位）、
 // 系統返回＝關掉（registerSheetDismiss）。
 export const SAVED_READER_Z_INDEX = 3150; // 高於 MobileSheet（3000）與登出確認（3100）
@@ -30,6 +31,22 @@ const Overlay = ({ pttchrome, saved, reader }) => {
     return pttchrome.registerSheetDismiss(close);
   }, [pttchrome, close]);
 
+  // iframe 裡按 Esc（唯讀頁吞掉按鍵，外面收不到）：唯讀頁 postMessage 過來。只認同源。
+  useEffect(() => {
+    const onMessage = (e) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data && e.data.type === SAVED_READER_CLOSE_MESSAGE) close();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [close]);
+
+  // 開不了（沒連線、忙）時提示一下，唯讀頁留著。
+  const [onlineFailed, setOnlineFailed] = useState(false);
+  const openOnline = () => {
+    if (!saved.openOnline()) setOnlineFailed(true);
+  };
+
   return createPortal(
     <div
       className="nomouse_command savedReaderOverlay"
@@ -42,8 +59,20 @@ const Overlay = ({ pttchrome, saved, reader }) => {
     >
       <div className="savedReaderOverlayHeader">
         <span className="savedReaderOverlayTitle">
-          {i18n("saved_readerTitle")}
+          {reader.title || i18n("saved_readerTitle")}
         </span>
+        <button
+          type="button"
+          className="savedReaderOverlayOnline pttRipple"
+          data-key="__savedReaderOnline"
+          title={i18n(onlineFailed ? "saved_onlineFailed" : "saved_openOnline")}
+          onClick={openOnline}
+        >
+          <IconWorld size={18} stroke={1.75} aria-hidden="true" />
+          <span>
+            {i18n(onlineFailed ? "saved_onlineFailed" : "saved_openOnline")}
+          </span>
+        </button>
         <button
           type="button"
           className="savedReaderOverlayClose pttRipple"

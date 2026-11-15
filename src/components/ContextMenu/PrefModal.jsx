@@ -2945,17 +2945,17 @@ export const PrefModal = ({
                     <Button variant="default" onClick={onSyncSignOutClick}>
                       {i18n("options_syncSignOut")}
                     </Button>
-                    {/* P70：只在登入雲端同步時出現（沒登入同步就沒有東西可同步）。 */}
+                    {/* 稍後閱讀同步：只在登入雲端同步時出現（沒登入同步就沒有東西可同步）。 */}
                     <PrefCheckbox
-                      name="syncSavedArticles"
-                      checked={values.syncSavedArticles}
-                      disabled={!values.enableSavedArticles}
+                      name="syncReadLater"
+                      checked={values.syncReadLater}
+                      disabled={!values.enableRecentArticles}
                       onChange={onCheckboxChange}
                     >
-                      {i18n("options_syncSavedArticles")}
+                      {i18n("options_syncReadLater")}
                     </PrefCheckbox>
                     <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_syncSavedArticles")}
+                      {i18n("tooltip_syncReadLater")}
                     </Text>
                   </div>
                 ) : (

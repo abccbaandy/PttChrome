@@ -94,7 +94,7 @@ export const PALETTE_ACTIONS = [
   { id: "settings", titleKey: "palette_settings", when: null, keywords: ["設定", "偏好", "settings", "preferences", "options"] },
   { id: "safeModeOn", titleKey: "palette_safeModeOn", when: "safeModeOff", keywords: ["安全模式", "全部用原生", "原生", "safe mode", "native"] },
   { id: "safeModeOff", titleKey: "palette_safeModeOff", when: "safeModeOn", keywords: ["安全模式", "關閉安全模式", "safe mode", "native"] },
-  { id: "saveArticle", titleKey: "saved_action", when: "saveArticle", keywords: ["存到本機", "本機收藏", "收藏", "離線", "save", "offline", "bookmark"] },
+  { id: "saveArticle", titleKey: "saved_action", when: "saveArticle", keywords: ["離線文章", "存到本機", "本機收藏", "收藏", "離線", "save", "offline", "bookmark"] },
   { id: "saveDebugRecord", titleKey: "palette_saveDebugRecord", when: "saveDebugRecord", keywords: ["存下最近 3 分鐘", "錄製", "錄製檔", "除錯", "回報", "bug", "debug", "record", "save recording"] },
 ];
 

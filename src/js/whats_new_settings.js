@@ -33,8 +33,8 @@ export const FEATURE_SETTING = {
   "圖文並排 AI 校正（實驗性，需 Chrome）": "enableCaptionAi",
   // 📋 看板與文章列表
   首頁儀表板: "enableHomeDashboard",
-  存到本機: "enableSavedArticles",
-  "最近讀過／稍後再讀": "enableRecentArticles",
+  離線文章: "enableSavedArticles",
+  "最近讀過／稍後閱讀": "enableRecentArticles",
   看板分頁: "enableBoardTabs",
   寬螢幕雙欄閱讀: "enableSplitReading",
   "文章列表好讀模式（實驗性）": "enableEasyReadingList",

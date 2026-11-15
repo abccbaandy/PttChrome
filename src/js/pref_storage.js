@@ -67,13 +67,13 @@ export const DEFAULT_PREFS = {
   // 更新後的新功能介紹（js/whats_new.js）：換新版後在首頁儀表板最上面（儀表板沒開就是右下角小卡）列出新功能。
   // 只改顯示、不送鍵 ⇒ 不在安全模式名單內。
   showWhatsNew: true,
-  // 最近讀過／稍後再讀（js/recent_articles.js）：記下讀過的文章（只讀文末網址列）、右鍵收進
-  // 稍後再讀，首頁儀表板與指令面板點了開回去。記的時候不送鍵；開回去是使用者按的 ⇒ 不在安全模式名單內。
+  // 最近讀過／稍後閱讀（js/recent_articles.js）：記下讀過的文章（只讀文末網址列）、右鍵收進
+  // 稍後閱讀，首頁儀表板與指令面板點了開回去。記的時候不送鍵；開回去是使用者按的 ⇒ 不在安全模式名單內。
   enableRecentArticles: true,
-  // 存到本機（P64，saved_articles.js）：好讀文章存進這個瀏覽器、不連線也能讀。
+  // 離線文章（P64，saved_articles.js）：好讀文章存在這台裝置、不連線也能讀。不同步。
   enableSavedArticles: true,
-  // 本機收藏的清單同步到雲端（P70，saved_cloud.js）：只在登入雲端同步時有作用，內文不上雲。
-  syncSavedArticles: true,
+  // 稍後閱讀跨裝置同步（read_later_sync.js）：只在登入雲端同步時有作用，增刪都同步。
+  syncReadLater: true,
   // 分享到 PttChrome（P69，deep_link.js）：別的 App 分享的文字裡有文章連結就開文。跳文本身就是
   // 既有 deep link（使用者主動分享過來）⇒ 不在安全模式名單內。
   enableShareTarget: true,

@@ -1,10 +1,11 @@
-// 最近讀過的文章＋稍後再讀（pref enableRecentArticles，預設開）。設計見
+// 最近讀過的文章＋稍後閱讀（pref enableRecentArticles，預設開）。設計見
 // docs/recent-articles.md —— 改這支之前先讀它。
 //
 // 三條規則：
 //   1. **記的時候一個 byte 都不送**：文章身分＝看板＋AID，取自 aid_navigation.findLocalPostAid
 //      （只讀文末「※ 文章網址:」那一列，不按 Q）；讀不到網址列（還沒捲到、轉錄文、站內信）
-//      就不記。紀錄只存在這個瀏覽器（localStorage，不上雲）。
+//      就不記。最近讀過只存在這個瀏覽器（localStorage）；稍後閱讀登入雲端同步時跨裝置同步
+//      （pref syncReadLater，read_later_sync.js：逐篇新者為準、刪除留墓碑，增刪都同步）。
 //   2. **開回去走既有入口**：點一筆 ＝ deepLinkController.request({ board, aid })，跟指令面板
 //      貼文章網址同一條（登入前暫存、AID 跳文、閱讀紀錄、忙碌提示都由那條負責）。
 //   3. 這裡只管清單：首頁儀表板、指令面板、右鍵選單只讀 state、呼叫 open／toggleLater。
@@ -18,10 +19,24 @@ import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { i18n } from './i18n';
 import { PAGE_STATE, screenOf } from './screen_model';
+import {
+  READ_LATER_LIMIT,
+  readLaterKey,
+  normalizeReadLaterMap,
+  mergeReadLater,
+  trimReadLater,
+  liveReadLater,
+  planReadLaterUpload,
+  readLaterMapFromList
+} from './read_later_sync';
+
+export { READ_LATER_LIMIT };
 
 export const RECENT_ARTICLES_KEY = 'pttchrome.recentArticles.v1';
+// 稍後閱讀（含刪除的墓碑）：read_later_sync.js 的 map，跟雲端 users/{uid}.readLater 同一個形狀。
+// 舊版放在 RECENT_ARTICLES_KEY 的 later 陣列，第一次讀時搬過來（_laterMap）。
+export const READ_LATER_KEY = 'pttchrome.readLater.v2';
 export const RECENT_ARTICLES_LIMIT = 30;
-export const READ_LATER_LIMIT = 50;
 // 開回去之後最多等多久落地（AID 跳文含切板通常幾秒內）。
 export const RESUME_ARM_MS = 30000;
 // 捲動停下來多久才記位置（捲動途中每一幀都量節點太浪費）。
@@ -169,12 +184,27 @@ export function articleMatches(data, q, limit) {
 // 控制器
 // ---------------------------------------------------------------------------
 
-export function RecentArticles(core, storage) {
+// cloud：稍後閱讀同步的接口（App 用 pref_sync 接，見 pttchrome.jsx；unit 給假的）：
+//   { signedIn(): bool, upload(plan): Promise<bool>, subscribe(cb(rawMap)) }。沒給＝不同步。
+// now：時間來源（unit 注入）。
+export function RecentArticles(core, storage, cloud, now) {
   this._core = core;
   this._storage = storage !== undefined ? storage : safeLocalStorage();
+  this._cloud = cloud || null;
+  this._now = now || Date.now;
   this._listeners = new Set();
   this._raw = undefined;
+  this._laterRaw = undefined;
+  this._laterMapCache = {};
   this._data = { recent: [], later: [] };
+  // 雲端的稍後閱讀（normalize 過的 map）。null＝還沒收到伺服器確定過的狀態。
+  this._cloudLater = null;
+  if (this._cloud && typeof this._cloud.subscribe === 'function') {
+    const self = this;
+    this._cloud.subscribe(function(raw) {
+      self._onCloud(raw);
+    });
+  }
   // 這篇記過了沒（換篇才會再記；同一篇讀很久不必每次 settle 都寫 storage）。
   this._lastKey = null;
   // 記下 _lastKey 時的文章實例（view._articleInstanceId）：捲動記位置只認這一篇。
@@ -202,17 +232,112 @@ function safeLocalStorage() {
 RecentArticles.prototype = {
   // 每次都比對 storage 的原文：別的分頁寫的、測試預先放的都讀得到。
   get state() {
-    let raw = null;
-    try {
-      raw = this._storage ? this._storage.getItem(RECENT_ARTICLES_KEY) : null;
-    } catch (e) {
-      raw = null;
-    }
-    if (raw !== this._raw) {
+    const raw = this._getItem(RECENT_ARTICLES_KEY);
+    const map = this._laterMap();
+    if (raw !== this._raw || this._data.laterMap !== map) {
       this._raw = raw;
-      this._data = parseRecentArticles(raw);
+      this._data = { recent: parseRecentArticles(raw).recent, later: liveReadLater(map), laterMap: map };
     }
     return this._data;
+  },
+
+  _getItem: function(key) {
+    try {
+      return this._storage ? this._storage.getItem(key) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  _setItem: function(key, raw) {
+    try {
+      if (this._storage) this._storage.setItem(key, raw);
+    } catch (e) {
+      // 寫不進去（隱私模式、配額）：只活在記憶體。
+    }
+  },
+
+  // 稍後閱讀的 map（含墓碑）。每次比對 storage 原文（別的分頁寫的讀得到）。
+  // 遷移：還沒有 v2 ⇒ 從舊版 v1 的 later 陣列搬過來，v1 拿掉 later（只搬一次）。
+  _laterMap: function() {
+    let raw = this._getItem(READ_LATER_KEY);
+    if (raw == null && this._laterRaw === undefined) {
+      const v1raw = this._getItem(RECENT_ARTICLES_KEY);
+      let old = null;
+      try {
+        old = v1raw ? JSON.parse(v1raw) : null;
+      } catch (e) {
+        old = null;
+      }
+      const migrated = readLaterMapFromList(old && old.later);
+      raw = JSON.stringify(migrated);
+      this._setItem(READ_LATER_KEY, raw);
+      if (old && Array.isArray(old.later)) this._setItem(RECENT_ARTICLES_KEY, JSON.stringify({ recent: old.recent || [] }));
+      this._laterRaw = raw;
+      this._laterMapCache = migrated;
+      return migrated;
+    }
+    if (raw !== this._laterRaw) {
+      let parsed = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        parsed = null;
+      }
+      this._laterRaw = raw;
+      this._laterMapCache = normalizeReadLaterMap(parsed);
+    }
+    return this._laterMapCache;
+  },
+
+  // 寫稍後閱讀：trim（上限、回收墓碑）→ 存 → 通知 → 同步上雲（upload＝false：收雲端時不必再比一次）。
+  _writeLater: function(map, upload) {
+    const next = trimReadLater(map, this._now());
+    const raw = JSON.stringify(next);
+    this._setItem(READ_LATER_KEY, raw);
+    this._laterRaw = raw;
+    this._laterMapCache = next;
+    const data = this.state;
+    this._listeners.forEach(function(fn) {
+      fn(data);
+    });
+    if (upload !== false) this._syncCloud();
+  },
+
+  // pref syncReadLater（預設開）＋登入了雲端同步。
+  cloudEnabled: function() {
+    return (
+      this.enabled() &&
+      readEffectivePrefs().syncReadLater !== false &&
+      !!this._cloud &&
+      !!this._cloud.signedIn()
+    );
+  },
+
+  // 雲端 snapshot（pref_sync 只在伺服器確定過的狀態才交過來）：逐篇合併進本機，再把本機贏的傳上去。
+  _onCloud: function(raw) {
+    this._cloudLater = normalizeReadLaterMap(raw);
+    this._syncCloud();
+  },
+
+  // 把這台的變動寫上雲。雲端狀態還沒到就先不寫（不知道雲端有什麼就上傳，會把別台剛刪的又加回去：
+  // 墓碑擋得住，但「還沒看過雲端」時連墓碑都還沒拿到）；下一個 snapshot 會再比一次。
+  // 先把雲端贏的拉進本機（同步開關剛打開、剛登入時也靠這一步補齊），再把本機贏的傳上去。
+  _syncCloud: function() {
+    if (!this._cloudLater || !this.cloudEnabled()) return null;
+    const local = this._laterMap();
+    const merged = trimReadLater(mergeReadLater(local, this._cloudLater), this._now());
+    if (JSON.stringify(merged) !== JSON.stringify(local)) this._writeLater(merged, false);
+    const plan = planReadLaterUpload(this._laterMap(), this._cloudLater, this._now());
+    if (!plan) return null;
+    // 樂觀地把雲端當成已寫入：同一筆不重傳；真的失敗，下一個 snapshot 會再比出差異。
+    const next = Object.assign({}, this._cloudLater, plan.set);
+    plan.del.forEach(function(k) {
+      delete next[k];
+    });
+    this._cloudLater = next;
+    Promise.resolve(this._cloud.upload(plan)).catch(function() {});
+    return plan;
   },
 
   enabled: function() {
@@ -227,17 +352,20 @@ RecentArticles.prototype = {
     };
   },
 
+  // 只寫最近讀過（稍後閱讀走 _writeLater）。data.later 不看。
   _write: function(data) {
-    const raw = JSON.stringify(data);
+    const raw = JSON.stringify({ recent: data.recent });
     try {
       if (this._storage) this._storage.setItem(RECENT_ARTICLES_KEY, raw);
     } catch (e) {
       // 寫不進去（無痕、容量滿）：這次只活在記憶體。
     }
     this._raw = raw;
-    this._data = data;
+    const map = this._laterMap();
+    const next = { recent: data.recent, later: liveReadLater(map), laterMap: map };
+    this._data = next;
     this._listeners.forEach(function(fn) {
-      fn(data);
+      fn(next);
     });
   },
 
@@ -320,8 +448,8 @@ RecentArticles.prototype = {
     if (i < 0 || (data.recent[i].line == null ? null : data.recent[i].line) === line) return false;
     const recent = data.recent.slice();
     recent[i] = withLine(recent[i], line);
-    const next = { recent: recent, later: data.later };
-    const raw = JSON.stringify(next);
+    const next = { recent: recent, later: data.later, laterMap: data.laterMap };
+    const raw = JSON.stringify({ recent: recent });
     try {
       if (this._storage) this._storage.setItem(RECENT_ARTICLES_KEY, raw);
     } catch (e) {
@@ -433,12 +561,17 @@ RecentArticles.prototype = {
     const e = cleanEntry(Object.assign({}, entry, { at: now || Date.now() }));
     if (!e) return false;
     const data = this.state;
-    const k = recentKey(e.board, e.aid);
-    // 稍後再讀裡那一筆沒有標題（從連結收的）⇒ 讀到時補上。
-    const later = data.later.map(function(x) {
-      return recentKey(x.board, x.aid) === k && !x.title && e.title ? Object.assign({}, x, { title: e.title }) : x;
-    });
-    this._write({ recent: pushEntry(data.recent, e, RECENT_ARTICLES_LIMIT), later: later });
+    this._write({ recent: pushEntry(data.recent, e, RECENT_ARTICLES_LIMIT) });
+    // 稍後閱讀裡那一筆沒有標題（從連結收的）⇒ 讀到時補上。**不動 mt**：補標題不是使用者的
+    // 增刪，不可以蓋掉別台在這之後的刪除（同 mt 時 newerEntry 讓有標題的贏，別台照樣收得到）。
+    const lk = readLaterKey(e.board, e.aid);
+    const map = this._laterMap();
+    const old = lk && map[lk];
+    if (old && !old.del && !old.title && e.title) {
+      const next = Object.assign({}, map);
+      next[lk] = Object.assign({}, old, { title: e.title });
+      this._writeLater(next);
+    }
     return true;
   },
 
@@ -448,36 +581,52 @@ RecentArticles.prototype = {
     });
   },
 
-  // 右鍵選單「稍後再讀」／「從稍後再讀移除」。回傳切換後是否在清單裡；不合法 ⇒ null。
-  toggleLater: function(entry, now) {
-    const e = cleanEntry(Object.assign({}, entry, { at: now || Date.now() }));
-    if (!e) return null;
-    const data = this.state;
-    const k = recentKey(e.board, e.aid);
-    if (this.isLater(k)) {
-      this._write({ recent: data.recent, later: removeEntry(data.later, k) });
-      return false;
-    }
-    this._write({ recent: data.recent, later: pushEntry(data.later, e, READ_LATER_LIMIT) });
+  // 加一篇（墓碑也直接復活成新加的）。e 已 cleanEntry 過。
+  _putLater: function(e) {
+    const k = readLaterKey(e.board, e.aid);
+    if (!k) return false;
+    const t = this._now();
+    const next = Object.assign({}, this._laterMap());
+    next[k] = { board: e.board, aid: e.aid, title: e.title || '', at: t, mt: t };
+    this._writeLater(next);
     return true;
   },
 
-  // 列表的「稍後再讀」（P53）：開選單時還不知道是哪一篇（AID 要按 Q 才問得到）⇒ 只收不移。
+  // 刪一篇＝留墓碑（mt＝現在），別台同步到才知道要跟著刪。
+  _dropLater: function(key) {
+    const k = typeof key === 'string' ? key.replace('/', ':') : null;
+    const map = this._laterMap();
+    const old = k && map[k];
+    if (!old || old.del) return false;
+    const next = Object.assign({}, map);
+    next[k] = Object.assign({}, old, { del: true, mt: Math.max(this._now(), old.mt + 1) });
+    this._writeLater(next);
+    return true;
+  },
+
+  // 右鍵選單「稍後閱讀」／「從稍後閱讀移除」。回傳切換後是否在清單裡；不合法 ⇒ null。
+  toggleLater: function(entry, now) {
+    const e = cleanEntry(Object.assign({}, entry, { at: now || this._now() }));
+    if (!e) return null;
+    const k = recentKey(e.board, e.aid);
+    if (this.isLater(k)) {
+      this._dropLater(k);
+      return false;
+    }
+    return this._putLater(e) ? true : null;
+  },
+
+  // 列表的「稍後閱讀」（P53）：開選單時還不知道是哪一篇（AID 要按 Q 才問得到）⇒ 只收不移。
   // 'added' ／ 'exists'（本來就在，不動）／ null（不合法）。
   addLater: function(entry, now) {
-    const e = cleanEntry(Object.assign({}, entry, { at: now || Date.now() }));
+    const e = cleanEntry(Object.assign({}, entry, { at: now || this._now() }));
     if (!e) return null;
     if (this.isLater(recentKey(e.board, e.aid))) return 'exists';
-    const data = this.state;
-    this._write({ recent: data.recent, later: pushEntry(data.later, e, READ_LATER_LIMIT) });
-    return 'added';
+    return this._putLater(e) ? 'added' : null;
   },
 
   removeLater: function(key) {
-    const data = this.state;
-    if (!this.isLater(key)) return false;
-    this._write({ recent: data.recent, later: removeEntry(data.later, key) });
-    return true;
+    return this._dropLater(key);
   },
 
   // 開回那一篇：跟指令面板貼文章網址同一條（deep link）。開不了（忙、沒連線）⇒ false。

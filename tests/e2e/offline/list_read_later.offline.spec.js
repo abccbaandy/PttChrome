@@ -14,7 +14,6 @@ const { bootOffline, replayListCassette } = require('../helpers/replay');
 const { rightClickElement } = require('../helpers/real_input');
 const fx = require('../../unit/fixtures/ptt_src_screens/post_info.json');
 
-const KEY = 'pttchrome.recentArticles.v1';
 const b64 = (s) => Buffer.from(s, 'latin1').toString('base64');
 const frame = (name) => fx.frames.find((f) => f.name === name).bytes;
 const cassette = {
@@ -93,7 +92,7 @@ test('列表右鍵「稍後再讀」⇒ 只送 Q 與空白、收進那一篇、�
 
   await expect
     .poll(async () =>
-      page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{"later":[]}').later, KEY)
+      page.evaluate(() => window.__app.recentArticles.state.later)
     )
     .toEqual([expect.objectContaining({ board: 'Test', aid: expect.stringMatching(/^[0-9A-Za-z_-]{8}$/), title: target.title })]);
   await expect(page.locator('.ListHint')).toContainText(await page.evaluate(() => window.__i18n('recent_added')));
@@ -161,7 +160,7 @@ test('原生列表右鍵「稍後再讀」（游標列）⇒ 只送 Q 與空白�
 
   await expect
     .poll(async () =>
-      page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{"later":[]}').later, KEY)
+      page.evaluate(() => window.__app.recentArticles.state.later)
     )
     .toEqual([expect.objectContaining({ board: 'Test', aid: expect.stringMatching(/^[0-9A-Za-z_-]{8}$/) })]);
   await expect(page.locator('.ListHint')).toContainText(await page.evaluate(() => window.__i18n('recent_added')));
@@ -170,6 +169,6 @@ test('原生列表右鍵「稍後再讀」（游標列）⇒ 只送 Q 與空白�
   const keys = sent.filter((d) => d !== '\f').map((d) => d.replace(/\f$/, ''));
   expect(keys).toEqual(['Q', ' ']);
   // 收的那一篇的標題取自右鍵那一列。
-  const saved = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).later[0].title, KEY);
+  const saved = await page.evaluate(() => window.__app.recentArticles.state.later[0].title);
   expect(target.text).toContain(saved);
 });
