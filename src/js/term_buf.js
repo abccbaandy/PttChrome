@@ -22,6 +22,7 @@ import { resolveDismiss } from './screen_dismiss';
 import { classifyPushScreen } from './push_screen';
 import { parseMenuItemRow, isMenuScreen } from './menu_items';
 import { isMailListFooter, isMailListRows, mailHeaderRow, MAIL_HEADER_SCAN_ROWS } from './mail_list';
+import { isEssenceListFooter, isEssenceListRows, ESSENCE_HEADER_SCAN_ROWS } from './essence_list';
 import { footerCaption, isEditorFooter } from './screen_captions';
 import {
   ARCHIVE_LIST,
@@ -1710,6 +1711,18 @@ TermBuf.prototype = {
       this.getRowText(0, 0, this.cols),
       this.getRowText(this.rows - 1, 0, this.cols)
     );
+  },
+
+  // 精華區列表（mbbsd/announce.c，判定見 essence_list.js：標題列＋欄位標題列＋底列 caption）。
+  // 跟信件列表一樣，底列 caption 是便宜的第一關，過了才解前幾列。
+  isEssenceListScreen: function() {
+    var last = this.getRowText(this.rows - 1, 0, this.cols);
+    if (!isEssenceListFooter(last)) return false;
+    var texts = [];
+    for (var y = 0; y < this.rows - 1; ++y)
+      texts.push(y < ESSENCE_HEADER_SCAN_ROWS ? this.getRowText(y, 0, this.cols) : '');
+    texts.push(last);
+    return isEssenceListRows(texts);
   },
 
   // 信件列表（mbbsd/mail.c，判定見 mail_list.js）。**只靠畫面指紋，不看 pageState**；

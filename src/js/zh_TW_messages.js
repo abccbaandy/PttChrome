@@ -2131,6 +2131,18 @@
   "menuBanner_art": {
     "message": "（圖）"
   },
+  "options_mobileEssenceCards": {
+    "message": "手機精華區排成卡片"
+  },
+  "tooltip_mobileEssenceCards": {
+    "message": "精華區的每一項畫成一張卡片（目錄有資料夾圖示和 ›），最上面一列寫目前在哪一層；點卡片＝移到那一項再按 Enter。認不出精華區畫面就照舊格線。"
+  },
+  "essence_dir": {
+    "message": "目錄"
+  },
+  "essence_crumb": {
+    "message": "精華區"
+  },
   "menuBanner_collapse": {
     "message": "收起動態看板 ▴"
   },

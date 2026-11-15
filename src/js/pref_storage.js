@@ -356,6 +356,9 @@ export const DEFAULT_PREFS = {
   // 手機選單上方的動態看板收成一列、點了展開（P87，js/menu_banner.js）。只改畫法、不送鍵 ⇒
   // 不在安全模式清單。展開／收起的選擇存本機（pttchrome.menuBannerExpanded），不在 prefs。
   mobileMenuBannerCollapse: true,
+  // 手機精華區排成卡片（P88，js/essence_list.js、render/essence_card.js）。點卡片＝使用者自己按的
+  // 「移游標＋⏎」（同主功能表／信件卡片）、認不出就照舊格線 ⇒ 不在安全模式清單。
+  mobileEssenceCards: true,
   // 手機文章列表「更多」的「這個看板」（P66，mobile_toolbar.boardTools）：進板畫面 b／精華區 z／文摘 Tab／
   // 看板資訊 i，每顆是使用者自己按的單一原生鍵 ⇒ 不在安全模式清單（同 mobileMailListTools）。
   mobileBoardTools: true,

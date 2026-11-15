@@ -24,6 +24,8 @@ import { buildListCard } from "./list_card";
 import { buildMenuCard, buildMenuBlankRow, buildMenuBannerBar, isBlankRow } from "./menu_card";
 import { bannerSummaryText, isMenuBannerRow, isUsongAlertRow } from "../js/menu_banner";
 import { buildMailCard } from "./mail_card";
+import { buildEssenceCard, buildEssenceCrumb } from "./essence_card";
+import { ESSENCE_HEADER_RE } from "../js/essence_list";
 import { MAIL_HEADER_RE, isMailKeyHintRow } from "../js/mail_list";
 import { buildCollapsedRow } from "./collapsed_row";
 import {
@@ -1282,6 +1284,9 @@ export class ScreenController {
       }
       if (banner === "collapsed" && isUsongAlertRow(row, rowToText(lines[row])))
         return buildMenuBlankRow(row);
+      // 精華區（P88，render/essence_card.js）：標題列改畫「板名 精華區 › 這一層」一列小字。
+      if (enhance.menuCards === "essence" && row === 0)
+        return buildEssenceCrumb({ chars: lines[row], row });
       if (row === 0 || row === lines.length - 1)
         return buildCollapsedRow(row, "menuChromeRow");
       // 信件列表（P31，render/mail_card.js）：信件列畫成卡片，欄位標題列收起（卡片自己
@@ -1300,6 +1305,19 @@ export class ScreenController {
             this.highlight.row === row ? this.highlight.cls : undefined,
         });
         if (mail) return mail.node;
+        if (isBlankRow(lines[row])) return buildMenuBlankRow(row);
+      } else if (enhance.menuCards === "essence") {
+        // 精華區（P88）：項目列畫成卡片、欄位標題列收起（卡片自己帶編選者／日期）；
+        // 按鍵說明列（新版第 1 列）照舊縮小格線（功能鍵可點）。只看該列自己。
+        if (ESSENCE_HEADER_RE.test(rowToText(lines[row])))
+          return buildCollapsedRow(row, "menuChromeRow");
+        const card = buildEssenceCard({
+          chars: lines[row],
+          row,
+          highlightClass:
+            this.highlight.row === row ? this.highlight.cls : undefined,
+        });
+        if (card) return card.node;
         if (isBlankRow(lines[row])) return buildMenuBlankRow(row);
       } else {
         const card = buildMenuCard({
