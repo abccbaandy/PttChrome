@@ -175,6 +175,25 @@ describe("控制器", () => {
     expect(ctl.state.visible).toBe(false);
   });
 
+  test("別的分頁按過「知道了」⇒ 這個分頁回主功能表時不再出現", async () => {
+    localStorage.setItem(WHATS_NEW_SEEN_KEY, JSON.stringify(["好讀模式"]));
+    const { core, ctl } = setup(MENU);
+    await core.settle();
+    core.buf.row0 = BOARD;
+    await core.settle();
+    localStorage.setItem(WHATS_NEW_SEEN_KEY, JSON.stringify(["好讀模式", "新東西", "關注名單"]));
+    core.buf.row0 = MENU;
+    await core.settle();
+    expect(ctl.state).toMatchObject({ visible: false, items: [] });
+  });
+
+  test("寫紀錄跟原有的取聯集：還開著舊版（README 較短）的分頁不會蓋掉新版記下的名稱", async () => {
+    localStorage.setItem(WHATS_NEW_SEEN_KEY, JSON.stringify(["好讀模式", "新東西", "關注名單", "更新的功能"]));
+    const { core } = setup(MENU);
+    await core.settle();
+    expect(readSeen()).toEqual(["好讀模式", "新東西", "關注名單", "更新的功能"]);
+  });
+
   test("dismiss（設定關掉）⇒ 收起但不記成看過", async () => {
     localStorage.setItem(WHATS_NEW_SEEN_KEY, JSON.stringify(["好讀模式"]));
     const { core, ctl } = setup(MENU);

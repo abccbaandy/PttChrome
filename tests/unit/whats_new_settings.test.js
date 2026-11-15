@@ -43,3 +43,14 @@ test("settingKeyFor：沒有開關、不認得的名稱 ⇒ null", () => {
   expect(settingKeyFor("沒有這個功能")).toBeNull();
   expect(settingKeyFor("toString")).toBeNull();
 });
+
+test("設定頁依平台不畫的項目不放按鈕（按了找不到那一項）", () => {
+  const web = { android: false, ssh: true };
+  const app = { android: true, ssh: true };
+  expect(settingKeyFor("內建 Proxy 連線", web)).toBe("useProxy");
+  expect(settingKeyFor("內建 Proxy 連線", app)).toBeNull();
+  expect(settingKeyFor("SSH 連線", web)).toBe("connectionProtocol");
+  expect(settingKeyFor("SSH 連線", app)).toBeNull();
+  expect(settingKeyFor("SSH 連線", { android: false, ssh: false })).toBeNull();
+  expect(settingKeyFor("好讀模式", app)).toBe("enableEasyReading");
+});

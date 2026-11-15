@@ -11,6 +11,8 @@
 //
 // **README 每加一條功能就要在這裡補一列**（key 或 null 都行，但不能漏）：
 // tests/unit/whats_new_settings.test.js 掃真的 README 守；改功能名稱也要跟著改這裡。
+import { isAndroidApp } from "./android_bridge";
+import { sshSupported } from "./ssh/ssh_transport";
 /** @type {Record<string, string | null>} */
 export const FEATURE_SETTING = {
   // 📖 閱讀文章
@@ -112,7 +114,7 @@ export const FEATURE_SETTING = {
   手機選取文字: "mobileSelectTextPage",
   手機文章工具收進更多: "mobileFloatToolsInMore",
   手機編輯器存檔: "mobileEditorSave",
-  "Android App": null,
+  "Android App": "enableNotifications",
   "Android App 自動更新": null,
   "一鍵登出並關閉 App": null,
   行動網路省流量開圖: "tapToLoadImagesOnMobileData",
@@ -128,13 +130,30 @@ export const FEATURE_SETTING = {
   "AI agent 操作（實驗性）": null,
 };
 
+// 設定頁上依平台不畫的項目（PrefModal.jsx 連線分頁）：按了開得到設定頁卻找不到那一項 ⇒ 不放按鈕。
+//   useProxy：Android App 連線固定走原生前景服務，整組 proxy 設定不畫。
+//   connectionProtocol：Android App 不畫；瀏覽器沒有 WebCrypto（非 secure context）也不畫。
+/** @type {Record<string, (env: { android: boolean, ssh: boolean }) => boolean>} */
+const HIDDEN_ON = {
+  useProxy: (env) => env.android,
+  connectionProtocol: (env) => env.android || !env.ssh,
+};
+
+function currentEnv() {
+  return { android: !!isAndroidApp(), ssh: !!sshSupported() };
+}
+
 /**
- * 功能名稱 → 設定搜尋索引的 key；沒有對應開關、或不認得的名稱 ⇒ null。
+ * 功能名稱 → 設定搜尋索引的 key；沒有對應開關、這個平台的設定頁不畫那一項、或不認得的名稱 ⇒ null。
  * @param {string} name
+ * @param {{ android: boolean, ssh: boolean }} [env] 測試注入；省略＝讀目前環境
  * @returns {string | null}
  */
-export function settingKeyFor(name) {
-  return Object.prototype.hasOwnProperty.call(FEATURE_SETTING, name)
+export function settingKeyFor(name, env) {
+  const key = Object.prototype.hasOwnProperty.call(FEATURE_SETTING, name)
     ? FEATURE_SETTING[name]
     : null;
+  if (!key) return null;
+  const hidden = HIDDEN_ON[key];
+  return hidden && hidden(env || currentEnv()) ? null : key;
 }

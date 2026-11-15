@@ -72,9 +72,15 @@ export function readSeen() {
   }
 }
 
+// 跟原有紀錄取聯集再寫：還開著舊版的分頁（README 比較短）寫回來時，不會把新版記下的名稱蓋掉、
+// 讓那些功能下次又被當成新的列一次。
 export function writeSeen(features) {
   try {
-    window.localStorage.setItem(WHATS_NEW_SEEN_KEY, JSON.stringify(features.map((f) => f.name)));
+    const prev = readSeen() || [];
+    const names = features.map((f) => f.name);
+    const known = new Set(names);
+    const merged = names.concat(prev.filter((n) => !known.has(n)));
+    window.localStorage.setItem(WHATS_NEW_SEEN_KEY, JSON.stringify(merged));
   } catch (e) {
     // 無痕視窗／被擋：下次開站又是「沒有紀錄」⇒ 默默記、不顯示，不會每次都跳。
   }
@@ -138,7 +144,15 @@ WhatsNew.prototype = {
       if (this._state.visible) this._set({ visible: false });
       return;
     }
-    if (this._state.items.length && !this._state.visible) this._set({ visible: true });
+    if (this._state.items.length) {
+      // 別的分頁可能已經按過「知道了」：回主功能表時再讀一次紀錄，看過的拿掉。
+      const seen = readSeen();
+      const items = seen ? pendingFeatures(this._state.items, seen) : this._state.items;
+      if (items.length !== this._state.items.length) {
+        if (!items.length) this._features = null;
+        this._set({ visible: items.length > 0, items: items });
+      } else if (!this._state.visible) this._set({ visible: true });
+    }
     if (this._checked || !enabled()) return;
     this._checked = true;
     return this.check();
