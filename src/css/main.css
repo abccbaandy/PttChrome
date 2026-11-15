@@ -579,6 +579,53 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
 .listCard .listCardMain > * + * {
   margin-left: 0.5em;
 }
+/* P87：選單上方動態看板收成一列（render/menu_card.js#buildMenuBannerBar、js/menu_banner.js）。
+   收起時動態看板區每一列有字就各畫一條摘要，兄弟選擇器只留第一條（列只看自己 ⇒ 不破
+   dirty-row patch）。高度 44px 與選單按鈕同一套（觸控目標夠大）。 */
+.main.mobileMenu #mainContainer > span.menuBannerBar {
+  display: block;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 2px 8px;
+}
+.main.mobileMenu #mainContainer > span.menuBannerSummary ~ span.menuBannerSummary {
+  display: none;
+}
+.menuBannerBar .menuBannerToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding-inline: 12px;
+  border: 0;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px #444;
+  background: #1a1d23;
+  color: #c0c0c0;
+  font: inherit;
+  font-family: system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+.menuBannerBar .menuBannerLabel {
+  flex: none;
+  color: #e6b450;
+}
+.menuBannerBar .menuBannerText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.menuBannerBar .menuBannerAction {
+  flex: none;
+  margin-left: auto;
+  color: #6fa3ff;
+}
 /* 推文數是列表最想一眼看到的數字：加粗（顏色仍是 PTT 的 綠／黃／紅爆／X 灰）。 */
 .listCard .listCardPush {
   font-weight: bold;

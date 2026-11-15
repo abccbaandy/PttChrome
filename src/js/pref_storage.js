@@ -353,6 +353,9 @@ export const DEFAULT_PREFS = {
   // 底部導覽第 1、2 格放「搜尋」（/、a）與「寫信」（^P）、「到底」（End）可按。都是使用者自己按的
   // PTT 原生指令 ⇒ 不在安全模式清單（同 mobileEditorSave）。
   mobileMailListTools: true,
+  // 手機選單上方的動態看板收成一列、點了展開（P87，js/menu_banner.js）。只改畫法、不送鍵 ⇒
+  // 不在安全模式清單。展開／收起的選擇存本機（pttchrome.menuBannerExpanded），不在 prefs。
+  mobileMenuBannerCollapse: true,
   // 手機文章列表「更多」的「這個看板」（P66，mobile_toolbar.boardTools）：進板畫面 b／精華區 z／文摘 Tab／
   // 看板資訊 i，每顆是使用者自己按的單一原生鍵 ⇒ 不在安全模式清單（同 mobileMailListTools）。
   mobileBoardTools: true,

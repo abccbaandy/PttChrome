@@ -21,7 +21,8 @@ import { el } from "./dom";
 import { i18n } from "../js/i18n";
 import { buildRow } from "./row";
 import { buildListCard } from "./list_card";
-import { buildMenuCard, buildMenuBlankRow, isBlankRow } from "./menu_card";
+import { buildMenuCard, buildMenuBlankRow, buildMenuBannerBar, isBlankRow } from "./menu_card";
+import { bannerSummaryText, isMenuBannerRow, isUsongAlertRow } from "../js/menu_banner";
 import { buildMailCard } from "./mail_card";
 import { MAIL_HEADER_RE, isMailKeyHintRow } from "../js/mail_list";
 import { buildCollapsedRow } from "./collapsed_row";
@@ -1259,6 +1260,24 @@ export class ScreenController {
     // 切換時整批重建）。末列是 prompt 時 buf.isMenuScreen() 不成立 ⇒ 不是 menu 畫面，
     // 收不到它。
     if (enhance && enhance.menuCards) {
+      // 動態看板收成一列（P87，js/menu_banner.js）：只看該列自己（列號＋有沒有字）。
+      // 展開時標題列改畫「收起」；收起時動態看板區有字的列各畫一條摘要（CSS 只留第一條）。
+      const banner = enhance.menuCards === true ? enhance.menuBanner : undefined;
+      if (banner === "expanded" && row === 0)
+        return buildMenuBannerBar({ row, kind: "head", onToggle: enhance.onMenuBannerToggle });
+      if (banner === "collapsed" && isMenuBannerRow(row) && row < lines.length - 1) {
+        const summary = bannerSummaryText(rowToText(lines[row]));
+        return summary
+          ? buildMenuBannerBar({
+              row,
+              kind: "summary",
+              text: summary,
+              onToggle: enhance.onMenuBannerToggle,
+            })
+          : buildMenuBlankRow(row);
+      }
+      if (banner === "collapsed" && isUsongAlertRow(row, rowToText(lines[row])))
+        return buildMenuBlankRow(row);
       if (row === 0 || row === lines.length - 1)
         return buildCollapsedRow(row, "menuChromeRow");
       // 信件列表（P31，render/mail_card.js）：信件列畫成卡片，欄位標題列收起（卡片自己

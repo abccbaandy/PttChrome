@@ -106,6 +106,7 @@ export const FEATURE_SETTING = {
   "UTF-8 連線（實驗性）": "connectionEncoding",
   // 📱 手機
   "手機版面（Android Chrome）": "mobileLayout",
+  手機選單收起動態看板: "mobileMenuBannerCollapse",
   手機看板捷徑: "mobileBoardTools",
   手機信箱捷徑: "mobileMailListTools",
   手機提問選項: "mobilePromptChoices",

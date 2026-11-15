@@ -36,6 +36,7 @@ import { tryOpenSearchModal } from './article_search';
 import { isRefreshKeyEvent } from './screen_refresh';
 import { mobileCtrlKey, mobileMenuLayout, listViewportGeometry, listFillRows, LIST_CARD_ROWS } from './mobile_layout';
 import { PAGE_STATE } from './screen_model';
+import { menuBannerMode, readMenuBannerExpanded } from './menu_banner';
 
 // 單獨按下修飾鍵本身（實體鍵盤按 Shift 準備打大寫）不算「下一個按鍵」，黏滯 Ctrl 不解除。
 var MODIFIER_KEY_NAMES = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'];
@@ -1544,6 +1545,15 @@ TermView.prototype = {
             this.menuCards && this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen() &&
             readEffectivePrefs().mobileMailListTools
           ),
+          // P87（pref mobileMenuBannerCollapse，js/menu_banner.js）：選單上方的動態看板收成一列。
+          // 'collapsed'／'expanded'（本機記住的選擇）／undefined（不是一般選單或開關關）。進 annotationsKey。
+          // 切換入口 onMenuBannerToggle 由 App 指派一次，引用穩定、不進 key。
+          menuBanner: menuBannerMode({
+            menuCards: this.menuCards && !(this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen()),
+            prefOn: !!readEffectivePrefs().mobileMenuBannerCollapse,
+            expanded: readMenuBannerExpanded(),
+          }),
+          onMenuBannerToggle: this.onMenuBannerToggle,
           // 「開燈」的軌 B：目前的 pmore 色彩顯示模式（0/1/2，null＝還沒看過設定
           // 頁）＋切換入口。App 在啟動時指派 onLightsRawMode，**引用必須穩定**
           // （同 onFunctionKey/onAidClick 的 view-optional callback 慣例）。
