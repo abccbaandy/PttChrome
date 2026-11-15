@@ -1467,7 +1467,7 @@ export const en_US = {
     "message": "Show new features after an update"
   },
   "tooltip_showWhatsNew": {
-    "message": "The first time you're back at the main menu after an update, a small card at the bottom right lists the new features. Close it with ✕ or by leaving the main menu; each batch shows only once. It never blocks typing."
+    "message": "After an update, the main menu lists the new features: at the top of the home dashboard, or as a small card at the bottom right when the dashboard is off. They stay until you press \"Got it\" (✕ on the card). Each item's \"⚙ Settings\" opens its switch. It never blocks typing."
   },
   "whatsNew_title": {
     "message": "What's new"
@@ -1483,6 +1483,18 @@ export const en_US = {
   },
   "whatsNew_showAll": {
     "message": "Show all"
+  },
+  "whatsNew_ack": {
+    "message": "Got it"
+  },
+  "whatsNew_count": {
+    "message": "{n} new"
+  },
+  "whatsNew_settings": {
+    "message": "⚙ Settings"
+  },
+  "whatsNew_settingsTitle": {
+    "message": "Open this feature's setting"
   },
   "options_shortcuts": {
     "message": "Shortcuts"

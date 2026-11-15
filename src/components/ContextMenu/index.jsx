@@ -1460,6 +1460,24 @@ export const ContextMenu = ({ pttchrome }) => {
   const onToolbarSettings = useCallback(() => {
     update({ ...initialState, showsSettings: true });
   }, [pttchrome, update]);
+  // 首頁「這次更新」每條的「⚙ 設定」（P71）：開設定頁並停在那個開關（同指令面板挑設定項的 prefJump）。
+  // 分頁要查設定搜尋索引：按下去才動態載入（索引會帶進兩份語系檔，不能進開站必載，
+  // lazy_modal_chunks.test.js 守）。索引裡找不到 ⇒ 照樣開設定頁，只是不跳。
+  const onOpenSettingFromHome = useCallback(
+    (key) => {
+      import("../../js/pref_search")
+        .then((m) => m.PREF_SEARCH_ITEMS.find((it) => it.key === key))
+        .catch(() => null)
+        .then((item) => {
+          update({
+            ...initialState,
+            showsSettings: true,
+            prefJump: item ? { tab: item.tab, key, n: Date.now() } : null,
+          });
+        });
+    },
+    [update],
+  );
 
   const onQuickSearchSelect = useCallback(
     (item, event) => {
@@ -1857,7 +1875,10 @@ export const ContextMenu = ({ pttchrome }) => {
         />
       </Suspense>
       <DebugRecordNotice pttchrome={pttchrome} />
-      <HomeDashboard pttchrome={pttchrome} />
+      <HomeDashboard
+        pttchrome={pttchrome}
+        onOpenSetting={onOpenSettingFromHome}
+      />
       <WhatsNewCard pttchrome={pttchrome} />
       <CommentFilterBar pttchrome={pttchrome} />
       <SplitReader pttchrome={pttchrome} />

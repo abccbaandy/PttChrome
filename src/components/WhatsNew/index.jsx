@@ -4,6 +4,8 @@ import { WHATS_NEW_ID, WHATS_NEW_PREVIEW } from "../../js/whats_new";
 import "./WhatsNew.css";
 
 // 更新後的新功能小卡（邏輯在 js/whats_new.js，設計見 docs/whats-new.md）。
+// 首頁儀表板開著時改畫在儀表板最上面（HomeDashboard 的 WhatsNewSection），這張小卡不畫；
+// 儀表板關掉、或使用者按了「原生主選單」才用這張。
 // 狀態只從 pttchrome.whatsNew.onChange 來，這裡照畫。不是 modal：不搶 #t 焦點、
 // 不擋打字（事件規則同 HomeDashboard：mousedown preventDefault、滑鼠事件不冒泡到 window）。
 const keepFocus = (e) => {
@@ -24,18 +26,27 @@ export const WhatsNewCard = ({ pttchrome }) => {
   const [state, setState] = useState(() => (ctl ? ctl.state : null));
   const [expanded, setExpanded] = useState(false);
   const [mobile, setMobile] = useState(() => !!(pttchrome && pttchrome.mobile));
+  const home = pttchrome && pttchrome.homeDashboard;
+  const [homeVisible, setHomeVisible] = useState(
+    () => !!(home && home.state && home.state.visible),
+  );
 
   useEffect(() => {
     if (!ctl || typeof ctl.onChange !== "function") return undefined;
     return ctl.onChange((s) => setState(s));
   }, [ctl]);
   useEffect(() => {
+    if (!home || typeof home.onChange !== "function") return undefined;
+    return home.onChange((s) => setHomeVisible(!!(s && s.visible)));
+  }, [home]);
+  useEffect(() => {
     if (!pttchrome || typeof pttchrome.onMobileChange !== "function")
       return undefined;
     return pttchrome.onMobileChange((m) => setMobile(!!m));
   }, [pttchrome]);
 
-  if (!state || !state.visible || !state.items.length) return null;
+  if (!state || !state.visible || !state.items.length || homeVisible)
+    return null;
   const items = state.items;
   const more = items.length - WHATS_NEW_PREVIEW;
   return (
@@ -59,7 +70,7 @@ export const WhatsNewCard = ({ pttchrome }) => {
           onMouseDown={keepFocus}
           onClick={(e) => {
             e.stopPropagation();
-            ctl.dismiss();
+            ctl.acknowledge();
           }}
         >
           ✕

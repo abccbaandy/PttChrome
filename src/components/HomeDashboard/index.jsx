@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { i18n } from "../../js/i18n";
 import { HOME_DASHBOARD_ID } from "../../js/home_dashboard";
 import { recentKey } from "../../js/recent_articles";
+import { WHATS_NEW_PREVIEW } from "../../js/whats_new";
+import { settingKeyFor } from "../../js/whats_new_settings";
 import "./HomeDashboard.css";
 
 // 首頁儀表板的外殼（邏輯與送鍵在 js/home_dashboard.js，設計見 docs/home-dashboard.md）。
@@ -177,7 +179,68 @@ function SavedSection({ list, others, saved, onOtherFail }) {
   );
 }
 
-export const HomeDashboard = ({ pttchrome }) => {
+// 「這次更新」（P71，js/whats_new.js）：換新版後列出新功能，放在儀表板最上面。按「知道了」才算看過
+// （在那之前每次回首頁都在）；超過 WHATS_NEW_PREVIEW 條收在「看全部」。每條右邊「⚙ 設定」＝打開設定頁
+// 停在那個功能的開關（whats_new_settings.js 的對應表；沒有開關的條目不放按鈕）。
+export function WhatsNewSection({ whatsNew, onOpenSetting }) {
+  const [state, setState] = useState(() => (whatsNew ? whatsNew.state : null));
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!whatsNew || typeof whatsNew.onChange !== "function") return undefined;
+    return whatsNew.onChange((s) => setState(s));
+  }, [whatsNew]);
+  const items = (state && state.items) || [];
+  if (!items.length) return null;
+  const shown = expanded ? items : items.slice(0, WHATS_NEW_PREVIEW);
+  return (
+    <section className="homeSection homeWhatsNew" data-home-whats-new>
+      <div className="homeSectionHead">
+        <h3>{i18n("whatsNew_title")}</h3>
+        <span className="homeWhatsNewCount">
+          {fmt("whatsNew_count", { n: items.length })}
+        </span>
+        <span className="homeSpacer" />
+        <Button data-home-whats-new-ack onClick={() => whatsNew.acknowledge()}>
+          {i18n("whatsNew_ack")}
+        </Button>
+      </div>
+      <ul className="homeWhatsNewList">
+        {shown.map((f) => {
+          const key = onOpenSetting ? settingKeyFor(f.name) : null;
+          return (
+            <li key={f.name} className="homeWhatsNewItem">
+              <div className="homeWhatsNewText">
+                <b>{f.name}</b>
+                <span>{f.desc}</span>
+              </div>
+              {key && (
+                <Button
+                  className="homeWhatsNewSetting"
+                  data-home-whats-new-setting={key}
+                  title={i18n("whatsNew_settingsTitle")}
+                  onClick={() => onOpenSetting(key)}
+                >
+                  {i18n("whatsNew_settings")}
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {!expanded && items.length > WHATS_NEW_PREVIEW && (
+        <Button
+          className="homeWhatsNewAll"
+          data-home-whats-new-all
+          onClick={() => setExpanded(true)}
+        >
+          {i18n("whatsNew_showAll")}
+        </Button>
+      )}
+    </section>
+  );
+}
+
+export const HomeDashboard = ({ pttchrome, onOpenSetting }) => {
   const home = pttchrome && pttchrome.homeDashboard;
   const [state, setState] = useState(() => (home ? home.state : null));
   const [mobile, setMobile] = useState(() => !!(pttchrome && pttchrome.mobile));
@@ -301,6 +364,12 @@ export const HomeDashboard = ({ pttchrome }) => {
               </Button>
             )}
           </div>
+        )}
+        {pttchrome.whatsNew && (
+          <WhatsNewSection
+            whatsNew={pttchrome.whatsNew}
+            onOpenSetting={onOpenSetting}
+          />
         )}
         <section className="homeSection">
           <div className="homeSectionHead">

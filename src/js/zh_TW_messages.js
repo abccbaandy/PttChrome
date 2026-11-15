@@ -1466,7 +1466,7 @@
     "message": "更新後顯示新功能"
   },
   "tooltip_showWhatsNew": {
-    "message": "換新版後第一次回到主功能表時，右下角一張小卡列出這次多了哪些功能，按 ✕ 或離開主功能表就收起，同一批只出現一次。不會擋住打字。"
+    "message": "換新版後回到主功能表時，列出這次多了哪些功能：首頁儀表板開著就放在儀表板最上面，沒開就是右下角一張小卡。按「知道了」（小卡是 ✕）才算看過，在那之前每次回主功能表都在。每條旁的「⚙ 設定」直接開到那個功能的開關。不會擋住打字。"
   },
   "whatsNew_title": {
     "message": "這次更新"
@@ -1482,6 +1482,18 @@
   },
   "whatsNew_showAll": {
     "message": "看全部"
+  },
+  "whatsNew_ack": {
+    "message": "知道了"
+  },
+  "whatsNew_count": {
+    "message": "{n} 個新功能"
+  },
+  "whatsNew_settings": {
+    "message": "⚙ 設定"
+  },
+  "whatsNew_settingsTitle": {
+    "message": "打開設定頁的這個開關"
   },
   "options_shortcuts": {
     "message": "快捷鍵"
