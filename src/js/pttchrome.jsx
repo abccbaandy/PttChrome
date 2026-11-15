@@ -95,6 +95,7 @@ import { FollowOnly, isFollowOnlyTarget } from './follow_only';
 import { ListFastScroll, isListFastScrollTarget } from './list_fast_scroll';
 import { EditorInput, isEditorInputTarget } from './editor_input';
 import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
+import { readMenuBannerExpanded, writeMenuBannerExpanded } from './menu_banner';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
 import { BUSY_IDLE, BUSY_SHOW_DELAY_MS, BUSY_TIMEOUT_MS, busyNext, isBusyShown } from './mobile_busy';
@@ -267,6 +268,12 @@ export const App = function() {
   // **只指派這一次，引用從此不變**（同 onFunctionKey 的理由）。
   this.view.onLightsRawMode = (mode) => this.onLightsRawMode(mode);
   // 浮動工具面板的「跳到新推文」：只捲好讀的視口，不送鍵（同文章工具側欄的跳列）。
+  // 手機選單動態看板的收起／展開（P87，js/menu_banner.js）：只存本機＋重畫，不送鍵。
+  // **只指派這一次，引用從此不變**（同 onFunctionKey 的理由）。
+  this.view.onMenuBannerToggle = () => {
+    writeMenuBannerExpanded(!readMenuBannerExpanded());
+    this.view.redraw(true);
+  };
   this.view.onJumpToNewComments = (row) => {
     if (this.easyReading) this.easyReading.scrollToArticleRow(row);
   };

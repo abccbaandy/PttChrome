@@ -23,6 +23,7 @@ import { el } from "./dom";
 import { rowToText } from "../js/comment_parse";
 import { menuLabelParts, parseMenuItemRow } from "../js/menu_items";
 import { buildCollapsedRow } from "./collapsed_row";
+import { i18n } from "../js/i18n";
 
 export const MENU_CARD_PX = 44;
 
@@ -80,4 +81,49 @@ export function buildMenuCard({ chars, row, highlightClass }) {
 // menuCards 模式的空白列：保留 bbsrow／data-row 契約，但不佔高度（共用 collapsed_row.js）。
 export function buildMenuBlankRow(row) {
   return buildCollapsedRow(row, "menuBlankRow");
+}
+
+// 動態看板收起／展開的那一條（P87，js/menu_banner.js）。
+//   kind 'summary'：收起時，動態看板區有字的列各畫一條（CSS 只留第一條），text ＝這一列的字。
+//   kind 'head'：展開時，標題列（row 0）改畫「收起」。
+// 是 <button>（pttchrome.jsx#isOwnControlTarget 認得 ⇒ 不會被當成點選單列送鍵）；按下去呼叫
+// onToggle（App 指派的穩定 callback：切換本機狀態＋重畫），本身不送鍵。
+// 契約：外層 span[type=bbsrow][srow]、裡面一個空的 [data-type=bbsline][data-row]。
+export function buildMenuBannerBar({ row, kind, text, artOnly, onToggle }) {
+  const expanded = kind === "head";
+  const button = el(
+    "button",
+    {
+      type: "button",
+      class: "menuBannerToggle",
+      "data-own-control": "",
+      "aria-expanded": expanded ? "true" : "false",
+    },
+    [
+      el("span", { class: "menuBannerLabel" }, i18n("menuBanner_label")),
+      expanded ? null : el("span", { class: "menuBannerText" }, text || ""),
+      el(
+        "span",
+        { class: "menuBannerAction" },
+        i18n(expanded ? "menuBanner_collapse" : "menuBanner_expand"),
+      ),
+    ],
+  );
+  button.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (typeof onToggle === "function") onToggle();
+  });
+  return el(
+    "span",
+    {
+      type: "bbsrow",
+      srow: row,
+      class: cx(
+        "menuBannerBar",
+        expanded ? "menuBannerHead" : "menuBannerSummary",
+        !expanded && artOnly && "menuBannerArtOnly",
+      ),
+    },
+    [el("span", { "data-type": "bbsline", "data-row": row }), button],
+  );
 }

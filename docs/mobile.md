@@ -450,6 +450,15 @@ offline e2e `mobile_select_text.offline.spec.js`（長按以真右鍵代替，�
   `resolveMouseRegion({ menuCards })` 早退 NONE（觸控 tap 的相容 mousemove 不在錯的按鈕上底色）。
 - 守護：unit `menu_items`／`menu_card`／`main_menu_mouse`／`mouse_regions`；offline e2e `main_menu`（桌機 hover／點擊）、
   `mobile_main_menu`（按鈕高、真 tap 送鍵）。素材是合成畫面 `tests/e2e/helpers/main_menu.js`。
+- **動態看板收成一列（P87）**：pref `mobileMenuBannerCollapse`（預設開）＋本機 `pttchrome.menuBannerExpanded`
+  → `enhance.menuBanner`（`'collapsed'`／`'expanded'`，信件列表與開關關＝undefined，進 `annotationsKey`；
+  `js/menu_banner.js#menuBannerMode`）。收起時 row 1～`MENU_BANNER_LAST_ROW` 每列只看自己：
+  整列空白 ⇒ `buildMenuBlankRow`；其餘畫 `menu_card.buildMenuBannerBar` 摘要條（`bannerSummaryText` 拿掉框線／色塊
+  後沒有可讀字 ⇒ `.menuBannerArtOnly`、文字「（圖）」）。CSS 兄弟選擇器只留第一條可讀的；整區都沒有可讀字時
+  （`#mainContainer:has(...)`）才留第一條 artOnly ⇒ 整片是圖的看板也有「展開」。row 12 的心情點播附註
+  （`menu.c#menu_header` EXP_ALERT_ADBANNER_USONG）`isUsongAlertRow` 跟著收。展開時 row 0 畫「收起」條。
+  條是 `<button data-own-control>`（`isOwnControlTarget` 擋掉選單列點擊），按下呼叫 `view.onMenuBannerToggle`
+  （App 指派一次：切本機狀態＋`redraw(true)`），不送鍵。守護：unit `menu_banner.test.js`、offline `mobile_main_menu`「P87」。
 
 ### 信件列表卡片（P31，`render/mail_card.js`）
 

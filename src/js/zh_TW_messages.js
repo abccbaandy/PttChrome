@@ -2113,6 +2113,24 @@
   "tooltip_mobileMailListTools": {
     "message": "信件列表的底部導覽前兩格是「搜尋」（標題／作者）與「寫信」，「到底」也能按；卡片上方那列鍵盤說明收起來。送的都是 PTT 自己的按鍵（/、a、Ctrl+P、End）。"
   },
+  "options_mobileMenuBannerCollapse": {
+    "message": "手機選單收起動態看板"
+  },
+  "tooltip_mobileMenuBannerCollapse": {
+    "message": "主功能表與子選單上方的動態看板／心情點播收成一列，選單一屏看完；點那一列展開、再點「收起」收回（記住你的選擇）。動態看板空白時整塊不畫。只改顯示，不會送任何按鍵。"
+  },
+  "menuBanner_label": {
+    "message": "動態看板"
+  },
+  "menuBanner_expand": {
+    "message": "展開 ▾"
+  },
+  "menuBanner_art": {
+    "message": "（圖）"
+  },
+  "menuBanner_collapse": {
+    "message": "收起動態看板 ▴"
+  },
   "options_mobilePromptChoices": {
     "message": "手機上 PTT 問「選一個」時浮出可點選項"
   },

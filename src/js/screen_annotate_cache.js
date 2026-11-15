@@ -179,6 +179,8 @@ export function annotationsKey(input) {
     stable(e.menuCards),
     // 手機信件列表收起按鍵說明列（P59，pref mobileMailListTools）：切開關要整批重畫。
     stable(e.mailHideKeyHint),
+    // 選單動態看板收起／展開（P87，pref mobileMenuBannerCollapse＋本機狀態）：切換要整批重畫。
+    stable(e.menuBanner),
     stable(input.mergeCaption),
     stable(input.captionAi),
     stable(input.aiKeep),

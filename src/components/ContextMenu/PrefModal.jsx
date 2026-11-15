@@ -1744,6 +1744,16 @@ export const PrefModal = ({
                       {i18n("tooltip_mobileMailListTools")}
                     </Text>
                     <PrefCheckbox
+                      name="mobileMenuBannerCollapse"
+                      checked={values.mobileMenuBannerCollapse}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobileMenuBannerCollapse")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobileMenuBannerCollapse")}
+                    </Text>
+                    <PrefCheckbox
                       name="mobilePromptChoices"
                       checked={values.mobilePromptChoices}
                       onChange={onCheckboxChange}

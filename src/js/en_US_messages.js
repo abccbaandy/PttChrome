@@ -2114,6 +2114,24 @@ export const en_US = {
   "tooltip_mobileMailListTools": {
     "message": "In the mail list the bottom bar's first two slots are \"Search\" (title / author) and \"Write\", and \"End\" works; the keyboard hint row above the cards is hidden. All of them send PTT's own keys (/, a, Ctrl+P, End)."
   },
+  "options_mobileMenuBannerCollapse": {
+    "message": "Collapse the banner above mobile menus"
+  },
+  "tooltip_mobileMenuBannerCollapse": {
+    "message": "The banner / song dedication art above the main menu and submenus shrinks to one line so the whole menu fits on screen; tap it to expand, tap \"Collapse\" to fold it again (your choice is remembered). Nothing is drawn when the banner is empty. Display only; no keys are sent."
+  },
+  "menuBanner_label": {
+    "message": "Banner"
+  },
+  "menuBanner_expand": {
+    "message": "Expand ▾"
+  },
+  "menuBanner_art": {
+    "message": "(picture)"
+  },
+  "menuBanner_collapse": {
+    "message": "Collapse banner ▴"
+  },
   "options_mobilePromptChoices": {
     "message": "Tappable choices when PTT asks you to pick one (mobile)"
   },
