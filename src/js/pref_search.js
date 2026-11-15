@@ -397,6 +397,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileSelectTextPage",
     },
     {
+      key: "mobileFindInArticle",
+      titleKey: "options_mobileFindInArticle",
+      tooltipKey: "tooltip_mobileFindInArticle",
+    },
+    {
       key: "mobileCardHideTitleBox",
       titleKey: "options_mobileCardHideTitleBox",
       tooltipKey: "tooltip_mobileCardHideTitleBox",

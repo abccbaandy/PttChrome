@@ -376,6 +376,13 @@ export const MobileToolbar = ({
     if (p && typeof p.open === "function") p.open(p.rowAtViewport());
   }, [pttchrome]);
 
+  // 文章內找字（P75）：App Bar 下方開找字列。
+  const onFindText = useCallback(() => {
+    setPanel(null);
+    const f = pttchrome.articleFind;
+    if (f && typeof f.open === "function") f.open();
+  }, [pttchrome]);
+
   // 跳到第一篇未讀：與桌機快捷鍵（預設 F7）同一個入口（unread_jump.js）。
   const onUnreadJump = useCallback(() => {
     setPanel(null);
@@ -804,6 +811,12 @@ export const MobileToolbar = ({
       label: i18n("selectText_title"),
       Icon: IconTextWrap,
       onClick: onSelectText,
+    },
+    // 手機文章內找字（P75，js/article_find.js）：開「更多」那一刻算能不能開。
+    __findText: !!pttchrome.articleFind?.available?.() && {
+      label: i18n("articleFind_title"),
+      Icon: IconSearch,
+      onClick: onFindText,
     },
     __select: {
       label: i18n("mobileKeypad_select"),

@@ -2818,6 +2818,36 @@ export const en_US = {
   "selectText_copied": {
     "message": "Copied"
   },
+  "options_mobileFindInArticle": {
+    "message": "Find in article on mobile"
+  },
+  "tooltip_mobileFindInArticle": {
+    "message": "Adds \"Find\" to the \"More\" sheet of easy-reading articles on mobile: type a word to highlight every match and jump between them. Never sends any key."
+  },
+  "articleFind_title": {
+    "message": "Find"
+  },
+  "articleFind_placeholder": {
+    "message": "Find in this article"
+  },
+  "articleFind_count": {
+    "message": "{n}/{total}"
+  },
+  "articleFind_none": {
+    "message": "No match"
+  },
+  "articleFind_prev": {
+    "message": "Previous"
+  },
+  "articleFind_next": {
+    "message": "Next"
+  },
+  "articleFind_close": {
+    "message": "Close find"
+  },
+  "mobileMoreShort_findText": {
+    "message": "Find"
+  },
   "options_mobileSelectTextPage": {
     "message": "Mobile select-text page"
   },

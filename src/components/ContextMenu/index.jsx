@@ -40,6 +40,7 @@ import CommentFilterBar from "../CommentFilterBar";
 import SplitReader from "../SplitReader";
 import ArticleTools from "../ArticleTools";
 import SelectTextPage from "../SelectTextPage";
+import ArticleFindBar from "../ArticleFind";
 import CommentBar from "../CommentBar";
 import ArticleNav from "../ArticleNav";
 import BoardTabs from "../BoardTabs";
@@ -1900,6 +1901,7 @@ export const ContextMenu = ({ pttchrome }) => {
         onOpenSettings={onToolbarSettings}
       />
       <SelectTextPage pttchrome={pttchrome} />
+      <ArticleFindBar pttchrome={pttchrome} />
     </Fragment>
   );
 };

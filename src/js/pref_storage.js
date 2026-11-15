@@ -331,6 +331,9 @@ export const DEFAULT_PREFS = {
   // 手機「選取文字」頁（P81，select_text_page.js）：好讀文章「更多」與長按選單的入口。只讀畫面、
   // 不送鍵 ⇒ 不在安全模式清單。
   mobileSelectTextPage: true,
+  // 手機文章內找字（P75，article_find.js）：好讀文章「更多」的「找字」。只讀畫面、標亮用瀏覽器的
+  // Highlight API、不送鍵 ⇒ 不在安全模式清單。
+  mobileFindInArticle: true,
   // 手機文章卡片拿掉原文標題前的「□」（P55，render/list_card.js#isTitleBoxMark）。只改畫法、不送鍵
   // ⇒ 不在安全模式清單；R:／轉 照留。
   mobileCardHideTitleBox: true,

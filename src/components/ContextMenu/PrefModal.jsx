@@ -1674,6 +1674,16 @@ export const PrefModal = ({
                       {i18n("tooltip_mobileSelectTextPage")}
                     </Text>
                     <PrefCheckbox
+                      name="mobileFindInArticle"
+                      checked={values.mobileFindInArticle}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobileFindInArticle")}
+                    </PrefCheckbox>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      {i18n("tooltip_mobileFindInArticle")}
+                    </Text>
+                    <PrefCheckbox
                       name="mobileCardHideTitleBox"
                       checked={values.mobileCardHideTitleBox}
                       onChange={onCheckboxChange}

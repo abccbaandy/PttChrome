@@ -2817,6 +2817,36 @@
   "selectText_copied": {
     "message": "已複製"
   },
+  "options_mobileFindInArticle": {
+    "message": "手機文章內找字"
+  },
+  "tooltip_mobileFindInArticle": {
+    "message": "手機好讀文章的「更多」多一項「找字」：打關鍵字標亮整篇符合處，按上／下逐一跳過去。不會送任何按鍵。"
+  },
+  "articleFind_title": {
+    "message": "找字"
+  },
+  "articleFind_placeholder": {
+    "message": "在這篇文章裡找"
+  },
+  "articleFind_count": {
+    "message": "{n}/{total}"
+  },
+  "articleFind_none": {
+    "message": "沒有符合"
+  },
+  "articleFind_prev": {
+    "message": "上一個"
+  },
+  "articleFind_next": {
+    "message": "下一個"
+  },
+  "articleFind_close": {
+    "message": "關閉找字"
+  },
+  "mobileMoreShort_findText": {
+    "message": "找字"
+  },
   "options_mobileSelectTextPage": {
     "message": "手機選取文字頁"
   },
