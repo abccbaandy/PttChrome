@@ -137,6 +137,24 @@ test.describe('手機選單動態看板收成一列（P87）', () => {
     expect(Math.abs(g.firstTop - g.barBottom)).toBeLessThan(1);
   });
 
+  // 選單上按 s 選擇看板：board.c#Select 在 row 1 開輸入欄（upstream 產的畫面，ptt_src_screens/menu_search.json）。
+  // 那一列落在動態看板區，收起來就看不到自己打的字 ⇒ 輸入欄開著時整區照原生格線。
+  test('選擇看板的輸入列不被收進摘要', async ({ page }) => {
+    const fx = require('../../unit/fixtures/ptt_src_screens/menu_search.json');
+    const frame = fx.frames.find((f) => f.name === 'board');
+    await page.evaluate((b) => window.__app.onData(b), frame.bytes);
+    await page.waitForFunction(() => window.__app.buf.isPromptPending());
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const row = document.querySelector('#mainContainer [type="bbsrow"][srow="1"]');
+          return !!row && getComputedStyle(row).display !== 'none' && row.textContent.includes('請輸入看板名稱');
+        })
+      )
+      .toBe(true);
+    expect(await visibleBars(page)).toEqual([]);
+  });
+
   test('tap 摘要 ⇒ 展開、不送鍵；tap「收起」⇒ 收回；選擇記在本機', async ({ page }) => {
     await startCapture(page);
     const bar = await waitRectStable(page, '#mainContainer .menuBannerSummary:not(.menuBannerArtOnly) button');

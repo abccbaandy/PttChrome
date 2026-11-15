@@ -84,10 +84,13 @@ export function writeMenuBannerExpanded(on, storage = defaultStorage()) {
 
 /**
  * 這一幀 enhance.menuBanner 的值：不是一般選單（信件列表也走 menuCards）或開關關掉 ⇒ undefined。
- * @param {{ menuCards: unknown, prefOn: boolean, expanded: boolean }} o
+ * PTT 在問東西（promptPending）⇒ 也是 undefined（整區照原生格線）：選單上按 s，board.c#Select 只
+ * vs_hdr「選擇看板」＋在 row 1 開輸入欄、下面的選單殘影不清，空白鍵自動搜尋的候選也畫在 row 2 起，
+ * 全落在動態看板區；收起來就看不到自己打的字與候選。
+ * @param {{ menuCards: unknown, prefOn: boolean, expanded: boolean, promptPending?: boolean }} o
  * @returns {'collapsed' | 'expanded' | undefined}
  */
 export function menuBannerMode(o) {
-  if (o.menuCards !== true || !o.prefOn) return undefined;
+  if (o.menuCards !== true || !o.prefOn || o.promptPending) return undefined;
   return o.expanded ? 'expanded' : 'collapsed';
 }
