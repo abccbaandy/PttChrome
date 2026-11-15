@@ -153,6 +153,11 @@ test.describe('手機選單動態看板收成一列（P87）', () => {
       )
       .toBe(true);
     expect(await visibleBars(page)).toEqual([]);
+    // 前提：這一幀仍被當成選單（大按鈕還在）。不然上面兩條會因為別的原因變綠。
+    expect(await page.evaluate(() => window.__app.view.menuCards)).toBe(true);
+    // 輸入結束、PTT 畫回選單 ⇒ 又收成一條摘要。
+    await drawMainMenu(page);
+    await expect.poll(async () => (await visibleBars(page)).length).toBe(1);
   });
 
   test('tap 摘要 ⇒ 展開、不送鍵；tap「收起」⇒ 收回；選擇記在本機', async ({ page }) => {
