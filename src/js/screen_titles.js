@@ -86,6 +86,12 @@ export function parseBoardKey(row0Text) {
   return row0Text.trim();
 }
 
+// 標題列左段是文章列表的 currBM（【板主:x】／【徵求中】）。比 isArticleListTitleRow 窄：主功能表右側
+// 也有「看板《X》」，這個只認 readtitle 才畫的左段。
+export function hasArticleListBmPrefix(row0Text) {
+  return !!row0Text && ARTICLE_LIST_TITLE_RE.test(row0Text);
+}
+
 // 文章列表的標題列（有《板名》，或被省略但左段是 currBM）。
 export function isArticleListTitleRow(row0Text) {
   return parseBoardKey(row0Text) != null;

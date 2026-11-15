@@ -63,6 +63,29 @@ describe("appBarFromFacts", () => {
     });
   });
 
+  // 列表底列換成 prompt（推文的「您覺得這篇文章 1.值得推薦…」、推文輸入列、搜尋…）時 footer 認不出，
+  // 但 row 0 還是 bbs.c#readtitle 的【板主:x】⇒ 不可當成子選單把標題換成「板主:x」。
+  test("文章列表底列換成 prompt：仍是列表（不變成「板主:x」選單）", () => {
+    const prompt = "您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ";
+    const prev = { kind: "list", title: "Test", subtitle: "", newMail: false, detail: "" };
+    expect(appBarFromFacts(frame({ 0: LIST_ROW0, 23: prompt }), { pageState: 2, prev })).toMatchObject({
+      kind: "list", title: "Test",
+    });
+    // 看板描述太長、《板名》被 server 省略：沿用上一個列表標題。
+    const longRow0 = "【板主:someone】      [LoL] 世界大賽主題曲 Know My Name 很長很長很長";
+    expect(appBarFromFacts(frame({ 0: longRow0, 23: prompt }), { pageState: 2, prev })).toMatchObject({
+      kind: "list", title: "Test",
+    });
+    // 《板名》被省略、上一個也不是列表（主功能表直接進板就按推文）：標題留空，不寫「板主:x」。
+    const menuPrev = { kind: "menu", title: "主功能表", subtitle: "", newMail: false, detail: "" };
+    expect(appBarFromFacts(frame({ 0: longRow0, 23: prompt }), { pageState: 2, prev: menuPrev })).toMatchObject({
+      kind: "list", title: "",
+    });
+    expect(appBarFromFacts(frame({ 0: "【徵求中】   沒有板主的板   看板《Test2》", 23: prompt }), { pageState: 2 })).toMatchObject({
+      kind: "list", title: "Test2",
+    });
+  });
+
   test("列表好讀 session 持有時同樣是列表", () => {
     const f = frame({ 0: LIST_ROW0 }, { listOwner: OWNER_ARTICLE_LIST });
     expect(appBarFromFacts(f, { pageState: 2 })).toMatchObject({ kind: "list", title: "Test" });
