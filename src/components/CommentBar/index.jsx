@@ -31,6 +31,10 @@ import "./CommentBar.css";
 // 滑鼠：App 的滑鼠入口在 window ⇒ 列上的事件一律 stopPropagation，且 App._onUploadLayer
 // 認 #commentBar 放過（不會被當成點終端機）。
 //
+// 列表模式（state.mode === 'list'，P90）：列表上 PTT 畫著推文類型選單時，同一條列蓋在選單上。
+// 送出走 bar.submitList（長推文狀態機替使用者按類型鍵→內容→y）；✕／Esc／系統返回＝bar.cancelList
+// （替使用者送 PTT 原生的取消）。禁噓板不出「噓」。累積頁的尾端空白（.commentBarShown）只給文章。
+//
 // 長推文看得到全文：輸入框是 textarea（Enter 照樣送出，不換行；貼上的換行換成空白）。
 // 打字中（聚焦，或手機收合展開中）跟著內容往上長高，最多 COMMENT_BAR_MAX_LINES 行；
 // 手機再改成上下兩層——輸入框獨佔一整列吃滿寬，推／噓／→、計數、送出排在下面。
@@ -58,6 +62,8 @@ export const CommentBar = ({ pttchrome }) => {
   const inputRef = useRef(null);
   const rootRef = useRef(null);
   const visible = !!(state && state.visible);
+  const listMode = !!(state && state.mode === "list");
+  const booAllowed = !state || state.booAllowed !== false;
   const prefill = state && state.prefill;
   const foldedOpen = !!(state && state.folded && state.expanded);
   // 正在打字：輸入框長高；手機改上下兩層。收合展開中焦點下一幀才到，先排好版面不跳一下。
@@ -80,9 +86,31 @@ export const CommentBar = ({ pttchrome }) => {
   // 累積頁尾端多留一條列高的空白（main.css `.commentBarShown`），最後一列才捲得出來。
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("commentBarShown", visible);
+    root.classList.toggle("commentBarShown", visible && !listMode);
     return () => root.classList.remove("commentBarShown");
-  }, [visible]);
+  }, [visible, listMode]);
+
+  // 換模式（文章 ↔ 列表）或列表換了一篇：輸入框的字與類型是給上一個目標的，清掉。
+  // 列收起時元件只 return null、state 留著 ⇒ 不清就會把 A 篇打到一半的字按 Enter 推到 B 篇。
+  const listTarget = state && state.listTarget;
+  const targetKey = listMode
+    ? "list:" +
+      (listTarget
+        ? [listTarget.board, listTarget.num, listTarget.author, listTarget.date, listTarget.subject].join("\u0001")
+        : "")
+    : "article";
+  const lastTargetKey = useRef(targetKey);
+  useEffect(() => {
+    if (lastTargetKey.current === targetKey) return;
+    lastTargetKey.current = targetKey;
+    setText("");
+    setType("push");
+  }, [targetKey]);
+
+  // 禁噓板（列表模式讀到的類型選單沒有 2.）：選著噓就改回推。
+  useEffect(() => {
+    if (!booAllowed && type === "boo") setType("push");
+  }, [booAllowed, type]);
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--comment-bar-h",
@@ -189,13 +217,37 @@ export const CommentBar = ({ pttchrome }) => {
   }, [foldedOpen, collapse]);
 
   const submit = useCallback(() => {
-    if (!text.trim() || !pttchrome || !pttchrome.openQuickPush) return;
+    if (!text.trim() || !pttchrome) return;
+    if (listMode) {
+      const r = bar && bar.submitList ? bar.submitList({ text, type }) : null;
+      if (r && r.ok) {
+        setText("");
+        setType("push");
+        if (inputRef.current) inputRef.current.blur();
+        return;
+      }
+      const key =
+        r && r.reason === "dropped"
+          ? "commentBar_listDropped"
+          : r && r.reason === "tooMany"
+            ? "commentBar_listTooMany"
+            : r && r.reason === "empty"
+              ? null
+              : "commentBar_listGone";
+      if (key) pttchrome.view?.flashListHint?.(i18n(key), 4000);
+      return;
+    }
+    if (!pttchrome.openQuickPush) return;
     if (pttchrome.openQuickPush({ text, type })) {
       setText("");
       setType("push");
       if (inputRef.current) inputRef.current.blur();
     }
-  }, [pttchrome, text, type]);
+  }, [pttchrome, bar, listMode, text, type]);
+
+  const cancelList = useCallback(() => {
+    if (bar && typeof bar.cancelList === "function") bar.cancelList();
+  }, [bar]);
 
   const onKeyDown = useCallback(
     (e) => {
@@ -208,10 +260,11 @@ export const CommentBar = ({ pttchrome }) => {
         submit();
       } else if (e.key === "Escape") {
         e.preventDefault();
-        e.currentTarget.blur();
+        if (listMode) cancelList();
+        else e.currentTarget.blur();
       }
     },
-    [submit],
+    [submit, listMode, cancelList],
   );
 
   if (!visible) return null;
@@ -225,8 +278,10 @@ export const CommentBar = ({ pttchrome }) => {
         (state.mobile ? " commentBar--mobile" : "") +
         (foldedOpen ? " commentBar--unfolded" : "") +
         (active ? " commentBar--active" : "") +
-        (stacked ? " commentBar--stacked" : "")
+        (stacked ? " commentBar--stacked" : "") +
+        (listMode ? " commentBar--list" : "")
       }
+      data-comment-mode={listMode ? "list" : "article"}
       style={{
         left: state.left,
         width: state.width,
@@ -246,7 +301,7 @@ export const CommentBar = ({ pttchrome }) => {
         role="radiogroup"
         aria-label={i18n("commentBar_type")}
       >
-        {TYPES.map((t) => (
+        {TYPES.filter((t) => booAllowed || t.value !== "boo").map((t) => (
           <button
             key={t.value}
             type="button"
@@ -317,6 +372,22 @@ export const CommentBar = ({ pttchrome }) => {
       >
         {i18n("commentBar_send")}
       </button>
+      {listMode && (
+        <button
+          type="button"
+          className="commentBarClose"
+          data-comment-cancel=""
+          aria-label={i18n("commentBar_listCancel")}
+          title={i18n("commentBar_listCancel")}
+          onMouseDown={keepFocus}
+          onClick={(e) => {
+            e.stopPropagation();
+            cancelList();
+          }}
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 };

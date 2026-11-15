@@ -519,6 +519,23 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 `session.start` 不在 `onPreflight` 裡同步呼叫（`setTimeout(0)`）：那一刻還在 session 的
 `_preflightDone` 裡，同步重入會讓狀態機在收尾一半時被改掉。
 
+### 列表上的推文列（P90，`list_push.js`＋`comment_bar.js` list 模式）
+
+列表上按 X **不攔**（`long_push_gate` 檔頭的理由不變）：X 照原生送出，PTT 畫推文類型選單；推文列在那一幀才接手。
+
+| 項目 | 規則 | 理由 |
+|---|---|---|
+| 出現條件 | `listPushEnabled`（推文列開關＋`pushKeyOpensLongPush`，安全模式關）＋長推文不 busy＋`listPushTarget` 認得出：底列**整句**類型選單（bbs.c#recommend，禁噓板少了「2.給它噓聲」）、row 0 反白看板標題、row 2 反白欄位表頭、entry 區**剛好一列** PTT 游標記號（`>`／`●`）且作者＋主題＋日期都讀得出 | 這條會替使用者把字寫進公開看板，而 X 是使用者按的、不是我們探路按的 ⇒ 判讀比 `classifyPushScreen` 嚴。要素缺一照原生（`parse_failure_degrade` 突變矩陣） |
+| 位置 | 同文章模式，但上緣對齊終端機最後一列再往上 6px，蓋住類型選單；不加 `.commentBarShown`（列表不需要尾端空白）。手機收合模式也直接展開、聚焦一次 | 使用者剛按 X 就是要打字 |
+| 送出 | `bar.submitList` → `LongPushSession.startFromList`：**重讀畫面**，還是同一幀同一篇才接手，第一個鍵是類型鍵（不帶 Enter），之後同文章裡的長推文。錨點帶 `date`（`long_push_anchor` 有日期就連日期一起比）。整段送完停在列表（不按 ⏎ 開文），閱讀紀錄 `list-push`（列表原處） | 第二則起在列表重按 X，同作者同主題的另一篇只差日期 |
+| 第二則起 | 落地畫面一定要是乾淨列表、且游標那列身分（作者＋主題＋日期）對得上才重按 X；被水球蓋住、footer 對不上、看起來像文章 ⇒ 停手（`_gate` 的 `_fromList` 分支） | 文章流程「還在文章裡 ⇒ X 推的就是這篇」在列表上不成立 |
+| 換目標 | 文章 ↔ 列表、或列表換一篇 ⇒ 輸入框的字與類型清空 | 列收起時元件 state 留著，不清會把 A 篇的字推到 B 篇 |
+| 擋下 | emoji 等 Big5 收不下的字、超過 20 則 ⇒ 不送、提示（列表上沒有長推文輸入框可以退回） | 同 `quickPushPlan` 退回的理由 |
+| 取消 | ✕／Esc／系統返回 ⇒ `dismissListMenu`：類型選單沒有取消鍵，Ctrl-C（被當成推）進內容列、再 Ctrl-C 放棄 | PTT 原生的取消；不開錯誤框 |
+| 錯誤框 | `fromList` 時不給「改成只送剩下的」（那條走文章裡的探路，列表上開不起來）；成功不清草稿（列表模式沒寫草稿） | — |
+
+守護：`list_push_flow.test.js`、`comment_bar.test.js`「列表模式」、`ptt_src_screens.test.js`（upstream 產的推文流程）、`parse_failure_degrade.test.js`、offline e2e `list_push_bar`／`mobile_list_push_bar`。
+
 ## 剛推的那幾則（P42，`just_pushed.js`，pref `markJustPushed` 預設開）
 
 整段送完（`_finish({kind:'done'})`，落回文末之後）呼叫 `view.markJustPushed({ userid, count, since })`，

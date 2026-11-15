@@ -50,6 +50,11 @@ import { parseContentDenied } from "../../src/js/push_screen";
 import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
 import { isEssenceListRows, parseEssenceRow } from "../../src/js/essence_list";
 import { ESSENCE_ROWS, ESSENCE_HEADER_ROW_INDEX, ESSENCE_ITEM_ROWS } from "./fixtures/essence_rows";
+import { listPushTarget, listPushFactsOf } from "../../src/js/list_push";
+import { TermBuf } from "../../src/js/term_buf";
+import { AnsiParser } from "../../src/js/ansi_parser";
+import pushFx from "./fixtures/ptt_src_screens/push.json";
+import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 const LISTS = {
   "C_Chat（24 列，有《板名》）": {
@@ -669,5 +674,46 @@ describe("看板精華區指紋（TermBuf.pagerFromEssence）：只認 col 0 的
     ["半繪", "【精華"],
   ])("%s → 不是精華區", (_n, row) => {
     expect(rowHasTitle(row, ARCHIVE_LIST)).toBe(false);
+  });
+});
+
+// P90 列表按推文改出推文列（list_push.listPushTarget）：要素缺一就不接手 ⇒ 類型選單照原生，
+// 一個鍵都不替使用者按。真實畫面＝upstream 產的「列表按 X」那一幀（ptt_src_screens/push.json push-1）。
+describe("列表推文列（P90）：認不出 ⇒ 類型選單照原生", () => {
+  const real = (() => {
+    loadBig5Tables();
+    const buf = new TermBuf(pushFx.cols, pushFx.rows);
+    buf.setView({ update() {}, updateCursorPos() {}, refreshCursorVisibility() {}, blinkOn: false });
+    buf.useMouseBrowsing = false;
+    const p = new AnsiParser(buf);
+    for (let i = 0; i <= pushFx.frames.findIndex((f) => f.name === "push-1"); ++i) p.feed(pushFx.frames[i].bytes);
+    buf.notify();
+    clearTimeout(buf.timerUpdate);
+    if (buf._settleTimer) clearTimeout(buf._settleTimer);
+    return listPushFactsOf(buf);
+  })();
+  const last = real.rows - 1;
+  const cursorRow = real.rowTexts.findIndex((t, i) => i >= 3 && t.charAt(0) === ">");
+  const withRow = (i, text) => ({ ...real, rowTexts: real.rowTexts.map((r, j) => (j === i ? text : r)) });
+
+  test("對照組：upstream 產的畫面認得出", () => {
+    expect(cursorRow).toBeGreaterThanOrEqual(3);
+    expect(listPushTarget(real)).not.toBeNull();
+  });
+
+  test.each([
+    ["底列不是類型選單（內容列）", () => withRow(last, "推 tester:                                                    ")],
+    ["類型選單改字", () => withRow(last, "您覺得這篇文章 1.推 2.噓 3.→ [1]? ")],
+    ["類型選單半繪", () => withRow(last, "您覺得這篇文章 1.值得推薦 ")],
+    ["標題列沒有看板", () => withRow(0, " ".repeat(80))],
+    ["標題列不是反白", () => ({ ...real, row0Reversed: false })],
+    ["欄位表頭不見", () => withRow(2, " ".repeat(80))],
+    ["欄位表頭不是反白", () => ({ ...real, row2Reversed: false })],
+    ["游標記號不見", () => withRow(cursorRow, " " + real.rowTexts[cursorRow].slice(1))],
+    ["兩列都有游標記號", () => withRow(cursorRow === 3 ? 4 : 3, ">" + real.rowTexts[cursorRow === 3 ? 4 : 3].slice(1))],
+    ["游標列的作者欄讀不出", () => withRow(cursorRow, real.rowTexts[cursorRow].slice(0, 17) + "           ")],
+    ["游標列的日期欄讀不出", () => withRow(cursorRow, real.rowTexts[cursorRow].slice(0, 11) + "  -  " + real.rowTexts[cursorRow].slice(16))],
+  ])("%s → 不接手", (_n, make) => {
+    expect(listPushTarget(make())).toBeNull();
   });
 });

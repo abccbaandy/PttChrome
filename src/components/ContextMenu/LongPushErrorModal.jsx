@@ -100,7 +100,7 @@ export const LongPushErrorModal = ({ error, onHide, onCopy, onResumeRest }) => {
                 {i18n("longPushError_copyRest")}
               </Button>
             )}
-            {rest && sent > 0 && onResumeRest && (
+            {rest && sent > 0 && onResumeRest && !error.fromList && (
               <Button
                 variant="light"
                 data-testid="longPushResumeRest"

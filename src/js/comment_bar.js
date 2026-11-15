@@ -14,6 +14,7 @@ import { readEffectivePrefs } from './pref_storage';
 import { stripNonBig5, splitPushSegments, big5ByteLength, pushMaxBytes } from './long_push';
 import { detectIpLogged, detectAlignedComments } from './push_screen';
 import { screenOf, SCREEN_KIND } from './screen_model';
+import { listPushTarget, listPushFactsOf, sameListPushTarget } from './list_push';
 
 export const COMMENT_BAR_ID = 'commentBar';
 // 列高（CSS px）。終端機累積頁尾端要多留這麼高的空白，最後一列才捲得出列的下面
@@ -24,6 +25,8 @@ export const COMMENT_BAR_HEIGHT = 40;
 export const COMMENT_BAR_MAX_LINES = 5;
 // 超過這麼多則就不直接送，退回輸入框（那裡有「還是要送」的二次確認）。同 LongPushModal。
 export const QUICK_PUSH_MAX_SEGMENTS = 20;
+// 列表模式（P90）蓋住底列的類型選單時，列的上緣再往上多蓋幾 px（字形上緣超出列框）。
+const LIST_COVER_SLACK = 6;
 
 export function isCommentBarTarget(el) {
   return !!(el && typeof el.closest === 'function' && el.closest('#' + COMMENT_BAR_ID));
@@ -63,6 +66,23 @@ export function quickPushPlan(result, quick, maxBytes) {
   if (splitPushSegments(text, r.maxBytes || maxBytes).length > QUICK_PUSH_MAX_SEGMENTS)
     return { direct: false, reason: 'tooMany', text };
   return { direct: true, reason: 'ok', text };
+}
+
+// P90 列表按推文改出推文列：除了推文列本身的開關，還從屬於「按推文鍵開長推文」（關掉＝列表上
+// 照舊原生類型選單）。安全模式下 enableCommentBar 已經是 false。
+export function listPushEnabled(prefs) {
+  return commentBarEnabled(prefs) && !!(prefs && prefs.pushKeyOpensLongPush);
+}
+
+// 列表上按送出：直接送，還是擋下來請使用者先改字（列表上沒有長推文輸入框可以退回）。
+// 擋下的兩種跟 quickPushPlan 相同理由：有 PTT 顯示不了的字（送出前會被濾掉）、分段太多。
+export function listPushPlan(quick, maxBytes) {
+  const raw = String((quick && quick.text) || '');
+  const { text, dropped } = stripNonBig5(raw);
+  if (!text.trim()) return { ok: false, reason: 'empty', text };
+  if (dropped && dropped.length) return { ok: false, reason: 'dropped', text };
+  if (splitPushSegments(text, maxBytes).length > QUICK_PUSH_MAX_SEGMENTS) return { ok: false, reason: 'tooMany', text };
+  return { ok: true, reason: 'ok', text };
 }
 
 // 推文列打字時右邊的計數（pref commentBarCounter）：一則放得下 ⇒ 還能打幾個字（全形字；
@@ -146,6 +166,10 @@ const HIDDEN = {
   counter: false,
   prefill: null,
   focusN: 0,
+  // 'article'＝好讀文章底部常駐；'list'＝列表上的推文類型選單（P90），listTarget 是要推的那一篇。
+  mode: 'article',
+  listTarget: null,
+  booAllowed: true,
 };
 
 export function CommentBar(core) {
@@ -231,17 +255,19 @@ CommentBar.prototype = {
 
   _hide: function() {
     this._releaseBack();
-    if (this._state.visible || this._state.available || this._state.expanded)
-      this._set({ visible: false, available: false, expanded: false });
+    if (this._state.visible || this._state.available || this._state.expanded || this._state.mode !== 'article')
+      this._set({ visible: false, available: false, expanded: false, mode: 'article', listTarget: null, booAllowed: true });
   },
 
   // 推文列計數用的單則上限（commentBarMaxBytes）。依累積頁長度快取：同一篇沒長新列就不重掃。
   maxBytes: function() {
     const core = this._core;
     const buf = core.buf;
-    const acc = (buf && buf.pageLines) || [];
     const view = core.view || {};
     const userId = view._selfId || readEffectivePrefs().autoLoginUser || '';
+    // 列表上看不到推文列（認不出 IP 欄）⇒ 保守值；送出時第一則的輸入列欄寬會校正。
+    if (this._state.mode === 'list') return commentBarMaxBytes([], userId);
+    const acc = (buf && buf.pageLines) || [];
     const key = acc.length + ':' + userId;
     if (this._maxBytesKey === key) return this._maxBytesVal;
     const rows = [];
@@ -280,9 +306,93 @@ CommentBar.prototype = {
     });
   },
 
+  // P90：列表上 PTT 畫著推文類型選單、而且認得出要推哪一篇 ⇒ 那一篇（listPushTarget）。
+  // 長推文還握著畫面（送出中、取消收尾中）時不出現：那時的類型選單是我們自己按出來的。
+  _listMenuTarget: function(prefs) {
+    if (!listPushEnabled(prefs)) return null;
+    const session = this._core.longPush;
+    if (session && session.busy) return null;
+    return listPushTarget(listPushFactsOf(this._core.buf));
+  },
+
+  _refreshList: function(prefs, target) {
+    const core = this._core;
+    const g = this._geometry();
+    if (!g) return this._hide();
+    // 列表模式要整個蓋住底列的類型選單：列的上緣對齊終端機最後一列的上緣（列比一列字高，
+    // 往下多出來的落在終端機下緣之外；再往上多蓋 LIST_COVER_SLACK：字形的上緣會超出列框幾 px）。
+    // 量不到那一列就照文章模式貼終端機下緣。
+    const lastTop = this._lastRowTop();
+    if (lastTop != null && typeof window !== 'undefined')
+      g.bottom = Math.max(Math.round(window.innerHeight - lastTop + LIST_COVER_SLACK - COMMENT_BAR_HEIGHT), Math.round((core.view && core.view.keyboardInset) || 0), 0);
+    const prev = this._state;
+    // 新出現（或換了一篇）⇒ 聚焦輸入框（使用者剛按 X，就是要打字），系統返回＝取消。
+    const entering = prev.mode !== 'list' || !prev.visible || !sameListPushTarget(prev.listTarget, target);
+    if (entering) {
+      this._releaseBack();
+      if (core.registerSheetDismiss) this._unregisterBack = core.registerSheetDismiss(() => this.cancelList());
+    }
+    this._set({
+      visible: true,
+      available: true,
+      folded: false,
+      expanded: false,
+      left: g.left,
+      width: g.width,
+      bottom: g.bottom,
+      mobile: !!core.mobile,
+      counter: !!prefs.commentBarCounter,
+      mode: 'list',
+      listTarget: target,
+      booAllowed: target.booAllowed,
+      focusN: entering ? prev.focusN + 1 : prev.focusN,
+    });
+  },
+
+  // 終端機最後一列（原生格線的 bbsrow／srow）的上緣；量不到回 null。
+  _lastRowTop: function() {
+    const buf = this._core.buf;
+    if (!buf || !buf.rows || typeof document === 'undefined' || !document.querySelector) return null;
+    const el = document.querySelector('#mainContainer [type="bbsrow"][srow="' + (buf.rows - 1) + '"]');
+    if (!el || typeof el.getBoundingClientRect !== 'function') return null;
+    const r = el.getBoundingClientRect();
+    return r && r.height ? r.top : null;
+  },
+
+  // 列表模式按送出（components/CommentBar）。回 { ok, reason }：ok ＝長推文狀態機接手了。
+  submitList: function(quick) {
+    const st = this._state;
+    if (st.mode !== 'list' || !st.listTarget) return { ok: false, reason: 'gone' };
+    const maxBytes = this.maxBytes();
+    const plan = listPushPlan(quick, maxBytes);
+    if (!plan.ok) return plan;
+    const session = this._core.longPush;
+    if (!session || !session.startFromList) return { ok: false, reason: 'gone' };
+    const started = session.startFromList({
+      text: plan.text,
+      type: (quick && quick.type) || 'push',
+      target: st.listTarget,
+      maxBytes: maxBytes,
+    });
+    if (!started) return { ok: false, reason: 'gone' };
+    this._hide();
+    return { ok: true, reason: 'ok', text: plan.text };
+  },
+
+  // 列表模式收起（✕、Esc、系統返回）＝替使用者取消：送 PTT 原生的取消（dismissListMenu）。
+  cancelList: function() {
+    if (this._state.mode !== 'list') return false;
+    const session = this._core.longPush;
+    this._hide();
+    return !!(session && session.dismissListMenu && session.dismissListMenu());
+  },
+
   refresh: function() {
     const core = this._core;
     const prefs = readEffectivePrefs();
+    const target = this._listMenuTarget(prefs);
+    if (target) return this._refreshList(prefs, target);
+    if (this._state.mode === 'list') this._hide();
     if (!commentBarEnabled(prefs) || !this._inEasyArticle()) return this._hide();
     const g = this._geometry();
     if (!g) return this._hide();
@@ -300,6 +410,9 @@ CommentBar.prototype = {
       bottom: g.bottom,
       mobile: !!core.mobile,
       counter: !!prefs.commentBarCounter,
+      mode: 'article',
+      listTarget: null,
+      booAllowed: true,
     });
   },
 };

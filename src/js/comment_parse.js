@@ -891,6 +891,14 @@ export function isListShapedRow(text) {
 // 只用在 isListShapedRow；黑名單作者比對仍只認 userid。
 const LIST_DATE_COL_START = 11;
 const LIST_DATE_RE = /^[ \d]\d\/\d\d$/;
+// 列表列的日期欄（` 9/20`／`10/01`，trim 後回傳）；不是日期形就回 null。
+// 長推文從列表開始時（P90）把它跟作者＋主題一起當成「還是同一篇」的身分。
+export function parseListDate(text) {
+  if (!text || text.length < LIST_DATE_COL_START + 5) return null;
+  const s = realignListColumns(text).substring(LIST_DATE_COL_START, LIST_DATE_COL_START + 5);
+  return LIST_DATE_RE.test(s) ? s.trim() : null;
+}
+
 function hasNonUseridOwner(text) {
   if (text.length < LIST_AUTHOR_COL_START) return false;
   const row = realignListColumns(text);

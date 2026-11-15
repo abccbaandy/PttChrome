@@ -102,6 +102,13 @@ export const RESTORE_TABLE = {
     cancel: cell(null, 'origin'),
     fail: cell(null, 'origin')
   },
+  // 列表按推文改出推文列（P90，long_push_session.startFromList）：推完 PTT 整頁重畫回同一份
+  // 列表、游標不動 ⇒ 一律回原處。
+  'list-push': {
+    done: cell(null, 'origin'),
+    cancel: cell(null, 'origin'),
+    fail: cell(null, 'origin')
+  },
   // 列表的稍後再讀（Q 問 AID 再關框）：列表沒變，一律回原處。
   'read-later-list': {
     done: cell(null, 'origin'),

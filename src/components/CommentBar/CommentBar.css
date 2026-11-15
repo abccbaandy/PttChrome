@@ -138,3 +138,22 @@
     animation: none;
   }
 }
+
+/* 列表模式（P90）：蓋在 PTT 的推文類型選單上。✕＝替使用者取消（PTT 原生的取消）。 */
+.commentBarClose {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1c1c22;
+  color: #bbb;
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.commentBarClose:hover {
+  background: #26262e;
+}
