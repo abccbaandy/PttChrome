@@ -588,7 +588,13 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   height: 44px;
   padding: 2px 8px;
 }
-.main.mobileMenu #mainContainer > span.menuBannerSummary ~ span.menuBannerSummary {
+/* 有可讀字的摘要只留第一條；沒有可讀字（純圖，.menuBannerArtOnly）的只在整區都沒有可讀字時
+   留第一條，讓整片都是圖的看板也有「展開」可點。 */
+.main.mobileMenu #mainContainer > span.menuBannerSummary:not(.menuBannerArtOnly)
+  ~ span.menuBannerSummary:not(.menuBannerArtOnly),
+.main.mobileMenu #mainContainer > span.menuBannerArtOnly ~ span.menuBannerArtOnly,
+.main.mobileMenu #mainContainer:has(> span.menuBannerSummary:not(.menuBannerArtOnly))
+  > span.menuBannerArtOnly {
   display: none;
 }
 .menuBannerBar .menuBannerToggle {

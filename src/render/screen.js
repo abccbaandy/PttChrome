@@ -1266,15 +1266,17 @@ export class ScreenController {
       if (banner === "expanded" && row === 0)
         return buildMenuBannerBar({ row, kind: "head", onToggle: enhance.onMenuBannerToggle });
       if (banner === "collapsed" && isMenuBannerRow(row) && row < lines.length - 1) {
+        // 整列空白才收掉；有東西但沒有可讀的字（純框線、色塊）也畫一條（artOnly），
+        // 整片都是圖的看板才不會連「展開」都沒有（CSS 有可讀的那條時就藏 artOnly）。
+        if (isBlankRow(lines[row])) return buildMenuBlankRow(row);
         const summary = bannerSummaryText(rowToText(lines[row]));
-        return summary
-          ? buildMenuBannerBar({
-              row,
-              kind: "summary",
-              text: summary,
-              onToggle: enhance.onMenuBannerToggle,
-            })
-          : buildMenuBlankRow(row);
+        return buildMenuBannerBar({
+          row,
+          kind: "summary",
+          text: summary || i18n("menuBanner_art"),
+          artOnly: !summary,
+          onToggle: enhance.onMenuBannerToggle,
+        });
       }
       if (banner === "collapsed" && isUsongAlertRow(row, rowToText(lines[row])))
         return buildMenuBlankRow(row);

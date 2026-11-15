@@ -2126,6 +2126,9 @@ export const en_US = {
   "menuBanner_expand": {
     "message": "Expand ▾"
   },
+  "menuBanner_art": {
+    "message": "(picture)"
+  },
   "menuBanner_collapse": {
     "message": "Collapse banner ▴"
   },

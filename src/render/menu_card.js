@@ -89,7 +89,7 @@ export function buildMenuBlankRow(row) {
 // 是 <button>（pttchrome.jsx#isOwnControlTarget 認得 ⇒ 不會被當成點選單列送鍵）；按下去呼叫
 // onToggle（App 指派的穩定 callback：切換本機狀態＋重畫），本身不送鍵。
 // 契約：外層 span[type=bbsrow][srow]、裡面一個空的 [data-type=bbsline][data-row]。
-export function buildMenuBannerBar({ row, kind, text, onToggle }) {
+export function buildMenuBannerBar({ row, kind, text, artOnly, onToggle }) {
   const expanded = kind === "head";
   const button = el(
     "button",
@@ -118,7 +118,11 @@ export function buildMenuBannerBar({ row, kind, text, onToggle }) {
     {
       type: "bbsrow",
       srow: row,
-      class: "menuBannerBar " + (expanded ? "menuBannerHead" : "menuBannerSummary"),
+      class: cx(
+        "menuBannerBar",
+        expanded ? "menuBannerHead" : "menuBannerSummary",
+        !expanded && artOnly && "menuBannerArtOnly",
+      ),
     },
     [el("span", { "data-type": "bbsline", "data-row": row }), button],
   );

@@ -17,7 +17,12 @@ import {
   MENU_BANNER_EXPANDED_KEY,
 } from "../../src/js/menu_banner";
 import { annotationsKey, sameKey } from "../../src/js/screen_annotate_cache";
-import { MAIN_MENU_ROWS, MAIN_MENU_ITEM_ROWS } from "./fixtures/main_menu_rows";
+import {
+  MAIN_MENU_ROWS,
+  MAIN_MENU_ITEM_ROWS,
+  SUBMENU_ROWS,
+  SUBMENU_ITEM_ROWS,
+} from "./fixtures/main_menu_rows";
 
 let style;
 beforeAll(() => {
@@ -131,6 +136,55 @@ describe("render（真 main.css）", () => {
     expect(visibleBars(s).length).toBe(0);
     const top = s.container.getBoundingClientRect().top;
     expect(rowNode(s, MAIN_MENU_ITEM_ROWS[0]).getBoundingClientRect().top - top).toBeLessThan(1);
+  });
+
+  test("整片都是圖（沒有可讀字）：仍留一條「（圖）」可以展開", () => {
+    const artOnly = ROWS.map((r, i) =>
+      i >= 1 && i <= 11 ? (i % 2 ? "│▄▄▄▄▄▄▄▄██████▄▄▄▄▄▄│" : BLANK) : i === 12 ? BLANK : r,
+    );
+    const s = render({ menuBanner: "collapsed" }, artOnly);
+    const bars = visibleBars(s);
+    expect(bars.length).toBe(1);
+    expect(bars[0].classList.contains("menuBannerArtOnly")).toBe(true);
+    expect(bars[0].querySelector(".menuBannerText").textContent).toBe("（圖）");
+  });
+
+  test("有可讀字的列在純圖列後面：顯示的是可讀那條", () => {
+    const s = render({ menuBanner: "collapsed" });
+    // 主選單 row 1 是純框線（artOnly），row 2 才有字。
+    expect(rowNode(s, 1).classList.contains("menuBannerArtOnly")).toBe(true);
+    expect(visibleBars(s)[0]).toBe(rowNode(s, 2));
+  });
+
+  test("逐列更新：第一條有字的列換了位置，畫面上仍只剩一條", () => {
+    const s = render({ menuBanner: "collapsed" }, ROWS_NO_BANNER);
+    const rows = ROWS_NO_BANNER.slice();
+    rows[5] = "  someuser想對大家說：第五列";
+    s.update({
+      lines: rows.map(line),
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: { pageState: 1, menuCards: true, menuBanner: "collapsed" },
+    });
+    rows[3] = "  另一位想對大家說：第三列";
+    s.update({
+      lines: rows.map(line),
+      enableLinkInlinePreview: false,
+      enableLinkHoverPreview: false,
+      enhance: { pageState: 1, menuCards: true, menuBanner: "collapsed" },
+    });
+    const bars = visibleBars(s);
+    expect(bars.length).toBe(1);
+    expect(bars[0].textContent).toContain("第三列");
+  });
+
+  test("子選單（沒有附註列）：第一顆按鈕緊接在摘要下面", () => {
+    const sub = [...SUBMENU_ROWS.slice(0, 12), BLANK, ...SUBMENU_ROWS.slice(13)];
+    const s = render({ menuBanner: "collapsed" }, sub);
+    const bars = visibleBars(s);
+    expect(bars.length).toBe(1);
+    const first = rowNode(s, SUBMENU_ITEM_ROWS[0]).getBoundingClientRect();
+    expect(Math.abs(first.top - bars[0].getBoundingClientRect().bottom)).toBeLessThan(1);
   });
 
   test("按那一條只呼叫 onToggle", () => {

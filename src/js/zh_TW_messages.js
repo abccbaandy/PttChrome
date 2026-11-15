@@ -2125,6 +2125,9 @@
   "menuBanner_expand": {
     "message": "展開 ▾"
   },
+  "menuBanner_art": {
+    "message": "（圖）"
+  },
   "menuBanner_collapse": {
     "message": "收起動態看板 ▴"
   },

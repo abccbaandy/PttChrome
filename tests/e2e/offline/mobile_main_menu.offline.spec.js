@@ -122,7 +122,10 @@ test.describe('手機選單動態看板收成一列（P87）', () => {
     expect(bars[0].expanded).toBe('false');
     expect(bars[0].text).toContain('右繞佛塔');
     const g = await page.evaluate((rows) => {
-      const bar = document.querySelector('#mainContainer .menuBannerSummary').getBoundingClientRect();
+      // 第一條有可讀字的摘要（純框線的 row 1 是 .menuBannerArtOnly，被 CSS 藏起來）。
+      const bar = document
+        .querySelector('#mainContainer .menuBannerSummary:not(.menuBannerArtOnly)')
+        .getBoundingClientRect();
       const cards = rows.map((r) =>
         document.querySelector(`#mainContainer [data-menu-row="${r}"]`).getBoundingClientRect()
       );
@@ -136,7 +139,7 @@ test.describe('手機選單動態看板收成一列（P87）', () => {
 
   test('tap 摘要 ⇒ 展開、不送鍵；tap「收起」⇒ 收回；選擇記在本機', async ({ page }) => {
     await startCapture(page);
-    const bar = await waitRectStable(page, '#mainContainer .menuBannerSummary button');
+    const bar = await waitRectStable(page, '#mainContainer .menuBannerSummary:not(.menuBannerArtOnly) button');
     await page.touchscreen.tap(bar.left + bar.width / 2, bar.top + bar.height / 2);
     await page.waitForFunction(() => !!document.querySelector('#mainContainer .menuBannerHead'));
     expect(await page.locator('#mainContainer .menuBannerSummary').count()).toBe(0);
