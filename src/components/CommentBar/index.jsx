@@ -202,6 +202,8 @@ export const CommentBar = ({ pttchrome }) => {
       const el = inputRef.current;
       if (el) el.focus();
       if (el && document.activeElement === el) takePending();
+      else if (bar && typeof bar.releasePendingInput === "function")
+        bar.releasePendingInput();
     });
     return () => cancelAnimationFrame(id);
   }, [focusN]);

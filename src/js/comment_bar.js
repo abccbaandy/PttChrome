@@ -268,7 +268,20 @@ CommentBar.prototype = {
   // 元件：列表模式的輸入框拿到焦點。解除擋鍵，回傳擋鍵期間落在 #t 的字（並清掉，免得之後送給 PTT）。
   takePendingInput: function() {
     if (!this._keysHeld) return '';
+    const text = this._clearPendingInput();
     this._holdTerminalKeys(false);
+    return text;
+  },
+
+  // 元件：聚焦失敗（輸入框沒拿到焦點）⇒ 解除擋鍵退回終端機，不然鍵盤與點擊都被 modal 擋著。
+  // 擋鍵期間落在 #t 的字丟掉：那時畫面是推文類型選單，留著會在下一次打字時一起送到別的畫面。
+  releasePendingInput: function() {
+    if (!this._keysHeld) return;
+    this._clearPendingInput();
+    this._holdTerminalKeys(false);
+  },
+
+  _clearPendingInput: function() {
     const input = this._core.view && this._core.view.input;
     const text = (input && input.value) || '';
     if (input) input.value = '';
@@ -283,7 +296,7 @@ CommentBar.prototype = {
   },
 
   _hide: function() {
-    this._holdTerminalKeys(false);
+    this.releasePendingInput();
     this._releaseBack();
     if (this._state.visible || this._state.available || this._state.expanded || this._state.mode !== 'article')
       this._set({ visible: false, available: false, expanded: false, mode: 'article', listTarget: null, booAllowed: true });

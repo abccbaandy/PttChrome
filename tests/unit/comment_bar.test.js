@@ -551,10 +551,27 @@ describe("CommentBar 列表模式（P90）", () => {
     const h = makeListCore();
     const modals = new Set();
     h.core.setModalOpen = (src, on) => (on ? modals.add(src) : modals.delete(src));
+    h.core.view.input = { value: "" };
     h.settle();
     expect(modals.has("commentBarPending")).toBe(true);
+    h.core.view.input.value = "2";
     act(h);
     expect(modals.has("commentBarPending")).toBe(false);
+    // 擋鍵期間打的字不可以留在 #t：下一次打字時會一起送到（已經不是選單的）畫面。
+    expect(h.core.view.input.value).toBe("");
+  });
+
+  test("聚焦失敗 ⇒ releasePendingInput 解除擋鍵、丟掉 #t 的字", () => {
+    const h = makeListCore();
+    const modals = new Set();
+    h.core.setModalOpen = (src, on) => (on ? modals.add(src) : modals.delete(src));
+    h.core.view.input = { value: "" };
+    h.settle();
+    h.core.view.input.value = "2";
+    h.bar.releasePendingInput();
+    expect(modals.size).toBe(0);
+    expect(h.core.view.input.value).toBe("");
+    expect(h.bar.state.visible).toBe(true);
   });
 
   test("focusList：列表推文列開著才聚焦（手機工具列「推文」不送 X）", () => {
