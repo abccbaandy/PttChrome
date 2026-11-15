@@ -287,3 +287,29 @@ test('手機：debug 錄製鈕收在「⋯」裡，不與底部工具列重疊',
   await expect(page.locator('#floatTools')).toHaveAttribute('data-recording', '');
   await expect(record).toBeHidden();
 });
+
+// 回歸：P76 收進「更多」後，錄製／存下最近 3 分鐘曾只在文章裡出現（主選單、列表的「更多」沒有）。
+// 應跟「⋯」時一樣任何畫面都能用 ⇒ 非文章畫面的「更多」有「除錯」區，真 tap 開始錄製。
+test('手機：非文章畫面的「更多」也有除錯區（錄製、存下最近 3 分鐘）', async ({ page }) => {
+  await bootOffline(page, ptt);
+  await feedRaw(page, `${ESC}[2J${ESC}[H  MOBILE DEBUG IN MORE TEST LINE  `);
+  await waitScreenSettled(page);
+  await page.evaluate(() => {
+    window.__app.setDebugMode(true);
+    window.__app.setBackgroundRecording(true);
+  });
+  await expect(page.locator('#floatTools')).toHaveCount(0);
+
+  await page.locator('[data-key="__more"]').tap();
+  const panel = page.locator('[data-panel="more"]');
+  const record = panel.locator('[data-key="__articleTool-debugRecordBtn"]');
+  await expect(record).toBeVisible();
+  await expect(panel.locator('[data-key="__articleTool-debugSaveBtn"]')).toBeVisible();
+  await expect(panel).toContainText(await label(page, 'mobileMore_sectionDebug'));
+  await expect(panel).not.toContainText(await label(page, 'mobileMore_sectionArticle'));
+  await waitDialogSettled(page, '[data-panel="more"]');
+  await record.tap();
+  await expect(panel).toBeHidden();
+  // 錄製中照舊畫紅色「⋯」（正在錄要一直看得到）。
+  await expect(page.locator('#floatTools')).toHaveAttribute('data-recording', '');
+});

@@ -1970,10 +1970,13 @@
     "message": "手機把文章工具收進「更多」"
   },
   "tooltip_mobileFloatToolsInMore": {
-    "message": "好讀文章右下角不再浮著「⋯」圓鈕；圖文並排、開燈這些這篇文章才有的工具改放在底部「更多」面板最上面的「這篇文章」。關掉就回到浮動圓鈕。"
+    "message": "好讀文章右下角不再浮著「⋯」圓鈕；圖文並排、開燈這些這篇文章才有的工具改放在底部「更多」面板最上面的「這篇文章」；debug 錄製這類除錯工具也在「更多」的「除錯」，任何畫面都能用。關掉就回到浮動圓鈕。"
   },
   "mobileMore_sectionArticle": {
     "message": "這篇文章"
+  },
+  "mobileMore_sectionDebug": {
+    "message": "除錯"
   },
   "tooltip_mobileListEndHint": {
     "message": "看板搜尋結果、只剩幾篇的列表這類不滿一頁的畫面，下面的空白不再畫成一張張空卡片，改在第一個空白處寫「沒有更多了」。只改畫法，不會送任何按鍵。"
@@ -2789,6 +2792,9 @@
   },
   "saved_readerTitle": {
     "message": "本機收藏"
+  },
+  "saved_readerClose": {
+    "message": "關閉"
   },
   "options_enableSavedArticles": {
     "message": "存到本機"

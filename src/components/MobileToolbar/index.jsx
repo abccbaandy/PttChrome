@@ -4,6 +4,7 @@ import {
   useCallback,
   useRef,
   useLayoutEffect,
+  Fragment,
 } from "react";
 import {
   IconThumbUp,
@@ -75,6 +76,12 @@ const NAV_DIR_ICONS = {
   prev: IconChevronLeft,
   next: IconChevronRight,
 };
+
+// 「更多」面板最上面的浮動工具區（screen.sheetTools() 每項的 group）。順序＝畫的順序。
+const SHEET_TOOL_SECTIONS = [
+  { group: "article", label: "mobileMore_sectionArticle" },
+  { group: "debug", label: "mobileMore_sectionDebug" },
+];
 
 // P66「這個看板」的圖示（BOARD_TOOL_KEYS 的 id）。
 const BOARD_TOOL_ICONS = {
@@ -928,10 +935,15 @@ export const MobileToolbar = ({
   // 擋住 App 的滑鼠入口（MobileSheet 檔頭）。
   // P76「這篇文章」：右下「⋯」浮動工具收進來（pref mobileFloatToolsInMore；關掉時 Screen 照舊畫
   // 「⋯」、這裡拿到空清單）。每項就是那顆工具按鈕本身（screen.sheetTools），開面板那一刻現問。
-  const articleTools =
+  // 「除錯」（錄製／存下最近 3 分鐘）在任何畫面都在，跟「⋯」時一樣；文章工具只有文章才有。
+  const sheetTools =
     panel === "more"
       ? pttchrome.view?.componentScreen?.sheetTools?.() || []
       : [];
+  const toolSections = SHEET_TOOL_SECTIONS.map((sec) => ({
+    ...sec,
+    tools: sheetTools.filter((t) => (t.group || "article") === sec.group),
+  })).filter((sec) => sec.tools.length);
   const moreSheet = (
     <MobileSheet
       pttchrome={pttchrome}
@@ -940,12 +952,10 @@ export const MobileToolbar = ({
       sheetKey="more"
     >
       <div data-panel="more">
-        {articleTools.length ? (
-          <>
-            <div className="mobileSheetSectionLabel">
-              {i18n("mobileMore_sectionArticle")}
-            </div>
-            {articleTools.map((t) => (
+        {toolSections.map((sec) => (
+          <Fragment key={"ts-" + sec.group}>
+            <div className="mobileSheetSectionLabel">{i18n(sec.label)}</div>
+            {sec.tools.map((t) => (
               <button
                 key={"at-" + t.id}
                 type="button"
@@ -966,8 +976,8 @@ export const MobileToolbar = ({
               </button>
             ))}
             <div className="mobileSheetDivider" role="separator" />
-          </>
-        ) : null}
+          </Fragment>
+        ))}
         {quickSearch.items.map((qs) => (
           <button
             key={"qs-" + qs.id}

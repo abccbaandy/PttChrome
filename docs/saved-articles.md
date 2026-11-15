@@ -24,6 +24,7 @@
 | 項目 | 規則 | 理由 |
 |---|---|---|
 | 打開方式 | 另開一頁（`SavedArticles.open` ⇒ 新分頁 `?saved=<key>`），`main.jsx` 在 `claimDeepLink` 之前分流 | 不跟活連線搶畫面、不佔 PTT 連線名額，也不會搶走別的分頁的 deep link |
+| APK | **同一頁疊全螢幕 iframe**（`components/SavedReaderOverlay`，`SavedArticles.reader`／`closeReader`）載同一個 `?saved=<key>`；開著算 modal（來源 `savedReader`）、系統返回＝關掉 | WebView 的 `window.open` 被 `MainActivity#onCreateWindow` 轉交外部瀏覽器，本站網址又被 App Link 解析回 App（`DeepLink.classify` 認不出 ⇒ 什麼都不做）⇒ 點了沒反應。iframe 同源（同一個 IndexedDB），唯讀頁不連線 ⇒ 活連線不動 |
 | 不連線 | 唯讀頁不 `connect()`、不接 deep link／返回鍵／雲端同步 ⇒ `view.conn` 恆 `undefined`，`_send` 天生送不出任何鍵 | 「一個 byte 都不送」由結構保證，不靠逐一攔截 |
 | 畫法 | `term_view.showStaticArticle(rows)`：之後每次 `redraw` 都畫存檔（`_redrawStatic`），走同一個 `_renderScreenLines`／`#mainContainer`，override `STATIC_ARTICLE_OVERRIDES`（`stableRows`、`pageState: 3`、`easyReading: true`） | 核心畫面只有一條寫入路徑（`CLAUDE.md`）；CSS、縮放、手機 reflow、推文合併／樓層／推文卡片原樣可用 |
 | 鍵盤 | `term_view.onKeyDown` 在唯讀頁只拿來捲動（`saved_articles.staticReaderKey`，鍵位照 pmore：空白／PgDn／f、PgUp／b、↓／j／Enter、↑／k、Home／g／0、End／G／$）；其他鍵吞掉，Ctrl／Alt／Meta 組合鍵不管 | 沒有連線，鍵送不出去；組合鍵留給瀏覽器（Ctrl+F、複製） |

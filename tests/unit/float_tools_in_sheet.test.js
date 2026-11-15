@@ -4,7 +4,8 @@
 //   - 收進去 ⇒ 不畫「⋯」，同一份工具由 sheetTools() 交出去（label＝按鈕此刻的字）；
 //   - run() ＝按那顆按鈕本身 ⇒ 效果與在「⋯」面板點一模一樣（這裡用錄製鈕驗：onDebugRecord 被叫、label 換）；
 //   - 開關關掉 ⇒ 照舊畫「⋯」、sheetTools() 是空的（兩邊不會同時出現）；
-//   - 只在文章（pageState READING）收：主選單／列表上照舊畫「⋯」；
+//   - 任何畫面都收（主選單／列表上的 debug 鈕也在「更多」，不只文章裡）；debug 鈕歸 group "debug"，
+//     文章工具歸 "article"（面板據此分「除錯」「這篇文章」兩區）；
 //   - 開關切換時下一次 render 就換位置，不殘留另一邊；debug 錄製中照舊畫紅色「⋯」。
 // real-input: tests/e2e/offline/mobile_float_tools.offline.spec.js
 import { mountScreen, unmountAll } from "./helpers/mount_screen";
@@ -59,9 +60,18 @@ test("run() ＝按那顆按鈕：呼叫 onDebugRecord，下一次問就是新的
   const s = mountScreen(props({ floatToolsInSheet: true, onDebugRecord, isDebugRecording: () => recording }));
   s.controller.sheetTools()[0].run();
   expect(recording).toBe(true);
-  const after = s.controller.sheetTools()[0];
-  expect(after.label).toBe("■ " + i18n("debugRecord_stop"));
-  expect(after.active).toBe(true);
+  // 開始錄製 ⇒ 立刻換成紅色「⋯」（不等下一幀），面板裡不再有它。
+  expect(floatTools(s)).not.toBe(null);
+  expect(floatTools(s).hasAttribute("data-recording")).toBe(true);
+  expect(floatTools(s).querySelector("#debugRecordBtn").textContent).toBe(
+    "■ " + i18n("debugRecord_stop"),
+  );
+  expect(s.controller.sheetTools()).toEqual([]);
+  // 從「⋯」停止 ⇒ 立刻收回面板。
+  floatTools(s).querySelector("#debugRecordBtn").click();
+  expect(recording).toBe(false);
+  expect(floatTools(s)).toBe(null);
+  expect(s.controller.sheetTools()[0].label).toBe("● " + i18n("debugRecord_start"));
 });
 
 test("開關關掉 ⇒ 照舊畫「⋯」，sheetTools 是空的", () => {
@@ -100,8 +110,13 @@ test("沒有任何工具 ⇒ 兩邊都沒有", () => {
   expect(s.controller.sheetTools()).toEqual([]);
 });
 
-test("不在文章裡（主選單）⇒ 照舊畫「⋯」，不進「這篇文章」區", () => {
-  const s = mountScreen(props({ floatToolsInSheet: true, pageState: 1 }));
-  expect(floatTools(s)).not.toBe(null);
-  expect(s.controller.sheetTools()).toEqual([]);
+test("不在文章裡（主選單）⇒ debug 鈕一樣收進更多，歸「除錯」區", () => {
+  const s = mountScreen(
+    props({ floatToolsInSheet: true, pageState: 1, debugSaveButton: true, onDebugSave: () => {} }),
+  );
+  expect(floatTools(s)).toBe(null);
+  expect(s.controller.sheetTools().map((t) => [t.id, t.group])).toEqual([
+    ["debugRecordBtn", "debug"],
+    ["debugSaveBtn", "debug"],
+  ]);
 });

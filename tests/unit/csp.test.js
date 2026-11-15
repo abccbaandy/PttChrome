@@ -136,5 +136,7 @@ describe('CSP 涵蓋程式會用到的來源', () => {
     expect(allows(d['media-src'], 'https://i.imgur.com/a.mp4')).toBe(true);
     expect(allows(d['frame-src'], 'https://www.youtube.com/embed/x')).toBe(true);
     expect(allows(d['frame-src'], 'https://pttchrome.firebaseapp.com/__/auth/iframe')).toBe(true);
+    // APK 的頁內唯讀頁（SavedReaderOverlay）：本站 ?saved=，APK dev server 模式是 http。
+    expect(allows(d['frame-src'], 'http://localhost:8080/?saved=test%2F1aaaaaaa', 'http://localhost:8080')).toBe(true);
   });
 });
