@@ -452,6 +452,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileModernCommentCards",
     },
     {
+      key: "mobileHangIndent",
+      titleKey: "options_mobileHangIndent",
+      tooltipKey: "tooltip_mobileHangIndent",
+    },
+    {
       key: "mobileEditorSave",
       titleKey: "options_mobileEditorSave",
       tooltipKey: "tooltip_mobileEditorSave",

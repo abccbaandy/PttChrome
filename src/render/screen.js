@@ -80,6 +80,7 @@ import {
 import { resetImageUnlocks } from "../js/image_load_gate";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import { ChunkLayer } from "./screen_chunk";
+import { applyHangIndent, hangIndentOf } from "../js/hang_indent";
 import { imageSizeMode, stepImageZoom } from "../js/image_zoom";
 import { setFullResWanted } from "../js/image_fit";
 import { diag, diagActive } from "../js/diag";
@@ -1367,6 +1368,10 @@ export class ScreenController {
       onHyperLinkMouseOut: this.onHyperLinkMouseOut,
       sizeMode: this._sizeMode(),
     });
+    // 手機好讀文章折行後的懸掛縮排（P86，js/hang_indent.js）：只看該列自己的行首空白，
+    // 不動文字（複製不變）。推文、檔頭、合併塊在上面各自的分支，不會走到這裡。
+    if (enhance && enhance.commentCards && enhance.hangIndent && !(ann && ann.hidden))
+      applyHangIndent(built.node, hangIndentOf(rowToText(lines[row])));
     for (let i = 0; i < built.slots.length; ++i) slots.push(built.slots[i]);
     return built.node;
   }

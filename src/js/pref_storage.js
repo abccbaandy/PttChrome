@@ -365,6 +365,9 @@ export const DEFAULT_PREFS = {
   // 手機好讀文章的新格式推文（「id: 內容 … [N]」與更早的「[N] id … creation」）也排成推文卡片
   // （P60，render/comment_card.buildModernCommentCard）。只改畫法、不送鍵 ⇒ 不在安全模式清單。
   mobileModernCommentCards: true,
+  // 手機好讀文章折行後，行首有空白的列續行對齊同一個縮排（P86，js/hang_indent.js）。
+  // 只改畫法、不送鍵 ⇒ 不在安全模式清單。
+  mobileHangIndent: true,
   // PTT 自己畫了 '>' 游標的畫面（列表／選單）不再疊一個閃爍游標 —— 兩個游標同框是
   // 重複資訊。輸入框／編輯器不走 pttbbs 的 cursor_show，閃爍游標照舊顯示，位置資訊
   // 不會消失，所以預設開。判定見 comment_parse.js#hasServerCursorMark。

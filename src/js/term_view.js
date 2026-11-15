@@ -1561,6 +1561,9 @@ TermView.prototype = {
           // 新格式推文也排成卡片（P60，pref mobileModernCommentCards）。只在 commentCards 開著時有作用。
           // 進 annotationsKey（切開關要整批重畫）。
           modernCommentCards: !!readEffectivePrefs().mobileModernCommentCards,
+          // 折行時保留縮排（P86，pref mobileHangIndent，js/hang_indent.js）。只在 commentCards
+          // 開著時有作用。進 annotationsKey（切開關要整批重畫）。
+          hangIndent: !!readEffectivePrefs().mobileHangIndent,
           // 新推文標記（js/new_comments.js）：第一則新推文在累積頁的哪一列。只在畫好讀
           // 累積頁（stableRows＋pageLines）時問 —— functionMode 的原生鏡像餵的是 24 列活
           // buffer，拿去問會把掃描狀態洗掉。進 annotationsKey（一篇文章最多翻一次）。
