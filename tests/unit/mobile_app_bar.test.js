@@ -76,6 +76,11 @@ describe("appBarFromFacts", () => {
     expect(appBarFromFacts(frame({ 0: longRow0, 23: prompt }), { pageState: 2, prev })).toMatchObject({
       kind: "list", title: "Test",
     });
+    // 《板名》被省略、上一個也不是列表（主功能表直接進板就按推文）：標題留空，不寫「板主:x」。
+    const menuPrev = { kind: "menu", title: "主功能表", subtitle: "", newMail: false, detail: "" };
+    expect(appBarFromFacts(frame({ 0: longRow0, 23: prompt }), { pageState: 2, prev: menuPrev })).toMatchObject({
+      kind: "list", title: "",
+    });
     expect(appBarFromFacts(frame({ 0: "【徵求中】   沒有板主的板   看板《Test2》", 23: prompt }), { pageState: 2 })).toMatchObject({
       kind: "list", title: "Test2",
     });
