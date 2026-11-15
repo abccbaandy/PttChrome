@@ -222,6 +222,21 @@ describe("從列表上只有 → 的輸入列接手（P91）", () => {
     expect(target).toBeNull();
   });
 
+  test("第二則 90 秒內：重按 X 又直接給 → 輸入列 ⇒ 不送類型鍵、直接送內容", () => {
+    const { h, target } = setupArrow();
+    h.session.startFromList({ text: "一二三四五六七八九十一二三四五六七八九十", type: "arrow", target, maxBytes: 30 });
+    h.settle(CONFIRM);
+    h.settleList(PAGE(), 1);
+    expect(h.sent[h.sent.length - 1]).toBe("X");
+    h.settle(ARROW_PROMPT);
+    expect(h.sent[h.sent.length - 1]).toMatch(/\r$/);
+    expect(h.sent).not.toContain("3");
+    h.settle(CONFIRM);
+    h.settleList(PAGE(), 1);
+    expect(h.session.active).toBe(false);
+    expect(h.results).toEqual([]);
+  });
+
   test("第二則過了 90 秒、PTT 改給類型選單 ⇒ 選 →（不是推）", () => {
     const { h, target } = setupArrow();
     h.session.startFromList({ text: "一二三四五六七八九十一二三四五六七八九十", type: "arrow", target, maxBytes: 30 });

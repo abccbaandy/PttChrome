@@ -439,7 +439,9 @@ CommentBar.prototype = {
     if (!listPushEnabled(readEffectivePrefs())) return false;
     const session = this._core.longPush;
     if ((session && session.busy) || this._listSuppressed) return false;
-    return !!listPushTarget(listPushFactsOf(this._core.buf));
+    if (!listPushTarget(listPushFactsOf(this._core.buf))) return false;
+    // 量不到版面時推文列不會出現（_refreshList → _hide）⇒ 工具列的面板照出，不能兩個都沒有。
+    return this._geometry() != null;
   },
 
   // 長推文放手（LongPushSession._releaseWire，busy 翻 false 的每一條路）：當下畫面已經不是類型選單 ⇒ 解除壓制。

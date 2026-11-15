@@ -611,6 +611,10 @@ describe("CommentBar 列表模式（P90）", () => {
     delete prefOverride.pushKeyOpensLongPush;
     h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 ");
     expect(h.bar.takesOverListPrompt()).toBe(false);
+    // 量不到版面（推文列出不來）⇒ 工具列的面板照出。
+    h.paint(MENU);
+    h.core.view.mainDisplay = null;
+    expect(h.bar.takesOverListPrompt()).toBe(false);
   });
 
   test("長推文還握著畫面（我們自己按出來的類型選單）⇒ 不出現", () => {
