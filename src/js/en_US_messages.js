@@ -2171,6 +2171,12 @@ export const en_US = {
   "tooltip_mobileModernCommentCards": {
     "message": "PTT's new comment format (\"id: text … time [floor]\") is laid out as cards in mobile easy reading, like regular comments: one line with the id, floor and time, the text on its own line at full width."
   },
+  "options_mobileHangIndent": {
+    "message": "Keep indentation when wrapping lines on mobile"
+  },
+  "tooltip_mobileHangIndent": {
+    "message": "In easy reading, a line that starts with spaces (lists, the second line of a bullet, paragraphs indented with full-width spaces) keeps the same indent on its wrapped continuation instead of jumping back to the left edge. Display only; copied text is unchanged."
+  },
   "options_mobileEditorSave": {
     "message": "Add \"Save\" to the mobile editor's bottom bar"
   },

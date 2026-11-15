@@ -261,6 +261,34 @@ a:link,a:visited,a:active,a:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* 折行時保留縮排（P86，js/hang_indent.js）：行首空白有幾格就把續行推開幾格，第一行用
+   負的 text-indent 拉回 0（行首空白自己佔住那段）。半形空白＝1ch、全形空白（U+3000，
+   color_segment.isCjkWide 當一般字排，CJK 字型裡寬＝1em）＝1em。寬度上限由 JS 擋（HANG_MAX_CELLS）；不用 % 夾：padding 的 % 對容器、text-indent
+   的 % 對自己的內容寬，兩邊會差一個 padding。
+   列的內容包在一層 div 裡（LinkSegmentBuilder.build），行盒在那層 ⇒ text-indent 寫在那層；
+   更裡面的全形字 .wpadding（inline-block）與預覽 div 會繼承 text-indent，歸零。 */
+.main.mobileReflow #mainContainer span[type="bbsrow"].hangIndent {
+  --hangWidth: calc(var(--hangHalf, 0) * 1ch + var(--hangFull, 0) * 1em);
+  padding-left: var(--hangWidth);
+}
+.main.mobileReflow #mainContainer span[type="bbsrow"].hangIndent > div {
+  text-indent: calc(-1 * var(--hangWidth));
+}
+.main.mobileReflow #mainContainer span[type="bbsrow"].hangIndent > div * {
+  text-indent: 0;
+}
+/* 縮排只給文字：行內預覽盒（bbsline 後面那層 div）與修好的網址行（.fixedUrlLine，也是 div）
+   拉回列的左緣，圖片照舊用滿寬。 */
+.main.mobileReflow #mainContainer span[type="bbsrow"].hangIndent > div > div {
+  margin-left: calc(-1 * var(--hangWidth));
+}
+/* 圖文並排的說明欄本來就窄，不再縮。 */
+.main.mobileReflow #mainContainer .mergedCaptionCol span[type="bbsrow"].hangIndent {
+  padding-left: 0;
+}
+.main.mobileReflow #mainContainer .mergedCaptionCol span[type="bbsrow"].hangIndent > div {
+  text-indent: 0;
+}
 /* 手機「選取模式」關著時，長按開的是我們的選單（ContextMenu 的 contextmenu handler，
    docs/mobile.md「選取模式」）：擋掉系統的長按呼出（iOS callout）。**不用 user-select:
    none 擋選字**：終端機的祖先不可以有它（css_user_select.test.js），選字殘留改由

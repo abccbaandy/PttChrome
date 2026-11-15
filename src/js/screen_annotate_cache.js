@@ -166,6 +166,8 @@ export function annotationsKey(input) {
     stable(e.commentCards),
     // 新格式推文卡片（P60，pref mobileModernCommentCards）：同理。
     stable(e.modernCommentCards),
+    // 折行時保留縮排（P86，pref mobileHangIndent）：同理。
+    stable(e.hangIndent),
     // 新推文標記的列（js/new_comments.js）：一篇文章裡從 null 翻成某一列最多一次。
     stable(e.newCommentsRow),
     // 推完文剛推的那幾則（js/just_pushed.js）：設定、到期各翻一次 ⇒ 那一幀全量重算。

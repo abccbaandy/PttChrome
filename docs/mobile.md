@@ -346,6 +346,16 @@ offline e2e `mobile_select_text.offline.spec.js`（長按以真右鍵代替，�
 - id 標示（原PO `.commentByAuthor` 青／我 `.commentBySelf` 綠／關注 `.commentByFollow` 橘，桌機同一組 class）：字換色＋同色淡底
   （P60：深藍底看不出來）；上班模式與游標列加亮的特異度較高，照舊由它們決定。
 
+### 折行時保留縮排（P86）
+- pref `mobileHangIndent`（預設開）→ `enhance.hangIndent`（進 `annotationsKey`），只在 `commentCards`（換行版面的好讀長頁）有作用。
+- `screen.js#_renderRow` 走到 buildRow 的內文列：`hang_indent.hangIndentOf(rowToText)` 數行首半形／全形空白，`applyHangIndent`
+  寫 `.hangIndent`＋`--hangHalf`／`--hangFull`。CSS：列 `padding-left`＝半形×`1ch`＋全形×`1em`，內層 div（行盒所在）負 `text-indent`，
+  更裡層歸零（text-indent 會繼承到 `.wpadding` inline-block）。文字不動 ⇒ 複製不變。
+- 縮排只給文字：bbsline 後面的預覽 div／`.fixedUrlLine`（`> div > div`）用負 margin 拉回列左緣，圖片照舊滿寬；
+  圖文並排的說明欄（`.mergedCaptionCol`）不縮。
+- 不套：行首沒空白、整列空白、超過 `HANG_MAX_CELLS`（20 格，置中標題／ANSI 圖）。推文、檔頭、合併塊走各自分支不經這裡。
+- 守護：unit `hang_indent.test.js`（真 main.css 量續行左緣）。
+
 ### 文末補白收起
 - 成因：文章短於一頁／末頁時 pmore 把 EOF 之後的列清成空白，`pageLines` 照收 ⇒ 推文區下方一大塊空白。
 - `computeAnnotations`（PAGE_READING、`commentCards`）把「最後一列非空白之後」的空白列標 `trailingBlank`（只寫 result、每幀新物件）；

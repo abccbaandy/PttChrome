@@ -2170,6 +2170,12 @@
   "tooltip_mobileModernCommentCards": {
     "message": "PTT 新格式推文（「id: 內容 …… 時間 [樓號]」）在手機好讀文章裡跟一般推文一樣排成卡片：一行帳號、樓號與時間，內容另起一行用滿寬。"
   },
+  "options_mobileHangIndent": {
+    "message": "手機折行時保留縮排"
+  },
+  "tooltip_mobileHangIndent": {
+    "message": "好讀文章裡行首有空白的列（名單、條列的第二行、全形空白開頭的段落）太長被折行時，續行從同一個縮排開始，不再跳回最左邊。只改顯示，複製出來的字不變。"
+  },
   "options_mobileEditorSave": {
     "message": "手機編輯器底部導覽加「存檔」"
   },
