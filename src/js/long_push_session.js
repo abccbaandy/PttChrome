@@ -63,6 +63,7 @@ import { recordFor } from './reading_record';
 import { isLiveRepeatPrompt, LIVE_REPEAT_DECLINE } from './open_prompt';
 import { PAGE_STATE } from './screen_model';
 import { holdWireWhile } from './wire_lease';
+import { listPushTarget, listPushFactsOf, sameListPushTarget } from './list_push';
 
 function isLiveScreen(buf) {
   return !!(buf && typeof buf.isLiveScreenNow === 'function' && buf.isLiveScreenNow());
@@ -162,6 +163,8 @@ LongPushSession.prototype = {
     this._cancelling = false;
     this._abortSteps = 0;
     this._startedInArticle = false;
+    // P90：這一趟是從列表上的推文類型選單接手的（startFromList）。收尾不回文章、不標剛推的。
+    this._fromList = false;
     // 這一趟長推文綁定的文章身分：{ aid, board, author, subject, num }。
     // aid 由 aidNavigation.resolvePostAid 提供（重新定位用的權威鍵）；
     // author/subject 是列表上比對得到的欄位（bbs.c#readdoent 只印這些）。
@@ -189,9 +192,9 @@ LongPushSession.prototype = {
   // 序列化操作的提示字串（serialized_op_gate 用）。armed 期間 active 是 false，
   // 自然不會走到這裡。
   get opHint() {
-    return this._phase === 'preflight'
-      ? '正在確認能不能推文，請稍候…'
-      : '長推文送出中，請稍候…';
+    if (this._phase === 'preflight') return '正在確認能不能推文，請稍候…';
+    if (this._phase === 'dismiss') return '正在取消推文，請稍候…';
+    return '長推文送出中，請稍候…';
   },
 
   // 丟掉探路成果。錨點綁在**這條連線**的列表游標上，斷線就失效（同
@@ -281,6 +284,10 @@ LongPushSession.prototype = {
     const rest = o.keepRest ? this._rest() : '';
     const sent = this._sent;
     const userId = this._userId;
+    const fromList = this._fromList;
+    // 從列表接手的那一趟沒有「回文章」那一步（_enqueueReopen 才收閱讀紀錄）⇒ 在這裡收。
+    if (fromList && this._bookmark)
+      recordFor(this._core).end(this._bookmark, o.kind === 'done' ? 'done' : o.kind === 'cancel' ? 'cancel' : 'fail');
     this.active = false;
     this._clearTimer();
     this._emit(null);
@@ -290,10 +297,11 @@ LongPushSession.prototype = {
     if (o.kind === 'done') {
       if (o.message) this._hint(o.message);
       // 落回文末了 ⇒ 把自己剛推的那幾則淡淡亮一下（P42，js/just_pushed.js；只看畫面、不送鍵）。
-      if (sent > 0 && this._view && typeof this._view.markJustPushed === 'function')
+      if (sent > 0 && !fromList && this._view && typeof this._view.markJustPushed === 'function')
         this._view.markJustPushed({ userid: userId, count: sent, since: this._sendStartedAt });
       // 唯一的「整段都送出去了」出口 ⇒ 草稿到這裡才可以清（見建構式的 onSent）。
-      if (this.onSent) this.onSent();
+      // 列表推文列（P90）沒有寫草稿：清掉的會是使用者另外存著的那一份。
+      if (this.onSent && !fromList) this.onSent();
       return;
     }
     if (this.onResult)
@@ -304,7 +312,9 @@ LongPushSession.prototype = {
         message: o.message || '',
         reason: o.reason || null,
         sent: sent,
-        rest: rest
+        rest: rest,
+        // 從列表接手的（P90）：錯誤框的「改成只送剩下的」會走文章裡的探路，列表上開不起來 ⇒ 不給。
+        fromList: fromList
       });
   },
 
@@ -466,6 +476,75 @@ LongPushSession.prototype = {
     this._prologue();
     this._enqueueResolveAid();
     return true;
+  },
+
+  // P90：列表上 PTT 已經畫出推文類型選單（使用者自己按的 X），底部推文列按送出時從這裡接手。
+  //
+  // target 是推文列出現那一刻讀到的那一篇（list_push.listPushTarget）。送出這一刻**重讀畫面**，
+  // 底列還是整句類型選單、游標列還是同一篇（作者＋主題＋日期＋同一列）才接手；否則回 false，
+  // 一個鍵都不送（畫面已經不是推文列出現時那一幀）。
+  //
+  // 接手之後第一步是類型鍵（選單的 vkey 正在等它），之後跟文章裡的長推文同一套：內容 → y →
+  // 推完 PTT 回列表；還有下一則就過 _gate（錨點帶日期，對不上又沒有 AID ⇒ 同頁找回來再驗一次，
+  // 找不到就停）→ 在列表重按 X。整段送完停在列表，不開文章。
+  startFromList: function(opts) {
+    const o = opts || {};
+    if (this.busy) return false;
+    if (isLiveScreen(this._termBuf)) return false;
+    const now = listPushTarget(listPushFactsOf(this._termBuf));
+    if (!now || !sameListPushTarget(now, o.target)) return false;
+    if (o.type === 'boo' && !now.booAllowed) return false;
+    const text = String(o.text || '');
+    this._reset();
+    this._text = text;
+    this._maxBytes = o.maxBytes || pushMaxBytes({});
+    this._recount();
+    if (!this._total) return false;
+    this._typeKey = PUSH_TYPE_KEY[o.type] || PUSH_TYPE_KEY.push;
+    this._phase = 'sending';
+    this.active = true;
+    this._sendStartedAt = Date.now();
+    this._fromList = true;
+    this._anchor = { author: now.author, subject: now.subject, date: now.date, num: now.num };
+    this._bookmark = recordFor(this._core).begin('list-push', { view: this._view, buf: this._termBuf });
+    this._listPrologue();
+    this._emit({});
+    this._enqueueType();
+    return true;
+  },
+
+  // P90：收起推文列＝替使用者取消。類型選單沒有取消鍵（vkey 收到非數字一律當「推」進內容列），
+  // 所以跟長推文的取消同一條收尾：Ctrl-C 進內容列、再 Ctrl-C 放棄（什麼都不寫）回列表。
+  // 只在底列還是整句類型選單時動手；回 true ＝ 有送收尾鍵。
+  dismissListMenu: function() {
+    if (this.busy) return false;
+    if (!listPushTarget(listPushFactsOf(this._termBuf))) return false;
+    this._reset();
+    this._phase = 'dismiss';
+    this.active = true;
+    // _onFlushed 讓路：收尾迴圈自己的 onFlushed 會走到 done（不開錯誤框）。
+    this._cancelling = true;
+    this._listPrologue();
+    const self = this;
+    const done = function() {
+      recordFor(self._core).releaseExternal();
+      self.active = false;
+      self._phase = 'idle';
+      self._reset();
+      self._releaseWire();
+    };
+    this._abortSteps = 0;
+    this._enqueueAbort(done, done);
+    return true;
+  },
+
+  // 列表上的序幕：只把列表好讀／看板列表停到外部導覽（共用 queue 淨空、reducer 不搶 settle）。
+  // 不碰文章好讀（人不在文章裡，_enterFunctionMode 在這裡沒有要凍結的閱讀位置）。
+  _listPrologue: function() {
+    if (this._core.listSession && this._core.listSession.beginExternalNavigation)
+      this._core.listSession.beginExternalNavigation();
+    if (this._core.boardListSession && this._core.boardListSession.beginExternalNavigation)
+      this._core.boardListSession.beginExternalNavigation();
   },
 
   // 序幕：採樣 → 切到原生鏡像。閱讀位置來自閱讀紀錄（reading_record）：它在
@@ -1050,6 +1129,8 @@ LongPushSession.prototype = {
       this._anchor.author = cap.author;
       this._anchor.subject = cap.subject;
       this._anchor.num = cap.num;
+      if (cap.date) this._anchor.date = cap.date;
+      else delete this._anchor.date;
     }
     proceed();
   },

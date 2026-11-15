@@ -421,6 +421,18 @@ export const en_US = {
   "commentBar_placeholder": {
     "message": "Write a comment, Enter to post"
   },
+  "commentBar_listCancel": {
+    "message": "Cancel"
+  },
+  "commentBar_listDropped": {
+    "message": "Some characters cannot be shown on PTT (e.g. emoji). Remove them first."
+  },
+  "commentBar_listTooMany": {
+    "message": "Too long (more than 20 comments). Please send it in parts."
+  },
+  "commentBar_listGone": {
+    "message": "The comment menu is gone. Nothing was sent."
+  },
   "commentBar_send": {
     "message": "Post"
   },

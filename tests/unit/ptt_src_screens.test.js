@@ -21,7 +21,7 @@ import {
 import { parseHelpMenuScreen } from "../../src/js/help_menu";
 import { isHomeScreen, parseFavRow } from "../../src/js/home_dashboard";
 import { parseStatusRow } from "../../src/js/string_util";
-import { subjectMatches } from "../../src/js/long_push_anchor";
+import { subjectMatches, listRowIdentity } from "../../src/js/long_push_anchor";
 import {
   articleContextFromScreen,
   isPinnedListRow,
@@ -64,6 +64,7 @@ import pushContentDeniedFx from "./fixtures/ptt_src_screens/push_content_denied.
 import pushOwnerFx from "./fixtures/ptt_src_screens/push_owner.json";
 import pushSearchFx from "./fixtures/ptt_src_screens/push_search.json";
 import { pushMaxBytes } from "../../src/js/long_push";
+import { listPushTarget, listPushFactsOf } from "../../src/js/list_push";
 import { navKeyBlockReason } from "../../src/js/nav_key_gate";
 import { App } from "../../src/js/pttchrome";
 import articleHelpFx from "./fixtures/ptt_src_screens/article_help.json";
@@ -2065,5 +2066,37 @@ describe("upstream pttbbs 產的文章 prompt 開著時，AID 跳文不出發", 
     expect(can(articlePromptsFx, "article")).toBe(true);
     for (const [fx, name] of PROMPTS) expect(can(fx, name)).toBe(false);
     expect(can(searchPromptsFx, "title")).toBe(false);
+  });
+});
+
+// P90 列表按推文改出推文列（list_push.js）：列表上按 X 之後的類型選單一幀，要認得出「整句選單」
+// 與游標列那一篇；選單以外的推文流程幀（內容列、確認列、作者本人直接進內容列）一律不接手。
+describe("upstream pttbbs 產的列表推文流程（bbs.c#recommend）：列表推文列只在類型選單接手", () => {
+  const target = (fx, name) => listPushTarget(listPushFactsOf(screenAt(fx, name).buf));
+
+  test("列表按 X 的類型選單：認得出、游標列那一篇身分完整", () => {
+    for (const [fx, name] of [[pushFx, "push-1"], [pushFlowFx, "menu"], [pushSearchFx, "menu"]]) {
+      const t = target(fx, name);
+      expect(t, name).not.toBeNull();
+      expect(t.author).toMatch(/^[a-z0-9]+$/);
+      expect(t.subject).toBeTruthy();
+      expect(t.date).toMatch(/^\d{1,2}\/\d\d$/);
+      expect(t.booAllowed).toBe(true);
+      // 跟按 X 之前那一幀的游標列是同一篇。
+      const list = screenAt(fx, fx.frames[fx.frames.findIndex((f) => f.name === name) - 1].name);
+      const id = listRowIdentity(list.rowTexts[list.buf.cur_y]);
+      expect({ author: t.author, subject: t.subject, row: t.row }).toEqual({ ...id, row: list.buf.cur_y });
+    }
+  });
+
+  test("推文流程的其他幀、純列表、作者本人（直接進內容列）一律不接手", () => {
+    expect(target(pushFx, "list")).toBeNull();
+    expect(target(pushFx, "push-2")).toBeNull();
+    expect(target(pushFlowFx, "input")).toBeNull();
+    expect(target(pushFlowFx, "confirm")).toBeNull();
+    expect(target(pushFlowFx, "done")).toBeNull();
+    expect(target(pushFlowFx, "article")).toBeNull();
+    expect(target(pushOwnerFx, "owner")).toBeNull();
+    expect(target(pushAgainFx, "too-close")).toBeNull();
   });
 });

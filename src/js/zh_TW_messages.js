@@ -421,6 +421,18 @@
   "commentBar_placeholder": {
     "message": "寫推文，Enter 送出"
   },
+  "commentBar_listCancel": {
+    "message": "取消推文"
+  },
+  "commentBar_listDropped": {
+    "message": "有 PTT 顯示不了的字（例如表情符號），請先移除再送出"
+  },
+  "commentBar_listTooMany": {
+    "message": "內容太長（超過 20 則），請分次送出"
+  },
+  "commentBar_listGone": {
+    "message": "畫面已經不是推文選單，這次沒有送出"
+  },
   "commentBar_send": {
     "message": "送出"
   },

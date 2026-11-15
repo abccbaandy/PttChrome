@@ -153,6 +153,20 @@ describe("checkCursorAnchor", () => {
     expect(checkCursorAnchor(f, ANCHOR)).toBe("ok");
   });
 
+  test("錨點帶日期（列表列採的）：同作者同主題、日期不同 → moved；文章標頭採的不帶日期照舊", () => {
+    const f = facts(
+      [
+        listRow(1233, "someone", "[公告] 別篇"),
+        listRow(1234, "abcUser", "[閒聊] 原本那篇", { cursor: true }),
+      ],
+      4,
+    );
+    expect(checkCursorAnchor(f, { ...ANCHOR, date: "9/01" })).toBe("ok");
+    expect(checkCursorAnchor(f, { ...ANCHOR, date: "9/02" })).toBe("moved");
+    expect(anchorMatchCount(f, { ...ANCHOR, date: "9/02" })).toBe(0);
+    expect(findAnchorRowNum(f, { ...ANCHOR, date: "9/01" })).toBe(1234);
+  });
+
   test("游標飄到別篇 → moved（就是使用者踩到的那個 bug）", () => {
     const f = facts(
       [
@@ -281,6 +295,8 @@ describe("captureCursorAnchor", () => {
       author: "abcuser",
       subject: "[閒聊] 原本那篇",
       num: 1234,
+      // 列表列採的錨點帶日期（P90：之後比對時日期也要相同）。
+      date: "9/01",
     });
   });
 

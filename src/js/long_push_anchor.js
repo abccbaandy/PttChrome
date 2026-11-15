@@ -34,7 +34,8 @@ import {
   parseArticleAuthor,
   parseArticleTitle,
   subjectOfListText,
-  pageArticleNums
+  pageArticleNums,
+  parseListDate
 } from './comment_parse';
 
 // 列表標題被截斷時 bbs.c#readdoent 補的省略號。
@@ -91,7 +92,10 @@ export function captureCursorAnchor(facts) {
   if (!facts || facts.curY == null) return null;
   const id = listRowIdentity((facts.rowTexts && facts.rowTexts[facts.curY]) || '');
   if (!id) return null;
-  return { author: id.author, subject: id.subject, num: cursorNum(facts) };
+  const out = { author: id.author, subject: id.subject, num: cursorNum(facts) };
+  const date = parseListDate((facts.rowTexts && facts.rowTexts[facts.curY]) || '');
+  if (date) out.date = date;
+  return out;
 }
 
 function cursorNum(facts) {
@@ -112,8 +116,11 @@ export function subjectMatches(rowSubject, anchorSubject) {
   return false;
 }
 
-function identityMatches(id, anchor) {
-  return !!id && id.author === anchor.author && subjectMatches(id.subject, anchor.subject);
+// anchor.date（只有從列表列採的錨點才有，P90 列表推文）：日期欄也要相同。文章標頭採的錨點
+// 沒有日期，維持只比作者＋主題。日期欄讀不出來（短列）時不算相符——有基準就不能放水。
+function identityMatches(id, anchor, text) {
+  if (!id || id.author !== anchor.author || !subjectMatches(id.subject, anchor.subject)) return false;
+  return !anchor.date || parseListDate(text || '') === anchor.date;
 }
 
 // 游標現在指的還是錨點那一篇嗎？
@@ -126,7 +133,7 @@ export function checkCursorAnchor(facts, anchor) {
   if (!facts || facts.curY == null) return 'unknown';
   const id = listRowIdentity((facts.rowTexts && facts.rowTexts[facts.curY]) || '');
   if (!id) return 'unknown';
-  return identityMatches(id, anchor) ? 'ok' : 'moved';
+  return identityMatches(id, anchor, facts.rowTexts[facts.curY]) ? 'ok' : 'moved';
 }
 
 // 錨點那一篇還在這一頁上嗎？在就回它的文章編號（供 `<編號>⏎` 跳過去），否則回
@@ -156,7 +163,7 @@ export function anchorRowNums(facts, anchor) {
   const nums = facts.nums || pageArticleNums(facts.rowTexts, facts.curY);
   for (let i = 3; i <= rows - 2; ++i) {
     if (nums[i] == null) continue;
-    if (identityMatches(listRowIdentity(facts.rowTexts[i] || ''), anchor))
+    if (identityMatches(listRowIdentity(facts.rowTexts[i] || ''), anchor, facts.rowTexts[i]))
       hits.push(nums[i]);
   }
   return hits;
@@ -189,7 +196,7 @@ export function anchorMatchCount(facts, anchor) {
   const rows = facts.rows || facts.rowTexts.length;
   let n = 0;
   for (let i = 3; i <= rows - 2; ++i) {
-    if (identityMatches(listRowIdentity(facts.rowTexts[i] || ''), anchor)) ++n;
+    if (identityMatches(listRowIdentity(facts.rowTexts[i] || ''), anchor, facts.rowTexts[i])) ++n;
   }
   return n;
 }

@@ -49,6 +49,9 @@ export const ANCHOR_ROW = (num, cursor) =>
 export const PINNED_ANCHOR_ROW = (cursor) =>
   (cursor ? ">   ★ " : "    ★ ") +
   listRow(0, ANCHOR_AUTHOR, ANCHOR_TITLE, false).slice(7);
+// 文章列表的標題列與欄位表頭（bbs.c#readtitle；list_push.listPushTarget 要兩件都在）。
+export const LIST_TITLE = "【板主:sysop】                 測試看板                    看板《Test》";
+export const LIST_HEADER = "   編號    日 期 作  者       文  章  標  題                        人氣:1";
 export const OTHER_ROW = (num, cursor) =>
   listRow(num, "someoneElse", "[公告] 剛剛才貼的新文", cursor);
 
@@ -70,6 +73,8 @@ export function harness(opts) {
     cols: 80,
     pageState: o.pageState === undefined ? 3 : o.pageState,
     getRowText: (r) => rowTexts[r] || "",
+    // 列表的看板標題列（row 0）與欄位表頭（row 2）是反白的（list_push.listPushFactsOf 讀它）。
+    isUnicolor: (r) => r === 0 || r === 2,
     // 官方推文實況（term_buf.isLiveScreenNow）：o.live 為真時當成實況畫面。
     isLiveScreenNow: () => !!o.live,
     // 推文輸入欄的反白寬度（term_buf.inputFieldWidth）。每一幀由 settle 的
@@ -170,7 +175,19 @@ export function harness(opts) {
     );
   };
 
+  // P90：使用者在列表上自己按了 X、PTT 畫出類型選單的那一幀（**不**餵 queue：那是使用者按的，
+  // 不是我們命令的回應）。rows 從第 3 列開始鋪，cursorRow 那一列要自己帶游標記號（listRow 的 cursor）。
+  const paintListMenu = (rows, menu) => {
+    rowTexts = new Array(ROWS).fill("");
+    rowTexts[0] = LIST_TITLE;
+    rowTexts[2] = LIST_HEADER;
+    rows.forEach((t, i) => (rowTexts[3 + i] = t));
+    rowTexts[ROWS - 1] = menu === undefined ? TYPE_MENU : menu;
+    fieldWidth = null;
+  };
+
   const api = {
+    paintListMenu,
     session,
     sent,
     copied,

@@ -224,6 +224,9 @@ describe("CommentBar：何時出現、畫在哪", () => {
       counter: true,
       prefill: null,
       focusN: 0,
+      mode: "article",
+      listTarget: null,
+      booAllowed: true,
     });
   });
   test("手機收合關掉 ⇒ 手機也常駐（底部導覽上方）", () => {
@@ -429,5 +432,134 @@ describe("手機收合：推文列收進底部導覽（pref mobileCommentBarFold
     } finally {
       delete prefOverride.mobileCommentBarFold;
     }
+  });
+});
+
+// P90 列表按推文改出推文列：列表上 PTT 畫著推文類型選單時，同一條列以 list 模式出現。
+describe("CommentBar 列表模式（P90）", () => {
+  const TITLE = "【板主:sysop】                 測試看板                    看板《Test》";
+  const HEADER = "   編號    日 期 作  者       文  章  標  題                        人氣:1";
+  const row = (num, author, title, cursor) =>
+    (cursor ? ">" + String(num).padStart(6) : String(num).padStart(7)) + "    " + " 9/01 " + author.padEnd(13) + "□" + title;
+  const MENU = "您覺得這篇文章 1.值得推薦 2.給它噓聲 3.只加→註解 [1]? ";
+  function makeListCore(opts = {}) {
+    const listeners = {};
+    let rows = [];
+    const paint = (last) => {
+      rows = new Array(24).fill("");
+      rows[0] = TITLE;
+      rows[2] = HEADER;
+      rows[3] = row(100, "someone", "[公告] 別篇", false);
+      rows[4] = row(101, "abcUser", "[閒聊] 原本那篇", true);
+      rows[23] = last;
+    };
+    paint(opts.last === undefined ? MENU : opts.last);
+    const sheets = [];
+    const session = {
+      busy: false,
+      startFromList: vi.fn(() => true),
+      dismissListMenu: vi.fn(() => true),
+    };
+    const core = {
+      mobile: !!opts.mobile,
+      registerSheetDismiss: (fn) => {
+        sheets.push(fn);
+        return () => {
+          const i = sheets.lastIndexOf(fn);
+          if (i >= 0) sheets.splice(i, 1);
+        };
+      },
+      longPush: session,
+      buf: {
+        rows: 24,
+        cols: 80,
+        pageState: 2,
+        pageLines: [],
+        getRowText: (r) => rows[r] || "",
+        isUnicolor: (r) => r === 0 || r === 2,
+        addEventListener: (name, fn) => (listeners[name] = fn),
+        isLiveScreenNow: () => false,
+      },
+      easyReading: { _enabled: true, _functionMode: false },
+      view: {
+        _selfId: "testuser",
+        mainDisplay: { getBoundingClientRect: () => ({ left: 10, width: 640, bottom: 480 }) },
+        lastRowDiv: { getBoundingClientRect: () => ({ top: 460, height: 20 }) },
+      },
+    };
+    const bar = new CommentBar(core);
+    return { bar, core, session, sheets, paint, settle: () => listeners.screenSettled() };
+  }
+  afterEach(() => {
+    for (const k of Object.keys(prefOverride)) delete prefOverride[k];
+  });
+
+  test("類型選單出現 ⇒ 列表模式出現、聚焦一次、讀出要推的那一篇；選單收了 ⇒ 收起", () => {
+    const h = makeListCore();
+    h.settle();
+    expect(h.bar.state).toMatchObject({ visible: true, mode: "list", booAllowed: true, focusN: 1 });
+    expect(h.bar.state.listTarget).toMatchObject({ author: "abcuser", date: "9/01", num: 101 });
+    h.settle();
+    expect(h.bar.state.focusN).toBe(1); // 同一幀重畫不重複聚焦
+    h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 ");
+    h.settle();
+    expect(h.bar.state.visible).toBe(false);
+    expect(h.bar.state.mode).toBe("article");
+  });
+
+  test("手機收合模式也直接展開（使用者剛按 X）", () => {
+    prefOverride.mobileCommentBarFold = true;
+    const h = makeListCore({ mobile: true });
+    h.settle();
+    expect(h.bar.state).toMatchObject({ visible: true, mode: "list", folded: false });
+  });
+
+  test.each([
+    ["按推文鍵開長推文關掉", { pushKeyOpensLongPush: false }],
+    ["推文列關掉", { enableCommentBar: false }],
+    ["長推文總開關關掉", { enableLongPush: false }],
+    ["安全模式", { nativeSafeMode: true }],
+  ])("%s ⇒ 照舊原生類型選單", (_n, prefs) => {
+    Object.assign(prefOverride, prefs);
+    if (prefs.nativeSafeMode) Object.assign(prefOverride, effectivePrefs({ ...DEFAULT_PREFS, ...prefs }));
+    const h = makeListCore();
+    h.settle();
+    expect(h.bar.state.visible).toBe(false);
+  });
+
+  test("長推文還握著畫面（我們自己按出來的類型選單）⇒ 不出現", () => {
+    const h = makeListCore();
+    h.session.busy = true;
+    h.settle();
+    expect(h.bar.state.visible).toBe(false);
+  });
+
+  test("送出 ⇒ 交給 startFromList（帶推文列出現時讀到的那一篇）並收起；emoji ⇒ 擋下不送", () => {
+    const h = makeListCore();
+    h.settle();
+    expect(h.bar.submitList({ text: "推 😀", type: "push" })).toMatchObject({ ok: false, reason: "dropped" });
+    expect(h.session.startFromList).not.toHaveBeenCalled();
+    expect(h.bar.submitList({ text: "推推", type: "arrow" }).ok).toBe(true);
+    expect(h.session.startFromList).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "推推", type: "arrow", target: expect.objectContaining({ author: "abcuser" }) }),
+    );
+    expect(h.bar.state.visible).toBe(false);
+  });
+
+  test("狀態機不接手（畫面變了）⇒ 回 gone、列留著", () => {
+    const h = makeListCore();
+    h.settle();
+    h.session.startFromList.mockReturnValue(false);
+    expect(h.bar.submitList({ text: "推推", type: "push" })).toMatchObject({ ok: false, reason: "gone" });
+  });
+
+  test("系統返回／✕ ⇒ 替使用者取消（dismissListMenu），列收起", () => {
+    const h = makeListCore();
+    h.settle();
+    expect(h.sheets).toHaveLength(1);
+    h.sheets[0]();
+    expect(h.session.dismissListMenu).toHaveBeenCalledTimes(1);
+    expect(h.bar.state.visible).toBe(false);
+    expect(h.sheets).toHaveLength(0);
   });
 });
