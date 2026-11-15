@@ -17,6 +17,8 @@ const fmt = (key, vars) =>
 
 const Bar = ({ pttchrome, ctl, state }) => {
   const inputRef = useRef(null);
+  // 注音／倉頡組字中不找（組字字串一直變，計數與捲動會閃）；組完才找。
+  const composingRef = useRef(false);
   const [text, setText] = useState(state.query || "");
   const close = useCallback(() => ctl.close(), [ctl]);
 
@@ -63,10 +65,18 @@ const Bar = ({ pttchrome, ctl, state }) => {
         value={text}
         onChange={(e) => {
           setText(e.target.value);
-          ctl.setQuery(e.target.value);
+          if (!composingRef.current) ctl.setQuery(e.target.value);
+        }}
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={(e) => {
+          composingRef.current = false;
+          ctl.setQuery(e.currentTarget.value);
         }}
         onKeyDown={(e) => {
           e.stopPropagation();
+          if (e.nativeEvent && e.nativeEvent.isComposing) return;
           if (e.key === "Enter") {
             e.preventDefault();
             if (e.shiftKey) ctl.prev();

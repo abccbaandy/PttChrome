@@ -16,7 +16,11 @@ import {
   ArticleFind,
   FIND_HIGHLIGHT,
   FIND_CURRENT_HIGHLIGHT,
+  FIND_BAR_PX,
+  FIND_SPACE_CLASS,
 } from "../../src/js/article_find";
+import css from "../../src/components/ArticleFind/ArticleFind.css?raw";
+import "../../src/components/ArticleFind/ArticleFind.css";
 
 const PREF_KEY = "pttchrome.pref.v1";
 
@@ -120,36 +124,78 @@ describe("控制器", () => {
     expect(s.ctl.available()).toBe(false);
   });
 
-  test("打字 ⇒ 計數、跳到第一個；下一個／上一個循環；標亮兩層；不送鍵", () => {
-    const { ctl, conn } = setup(["aa b", "b", "a"]);
-    const scrolls = [];
-    const orig = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = function () {
-      scrolls.push(this.getAttribute("data-row"));
-    };
-    try {
-      ctl.open();
-      ctl.setQuery("A");
-      expect(ctl.state).toMatchObject({ open: true, total: 3, index: 0 });
-      expect(scrolls).toEqual(["0"]);
-      ctl.next();
-      ctl.next();
-      expect(ctl.state.index).toBe(2);
-      expect(scrolls[scrolls.length - 1]).toBe("2");
-      ctl.next();
-      expect(ctl.state.index).toBe(0);
-      ctl.prev();
-      expect(ctl.state.index).toBe(2);
-      if (typeof CSS !== "undefined" && CSS.highlights) {
-        expect(CSS.highlights.get(FIND_HIGHLIGHT).size).toBe(2);
-        expect(CSS.highlights.get(FIND_CURRENT_HIGHLIGHT).size).toBe(1);
-      }
-      ctl.setQuery("zzz");
-      expect(ctl.state).toMatchObject({ total: 0, index: -1 });
-      expect(conn.send).not.toHaveBeenCalled();
-    } finally {
-      Element.prototype.scrollIntoView = orig;
-    }
+  // 真版面：容器固定高、可捲，每列 40px ⇒ 量得到「那幾個字在不在找字列底下的可視範圍裡」。
+  function scrollable(container, n) {
+    container.style.cssText = "height:400px;overflow-y:auto;position:relative";
+    container.classList.add("main");
+    for (const el of container.children) el.style.height = "40px";
+    return n;
+  }
+  const visibleBelowBar = (container, range) => {
+    const box = container.getBoundingClientRect();
+    const r = range.getBoundingClientRect();
+    return r.top >= box.top + FIND_BAR_PX - 1 && r.bottom <= box.bottom + 1;
+  };
+
+  test("打字 ⇒ 計數、跳到第一個；下一個／上一個循環並捲進找字列底下；標亮兩層；不送鍵", () => {
+    const rows = Array.from({ length: 40 }, (_, i) => (i % 10 === 5 ? "aa b" : "b"));
+    const { ctl, conn, container } = setup(rows);
+    scrollable(container);
+    ctl.open();
+    ctl.setQuery("A");
+    expect(ctl.state).toMatchObject({ open: true, total: 8, index: 0 });
+    for (let k = 0; k < 5; k++) ctl.next();
+    expect(ctl.state.index).toBe(5);
+    const cur = scanMatches(container, "a")[5];
+    expect(cur.rowEl.getAttribute("data-row")).toBe("25");
+    expect(container.scrollTop).toBeGreaterThan(0);
+    expect(visibleBelowBar(container, cur.range)).toBe(true);
+    for (let k = 0; k < 3; k++) ctl.next();
+    expect(ctl.state.index).toBe(0);
+    ctl.prev();
+    expect(ctl.state.index).toBe(7);
+    expect(CSS.highlights.get(FIND_HIGHLIGHT).size).toBe(7);
+    expect(CSS.highlights.get(FIND_CURRENT_HIGHLIGHT).size).toBe(1);
+    ctl.setQuery("zzz");
+    expect(ctl.state).toMatchObject({ total: 0, index: -1 });
+    expect(conn.send).not.toHaveBeenCalled();
+  });
+
+  test("文章最上面那一列的字也捲得出找字列底下（容器上緣讓出找字列高度）", () => {
+    const { ctl, container } = setup(["title foo", "b", "b", "b", "b", "b", "b", "b", "b", "b", "b", "b"]);
+    scrollable(container);
+    ctl.open();
+    expect(container.classList.contains(FIND_SPACE_CLASS)).toBe(true);
+    ctl.setQuery("foo");
+    const [m] = scanMatches(container, "foo");
+    expect(visibleBelowBar(container, m.range)).toBe(true);
+    ctl.close();
+    expect(container.classList.contains(FIND_SPACE_CLASS)).toBe(false);
+  });
+
+  test("打字時從畫面上正在讀的地方開始，不拉回文章最上面", () => {
+    const rows = Array.from({ length: 40 }, (_, i) => (i % 10 === 5 ? "foo" : "b"));
+    const { ctl, container } = setup(rows);
+    scrollable(container);
+    container.scrollTop = 20 * 40;
+    ctl.open();
+    ctl.setQuery("foo");
+    expect(ctl.state.index).toBe(2);
+  });
+
+  test("每次改字都通知畫面（第一次就找不到、刪成空字串，計數都要跟著變）", () => {
+    const { ctl } = setup(["abc"]);
+    const seen = [];
+    ctl.onChange((st) => seen.push(st.query));
+    ctl.open();
+    ctl.setQuery("zzz");
+    ctl.setQuery("");
+    expect(seen.slice(-2)).toEqual(["zzz", ""]);
+  });
+
+  test("找字列高度與 CSS 一致", () => {
+    expect(css).toMatch(new RegExp("\\.articleFindBar \\{[^}]*height: " + FIND_BAR_PX + "px"));
+    expect(css).toMatch(new RegExp("articleFindSpace::before \\{[^}]*height: " + FIND_BAR_PX + "px"));
   });
 
   test("換了一篇 ⇒ 收起、標亮全清", () => {
@@ -159,10 +205,8 @@ describe("控制器", () => {
     view._articleInstanceId = 2;
     core.settle();
     expect(ctl.state.open).toBe(false);
-    if (typeof CSS !== "undefined" && CSS.highlights) {
-      expect(CSS.highlights.has(FIND_HIGHLIGHT)).toBe(false);
-      expect(CSS.highlights.has(FIND_CURRENT_HIGHLIGHT)).toBe(false);
-    }
+    expect(CSS.highlights.has(FIND_HIGHLIGHT)).toBe(false);
+    expect(CSS.highlights.has(FIND_CURRENT_HIGHLIGHT)).toBe(false);
   });
 
   test("離開好讀累積頁 ⇒ 收起", () => {
@@ -175,6 +219,7 @@ describe("控制器", () => {
 
   test("列被換掉（好讀邊捲邊載）⇒ 重找，目前這個留在同一列", async () => {
     const { ctl, container } = setup(["x", "x", "x"]);
+    scrollable(container);
     ctl.open();
     ctl.setQuery("x");
     ctl.next();

@@ -14,6 +14,13 @@
 //
 // 只在手機好讀累積頁（view._renderedLines === buf.pageLines）或本機唯讀頁出現（同選取文字頁）；
 // 離開文章（換了一篇、不在累積頁）就收起、標亮全清。
+//
+// 找字列蓋在 App Bar 下面 52px：開著時好讀的捲動容器（view.mainDisplay，.main）加 class
+// articleFindSpace，內容最上面讓出同樣高度（::before 墊片，只改樣式、不動 DOM），文章最上面的
+// 標題／檔頭也捲得出來；開關時同步調 scrollTop，畫面不跳。跳到某一處：照好讀既有的跳列做法
+// （renderChunksAround 後直接設 .main 的 scrollTop，不用 scrollIntoView ⇒ 外層容器不會被捲），
+// 把**那幾個字**（Range）放到找字列與畫面底之間的中間。
+// 開著是 modal：終端機的滑鼠點擊（點推文、點邊緣翻頁、下拉）暫停，捲動、長按選單、底部工具列照常。
 // 守護：tests/unit/article_find.test.js、offline e2e mobile_article_find.offline.spec.js。
 import { readEffectivePrefs } from './pref_storage';
 import { renderChunksAround } from '../render/screen_chunk';
@@ -22,6 +29,9 @@ export const FIND_HIGHLIGHT = 'pttFind';
 export const FIND_CURRENT_HIGHLIGHT = 'pttFindCurrent';
 // 好讀邊捲邊載時列會一批批換：等它停一下再重找。
 export const RESCAN_DEBOUNCE_MS = 150;
+// 找字列高度（ArticleFind.css .articleFindBar 的 height，守護 tests/unit/article_find.test.js）。
+export const FIND_BAR_PX = 52;
+export const FIND_SPACE_CLASS = 'articleFindSpace';
 
 // 畫面上的空白是 &nbsp;（U+00A0）：比對前一律換成一般空白，使用者打的空白才對得上。
 function norm(s) {
@@ -97,7 +107,8 @@ export function scanMatches(container, query) {
 }
 
 // 重找之後目前這個要落在哪：同一列（同一個元素，或同 data-row）裡的第 k 個；那一列沒了 ⇒
-// 第一個在它之後的；都沒有 ⇒ 0。prev＝{ rowEl, row, nth }。
+// 從頭第一個（重找多半是好讀又載了一段，那一列不在了＝被換掉，回到第一個比停在錯的位置好）。
+// prev＝{ rowEl, row, nth }。
 export function carryIndex(matches, prev) {
   if (!matches.length) return -1;
   if (!prev) return 0;
@@ -188,6 +199,7 @@ ArticleFind.prototype = {
     const view = this._core.view;
     this._articleId = view ? view._articleInstanceId : null;
     this._set({ open: true, query: '', total: 0, index: -1 });
+    this._makeSpace(true);
     this._watch();
     return true;
   },
@@ -199,13 +211,45 @@ ArticleFind.prototype = {
     this._observer = null;
     this._matches = [];
     this._paint();
-    if (this._state.open) this._set({ open: false, query: '', total: 0, index: -1 });
+    if (this._state.open) {
+      this._makeSpace(false);
+      this._set({ open: false, query: '', total: 0, index: -1 });
+    }
   },
 
   setQuery: function(q) {
     if (!this._state.open) return;
-    this._state = Object.assign({}, this._state, { query: String(q || '') });
-    this._rescan(null, true);
+    this._set({ query: String(q || '') });
+    this._rescan('viewport', true);
+  },
+
+  // 好讀的捲動容器上下讓出找字列的高度（見檔頭）。
+  _makeSpace: function(on) {
+    const disp = this._scroller();
+    if (!disp || !disp.classList) return;
+    if (on === disp.classList.contains(FIND_SPACE_CLASS)) return;
+    const st = disp.scrollTop || 0;
+    disp.classList.toggle(FIND_SPACE_CLASS, on);
+    if (on && st > 0) disp.scrollTop = st + FIND_BAR_PX;
+    else if (!on) disp.scrollTop = Math.max(0, st - FIND_BAR_PX);
+  },
+
+  _scroller: function() {
+    const view = this._core && this._core.view;
+    return (view && view.mainDisplay) || null;
+  },
+
+  // 畫面上找字列底下第一個看得到（或在它之後）的符合處：打字時從使用者正在讀的地方開始，
+  // 不把人拉回文章最上面。都在上面 ⇒ 0。
+  _firstVisible: function() {
+    const disp = this._scroller();
+    if (!disp || !this._matches.length) return this._matches.length ? 0 : -1;
+    const top = disp.getBoundingClientRect().top + FIND_BAR_PX;
+    for (let i = 0; i < this._matches.length; i++) {
+      const r = this._matches[i].range.getBoundingClientRect();
+      if (r.bottom > top) return i;
+    }
+    return 0;
   },
 
   next: function() {
@@ -260,7 +304,7 @@ ArticleFind.prototype = {
   // reveal：使用者剛打字 ⇒ 跳到第一個；版面變動重找 ⇒ 不捲（使用者可能正在滑）。
   _rescan: function(prev, reveal) {
     this._matches = scanMatches(this._container(), this._state.query);
-    const index = carryIndex(this._matches, prev);
+    const index = prev === 'viewport' ? this._firstVisible() : carryIndex(this._matches, prev);
     this._set({ total: this._matches.length, index: index, query: this._state.query });
     this._paint();
     if (reveal && index >= 0) this._reveal(index);
@@ -274,16 +318,28 @@ ArticleFind.prototype = {
     if (!this._matches.length) return;
     const cur = this._matches[this._state.index];
     const rest = this._matches.filter((m) => m !== cur).map((m) => m.range);
-    if (rest.length) hl.set(FIND_HIGHLIGHT, new Highlight(...rest));
+    // 逐一 add（不用展開參數：符合處上萬時展開會爆堆疊）。
+    if (rest.length) {
+      const all = new Highlight();
+      for (let i = 0; i < rest.length; i++) all.add(rest[i]);
+      hl.set(FIND_HIGHLIGHT, all);
+    }
     if (cur) hl.set(FIND_CURRENT_HIGHLIGHT, new Highlight(cur.range));
   },
 
-  // 那一列捲到畫面中間。分塊裡的列先叫它的塊照常渲染，量到的才是真位置（screen_chunk）。
+  // 那幾個字捲到「找字列底下到畫面底」的中間。分塊裡的列先叫它的塊照常渲染，量到的才是
+  // 真位置（screen_chunk）；只動 .main 的 scrollTop（同 easy_reading._scrollToPageRow）。
   _reveal: function(i) {
     const m = this._matches[i];
-    if (!m || !m.rowEl.isConnected) return;
+    const disp = this._scroller();
+    if (!m || !m.rowEl.isConnected || !disp) return;
     renderChunksAround(m.rowEl);
-    if (typeof m.rowEl.scrollIntoView === 'function') m.rowEl.scrollIntoView({ block: 'center' });
+    const box = disp.getBoundingClientRect();
+    let r = m.range.getBoundingClientRect();
+    if (!r.height) r = m.rowEl.getBoundingClientRect();
+    const top = box.top + FIND_BAR_PX;
+    const mid = (top + box.bottom) / 2;
+    disp.scrollTop += r.top + r.height / 2 - mid;
   },
 };
 

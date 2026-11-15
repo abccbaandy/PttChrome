@@ -34,6 +34,13 @@
   outline: none;
 }
 
+/* 原生的清除鈕跟右邊的 ✕ 長得一樣，藏掉。 */
+.articleFindInput::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
 .articleFindInput:focus {
   border-color: #4a7fd4;
 }
@@ -67,6 +74,13 @@
 
 .articleFindBtn:active:not(:disabled) {
   background: #2c2e33;
+}
+
+/* 找字列開著時，好讀捲動容器最上面讓出找字列的高度（js/article_find.js 檔頭）。 */
+.main.articleFindSpace::before {
+  content: "";
+  display: block;
+  height: 52px;
 }
 
 /* 標亮（CSS Custom Highlight API，js/article_find.js）：全部＝暗黃底，目前這個＝橘底黑字。 */
