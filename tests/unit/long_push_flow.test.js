@@ -152,6 +152,22 @@ describe("冷卻", () => {
     expect(h.session.active).toBe(true);
   });
 
+  // REGRESSION：倒數完重按 X 原本不過守門。橫幅消掉落在列表、游標停在別篇（PTT 在列表上被
+  // 擋 ⇒ 回到列表）時，X 會推到游標所在的那一篇。
+  test("REGRESSION 橫幅消掉後落在列表、游標在別篇 ⇒ 倒數完不直接按 X", () => {
+    const h = harness();
+    h.session.start({ text: "內容", type: "push" });
+    h.settle(vmsg("本板禁止快速連續推文，請再等 3 秒"));
+    expect(h.sent).toEqual(["X", " "]);
+    h.settleList([OTHER_ROW(100, true), ANCHOR_ROW(101, false)], 0);
+    vi.advanceTimersByTime(5000);
+    // 先用 #AID 把游標帶回原篇，落地確認是原篇才按 X，照樣推下去。
+    expect(h.sent[2]).toBe("#" + AID + "\r\f");
+    h.settleList([OTHER_ROW(100), ANCHOR_ROW(101, true)], 1);
+    expect(h.sent[3]).toBe("X");
+    expect(h.session.active).toBe(true);
+  });
+
   test("倒數期間會把剩餘秒數報給遮罩", () => {
     const h = harness();
     const seen = [];

@@ -1220,7 +1220,10 @@ LongPushSession.prototype = {
         return;
       }
       self._timer = null;
-      self._enqueueOpen();
+      // 橫幅消掉那一幀（_lastFacts）可能已經在列表上：重按 X 前同樣要過游標守門。
+      self._gate(self._lastFacts, function() {
+        self._enqueueOpen();
+      });
     };
     this._timer = setTimeout(tick, 1000 + COOLDOWN_SLACK_MS);
   },
