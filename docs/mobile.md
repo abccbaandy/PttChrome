@@ -179,6 +179,8 @@ PTT 問「選一個」時，底部導覽上方浮出可點選項（`MobileToolba
   `_syncOverlays` 照樣算出同一份 `tools`，收進去時不掛「⋯」、存成 `_sheetTools`；MobileToolbar 開「更多」那一刻問
   `view.componentScreen.sheetTools()`，畫在面板最上面的「這篇文章」區（label＝按鈕此刻的字、`run()`＝按那顆按鈕本身，
   效果跟在「⋯」裡點一樣；開關類帶 `aria-pressed`）。清單只有一份 ⇒ 兩邊不會各說各話。關掉開關回到「⋯」。
+  **任何畫面都收**（不限文章）：debug 錄製／存下最近 3 分鐘在主選單、列表也要能按，每項帶 `group`
+  （`debug`／`article`），面板分「這篇文章」「除錯」兩區。debug 錄製中例外照畫紅色「⋯」。
   守護 unit `float_tools_in_sheet.test.js`、offline `mobile_float_tools`（真 tap；「⋯」那幾條明確關掉開關）。
 - pref `showMergeCaptionButton`／`showLightsOnButton`（預設 true，增強分頁）→ `enhance.mergeCaptionButton`／`lightsButton`。
   關掉時 `screen.js#update` 還原效果（合併狀態、軌 A）；軌 B（已切純文字）要送鍵，按鈕保留到使用者切回。

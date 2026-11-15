@@ -129,6 +129,8 @@ function uniqueLineIndex(lines) {
 // 被吃掉。col＝底色從第幾欄畫起（0＝整列），與可點區同源
 // （js/mouse_regions.clickableColStart）。
 const NO_HIGHLIGHT = Object.freeze({ row: -1, cls: null, col: 0 });
+// 手機「更多」面板裡歸「除錯」區的浮動工具（其餘歸「這篇文章」）。
+const DEBUG_TOOL_IDS = new Set(["debugRecordBtn", "debugSaveBtn"]);
 // 列表視口「捲動靜止」的判準：這麼久沒有 scroll 事件（慣性甩動每幀都有一個）。
 const LIST_RESERVE_IDLE_MS = 250;
 // 推文者高亮的整列底色（main.css .pusherHighlight）。
@@ -1891,11 +1893,10 @@ export class ScreenController {
     // mobileFloatToolsInMore）。**同一份 tools**：清單只在上面算一次，「⋯」與「更多」不會各說各話；
     // 收進去時不畫「⋯」，由 sheetTools() 在開面板那一刻交給 MobileToolbar。
     // 例外：debug 錄製中照舊畫「⋯」（紅色）——「正在錄」要一直看得到，收進面板就只剩打開才知道。
-    // 只在文章裡收：面板那一區叫「這篇文章」，主選單／列表上的 debug 鈕照舊留在「⋯」。
+    // **任何畫面都收**：debug 錄製／存下最近 3 分鐘在主選單、列表也要能用（跟「⋯」時一樣隨時都在），
+    // 面板依 sheetTools() 每項的 group 分成「這篇文章」與「除錯」兩區。
     const inSheet =
-      !!(enhance && enhance.floatToolsInSheet) &&
-      enhance.pageState === PAGE_READING &&
-      !this._debugRecording;
+      !!(enhance && enhance.floatToolsInSheet) && !this._debugRecording;
     this._sheetTools = inSheet ? tools : [];
 
     const wanted = [];
@@ -1937,12 +1938,13 @@ export class ScreenController {
     this._syncFloatToolsActive();
   }
 
-  // P76：「更多」面板的「這篇文章」區（手機、pref 開著時才有東西）。每一項就是那顆浮動工具按鈕
+  // P76：「更多」面板的「這篇文章」／「除錯」區（手機、pref 開著時才有東西）。每一項就是那顆浮動工具按鈕
   // 本身：label＝它此刻的字（一律是「點下去會發生什麼」），run＝按它 ⇒ 效果跟在「⋯」面板裡點
   // 一模一樣。開面板那一刻現問（同 savedArticles.canSave），不另存一份狀態。
   sheetTools() {
     return this._sheetTools.map((b) => ({
       id: b.id,
+      group: DEBUG_TOOL_IDS.has(b.id) ? "debug" : "article",
       label: b.textContent,
       active: this._toolActive(b.id),
       run: () => b.click(),
@@ -1977,10 +1979,18 @@ export class ScreenController {
     const enhance = this.props && this.props.enhance;
     const toggle = enhance && enhance.onDebugRecord;
     if (!toggle) return;
+    const was = this._debugRecording;
     this._debugRecording = !!toggle();
     if (this._debugRecordButton)
       this._debugRecordButton.update(this._debugRecording);
     this._syncFloatToolsActive();
+    // 收進「更多」時，開始錄製要立刻換成紅色「⋯」（停止則收回面板），不等下一幀。
+    if (
+      was !== this._debugRecording &&
+      enhance.floatToolsInSheet &&
+      this._annotations
+    )
+      this._syncOverlays(this._annotations, enhance);
   }
 
   _syncHoverPreview() {

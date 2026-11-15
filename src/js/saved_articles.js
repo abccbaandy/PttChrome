@@ -6,7 +6,8 @@
 //      （aid_navigation.findLocalPostAid，不按 Q）；讀不到網址列、不在好讀文章裡就不能存。
 //   2. **打開＝另開一頁唯讀頁**（`?saved=<key>`）：那一頁不 connect()（view.conn 恆 undefined ⇒
 //      送不出任何鍵），畫面走 term_view.showStaticArticle（同一個 #mainContainer、同一條
-//      _renderScreenLines），不會跟活連線搶畫面、也不佔 PTT 連線名額。
+//      _renderScreenLines），不會跟活連線搶畫面、也不佔 PTT 連線名額。APK 開不了新分頁，改在同一頁疊 iframe
+//      （components/SavedReaderOverlay），一樣是那個唯讀頁。
 //   3. 內文只存在這個瀏覽器（IndexedDB，saved_articles_store.js），不上雲。用 Google 登入雲端同步的人，
 //      **清單**（看板、AID、標題、作者、存的時間）跟著偏好同步（P70，saved_cloud.js）：別台裝置的首頁
 //      「其他裝置存的」列出來，點了走 deep link 開真文章（要連線），不是唯讀頁。
@@ -23,6 +24,7 @@ import { i18n } from './i18n';
 import { readEffectivePrefs } from './pref_storage';
 import { normalizeCloudSaved, othersFromCloud, planCloudUpload, cloudKey } from './saved_cloud';
 import { PAGE_STATE } from './screen_model';
+import { isAndroidApp } from './android_bridge';
 
 export const SAVED_QUERY_KEY = 'saved';
 const HINT_MS = 2500;
@@ -82,6 +84,9 @@ export function SavedArticles(core, store, cloud, hiddenStore) {
   // 清單摘要（首頁「本機收藏」畫這份）。null＝還沒讀過；refresh() 讀 IndexedDB 後通知。
   this.state = null;
   this._listeners = [];
+  // 頁內唯讀頁（APK）：正在開的那篇的網址，null＝沒開。components/SavedReaderOverlay 照它畫。
+  this.reader = null;
+  this._readerListeners = new Set();
 }
 
 SavedArticles.prototype = {
@@ -215,12 +220,42 @@ SavedArticles.prototype = {
     return res;
   },
 
-  // 在新分頁打開唯讀頁。
+  // 打開唯讀頁。瀏覽器＝新分頁；**APK＝同一頁裡的全螢幕 iframe**（closeReader 關掉）：
+  // WebView 的 window.open 一律被 MainActivity#onCreateWindow 轉交外部瀏覽器，而本站網址又被
+  // App Link 解析回 App 自己（DeepLink.classify 認不出 ?saved= ⇒ 什麼都不做）⇒ 點了沒反應。
+  // iframe 跟主頁同源（同一個 IndexedDB）、唯讀頁本身不 connect() ⇒ 一樣不碰活連線。
   open: function (key, win) {
     const w = win || (typeof window !== 'undefined' ? window : null);
     if (!w || !key) return false;
-    w.open(savedReaderUrl(w.location.href, key), '_blank', 'noopener');
+    const url = savedReaderUrl(w.location.href, key);
+    if (this._inlineReader()) {
+      this._setReader({ key: key, url: url });
+      return true;
+    }
+    w.open(url, '_blank', 'noopener');
     return true;
+  },
+
+  _inlineReader: function () {
+    return isAndroidApp();
+  },
+
+  closeReader: function () {
+    if (this.reader) this._setReader(null);
+  },
+
+  onReaderChange: function (fn) {
+    this._readerListeners.add(fn);
+    fn(this.reader);
+    const set = this._readerListeners;
+    return function () {
+      set.delete(fn);
+    };
+  },
+
+  _setReader: function (r) {
+    this.reader = r;
+    this._readerListeners.forEach((fn) => fn(r));
   },
 };
 

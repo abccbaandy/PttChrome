@@ -117,6 +117,63 @@ test.describe('存到本機', () => {
       .toBe(true);
   });
 
+  // 回歸：APK 的 WebView 開不了新分頁（window.open 被原生轉交外部瀏覽器、本站網址又被 App Link
+  // 解析回 App ⇒ 點了沒反應）。APK 改在同一頁疊全螢幕 iframe：不開新分頁、活連線不動，關掉／系統返回回原畫面。
+  test('APK：點存檔 ⇒ 同一頁開唯讀頁（不開新分頁），關閉與返回都回原畫面', async ({ page }) => {
+    test.setTimeout(90000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    await replayCassette(page, article, { easyReading: true });
+    await waitPreviewsSettled(page);
+    await page.evaluate(() => window.__app.savedArticles.saveCurrent());
+    // 只開 bridge 的宣告（同 mobile_toolbar spec）：isAndroidApp() 在點擊當下現讀。
+    await page.evaluate(() => {
+      window.__PTT_ANDROID__ = Object.freeze({ version: 'e2e', site: '' });
+      window.PttAndroid = { postMessage() {}, addEventListener() {} };
+    });
+    let popups = 0;
+    page.context().on('page', () => popups++);
+
+    const input = page.locator('input[name="commandPaletteQuery"]');
+    const palette = page.locator('[data-command-palette]');
+    const overlay = page.locator('[data-saved-reader]');
+    const openFromPalette = async () => {
+      await page.keyboard.press('F4');
+      await expect(input).toBeFocused();
+      const item = palette.locator(`[data-palette-item="saved:${KEY}"]`);
+      await expect(item).toBeVisible();
+      await item.click();
+      await expect(overlay).toBeVisible();
+    };
+
+    await openFromPalette();
+    await expect(overlay).toHaveAttribute('data-saved-reader', KEY);
+    const frame = page.frameLocator('[data-saved-reader] iframe');
+    await expect(frame.locator('#mainContainer [data-type="bbsline"]').first()).toContainText('作者');
+    const inner = page.frames().find((fr) => /[?&]saved=/.test(fr.url()));
+    expect(inner).toBeTruthy();
+    expect(await inner.evaluate(() => window.__app.view.conn)).toBeUndefined();
+    expect(await page.evaluate(() => window.__app.modalShown)).toBe(true);
+    // 後面的活連線原封不動。
+    expect(await page.evaluate(() => window.__app.isConnected())).toBe(true);
+
+    await page.locator('[data-key="__savedReaderClose"]').click();
+    await expect(overlay).toHaveCount(0);
+    expect(await page.evaluate(() => window.__app.modalShown)).toBe(false);
+
+    // 系統返回（真 popstate）＝關掉唯讀頁，不送 ←。
+    await openFromPalette();
+    await page.waitForFunction(() => !!(window.history.state && window.history.state.pttchromeBackGuard));
+    await page.evaluate(() => {
+      window.__sent = [];
+      window.__stubWSSent = (x) => window.__sent.push(x);
+    });
+    await page.goBack();
+    await expect(overlay).toHaveCount(0);
+    expect(await page.evaluate(() => (window.__sent || []).join(''))).not.toContain('\x1b[D');
+    expect(popups).toBe(0);
+  });
+
   // 設定 → 設定備份「本機收藏」：匯出的檔案（真下載）刪光後再匯入，同一篇回來。
   test('匯出本機收藏 → 刪掉 → 匯入檔案 ⇒ 同一篇回來', async ({ page }) => {
     test.setTimeout(90000);

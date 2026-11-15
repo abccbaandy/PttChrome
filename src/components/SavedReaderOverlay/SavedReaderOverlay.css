@@ -1,0 +1,53 @@
+/* 頁內唯讀頁（components/SavedReaderOverlay，APK）。全螢幕、恆為暗色（同選取文字頁）。 */
+.savedReaderOverlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1a1b1e;
+  color: #dee2e6;
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.savedReaderOverlayHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 4px 0 16px;
+  border-bottom: 1px solid #2c2e33;
+  flex: none;
+}
+
+.savedReaderOverlayTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  color: #e9ecef;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.savedReaderOverlayClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #dee2e6;
+  flex: none;
+}
+
+.savedReaderOverlayFrame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #000;
+}
