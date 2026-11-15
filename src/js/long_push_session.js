@@ -226,6 +226,9 @@ LongPushSession.prototype = {
     if (this.busy) return;
     const er = this._core && this._core.easyReading;
     if (er && er.onWireIdle) er.onWireIdle({ force: true });
+    // 列表推文列（P90）送出／取消後壓著不出現，放手這一刻用當下畫面判一次（之後不一定還有新的一幀）。
+    const bar = this._core && this._core.commentBar;
+    if (bar && bar.onWireReleased) bar.onWireReleased();
   },
 
   _clearTimer: function() {

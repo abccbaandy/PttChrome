@@ -534,6 +534,74 @@ describe("CommentBar 列表模式（P90）", () => {
     expect(h.bar.state.visible).toBe(false);
   });
 
+  // REGRESSION：送出／取消之後長推文失敗或晚收尾，畫面還停在（我們按出來的）類型選單 ⇒ 列又跳出來、
+  // focusN 把焦點從錯誤框搶走。要等畫面離開選單一次，使用者自己再按 X 才准再出現。
+  test.each([
+    ["送出後失敗", (h) => h.bar.submitList({ text: "推推", type: "push" })],
+    ["取消收尾沒成功", (h) => h.bar.cancelList()],
+  ])("%s、選單還在 ⇒ 不再出現；離開選單後再按 X ⇒ 照常出現", (_n, act) => {
+    const h = makeListCore();
+    h.settle();
+    act(h);
+    expect(h.bar.state.visible).toBe(false);
+    const focusN = h.bar.state.focusN;
+    h.settle(); // 長推文已經放手（busy false），選單還在
+    expect(h.bar.state.visible).toBe(false);
+    expect(h.bar.state.focusN).toBe(focusN);
+    h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 ");
+    h.settle();
+    h.paint(MENU);
+    h.settle();
+    expect(h.bar.state).toMatchObject({ visible: true, mode: "list" });
+  });
+
+  // REGRESSION（W4）：長推文在 timer／點擊裡放手（冷卻倒數中取消、逾時），畫面已經是乾淨列表、
+  // 之後沒有新的一幀 ⇒ 旗標沒機會清，使用者下一次按 X 推文列出不來。放手當下用現在的畫面判一次。
+  test("放手時畫面已經不是選單（沒有新的一幀）⇒ 下一次按 X 照常出現", () => {
+    const h = makeListCore();
+    h.settle();
+    h.bar.submitList({ text: "推推", type: "push" });
+    h.session.busy = true;
+    h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 ");
+    h.settle(); // 握著畫面期間的列表幀
+    h.session.busy = false;
+    h.bar.onWireReleased(); // 在 timer 裡放手，沒有 settle
+    h.paint(MENU);
+    h.settle();
+    expect(h.bar.state).toMatchObject({ visible: true, mode: "list" });
+  });
+
+  test("放手時畫面還是選單 ⇒ 照樣壓著", () => {
+    const h = makeListCore();
+    h.settle();
+    h.bar.submitList({ text: "推推", type: "push" });
+    h.bar.onWireReleased();
+    h.settle();
+    expect(h.bar.state.visible).toBe(false);
+  });
+
+  test("列表推文關掉期間經過非選單畫面 ⇒ 重新打開後第一次按 X 就出現", () => {
+    const h = makeListCore();
+    h.settle();
+    h.bar.submitList({ text: "推推", type: "push" });
+    prefOverride.pushKeyOpensLongPush = false;
+    h.paint(" 文章選讀  (y)回應(X)推文(^X)轉錄 ");
+    h.settle();
+    delete prefOverride.pushKeyOpensLongPush;
+    h.paint(MENU);
+    h.settle();
+    expect(h.bar.state).toMatchObject({ visible: true, mode: "list" });
+  });
+
+  test("長推文握著畫面期間看到的選單 ⇒ 放手後選單還在也不出現", () => {
+    const h = makeListCore();
+    h.session.busy = true;
+    h.settle();
+    h.session.busy = false;
+    h.settle();
+    expect(h.bar.state.visible).toBe(false);
+  });
+
   test("送出 ⇒ 交給 startFromList（帶推文列出現時讀到的那一篇）並收起；emoji ⇒ 擋下不送", () => {
     const h = makeListCore();
     h.settle();
