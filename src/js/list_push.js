@@ -29,6 +29,22 @@ export function parseListPushMenu(lastRowText) {
   return { booAllowed: !!m[1] };
 }
 
+// P91：PTT 不給類型選單、直接進 → 輸入列的兩種情況（bbs.c#comment，跟類型選單互斥）：
+//   作者本人   b_lines-1 "作者本人, 使用 → 加註方式"
+//   時間太近   b_lines-1 "時間太近, 使用 → 加註方式"（now - lastrecommend < 90，寫死 90 秒）
+// 底列是內容輸入列 "→ <id>:" ＋反白欄。只接**欄位還是空的**：使用者已經在原生輸入列打了字
+//（推文列出現前），再接手會把兩段字接在一起送出去。
+const ARROW_NOTICE_RE = /^(作者本人|時間太近), 使用 → 加註方式/;
+const ARROW_PROMPT_RE = /^→ [A-Za-z][0-9A-Za-z]{1,11} *: *$/;
+
+export function parseListPushArrowOnly(noticeRowText, lastRowText) {
+  const notice = String(noticeRowText || '');
+  const m = ARROW_NOTICE_RE.exec(notice);
+  if (!m) return null;
+  if (!ARROW_PROMPT_RE.test(String(lastRowText || ''))) return null;
+  return { reason: m[1] === '作者本人' ? 'owner' : 'tooClose', notice: notice.trim() };
+}
+
 // 列表上 PTT 自己畫的游標記號：新版半形 '>'、舊版全形 '●'（comment_parse.js 的 cursor 兩代）。
 // 型別選單一出現，終端機游標就移到底列 ⇒ 找游標列只能看記號。entry 區 [3, rows-2] 裡**剛好一列**
 // 有記號才算；零列或兩列以上（殘影、別的畫面）一律認不出。
@@ -51,11 +67,13 @@ export function listPushTarget(facts) {
   const rowTexts = facts.rowTexts;
   const rows = facts.rows || rowTexts.length;
   const menu = parseListPushMenu(rowTexts[rows - 1]);
-  if (!menu) return null;
+  const arrow = menu ? null : parseListPushArrowOnly(rowTexts[rows - 2], rowTexts[rows - 1]);
+  if (!menu && !arrow) return null;
   // 列表的頭兩件：row 0 看板標題（反白＋板名）、row 2 欄位表頭（反白＋「編號」）。
   if (!facts.row0Reversed || parseBoardKey(rowTexts[0]) == null) return null;
   if (!facts.row2Reversed || (rowTexts[2] || '').indexOf('編號') < 0) return null;
-  const row = cursorMarkRow(rowTexts, rows);
+  // 只有 → 時倒數第二列是 PTT 的說明，entry 區少一列。
+  const row = cursorMarkRow(rowTexts, arrow ? rows - 1 : rows);
   if (row == null) return null;
   const id = listRowIdentity(rowTexts[row]);
   const date = parseListDate(rowTexts[row]);
@@ -68,7 +86,10 @@ export function listPushTarget(facts) {
     num: nums[row] == null ? null : nums[row],
     row: row,
     board: parseBoardKey(rowTexts[0]),
-    booAllowed: menu.booAllowed
+    booAllowed: menu ? menu.booAllowed : false,
+    // P91：PTT 已經直接進 → 輸入列（不送類型鍵）；notice 是 PTT 那一行原話。
+    arrowOnly: !!arrow,
+    notice: arrow ? arrow.notice : null
   };
 }
 
@@ -79,7 +100,8 @@ export function sameListPushTarget(a, b) {
     a.subject === b.subject &&
     a.date === b.date &&
     a.row === b.row &&
-    a.board === b.board);
+    a.board === b.board &&
+    !!a.arrowOnly === !!b.arrowOnly);
 }
 
 // TermBuf → listPushTarget 要的 facts（讀 buf 不讀 DOM：DOM 慢一幀）。

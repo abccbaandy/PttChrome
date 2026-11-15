@@ -177,11 +177,13 @@ export function harness(opts) {
 
   // P90：使用者在列表上自己按了 X、PTT 畫出類型選單的那一幀（**不**餵 queue：那是使用者按的，
   // 不是我們命令的回應）。rows 從第 3 列開始鋪，cursorRow 那一列要自己帶游標記號（listRow 的 cursor）。
-  const paintListMenu = (rows, menu) => {
+  // notice：倒數第二列（P91 只有 → 時 PTT 寫「時間太近／作者本人, 使用 → 加註方式」）。
+  const paintListMenu = (rows, menu, notice) => {
     rowTexts = new Array(ROWS).fill("");
     rowTexts[0] = LIST_TITLE;
     rowTexts[2] = LIST_HEADER;
     rows.forEach((t, i) => (rowTexts[3 + i] = t));
+    if (notice !== undefined) rowTexts[ROWS - 2] = notice;
     rowTexts[ROWS - 1] = menu === undefined ? TYPE_MENU : menu;
     fieldWidth = null;
   };

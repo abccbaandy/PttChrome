@@ -2089,14 +2089,26 @@ describe("upstream pttbbs 產的列表推文流程（bbs.c#recommend）：列表
     }
   });
 
-  test("推文流程的其他幀、純列表、作者本人（直接進內容列）一律不接手", () => {
+  test("推文流程的其他幀、純列表一律不接手", () => {
     expect(target(pushFx, "list")).toBeNull();
     expect(target(pushFx, "push-2")).toBeNull();
     expect(target(pushFlowFx, "input")).toBeNull();
     expect(target(pushFlowFx, "confirm")).toBeNull();
     expect(target(pushFlowFx, "done")).toBeNull();
     expect(target(pushFlowFx, "article")).toBeNull();
-    expect(target(pushOwnerFx, "owner")).toBeNull();
-    expect(target(pushAgainFx, "too-close")).toBeNull();
+  });
+
+  // P91：作者本人／90 秒內連推，PTT 直接給 → 輸入列 ⇒ 推文列只有 →，帶 PTT 那一行原話。
+  test("作者本人、時間太近（直接進 → 輸入列）⇒ 接手、只能 →，游標列同一篇", () => {
+    for (const [fx, name, notice] of [
+      [pushOwnerFx, "owner", "作者本人, 使用 → 加註方式"],
+      [pushAgainFx, "too-close", "時間太近, 使用 → 加註方式"],
+    ]) {
+      const t = target(fx, name);
+      expect(t, name).toMatchObject({ arrowOnly: true, booAllowed: false, notice });
+      const list = screenAt(fx, fx.frames[fx.frames.findIndex((f) => f.name === name) - 1].name);
+      const id = listRowIdentity(list.rowTexts[list.buf.cur_y]);
+      expect({ author: t.author, subject: t.subject }).toEqual({ author: id.author, subject: id.subject });
+    }
   });
 });

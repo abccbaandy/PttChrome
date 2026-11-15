@@ -170,6 +170,11 @@ const HIDDEN = {
   mode: 'article',
   listTarget: null,
   booAllowed: true,
+  // P91：PTT 已經直接進 → 輸入列（作者本人／90 秒內連推）⇒ 類型只剩 →，notice 是 PTT 那一行原話。
+  arrowOnly: false,
+  notice: null,
+  // 列要往上多蓋的高度（px，P91 蓋住 PTT 的說明列）。
+  coverExtra: 0,
 };
 
 export function CommentBar(core) {
@@ -299,7 +304,7 @@ CommentBar.prototype = {
     this.releasePendingInput();
     this._releaseBack();
     if (this._state.visible || this._state.available || this._state.expanded || this._state.mode !== 'article')
-      this._set({ visible: false, available: false, expanded: false, mode: 'article', listTarget: null, booAllowed: true });
+      this._set({ visible: false, available: false, expanded: false, mode: 'article', listTarget: null, booAllowed: true, arrowOnly: false, notice: null, coverExtra: 0 });
   },
 
   // 推文列計數用的單則上限（commentBarMaxBytes）。依累積頁長度快取：同一篇沒長新列就不重掃。
@@ -379,7 +384,14 @@ CommentBar.prototype = {
     // 列表模式要整個蓋住底列的類型選單：列的上緣對齊終端機最後一列的上緣（列比一列字高，
     // 往下多出來的落在終端機下緣之外；再往上多蓋 LIST_COVER_SLACK：字形的上緣會超出列框幾 px）。
     // 量不到那一列就照文章模式貼終端機下緣。
-    const lastTop = this._lastRowTop();
+    const lastTop = this._lastRowTop(1);
+    // P91 只有 → 時連 PTT 的說明列（倒數第二列）一起蓋住：說明改在列裡顯示（notice），不蓋的話
+    // 列的上緣會切掉說明列字形的下半。下緣照舊對齊最後一列，列往上多長一列高（coverExtra）。
+    let coverExtra = 0;
+    if (target.arrowOnly && lastTop != null) {
+      const upTop = this._lastRowTop(2);
+      if (upTop != null) coverExtra = Math.max(0, Math.round(lastTop - upTop));
+    }
     if (lastTop != null && typeof window !== 'undefined')
       g.bottom = Math.max(Math.round(window.innerHeight - lastTop + LIST_COVER_SLACK - COMMENT_BAR_HEIGHT), Math.round((core.view && core.view.keyboardInset) || 0), 0);
     const prev = this._state;
@@ -403,18 +415,31 @@ CommentBar.prototype = {
       mode: 'list',
       listTarget: target,
       booAllowed: target.booAllowed,
+      arrowOnly: !!target.arrowOnly,
+      notice: target.notice || null,
+      coverExtra: coverExtra,
       focusN: entering ? prev.focusN + 1 : prev.focusN,
     });
   },
 
-  // 終端機最後一列（原生格線的 bbsrow／srow）的上緣；量不到回 null。
-  _lastRowTop: function() {
+  // 終端機倒數第 fromBottom 列（預設最後一列；原生格線的 bbsrow／srow）的上緣；量不到回 null。
+  _lastRowTop: function(fromBottom) {
     const buf = this._core.buf;
     if (!buf || !buf.rows || typeof document === 'undefined' || !document.querySelector) return null;
-    const el = document.querySelector('#mainContainer [type="bbsrow"][srow="' + (buf.rows - 1) + '"]');
+    const el = document.querySelector('#mainContainer [type="bbsrow"][srow="' + (buf.rows - (fromBottom || 1)) + '"]');
     if (!el || typeof el.getBoundingClientRect !== 'function') return null;
     const r = el.getBoundingClientRect();
     return r && r.height ? r.top : null;
+  },
+
+  // 手機工具列問：這一幀的推文提問（類型選單、P91 的 → 輸入列）是不是由推文列接手。是 ⇒ 工具列不出
+  // 自己的提問選項／「開鍵盤輸入」面板（兩個疊在一起，點到面板會繞過推文列直接送鍵）。
+  // 跟 _listMenuTarget 同一套條件，但不改任何狀態（工具列跟推文列誰先收到這一幀不一定）。
+  takesOverListPrompt: function() {
+    if (!listPushEnabled(readEffectivePrefs())) return false;
+    const session = this._core.longPush;
+    if ((session && session.busy) || this._listSuppressed) return false;
+    return !!listPushTarget(listPushFactsOf(this._core.buf));
   },
 
   // 長推文放手（LongPushSession._releaseWire，busy 翻 false 的每一條路）：當下畫面已經不是類型選單 ⇒ 解除壓制。
@@ -433,7 +458,7 @@ CommentBar.prototype = {
     if (!session || !session.startFromList) return { ok: false, reason: 'gone' };
     const started = session.startFromList({
       text: plan.text,
-      type: (quick && quick.type) || 'push',
+      type: st.arrowOnly ? 'arrow' : (quick && quick.type) || 'push',
       target: st.listTarget,
       maxBytes: maxBytes,
     });

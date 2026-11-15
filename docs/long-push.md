@@ -528,6 +528,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | 出現條件 | `listPushEnabled`（推文列開關＋`pushKeyOpensLongPush`，安全模式關）＋長推文不 busy＋`listPushTarget` 認得出：底列**整句**類型選單（bbs.c#recommend，禁噓板少了「2.給它噓聲」）、row 0 反白看板標題、row 2 反白欄位表頭、entry 區**剛好一列** PTT 游標記號（`>`／`●`）且作者＋主題＋日期都讀得出 | 這條會替使用者把字寫進公開看板，而 X 是使用者按的、不是我們探路按的 ⇒ 判讀比 `classifyPushScreen` 嚴。要素缺一照原生（`parse_failure_degrade` 突變矩陣） |
 | 位置 | 同文章模式，但上緣對齊終端機最後一列再往上 6px，蓋住類型選單；不加 `.commentBarShown`（列表不需要尾端空白）。手機收合模式也直接展開、聚焦一次 | 使用者剛按 X 就是要打字 |
 | 送出 | `bar.submitList` → `LongPushSession.startFromList`：**重讀畫面**，還是同一幀同一篇才接手，第一個鍵是類型鍵（不帶 Enter），之後同文章裡的長推文。錨點帶 `date`（`long_push_anchor` 有日期就連日期一起比）。整段送完停在列表（不按 ⏎ 開文），閱讀紀錄 `list-push`（列表原處） | 第二則起在列表重按 X，同作者同主題的另一篇只差日期 |
+| 只有 →（P91） | 作者本人／90 秒內連推時 PTT 不給類型選單，倒數第二列「作者本人／時間太近, 使用 → 加註方式」＋底列空的「→ id:」輸入列（bbs.c#comment）⇒ `listPushTarget` 回 `arrowOnly`：推文列只有 →、PTT 那一行原話排在 → 旁邊，列往上多蓋一列（`coverExtra`）；送出不送類型鍵、直接內容＋y，之後分段的類型鍵也是 →。輸入列已經有字（使用者先在原生列打了）⇒ 認不出、照原生。手機工具列這時不出「開鍵盤輸入」面板（`takesOverListPrompt`） | 連推是推文列最常見的用法；兩個面板疊在一起，點工具列面板會繞過推文列送鍵 |
 | 聚焦前打的字 | 認出選單那一刻登記 modal 來源 `commentBarPending` 擋終端機收鍵（字留在 `#t`）；輸入框聚焦時 `takePendingInput` 解除並把字接到輸入框；列收起時一定解除 | 列出現到聚焦隔一次 render＋rAF，這段打的字原本會送 PTT，數字被類型選單當類型（「2」＝噓） |
 | 手機工具列「推文」 | 列表推文列開著時 ⇒ `bar.focusList()` 聚焦，不送 X | 類型選單上再送 X 不是使用者要的 |
 | 第二則起 | 落地畫面一定要是乾淨列表、且游標那列身分（作者＋主題＋日期）對得上才重按 X；被水球蓋住、footer 對不上、看起來像文章 ⇒ 停手（`_gate` 的 `_fromList` 分支）。同一頁同作者＋同主題＋同日期兩篇（例：同一天自己在同一串的原文與回文，主題比對會剝掉 `Re:`）分不出來、又沒有 AID 可確認 ⇒ 第二則必停（安全方向，剩下的字放錯誤框） | 文章流程「還在文章裡 ⇒ X 推的就是這篇」在列表上不成立 |
@@ -537,7 +538,7 @@ offline e2e 各有數處）會一起靜默失效。輔助技術那份改由 `ari
 | 取消 | ✕／Esc／系統返回 ⇒ `dismissListMenu`：類型選單沒有取消鍵，Ctrl-C（被當成推）進內容列、再 Ctrl-C 放棄 | PTT 原生的取消；不開錯誤框 |
 | 錯誤框 | `fromList` 時不給「改成只送剩下的」（那條走文章裡的探路，列表上開不起來）；成功不清草稿（列表模式沒寫草稿） | — |
 
-守護：`list_push_flow.test.js`、`comment_bar.test.js`「列表模式」、`ptt_src_screens.test.js`（upstream 產的推文流程）、`parse_failure_degrade.test.js`、offline e2e `list_push_bar`／`mobile_list_push_bar`。
+守護：`list_push_flow.test.js`、`comment_bar.test.js`「列表模式」、`ptt_src_screens.test.js`（upstream 產的推文流程）、`parse_failure_degrade.test.js`、offline e2e `list_push_bar`／`mobile_list_push_bar`／`list_push_arrow`。
 
 ## 剛推的那幾則（P42，`just_pushed.js`，pref `markJustPushed` 預設開）
 

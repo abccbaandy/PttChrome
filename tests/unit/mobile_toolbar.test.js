@@ -274,6 +274,31 @@ describe("toolbarContextFromFacts", () => {
   });
 });
 
+// P91：列表上「→ testuser:」輸入列由推文列接手時，工具列不出「開鍵盤輸入／取消」面板（兩個疊在一起，
+// 點面板會繞過推文列直接送鍵）。
+describe("推文提問由推文列接手 ⇒ 不出提問面板", () => {
+  const rows = new Array(24).fill("");
+  rows[23] = "→ testuser:";
+  const buf = {
+    rows: 24,
+    cols: 80,
+    cur_y: 23,
+    pageState: 2,
+    getRowText: (r) => rows[r] || "",
+    inputFieldText: () => "",
+    inputPromptText: () => "→ testuser:",
+  };
+  test.each([
+    [true, null],
+    [false, "typeInput"],
+  ])("takesOverListPrompt=%s ⇒ choices %s", (takes, kind) => {
+    const core = { buf, view: {}, commentBar: { takesOverListPrompt: () => takes } };
+    const c = mobileToolbarContext(core).choices;
+    if (kind) expect(c).toMatchObject({ kind });
+    else expect(c).toBeNull();
+  });
+});
+
 describe("choices（P61，pref mobilePromptChoices）", () => {
   const yn = (title) => promptChoices({ promptText: title + " [y/N]: ", fieldText: "", cursorRow: 22, rowTexts: [] });
   test("opts.choices 原樣帶進 context；沒給是 null", () => {
