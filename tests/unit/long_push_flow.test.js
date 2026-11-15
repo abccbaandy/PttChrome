@@ -161,7 +161,11 @@ describe("冷卻", () => {
     expect(h.sent).toEqual(["X", " "]);
     h.settleList([OTHER_ROW(100, true), ANCHOR_ROW(101, false)], 0);
     vi.advanceTimersByTime(5000);
-    expect(h.sent[2]).not.toBe("X");
+    // 先用 #AID 把游標帶回原篇，落地確認是原篇才按 X，照樣推下去。
+    expect(h.sent[2]).toBe("#" + AID + "\r\f");
+    h.settleList([OTHER_ROW(100), ANCHOR_ROW(101, true)], 1);
+    expect(h.sent[3]).toBe("X");
+    expect(h.session.active).toBe(true);
   });
 
   test("倒數期間會把剩餘秒數報給遮罩", () => {
