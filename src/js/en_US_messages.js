@@ -2132,6 +2132,18 @@ export const en_US = {
   "menuBanner_art": {
     "message": "(picture)"
   },
+  "options_mobileEssenceCards": {
+    "message": "Show the mobile digest (精華區) as cards"
+  },
+  "tooltip_mobileEssenceCards": {
+    "message": "Each digest item is drawn as a card (folders get a folder icon and ›), with a line on top showing where you are; tapping a card moves to it and presses Enter. Falls back to the plain grid when the screen isn't recognized."
+  },
+  "essence_dir": {
+    "message": "Folder"
+  },
+  "essence_crumb": {
+    "message": "Digest"
+  },
   "menuBanner_collapse": {
     "message": "Collapse banner ▴"
   },

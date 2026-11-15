@@ -724,6 +724,59 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 精華區卡片（P88，render/essence_card.js）：同一套大按鈕版面，圖示＋兩行（標題／編選者・日期）＋
+   目錄的 ›。高度＝ESSENCE_CARD_PX（守護 tests/unit/essence_card.test.js）。 */
+.main.mobileMenu #mainContainer > span.menuCard.essenceCard {
+  height: 60px;
+}
+.menuCard .essenceCardBody {
+  gap: 10px;
+  white-space: nowrap;
+}
+.essenceCard .essenceCardIcon {
+  flex: none;
+  width: 24px;
+  text-align: center;
+  font-size: 18px;
+}
+.essenceCard .essenceCardText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.essenceCard .essenceCardTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #e8eaf0;
+}
+.essenceCard.essenceCardDir .essenceCardTitle {
+  color: #7dd3fc;
+}
+.essenceCard .essenceCardMeta {
+  font-size: 13px;
+  color: #909090;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.essenceCard .essenceCardChevron {
+  flex: none;
+  font-size: 22px;
+  color: #6b7280;
+}
+/* 精華區頂端「板名 精華區 › 這一層」（取代標題列）。字級寫死 px，不跟 .main 的塞滿寬字級走。 */
+.main.mobileMenu #mainContainer > span.essenceCrumb {
+  display: block;
+  box-sizing: border-box;
+  padding: 8px 16px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* 手機收起來的列（render/collapsed_row.js）：選單的空白列與標題／狀態列、列表卡片的
    header／footer、好讀文章檔頭的分隔線。不佔高度；bbsrow／data-row 契約保留。
    選擇器不綁畫面 class：只有手機分支會產生這個節點（桌機 golden 不經過）。 */

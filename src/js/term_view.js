@@ -1537,7 +1537,8 @@ TermView.prototype = {
           // _syncMobileSurface 對帳成這一幀的值。進 annotationsKey。
           // 信件列表時是 'mail'（render/mail_card.js，P31），主功能表／子選單是 true。
           menuCards: this.menuCards ?
-            (this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen() ? 'mail' : true) :
+            (this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen() ? 'mail' :
+              this._essenceCardsNow() ? 'essence' : true) :
             undefined,
           // P59（pref mobileMailListTools）：手機信件列表卡片收起「[→]讀信 [z]信件夾…」按鍵說明列
           // （render/screen.js 的 mail 分支，mail_list.isMailKeyHintRow 只看該列自己）。進 annotationsKey。
@@ -1549,7 +1550,8 @@ TermView.prototype = {
           // 'collapsed'／'expanded'（本機記住的選擇）／undefined（不是一般選單或開關關）。進 annotationsKey。
           // 切換入口 onMenuBannerToggle 由 App 指派一次，引用穩定、不進 key。
           menuBanner: menuBannerMode({
-            menuCards: this.menuCards && !(this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen()),
+            menuCards: this.menuCards && !(this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen()) &&
+              !this._essenceCardsNow(),
             prefOn: !!readEffectivePrefs().mobileMenuBannerCollapse,
             expanded: readMenuBannerExpanded(),
             promptPending: !!(this.buf && this.buf.isPromptPending && this.buf.isPromptPending()),
@@ -2200,7 +2202,21 @@ TermView.prototype = {
     // （enhance.menuCards === 'mail'，render/mail_card.js）。
     if (this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen())
       return 'menu';
+    // 精華區列表（P88）：同上，列改畫成精華區卡片（enhance.menuCards === 'essence'）。
+    if (this._essenceCardsNow())
+      return 'menu';
     return 'grid';
+  },
+
+  // 這一幀精華區要不要排成卡片（P88，pref mobileEssenceCards）：三件指紋都認得
+  // （buf.isEssenceListScreen）、而且 PTT 沒在問東西。精華區的搜尋／跳號是 getdata 開在
+  // 舊畫面上（底列 caption 可能還在）⇒ 不看 prompt 會把輸入欄藏在卡片後面（P87 #440 同一類）。
+  _essenceCardsNow: function() {
+    var buf = this.buf;
+    if (!buf || typeof buf.isEssenceListScreen !== 'function') return false;
+    if (!readEffectivePrefs().mobileEssenceCards) return false;
+    if (buf.isPromptPending && buf.isPromptPending()) return false;
+    return buf.isEssenceListScreen();
   },
 
   // 每次 render 前（_renderScreenLines 開頭）對帳：手機模式下依這一幀的畫面類型

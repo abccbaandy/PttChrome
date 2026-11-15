@@ -483,6 +483,25 @@ offline e2e `mobile_select_text.offline.spec.js`（長按以真右鍵代替，�
 - 守護：unit `mail_card`（upstream 產的畫面＋各種狀態＋DOM）、`parse_failure_degrade`（突變）；offline e2e
   `mobile_mail_cards`（卡片高、真 tap 送「↑↑＋⏎」、認不出 ⇒ 格線）。
 
+### 精華區卡片（P88，`js/essence_list.js`、`render/essence_card.js`，pref `mobileEssenceCards`，預設開）
+
+- 看板精華區（列表按 z）**共用同一個 `'menu'` 版面**：`term_view._essenceCardsNow()` 成立時 `_frameSurface`
+  回 `'menu'`、`enhance.menuCards` 傳 `'essence'`（`menuBanner` 一律不給）。點卡片＝`data-menu-row` →
+  `_sendRowEnter`（↑／↓ 到那一列＋⏎），跟主功能表、信件卡片同一條。
+- 判定（依 `mbbsd/announce.c`，新版 `announce_renderer`／`announce_coldefs`／`announce_caption`，舊版
+  `a_showmenu`，檔頭）三件都要：row 0 col 0 的【精華文章】、第 1～2 列的「編號 標題 編選 日期」欄位標題列
+  （新版在第 2 列、舊版在第 1 列，字距不同只認字序）、底列 caption（新版「精華列表／精華管理」、舊版
+  「【功能鍵】／【板  主】」）。**複製佇列中（標記項目／【已標記(複製) N 項】）不接**：c 標記要看得到。
+  **PTT 在問東西（`isPromptPending`）時不接**：搜尋／跳號的 getdata 開在舊畫面上、底列 caption 可能還在，
+  收成卡片會把輸入欄當空白列收掉（P87 #440 同一類）。
+- 項目列：`%6d` 編號＋`.`／`X`（板主限定）／`)`（隱藏）＋`c`（已標記）、標題（自帶 ◆ 目錄／◇ 文章／◎ 前綴）、
+  編選者、`[MM/DD/YY]`；認不出的列照舊格線。
+- 渲染：row 0 → 一列小字「板名 精華區 › 這一層」（中間的 mtitle 跟板名一樣就只寫「板名 精華區」）；
+  項目 → 兩行卡片（圖示＋標題；目錄・編選者・日期，目錄有 ›，高 `ESSENCE_CARD_PX`=60）；欄位標題列、末列收起；
+  按鍵說明列（新版第 1 列，功能鍵可點）照舊縮小格線。精華區裡開的文章不動（pmore，好讀照常）。
+- 守護：unit `essence_card`（upstream 新舊兩代產的畫面＋各種旗標＋DOM）、`parse_failure_degrade`（突變）；
+  offline e2e `mobile_essence_cards`（卡片高、真 tap 送「↑↑＋⏎」、開關關／認不出／開輸入欄 ⇒ 格線）。
+
 ## Phase 6：App Bar（`components/MobileAppBar`）
 
 - 標題純函式 `mobile_app_bar.appBarFromFacts(facts, {pageState, articleTitle, articleBoard, prev})`，與底部導覽同一次計算

@@ -437,6 +437,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileMenuBannerCollapse",
     },
     {
+      key: "mobileEssenceCards",
+      titleKey: "options_mobileEssenceCards",
+      tooltipKey: "tooltip_mobileEssenceCards",
+    },
+    {
       key: "mobilePromptChoices",
       titleKey: "options_mobilePromptChoices",
       tooltipKey: "tooltip_mobilePromptChoices",

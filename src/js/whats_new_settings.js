@@ -109,6 +109,7 @@ export const FEATURE_SETTING = {
   手機選單收起動態看板: "mobileMenuBannerCollapse",
   手機看板捷徑: "mobileBoardTools",
   手機信箱捷徑: "mobileMailListTools",
+  手機精華區卡片: "mobileEssenceCards",
   手機提問選項: "mobilePromptChoices",
   手機開鍵盤輸入: "mobilePromptKeyboard",
   手機按任意鍵繼續: "mobileAnyKeyContinue",

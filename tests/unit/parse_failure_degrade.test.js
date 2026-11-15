@@ -48,6 +48,8 @@ import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
 import { isMailListRows, parseMailRow, isMailboxOverLimitNotice, isMailKeyHintRow } from "../../src/js/mail_list";
 import { parseContentDenied } from "../../src/js/push_screen";
 import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
+import { isEssenceListRows, parseEssenceRow } from "../../src/js/essence_list";
+import { ESSENCE_ROWS, ESSENCE_HEADER_ROW_INDEX, ESSENCE_ITEM_ROWS } from "./fixtures/essence_rows";
 
 const LISTS = {
   "C_Chat（24 列，有《板名》）": {
@@ -617,6 +619,37 @@ describe("列表好讀 session：認不出 ⇒ 原生", () => {
       }
     );
   }
+});
+
+describe("手機精華區卡片（P88）：認不出 ⇒ 照舊格線（不畫卡片、點擊照原生）", () => {
+  const mutate = (i, text) => ESSENCE_ROWS.map((r, j) => (j === i ? text : r));
+  const last = ESSENCE_ROWS.length - 1;
+
+  test("對照組：upstream 產的精華區認得出、項目解得出", () => {
+    expect(isEssenceListRows(ESSENCE_ROWS)).toBe(true);
+    for (const y of ESSENCE_ITEM_ROWS) expect(parseEssenceRow(ESSENCE_ROWS[y])).not.toBeNull();
+  });
+
+  test.each([
+    ["標題列不是【精華文章】", mutate(0, "【板主:sysop】                      Gossip                       看板《Gossip》 ")],
+    ["標題列的【精華文章】不在 col 0", mutate(0, "  【精華文章】                      Gossip                       看板《Gossip》")],
+    ["欄位標題列改版", mutate(ESSENCE_HEADER_ROW_INDEX, "   #      Title                                         Editor       Date")],
+    ["欄位標題列不見", mutate(ESSENCE_HEADER_ROW_INDEX, " ".repeat(80))],
+    ["底列 caption 改版", mutate(last, " 精華區  (F)寄回信箱 (c)複製項目       (←)離開 (h)說明  ")],
+    ["複製佇列中（標記項目）", mutate(last, " 標記項目  (c)標記/複製 (p)貼上       (←)離開 (h)說明  ")],
+    ["半繪（底列還沒畫）", mutate(last, "")],
+  ])("畫面指紋：%s → 不是精華區", (_n, rows) => {
+    expect(isEssenceListRows(rows)).toBe(false);
+  });
+
+  test.each([
+    ["日期欄改版（沒有 []）", "      1.  ◇ [爆卦] 收進精華區的文章                    judy         09/27/26"],
+    ["日期欄改成 MM/DD", "      1.  ◇ [爆卦] 收進精華區的文章                    judy         [09/27]"],
+    ["編號後面不是 . X )", "      1:  ◇ [爆卦] 收進精華區的文章                    judy         [09/27/26]"],
+    ["編號欄不是數字", "      -.  ◇ [爆卦] 收進精華區的文章                    judy         [09/27/26]"],
+  ])("項目列：%s → 這一列不畫卡片", (_n, row) => {
+    expect(parseEssenceRow(row)).toBeNull();
+  });
 });
 
 // 方向跟上面相反：認得出精華區 ⇒ 少接管（重新整理／推文／Q 都不給），認不出 ⇒ 回到只看 footer
