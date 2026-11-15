@@ -1419,7 +1419,7 @@ export const en_US = {
     "message": "Recently read / Read later"
   },
   "tooltip_enableRecentArticles": {
-    "message": "Remembers the last 30 articles you read (once the article URL line at the end has loaded). Right-click or long-press an article to save it for later. The home dashboard and the command palette (F4) list them; click to reopen. Stored only in this browser, never synced."
+    "message": "Remembers the last 30 articles you read (once the article URL line at the end has loaded). Right-click or long-press an article to add it to Read later. The home dashboard and the command palette (F4) list them; click to reopen. With cloud sync signed in, Read later syncs across devices."
   },
   "recent_later": {
     "message": "Read later"
@@ -1449,19 +1449,19 @@ export const en_US = {
     "message": "Read later"
   },
   "cmenu_removeReadLater": {
-    "message": "Remove from read later"
+    "message": "Remove from Read later"
   },
   "recent_added": {
-    "message": "Saved to read later (find it on the home dashboard or with F4)"
+    "message": "Added to Read later (find it on the home dashboard or with F4)"
   },
   "recent_already_later": {
     "message": "This post is already in Read later"
   },
   "recent_list_no_aid": {
-    "message": "Could not read this post's AID; not saved to Read later"
+    "message": "Could not read this post's AID; not added to Read later"
   },
   "recent_list_busy": {
-    "message": "Cannot save to Read later right now, please try again"
+    "message": "Cannot add to Read later right now, please try again"
   },
   "options_showWhatsNew": {
     "message": "Show new features after an update"
@@ -2765,10 +2765,10 @@ export const en_US = {
     "message": "Separate each font with a comma, start with the desired font and end with a generic font."
   },
   "saved_done": {
-    "message": "Saved on this device (readable offline)"
+    "message": "Saved as an offline article (readable without connecting)"
   },
   "saved_updated": {
-    "message": "Saved copy updated"
+    "message": "Offline article updated"
   },
   "saved_failed_notArticle": {
     "message": "Cannot save: open the article in easy reading mode and read to its URL line"
@@ -2780,7 +2780,7 @@ export const en_US = {
     "message": "Cannot save: the article is too long"
   },
   "saved_failed_full": {
-    "message": "Cannot save: saved articles are full (200); delete some first"
+    "message": "Cannot save: offline articles are full (200); delete some first"
   },
   "saved_failed_quota": {
     "message": "Cannot save: not enough browser storage"
@@ -2789,34 +2789,31 @@ export const en_US = {
     "message": "Cannot save: this browser cannot store data (private window or site data blocked)"
   },
   "saved_missing": {
-    "message": "Saved article not found (deleted, or saved in another browser)"
+    "message": "Offline article not found (deleted, or saved on another device)"
   },
   "saved_readerTitle": {
-    "message": "Saved articles"
+    "message": "Offline article"
   },
   "saved_readerClose": {
     "message": "Close"
   },
+  "saved_openOnline": {
+    "message": "Open online"
+  },
+  "saved_onlineFailed": {
+    "message": "Cannot open now (not connected or busy)"
+  },
   "options_enableSavedArticles": {
-    "message": "Save on this device"
+    "message": "Offline articles"
   },
   "tooltip_enableSavedArticles": {
-    "message": "Adds \"Save on this device\" to an easy-reading article's More menu (right-click on desktop): the whole article as read (text, comments, colors) is stored in this browser; open it from \"Saved on this device\" on the home screen in a new tab, offline and without sending any key to PTT. Up to 200 articles; the content is never uploaded (with cloud sync on, only the list syncs)."
+    "message": "Adds \"Save as offline article\" to an easy-reading article's More menu (right-click on desktop): the whole article as read (text, comments, colors) is stored on this device. Open it from \"Offline articles\" on the home dashboard without connecting or sending any key to PTT; \"Open online\" reopens it on PTT. Up to 200 articles, kept on this device only (not synced)."
   },
-  "options_syncSavedArticles": {
-    "message": "Sync the list of saved articles too"
+  "options_syncReadLater": {
+    "message": "Sync Read later across devices"
   },
-  "tooltip_syncSavedArticles": {
-    "message": "While cloud sync is signed in, the list of saved articles (board, title, author; never the content) syncs too: other devices show them under \"Saved on other devices\" on the home page, and opening one loads the article over the connection."
-  },
-  "saved_others": {
-    "message": "Saved on other devices"
-  },
-  "saved_others_remove": {
-    "message": "Hide on this device (the other device keeps its copy)"
-  },
-  "saved_others_failed": {
-    "message": "Can't open this article right now (not connected or busy)"
+  "tooltip_syncReadLater": {
+    "message": "With cloud sync signed in, Read later syncs like your settings: added on one device shows on the others, and removing it anywhere removes it everywhere. Turn off to keep it on this device only."
   },
   "options_enableShareTarget": {
     "message": "Share to PttChrome"
@@ -2828,7 +2825,7 @@ export const en_US = {
     "message": "No PTT article link in what was shared"
   },
   "saved_action": {
-    "message": "Save on this device"
+    "message": "Save as offline article"
   },
   "selectText_title": {
     "message": "Select text"
@@ -2885,25 +2882,25 @@ export const en_US = {
     "message": "Adds \"Select text\" to the More sheet and long-press menu of mobile easy-reading articles: opens the article text as a padded, wrapped page where the system selection handles work for selecting and copying. No keys are sent."
   },
   "saved_section": {
-    "message": "Saved on this device"
+    "message": "Offline articles"
   },
   "saved_remove": {
-    "message": "Delete saved copy"
+    "message": "Delete offline article"
   },
   "options_savedBackup": {
-    "message": "Saved articles"
+    "message": "Offline articles"
   },
   "tooltip_savedBackup": {
-    "message": "Export the articles you saved on this device to a file, and import it in another browser or device. Importing replaces the same article with the file’s copy; up to 200 articles."
+    "message": "Export your offline articles to a file, and import it in another browser or device. Importing replaces the same article with the file’s copy; up to 200 articles."
   },
   "options_savedExportBtn": {
-    "message": "Export saved articles"
+    "message": "Export offline articles"
   },
   "options_savedImportBtn": {
-    "message": "Import saved articles"
+    "message": "Import offline articles"
   },
   "options_savedExportEmpty": {
-    "message": "There are no saved articles to export."
+    "message": "There are no offline articles to export."
   },
   "options_savedExported": {
     "message": "Exported {count} articles."
@@ -2918,7 +2915,7 @@ export const en_US = {
     "message": "{full} did not fit (200 articles max); delete some and import again."
   },
   "options_savedErrorBadFormat": {
-    "message": "Import failed: this is not a pttchrome saved-articles export."
+    "message": "Import failed: this is not a pttchrome offline-articles export."
   }
 
 };

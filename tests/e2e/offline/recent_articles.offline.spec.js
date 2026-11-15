@@ -16,8 +16,12 @@ const { drawMainMenu } = require('../helpers/main_menu');
 const article = loadCassette('stock-huang');
 const scenario = loadCassette('scn-deep-link');
 const KEY = 'pttchrome.recentArticles.v1';
+// 最近讀過在 KEY；稍後閱讀另存（READ_LATER_KEY，含刪除墓碑）⇒ 一律問 App 的 state。
 const readStore = (page) =>
-  page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{"recent":[],"later":[]}'), KEY);
+  page.evaluate(() => {
+    const s = window.__app.recentArticles.state;
+    return { recent: s.recent, later: s.later };
+  });
 const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
 async function drawList(page) {
@@ -83,12 +87,9 @@ test.describe('最近讀過／稍後再讀', () => {
     test.setTimeout(90000);
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReadingList: false });
-    await page.evaluate((k) => {
-      localStorage.setItem(
-        k,
-        JSON.stringify({ recent: [], later: [{ board: 'Stock', aid: '1g8znzQ3', title: '[新聞] 測試標題', at: 1 }] })
-      );
-    }, KEY);
+    await page.evaluate(() =>
+      window.__app.recentArticles.addLater({ board: 'Stock', aid: '1g8znzQ3', title: '[新聞] 測試標題' })
+    );
     // deep link 要看過主功能表（＝登入完成）才會開跳，否則只是收著等登入。
     await drawMainMenu(page);
     await drawList(page);

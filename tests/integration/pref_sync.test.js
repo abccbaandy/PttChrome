@@ -245,7 +245,7 @@ beforeEach(() => {
     .then(() => {
       window.localStorage.clear();
       prefSync.registerOnCloudValues(null);
-      prefSync.registerOnCloudSaved(null);
+      prefSync.registerOnCloudReadLater(null);
       infoSpy.mockClear();
       warnSpy.mockClear();
     });
@@ -555,66 +555,76 @@ describe("lifecycle", () => {
   });
 });
 
-// 本機收藏的清單（P70，src/js/saved_cloud.js）：跟偏好放同一份 users/{uid}，欄位 saved（map）。
-// 逐篇 set／deleteField，不碰 prefs；firestore.rules 擋掉超過 300 篇的寫入。
-describe("saved list (P70)", () => {
-  const entry = (aid, savedAt) => ({
-    board: "Stock",
-    aid,
-    title: "[標的] " + aid,
-    author: "someone",
-    savedAt
-  });
+// 稍後閱讀（src/js/read_later_sync.js）：跟偏好放同一份 users/{uid}，欄位 readLater（map，刪除是墓碑）。
+// 逐篇 set／deleteField，不碰 prefs；firestore.rules 擋掉超過 400 筆的寫入。
+describe("read later sync", () => {
+  const entry = (aid, mt, del) =>
+    Object.assign({ board: "Stock", aid, title: "[標的] " + aid, at: mt, mt }, del ? { del: true } : {});
   const key = aid => "stock:" + aid;
+  const many = n => {
+    const out = {};
+    for (let i = 0; i < n; ++i) {
+      const aid = ("A" + String(i).padStart(7, "0")).slice(0, 8);
+      out[key(aid)] = entry(aid, i);
+    }
+    return out;
+  };
 
-  it("delivers another device's saved list to the registered callback", () => {
+  it("delivers another device's read-later map (including deletions) to the registered callback", () => {
     writeStoredPrefs({ fontSize: 16 });
-    const onSaved = vi.fn();
-    prefSync.registerOnCloudSaved(onSaved);
+    const onLater = vi.fn();
+    prefSync.registerOnCloudReadLater(onLater);
 
-    return seedDoc({ prefs: { fontSize: 16 }, saved: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5) } })
+    return seedDoc({ prefs: { fontSize: 16 }, readLater: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5) } })
       .then(() => startupWithUser(vi.fn()))
-      .then(() => waitFor(() => onSaved.mock.calls.length >= 1, "saved delivered"))
+      .then(() => waitFor(() => onLater.mock.calls.length >= 1, "read later delivered"))
       .then(() => {
-        const last = onSaved.mock.calls[onSaved.mock.calls.length - 1][0];
+        const last = onLater.mock.calls[onLater.mock.calls.length - 1][0];
         expect(last[key("1gIeu-3A")].title).toBe("[標的] 1gIeu-3A");
-        onSaved.mockClear();
-        // 別台又存了一篇 ⇒ 即時推過來
+        onLater.mockClear();
+        // 別台刪了它（墓碑）⇒ 即時推過來
         return seeder().then(sd =>
-          setDoc(doc(sd.db, "users", sd.uid), { saved: { [key("1gIeu-3B")]: entry("1gIeu-3B", 6) } }, { merge: true })
+          setDoc(
+            doc(sd.db, "users", sd.uid),
+            { readLater: { [key("1gIeu-3A")]: entry("1gIeu-3A", 6, true) } },
+            { merge: true }
+          )
         );
       })
       .then(() =>
         waitFor(
-          () => onSaved.mock.calls.some(c => c[0][key("1gIeu-3B")] && c[0][key("1gIeu-3A")]),
-          "second entry propagated"
+          () => onLater.mock.calls.some(c => c[0][key("1gIeu-3A")] && c[0][key("1gIeu-3A")].del === true),
+          "deletion propagated"
         )
       );
   });
 
-  it("saveSavedEntries sets and deletes single entries without touching prefs or other entries", () => {
+  it("saveReadLaterEntries sets and deletes single entries without touching prefs or other entries", () => {
     writeStoredPrefs({ fontSize: 16 });
     return seedDoc({
       prefs: { fontSize: 16 },
-      saved: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5), [key("1gIeu-3B")]: entry("1gIeu-3B", 6) }
+      readLater: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5, true), [key("1gIeu-3B")]: entry("1gIeu-3B", 6) }
     })
       .then(() => startupWithUser(vi.fn()))
       .then(() =>
-        prefSync.saveSavedEntries({ set: { [key("1gIeu-3C")]: entry("1gIeu-3C", 7) }, del: [key("1gIeu-3A")] })
+        prefSync.saveReadLaterEntries({ set: { [key("1gIeu-3C")]: entry("1gIeu-3C", 7) }, del: [key("1gIeu-3A")] })
       )
       .then(ok => {
         expect(ok).toBe(true);
-        return waitForCloud(d => d && d.saved && d.saved[key("1gIeu-3C")] && !d.saved[key("1gIeu-3A")], "saved upload");
+        return waitForCloud(
+          d => d && d.readLater && d.readLater[key("1gIeu-3C")] && !d.readLater[key("1gIeu-3A")],
+          "read later upload"
+        );
       })
       .then(cloudDoc => {
-        expect(Object.keys(cloudDoc.saved).sort()).toEqual([key("1gIeu-3B"), key("1gIeu-3C")]);
+        expect(Object.keys(cloudDoc.readLater).sort()).toEqual([key("1gIeu-3B"), key("1gIeu-3C")]);
         expect(cloudDoc.prefs.fontSize).toBe(16);
       });
   });
 
-  it("a prefs upload leaves the saved list alone", () => {
+  it("a prefs upload leaves the read-later map alone", () => {
     writeStoredPrefs({ fontSize: 16 });
-    return seedDoc({ prefs: { fontSize: 16 }, saved: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5) } })
+    return seedDoc({ prefs: { fontSize: 16 }, readLater: { [key("1gIeu-3A")]: entry("1gIeu-3A", 5) } })
       .then(() => startupWithUser(vi.fn()))
       .then(() => {
         writeStoredPrefs({ ...readStoredPrefs(), fontSize: 22 });
@@ -622,63 +632,47 @@ describe("saved list (P70)", () => {
       })
       .then(() => waitForCloud(d => d && d.prefs && d.prefs.fontSize === 22, "prefs upload"))
       .then(cloudDoc => {
-        expect(Object.keys(cloudDoc.saved)).toEqual([key("1gIeu-3A")]);
+        expect(Object.keys(cloudDoc.readLater)).toEqual([key("1gIeu-3A")]);
       });
   });
 
-  it("rules refuse a merge write that grows the saved map past 300", () => {
-    const many = {};
-    for (let i = 0; i < 300; ++i) {
-      const aid = ("A" + String(i).padStart(7, "0")).slice(0, 8);
-      many[key(aid)] = entry(aid, i);
-    }
-    return seedDoc({ prefs: { fontSize: 16 }, saved: many })
-      .then(() => seeder())
-      .then(sd =>
-        setDoc(doc(sd.db, "users", sd.uid), { saved: { [key("Z0000000")]: entry("Z0000000", 999) } }, { merge: true })
-      )
-      .then(
-        () => {
-          throw new Error("the 301st entry should have been refused");
-        },
-        e => {
-          expect(String(e && e.code)).toMatch(/permission-denied/);
-        }
-      );
-  });
-
-  it("saveSavedEntries is a no-op before sign-in", () =>
-    prefSync.saveSavedEntries({ set: { [key("1gIeu-3A")]: entry("1gIeu-3A", 1) }, del: [] }).then(ok => {
+  it("saveReadLaterEntries is a no-op before sign-in", () =>
+    prefSync.saveReadLaterEntries({ set: { [key("1gIeu-3A")]: entry("1gIeu-3A", 1) }, del: [] }).then(ok => {
       expect(ok).toBe(false);
     }));
 
-  it("rules refuse a saved map over 300 entries", () => {
-    const many = n => {
-      const out = {};
-      for (let i = 0; i < n; ++i) {
-        const aid = ("A" + String(i).padStart(7, "0")).slice(0, 8);
-        out[key(aid)] = entry(aid, i);
-      }
-      return out;
-    };
-    return seedDoc({ prefs: { fontSize: 16 }, saved: many(300) })
-      .then(() => seedDoc({ prefs: { fontSize: 16 }, saved: many(301) }))
+  it("rules refuse a read-later map over 400 entries, or one that is not a map", () =>
+    seedDoc({ prefs: { fontSize: 16 }, readLater: many(400) })
+      .then(() => seeder())
+      .then(sd =>
+        setDoc(doc(sd.db, "users", sd.uid), { readLater: { [key("Z0000000")]: entry("Z0000000", 999) } }, { merge: true })
+      )
       .then(
         () => {
-          throw new Error("301 entries should have been refused");
+          throw new Error("the 401st entry should have been refused");
         },
         e => {
           expect(String(e && e.code)).toMatch(/permission-denied/);
         }
       )
-      .then(() => seedDoc({ prefs: { fontSize: 16 }, saved: [] }))
+      .then(() => seedDoc({ prefs: { fontSize: 16 }, readLater: [] }))
       .then(
         () => {
-          throw new Error("a non-map saved should have been refused");
+          throw new Error("a non-map readLater should have been refused");
         },
         e => {
           expect(String(e && e.code)).toMatch(/permission-denied/);
         }
-      );
-  });
+      ));
+
+  // 舊版 App（P70）還可能寫 saved：照舊擋 300 篇。
+  it("rules still refuse a legacy saved map over 300 entries", () =>
+    seedDoc({ prefs: { fontSize: 16 }, saved: many(301) }).then(
+      () => {
+        throw new Error("301 entries should have been refused");
+      },
+      e => {
+        expect(String(e && e.code)).toMatch(/permission-denied/);
+      }
+    ));
 });

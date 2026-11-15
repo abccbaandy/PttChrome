@@ -1,4 +1,4 @@
-/* 頁內唯讀頁（components/SavedReaderOverlay，APK）。全螢幕、恆為暗色（同選取文字頁）。 */
+/* 離線文章的唯讀頁（components/SavedReaderOverlay）。全螢幕、恆為暗色（同選取文字頁）。 */
 .savedReaderOverlay {
   position: fixed;
   inset: 0;
@@ -50,4 +50,20 @@
   width: 100%;
   border: 0;
   background: #000;
+}
+
+/* 「前往線上版本」：主要動作，藍色外框（同暗色主題的強調色）。 */
+.savedReaderOverlayOnline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #1971c2;
+  border-radius: 18px;
+  background: transparent;
+  color: #74c0fc;
+  font-size: 14px;
+  white-space: nowrap;
+  flex: none;
 }

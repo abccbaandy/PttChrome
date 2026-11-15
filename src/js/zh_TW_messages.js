@@ -1415,13 +1415,13 @@
     "message": "關掉 {0}"
   },
   "options_enableRecentArticles": {
-    "message": "最近讀過／稍後再讀"
+    "message": "最近讀過／稍後閱讀"
   },
   "tooltip_enableRecentArticles": {
-    "message": "記下最近讀過的 30 篇文章（讀到文末的文章網址那一行才記），右鍵或長按文章可以「稍後再讀」。首頁和指令面板（F4）列出來，點了直接開回那篇。只存在這個瀏覽器，不上雲。"
+    "message": "記下最近讀過的 30 篇文章（讀到文末的文章網址那一行才記），右鍵或長按文章可以加進「稍後閱讀」。首頁和指令面板（F4）列出來，點了直接開回那篇。登入雲端同步時，稍後閱讀會跨裝置同步。"
   },
   "recent_later": {
-    "message": "稍後再讀"
+    "message": "稍後閱讀"
   },
   "recent_recent": {
     "message": "最近讀過"
@@ -1445,22 +1445,22 @@
     "message": "現在開不了這篇，請稍候再試"
   },
   "cmenu_readLater": {
-    "message": "稍後再讀"
+    "message": "稍後閱讀"
   },
   "cmenu_removeReadLater": {
-    "message": "從稍後再讀移除"
+    "message": "從稍後閱讀移除"
   },
   "recent_added": {
-    "message": "已加入稍後再讀（首頁、F4 指令面板找得到）"
+    "message": "已加入稍後閱讀（首頁、F4 指令面板找得到）"
   },
   "recent_already_later": {
-    "message": "這篇已經在稍後再讀裡"
+    "message": "這篇已經在稍後閱讀裡"
   },
   "recent_list_no_aid": {
-    "message": "讀不到這篇的文章代碼，沒有加入稍後再讀"
+    "message": "讀不到這篇的文章代碼，沒有加入稍後閱讀"
   },
   "recent_list_busy": {
-    "message": "現在無法加入稍後再讀，請稍後再試"
+    "message": "現在無法加入稍後閱讀，請稍後再試"
   },
   "options_showWhatsNew": {
     "message": "更新後顯示新功能"
@@ -2764,10 +2764,10 @@
     "message": "以逗號隔開，由欲套用的字型開始至較通用的字型。"
   },
   "saved_done": {
-    "message": "已存到本機（不用連線也能讀）"
+    "message": "已存成離線文章（不用連線也能讀）"
   },
   "saved_updated": {
-    "message": "已更新本機存檔"
+    "message": "已更新離線文章"
   },
   "saved_failed_notArticle": {
     "message": "存不了：要在好讀模式的文章裡，而且要讀到文末的文章網址"
@@ -2779,7 +2779,7 @@
     "message": "存不了：文章太長"
   },
   "saved_failed_full": {
-    "message": "存不了：本機收藏已滿（200 篇），先刪掉幾篇"
+    "message": "存不了：離線文章已滿（200 篇），先刪掉幾篇"
   },
   "saved_failed_quota": {
     "message": "存不了：瀏覽器的儲存空間不夠"
@@ -2788,34 +2788,31 @@
     "message": "存不了：這個瀏覽器不能存（私密視窗或封鎖了網站資料）"
   },
   "saved_missing": {
-    "message": "找不到這篇本機存檔（可能已刪除，或存在別的瀏覽器）"
+    "message": "找不到這篇離線文章（可能已刪除，或存在別台裝置）"
   },
   "saved_readerTitle": {
-    "message": "本機收藏"
+    "message": "離線文章"
   },
   "saved_readerClose": {
     "message": "關閉"
   },
+  "saved_openOnline": {
+    "message": "前往線上版本"
+  },
+  "saved_onlineFailed": {
+    "message": "現在開不了（還沒連線或正在忙）"
+  },
   "options_enableSavedArticles": {
-    "message": "存到本機"
+    "message": "離線文章"
   },
   "tooltip_enableSavedArticles": {
-    "message": "好讀文章的「更多」（桌機右鍵）多一個「存到本機」：把讀到的整篇（內文、推文、顏色）存在這個瀏覽器，首頁「本機收藏」點了在新分頁打開，不用連線、不送任何鍵給 PTT。最多 200 篇，內文不上雲（登入雲端同步時只同步清單）。"
+    "message": "好讀文章的「更多」（桌機右鍵）多一個「存成離線文章」：把讀到的整篇（內文、推文、顏色）存在這台裝置，首頁「離線文章」點了直接打開，不用連線、不送任何鍵給 PTT；上面的「前往線上版本」開回 PTT 上的那篇。最多 200 篇，只存在這台、不同步。"
   },
-  "options_syncSavedArticles": {
-    "message": "本機收藏的清單也同步"
+  "options_syncReadLater": {
+    "message": "稍後閱讀跨裝置同步"
   },
-  "tooltip_syncSavedArticles": {
-    "message": "登入雲端同步時，存到本機的文章清單（看板、標題、作者，不含內文）也一起同步：別台裝置的首頁「本機收藏」會多一段「其他裝置存的」，點了連線打開那篇。"
-  },
-  "saved_others": {
-    "message": "其他裝置存的"
-  },
-  "saved_others_remove": {
-    "message": "這台不再顯示（那台的存檔不動）"
-  },
-  "saved_others_failed": {
-    "message": "現在開不了這篇（還沒連線或正在忙）"
+  "tooltip_syncReadLater": {
+    "message": "登入雲端同步時，稍後閱讀跟設定一樣跨裝置同步：這台加的別台看得到，在任何一台移除，其他台也跟著消失。關掉就只留在這台。"
   },
   "options_enableShareTarget": {
     "message": "分享到 PttChrome"
@@ -2827,7 +2824,7 @@
     "message": "分享的內容裡沒有 PTT 文章連結"
   },
   "saved_action": {
-    "message": "存到本機"
+    "message": "存成離線文章"
   },
   "selectText_title": {
     "message": "選取文字"
@@ -2884,25 +2881,25 @@
     "message": "手機好讀文章的「更多」與長按選單多一項「選取文字」：把這篇文字開成留邊、自動換行的一頁，用系統的選取把手選字、複製。不會送任何按鍵。"
   },
   "saved_section": {
-    "message": "本機收藏"
+    "message": "離線文章"
   },
   "saved_remove": {
-    "message": "刪除本機存檔"
+    "message": "刪除離線文章"
   },
   "options_savedBackup": {
-    "message": "本機收藏"
+    "message": "離線文章"
   },
   "tooltip_savedBackup": {
-    "message": "把「存到本機」的文章匯出成一個檔案，換瀏覽器或裝置時再匯入。同一篇會覆蓋成檔案裡的版本，最多 200 篇。"
+    "message": "把離線文章匯出成一個檔案，換瀏覽器或裝置時再匯入。同一篇會覆蓋成檔案裡的版本，最多 200 篇。"
   },
   "options_savedExportBtn": {
-    "message": "匯出本機收藏"
+    "message": "匯出離線文章"
   },
   "options_savedImportBtn": {
-    "message": "匯入本機收藏"
+    "message": "匯入離線文章"
   },
   "options_savedExportEmpty": {
-    "message": "目前沒有本機收藏可以匯出。"
+    "message": "目前沒有離線文章可以匯出。"
   },
   "options_savedExported": {
     "message": "已匯出 {count} 篇。"
@@ -2917,7 +2914,7 @@
     "message": "有 {full} 篇放不下（已滿 200 篇），先刪掉幾篇再匯入。"
   },
   "options_savedErrorBadFormat": {
-    "message": "匯入失敗：這不是 pttchrome 的本機收藏匯出檔。"
+    "message": "匯入失敗：這不是 pttchrome 的離線文章匯出檔。"
   }
 
 };

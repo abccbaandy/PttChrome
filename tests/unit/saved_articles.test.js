@@ -345,11 +345,44 @@ describe("唯讀頁網址／能不能存", () => {
     expect(hints).toEqual(["error"]);
   });
 
-  test("open 在新分頁開唯讀頁", () => {
+  // 不開新分頁（APK 開不了）：同一頁疊唯讀頁（SavedReaderOverlay 照 reader 畫）。
+  test("open ⇒ 同一頁的唯讀頁（不開新分頁）；closeReader 關掉；壞 key 不開", () => {
     const open = vi.fn();
     const win = { open, location: { href: "https://example.com/?x=1" } };
-    expect(new SavedArticles(core(), {}).open("stock/1g8znzQ3", win)).toBe(true);
-    expect(open).toHaveBeenCalledWith("https://example.com/?saved=stock%2F1g8znzQ3", "_blank", "noopener");
+    const sa = new SavedArticles(core(), {});
+    sa.state = [{ key: "stock/1g8znzQ3", board: "Stock", aid: "1g8znzQ3", title: "[標的] 測試" }];
+    const seen = [];
+    sa.onReaderChange((r) => seen.push(r));
+    expect(sa.open("stock/1g8znzQ3", win)).toBe(true);
+    expect(open).not.toHaveBeenCalled();
+    expect(sa.reader).toEqual({
+      key: "stock/1g8znzQ3",
+      url: "https://example.com/?saved=stock%2F1g8znzQ3",
+      board: "Stock",
+      aid: "1g8znzQ3",
+      title: "[標的] 測試",
+    });
+    sa.closeReader();
+    expect(sa.reader).toBe(null);
+    expect(seen).toEqual([null, expect.objectContaining({ aid: "1g8znzQ3" }), null]);
+    expect(sa.open("../evil", win)).toBe(false);
+  });
+
+  // 「前往線上版本」：關掉唯讀頁、用後面的連線開那一篇（deep link）；開不了 ⇒ 唯讀頁留著。
+  test("openOnline ⇒ deep link 開那篇並關掉唯讀頁；request 不收 ⇒ 留著", () => {
+    const c = core();
+    const request = vi.fn(() => "navigating");
+    c.deepLinkController = { request };
+    const sa = new SavedArticles(c, {});
+    const win = { location: { href: "https://example.com/" } };
+    sa.open("stock/1g8znzQ3", win);
+    expect(sa.openOnline()).toBe(true);
+    expect(request).toHaveBeenCalledWith({ board: "stock", aid: "1g8znzQ3" }, { quietLanding: true });
+    expect(sa.reader).toBe(null);
+    request.mockReturnValue(null);
+    sa.open("stock/1g8znzQ3", win);
+    expect(sa.openOnline()).toBe(false);
+    expect(sa.reader).not.toBe(null);
   });
 });
 

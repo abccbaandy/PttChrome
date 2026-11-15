@@ -261,8 +261,8 @@ describe("設定備份分頁：雲端同步", () => {
 
 // P70：「本機收藏的清單也同步」只在登入雲端同步後出現（沒登入就沒東西可同步），預設勾著；
 // 本機收藏關掉時跟著反灰。
-describe("設定備份分頁：收藏清單同步的開關", () => {
-  const box = () => document.querySelector('input[name="syncSavedArticles"]');
+describe("設定備份分頁：稍後閱讀同步的開關", () => {
+  const box = () => document.querySelector('input[name="syncReadLater"]');
   afterEach(() => prefSync.onAuthState.mockImplementation(() => () => {}));
 
   test("沒登入 ⇒ 不出現", () => {
@@ -270,7 +270,7 @@ describe("設定備份分頁：收藏清單同步的開關", () => {
     expect(box()).toBeNull();
   });
 
-  test("登入了 ⇒ 出現、預設勾著；本機收藏關掉 ⇒ 反灰", () => {
+  test("登入了 ⇒ 出現、預設勾著；最近讀過／稍後閱讀關掉 ⇒ 反灰", () => {
     prefSync.onAuthState.mockImplementation((cb) => {
       cb({ email: "me@example.com" });
       return () => {};
@@ -280,7 +280,7 @@ describe("設定備份分頁：收藏清單同步的開關", () => {
     expect(box().checked).toBe(true);
     expect(box().disabled).toBe(false);
     cleanup();
-    openBackupTab({ enableSavedArticles: false });
+    openBackupTab({ enableRecentArticles: false });
     expect(box().disabled).toBe(true);
   });
 });
