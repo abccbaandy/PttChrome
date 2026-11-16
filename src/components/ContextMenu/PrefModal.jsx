@@ -35,6 +35,7 @@ import {
   readValuesWithDefault,
   writeValues,
 } from "../../js/pref_storage";
+import { mergeEditedPrefs } from "../../js/pref_merge";
 import * as prefSync from "../../js/pref_sync";
 import {
   promptApiAvailability,
@@ -873,10 +874,18 @@ export const PrefModal = ({
   );
 
   const onCloseClick = useCallback(() => {
-    const next = pruneQuickSearchEntries(normalizeAutoLoginValues(values));
+    // 只寫回在設定頁裡改過的格子（跟打開時的 storedSnapshot 比），其餘以儲存裡現在的值為準：
+    // 開著的期間別的分頁、雲端同步、右鍵加黑名單寫進去的改動不可以被打開那一刻的表單蓋掉
+    // （見 pref_merge.js）。
+    const fresh = readValuesWithDefault();
+    const next = mergeEditedPrefs(
+      fresh,
+      storedSnapshot,
+      pruneQuickSearchEntries(normalizeAutoLoginValues(values)),
+    );
     // Untouched form → nothing to persist or upload; uploading anyway
     // would bump updatedAt and ping every other device for nothing.
-    if (!deepEqual(next, readValuesWithDefault())) {
+    if (!deepEqual(next, fresh)) {
       storeCredential(next);
       writeValues(next);
       prefSync.savePrefs(next);
@@ -893,7 +902,7 @@ export const PrefModal = ({
       next.deepLinkHandoffNotify || next.enableNotifications,
     );
     onSave(next);
-  }, [values, onSave]);
+  }, [values, storedSnapshot, onSave]);
 
   const onResetClick = useCallback(() => {
     prefSync.savePrefs(DEFAULT_PREFS);
