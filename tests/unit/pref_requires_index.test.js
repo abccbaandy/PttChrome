@@ -33,8 +33,8 @@ describe("設定索引的前置開關", () => {
       "utf8",
     );
     const rows = [...src.matchAll(/<PrefCheckRow\b([\s\S]*?)\/>/g)].map((m) => m[1]);
-    // 「一般」分區改由索引畫出（PrefIndexRows）後，手寫的勾選列剩其他分區那幾十格。
-    expect(rows.length).toBeGreaterThan(50);
+    // 分區陸續改由索引畫出（PrefIndexRows），手寫的勾選列會越來越少；只擋「掃描本身壞掉、一列都沒抓到」。
+    expect(rows.length).toBeGreaterThan(10);
     for (const body of rows) {
       const name = /name="(\w+)"/.exec(body)?.[1];
       expect(body, name).not.toMatch(/\bchecked=/);

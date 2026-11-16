@@ -149,24 +149,29 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     expect(checked).toBeGreaterThan(30);
   });
 
-  // 架構 review A7 第十三步：「一般」分區由索引畫出（PrefModal.jsx#PrefIndexRows）。
+  // 架構 review A7 第十三步起：「一般」等分區由索引畫出（PrefModal.jsx#PrefIndexRows）。
   // 索引的順序就是畫面順序；sub 的格子在縮排區裡；前置鏈關掉的熱鍵反灰。
-  test("由索引畫出：一般分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
+  // 新的分區改用 PrefIndexRows 時加進 INDEX_SECTIONS（靜態掃描那邊自己會讀 JSX）。
+  const INDEX_SECTIONS = ["options_general", "options_contextMenu"];
+  test("由索引畫出：分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
     openModal();
     await mounted();
-    const general = document.querySelector(
-      '[data-pref-anchor="section:options_general"]',
-    );
-    const shown = [...general.querySelectorAll("[data-pref-anchor]")].map(
-      (el) => el.dataset.prefAnchor,
-    );
-    const items = prefSectionItems("options_general");
-    expect(shown).toEqual(items.map((it) => it.key));
-    for (const it of items) {
-      const el = general.querySelector(`[data-pref-anchor="${it.key}"]`);
-      expect(!!el.closest(".PrefModal__SubOptions"), it.key).toBe(!!it.sub);
+    for (const sectionKey of INDEX_SECTIONS) {
+      const section = document.querySelector(
+        `[data-pref-anchor="section:${sectionKey}"]`,
+      );
+      const shown = [...section.querySelectorAll("[data-pref-anchor]")].map(
+        (el) => el.dataset.prefAnchor,
+      );
+      const items = prefSectionItems(sectionKey);
+      expect(items.length, sectionKey).toBeGreaterThan(5);
+      expect(shown, sectionKey).toEqual(items.map((it) => it.key));
+      for (const it of items) {
+        const el = section.querySelector(`[data-pref-anchor="${it.key}"]`);
+        expect(!!el.closest(".PrefModal__SubOptions"), it.key).toBe(!!it.sub);
+      }
     }
-    expect(items.some((it) => it.sub)).toBe(true);
+    expect(prefSectionItems("options_general").some((it) => it.sub)).toBe(true);
 
     const input = (key) => document.querySelector(`input[name="${key}"]`);
     expect(input("commandPaletteKey").disabled).toBe(false);
