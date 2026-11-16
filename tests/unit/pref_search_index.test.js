@@ -54,7 +54,7 @@ const spreadAnchors = matchAll(/\{\.\.\.anchor\("([^"]+)"\)\}/g);
 // （adapter 內 anchorFor(name, …)）。
 const checkboxNames = [
   ...SRC.matchAll(
-    /<Pref(?:Checkbox|Number|Select|Hotkey|Text|Textarea)\b[^>]*?\bname="([^"]+)"/g,
+    /<Pref(?:Checkbox|CheckRow|Number|Select|Hotkey|Text|Textarea)\b[^>]*?\bname="([^"]+)"/g,
   ),
 ].map((m) => m[1]);
 const panelTabs = matchAll(/<Tabs\.Panel\s+value="([^"]+)"/g);

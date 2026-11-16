@@ -121,6 +121,32 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     );
   });
 
+  test("勾選列的標題與說明＝設定搜尋索引的字（同一份來源）", async () => {
+    openModal();
+    await mounted();
+    const items = PREF_SEARCH_ITEMS.filter(
+      (it) => it.kind === "pref" && it.sectionKey === "options_general",
+    );
+    let checked = 0;
+    for (const it of items) {
+      const box = document.getElementById(`pref-check-${it.key}`);
+      if (!box) continue;
+      const row = box.closest(`[data-pref-anchor="${it.key}"]`);
+      expect(row.textContent, it.key).toContain(i18n(it.titleKey));
+      if (it.tooltipKey) {
+        // 說明是勾選列的下一個兄弟（PrefHint），或手寫列放在勾選框裡的 description。
+        const want = i18n(it.tooltipKey);
+        const hint = row.nextElementSibling;
+        const shown =
+          (hint && hint.textContent === want) || row.textContent.includes(want);
+        expect(shown, it.key).toBe(true);
+      }
+      checked++;
+    }
+    // 一般分區幾乎都是勾選列；少到這個數字代表掃描本身壞了。
+    expect(checked).toBeGreaterThan(30);
+  });
+
   test("點跳轉鈕：那一段的小標停在黏住的跳轉列正下方，那顆鈕亮起", async () => {
     openModal();
     await mounted();

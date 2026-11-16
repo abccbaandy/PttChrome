@@ -183,7 +183,8 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - **其餘下拉選單與憑證欄**：存成數字的滑鼠三顆（中鍵／滾輪／返回）由呼叫端傳 `String(value)`＋`onSelectNum`，選項常數的 value 就是 index 字串；只有 legend 沒有 label 的傳 `ariaLabel`；手機字級的選項文字不走 i18n，傳元件外的常數 `data`；連線方式／編碼、自動登入重複連線也收進 `PrefSelect`（`autoComplete` 照帶）。自動登入帳密／2FA、圖片上傳 token 收進 `PrefText`（多帶 `type`／`autoComplete`／`maxLength`／`error` 字串／`onBlur`／`mt`）。測試另驗改滾輪只重畫那一顆、自動登入分頁打帳號只重畫帳號欄。
 - **「一般」分區的段落**（P94）：段落定義在 `src/js/pref_groups.js`（每段只記第一項的 key），設定頁的小標／跳轉列與設定搜尋的副標共用它，是設定表的第一個欄位。守護 `tests/unit/pref_groups.test.jsx`。
 - **快速搜尋**：自訂列收成 memo 元件 `QuickSearchCustomRow`（吃整列物件＋帶 id 的穩定 callback；改一列時 `onQuickSearchCustomChange` 只換掉那一列的物件，其他列物件不變 ⇒ 只重畫那一列）。內建項目的標題（名稱＋灰字網址樣板，是 JSX）在 PrefModal 裡 `useMemo` 建一次，`PrefCheckbox` 的 memo 不再被它打穿。測試另驗改一列只重畫那一列，計數對沒有 name 的欄位以 label 計。
-- **還沒做**：設定頁的每一格都已經走 memo adapter；下一步是「從設定表產生一般列」（段落已在 `pref_groups.js`），把 JSX 裡逐項手寫的 adapter 改成由表產生，搜尋索引（`pref_search.js`）跟著從同一張表出來。
+- **勾選列的字從索引來**：`PrefCheckRow name="…"` 只寫 name／checked／disabled／onChange，標題與灰字說明取自設定搜尋索引（`pref_search.js#prefItem` 的 `titleKey`／`tooltipKey`）⇒ 設定頁與搜尋結果同一份文字來源。99 列（標題＋說明剛好是索引那兩個鍵的）已換；帶警告字、`description`、說明跟索引不同字的照舊手寫 `PrefCheckbox`。守護：`pref_groups.test.jsx` 驗一般分區每個勾選列的字＝索引，`pref_search_index.test.js` 掃 `PrefCheckRow` 的 name。
+- **還沒做**：把索引升格成完整設定表（再帶型別、disabled 條件、子選項縮排），讓一般列直接由表 map 出來；目前 JSX 仍逐列寫元件，只有文字鍵已同源。
 
 ## Deprecated 瀏覽器 API
 
