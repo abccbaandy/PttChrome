@@ -15,6 +15,13 @@ import "./PageTopAlert.css";
 // （終端機的隱藏 input#t 也是 input，故在 handler 內另外以 id 排除。）
 const PASSTHROUGH =
   '[role="dialog"], [role="menu"], input, textarea, select, [contenteditable]';
+// 開著的對話框（Mantine Modal 的 content 帶 aria-modal）。App 有給 isModalOpen
+// （App.modalShown，終端機鍵盤的總閘門）就以它為準，否則看 DOM。
+const OPEN_MODAL = '[role="dialog"][aria-modal="true"]';
+const modalOpenNow = (isModalOpen) =>
+  typeof isModalOpen === "function"
+    ? !!isModalOpen()
+    : !!document.querySelector(OPEN_MODAL);
 
 // diagnose：回傳 Promise<{ verdict, suggestions }>（決策表在
 // js/connection_probe.js#adviseConnectFailure）；舊形狀（只回 verdict 字串）也吃。
@@ -63,6 +70,7 @@ export const ConnectionAlert = ({
   onSwitchProtocol,
   loggedOut,
   loginBlocked,
+  isModalOpen,
 }) => {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -100,6 +108,14 @@ export const ConnectionAlert = ({
         typeof t.closest === "function" &&
         t.closest(PASSTHROUGH)
       ) {
+        return;
+      }
+      // 對話框開著時的 Esc 是給對話框關自己用的（Mantine Modal 也掛在 window capture，
+      // 但比這裡晚）。設定頁剛打開時焦點還在 #t（focus trap 用 setTimeout 才搬進去），
+      // 只看 target 會把這個 Esc 當終端機按鍵吃掉 ⇒ 對話框關不掉。
+      // 「開著」以 App 的 modalShown 為準（isModalOpen）：對話框關閉後的退場動畫期間
+      // DOM 還在，但 modalShown 已經是 false，那時 #t 上的 Esc 要照擋（終端機已經在收鍵）。
+      if (e.key === "Escape" && modalOpenNow(isModalOpen)) {
         return;
       }
       if (e.keyCode == 13) {
