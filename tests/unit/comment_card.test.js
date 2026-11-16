@@ -151,6 +151,20 @@ describe("ScreenController：只在 enhance.commentCards 時畫卡片", () => {
     expect(m.container.textContent).not.toContain("黑名單這則");
   });
 
+  // 同一人隔天（甚至隔幾天）又推：行右只寫「時:分」會被讀成標頭那天的時間 ⇒ 日期跟上一則
+  // 不同時，行右寫完整「月/日 時:分」。
+  test("合併塊裡跨日的那則，行右時間帶日期；同一天的照舊只寫時:分", () => {
+    const lines = easy.lines.slice(0, 10).concat([
+      row(seg("推 gooduser: 隔幾天第三則", color(2, 0)), seg("        06/20 09:15")),
+      row(seg("推 gooduser: 同一天第四則", color(2, 0)), seg("        06/20 09:16")),
+    ]);
+    const m = mountScreen({ ...props(true), lines });
+    const merged = m.container.querySelector('.commentCard[data-pusher="gooduser"]');
+    expect(
+      [...merged.querySelectorAll(".commentCardLineTime")].map((n) => n.getAttribute("data-time")),
+    ).toEqual(["12:02", "06/20 09:15", "09:16"]);
+  });
+
   test("合併推文標每則時間關掉：只留最後一則的時間、沒有行右時間", () => {
     const m = mountScreen(props(true, false));
     const merged = m.container.querySelector(
