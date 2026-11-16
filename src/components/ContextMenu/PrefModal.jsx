@@ -180,6 +180,24 @@ const PrefCheckbox = memo(
   ),
 );
 
+// 數字欄 adapter。onChange 傳穩定的 onNumberChange(name, value)，name 由這裡帶 ⇒
+// 呼叫端不必寫 inline arrow（inline 每次都是新函式，memo 就失效）。
+// 保留 name（input[name=...] e2e marker）與錨點。
+const PrefNumber = memo(
+  ({ name, value, onChange, label, description, min }) => (
+    <NumberInput
+      label={label}
+      description={description}
+      name={name}
+      min={min}
+      value={value}
+      onChange={(val) => onChange(name, val)}
+      mb="xs"
+      {...anchorFor(name, useFlashKey())}
+    />
+  ),
+);
+
 // 設定項下方的灰字說明。跟 PrefCheckbox 一樣包 memo：設定頁每改一個值整份
 // PrefModal 重畫，props 沒變的列直接跳過（改一格的重畫時間約減半，量測見
 // docs/build-modernization.md「設定頁重畫」）。
@@ -1233,17 +1251,13 @@ export const PrefModal = ({
                 >
                   {i18n("options_refreshKeyIntercept")}
                 </PrefCheckbox>
-                <NumberInput
+                <PrefNumber
+                  name="refreshMinIntervalSec"
+                  value={values.refreshMinIntervalSec}
+                  onChange={onNumberChange}
                   label={i18n("options_refreshMinIntervalSec")}
                   description={i18n("tooltip_refreshMinIntervalSec")}
-                  name="refreshMinIntervalSec"
                   min={0}
-                  value={values.refreshMinIntervalSec}
-                  onChange={(val) =>
-                    onNumberChange("refreshMinIntervalSec", val)
-                  }
-                  mb="xs"
-                  {...anchor("refreshMinIntervalSec")}
                 />
                 <PrefCheckbox
                   name="endTurnsOnLiveUpdate"
@@ -1285,22 +1299,18 @@ export const PrefModal = ({
                   {i18n("options_resumeLastPlace")}
                 </PrefCheckbox>
                 <PrefHint textKey="tooltip_resumeLastPlace" />
-                <NumberInput
-                  label={i18n("options_antiIdleTime")}
-                  description={i18n("tooltip_antiIdleTime")}
+                <PrefNumber
                   name="antiIdleTime"
                   value={values.antiIdleTime}
-                  onChange={(val) => onNumberChange("antiIdleTime", val)}
-                  mb="xs"
-                  {...anchor("antiIdleTime")}
+                  onChange={onNumberChange}
+                  label={i18n("options_antiIdleTime")}
+                  description={i18n("tooltip_antiIdleTime")}
                 />
-                <NumberInput
-                  label={i18n("options_lineWrap")}
+                <PrefNumber
                   name="lineWrap"
                   value={values.lineWrap}
-                  onChange={(val) => onNumberChange("lineWrap", val)}
-                  mb="xs"
-                  {...anchor("lineWrap")}
+                  onChange={onNumberChange}
+                  label={i18n("options_lineWrap")}
                 />
               </PrefSection>
               <PrefSection legendKey="options_contextMenu">
@@ -1481,13 +1491,11 @@ export const PrefModal = ({
                   mb="xs"
                   {...anchor("fontFace")}
                 />
-                <NumberInput
-                  label={i18n("options_bbsMargin")}
+                <PrefNumber
                   name="bbsMargin"
                   value={values.bbsMargin}
-                  onChange={(val) => onNumberChange("bbsMargin", val)}
-                  mb="xs"
-                  {...anchor("bbsMargin")}
+                  onChange={onNumberChange}
+                  label={i18n("options_bbsMargin")}
                 />
                 <Select
                   label={i18n("options_termSize")}
@@ -1511,21 +1519,17 @@ export const PrefModal = ({
                 />
                 {values.termSizeMode === "fixed-term-size" && (
                   <div>
-                    <NumberInput
-                      label={i18n("options_cols")}
+                    <PrefNumber
                       name="termSize.cols"
                       value={values.termSize.cols}
-                      onChange={(val) => onNumberChange("termSize.cols", val)}
-                      mb="xs"
-                      {...anchor("termSize.cols")}
+                      onChange={onNumberChange}
+                      label={i18n("options_cols")}
                     />
-                    <NumberInput
-                      label={i18n("options_rows")}
+                    <PrefNumber
                       name="termSize.rows"
                       value={values.termSize.rows}
-                      onChange={(val) => onNumberChange("termSize.rows", val)}
-                      mb="xs"
-                      {...anchor("termSize.rows")}
+                      onChange={onNumberChange}
+                      label={i18n("options_rows")}
                     />
                     <PrefCheckbox
                       name="fontFitWindowWidth"
@@ -1537,13 +1541,11 @@ export const PrefModal = ({
                   </div>
                 )}
                 {values.termSizeMode === "fixed-font-size" && (
-                  <NumberInput
-                    label={i18n("options_fontSize")}
+                  <PrefNumber
                     name="fontSize"
                     value={values.fontSize}
-                    onChange={(val) => onNumberChange("fontSize", val)}
-                    mb="xs"
-                    {...anchor("fontSize")}
+                    onChange={onNumberChange}
+                    label={i18n("options_fontSize")}
                   />
                 )}
                 <Select
