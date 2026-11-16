@@ -16,6 +16,7 @@
 // 才捲）。只捲視口、一個 byte 都不多送；頂端閃一行「接著上次讀到的地方｜回到開頭」。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { defaultStorage, readRaw, writeRaw } from './user_data';
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { i18n } from './i18n';
@@ -190,7 +191,7 @@ export function articleMatches(data, q, limit) {
 // now：時間來源（unit 注入）。
 export function RecentArticles(core, storage, cloud, now) {
   this._core = core;
-  this._storage = storage !== undefined ? storage : safeLocalStorage();
+  this._storage = storage !== undefined ? storage : defaultStorage();
   this._cloud = cloud || null;
   this._now = now || Date.now;
   this._listeners = new Set();
@@ -222,18 +223,10 @@ export function RecentArticles(core, storage, cloud, now) {
     });
 }
 
-function safeLocalStorage() {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage : null;
-  } catch (e) {
-    return null;
-  }
-}
-
 RecentArticles.prototype = {
   // 每次都比對 storage 的原文：別的分頁寫的、測試預先放的都讀得到。
   get state() {
-    const raw = this._getItem(RECENT_ARTICLES_KEY);
+    const raw = readRaw('recentArticles', this._storage);
     const map = this._laterMap();
     if (raw !== this._raw || this._data.laterMap !== map) {
       this._raw = raw;
@@ -242,28 +235,12 @@ RecentArticles.prototype = {
     return this._data;
   },
 
-  _getItem: function(key) {
-    try {
-      return this._storage ? this._storage.getItem(key) : null;
-    } catch (e) {
-      return null;
-    }
-  },
-
-  _setItem: function(key, raw) {
-    try {
-      if (this._storage) this._storage.setItem(key, raw);
-    } catch (e) {
-      // 寫不進去（隱私模式、配額）：只活在記憶體。
-    }
-  },
-
   // 稍後閱讀的 map（含墓碑）。每次比對 storage 原文（別的分頁寫的讀得到）。
   // 遷移：還沒有 v2 ⇒ 從舊版 v1 的 later 陣列搬過來，v1 拿掉 later（只搬一次）。
   _laterMap: function() {
-    let raw = this._getItem(READ_LATER_KEY);
+    let raw = readRaw('readLater', this._storage);
     if (raw == null && this._laterRaw === undefined) {
-      const v1raw = this._getItem(RECENT_ARTICLES_KEY);
+      const v1raw = readRaw('recentArticles', this._storage);
       let old = null;
       try {
         old = v1raw ? JSON.parse(v1raw) : null;
@@ -272,8 +249,8 @@ RecentArticles.prototype = {
       }
       const migrated = readLaterMapFromList(old && old.later);
       raw = JSON.stringify(migrated);
-      this._setItem(READ_LATER_KEY, raw);
-      if (old && Array.isArray(old.later)) this._setItem(RECENT_ARTICLES_KEY, JSON.stringify({ recent: old.recent || [] }));
+      writeRaw('readLater', raw, this._storage);
+      if (old && Array.isArray(old.later)) writeRaw('recentArticles', JSON.stringify({ recent: old.recent || [] }), this._storage);
       this._laterRaw = raw;
       this._laterMapCache = migrated;
       return migrated;
@@ -295,7 +272,7 @@ RecentArticles.prototype = {
   _writeLater: function(map, upload) {
     const next = trimReadLater(map, this._now());
     const raw = JSON.stringify(next);
-    this._setItem(READ_LATER_KEY, raw);
+    writeRaw('readLater', raw, this._storage);
     this._laterRaw = raw;
     this._laterMapCache = next;
     const data = this.state;
@@ -356,11 +333,8 @@ RecentArticles.prototype = {
   // 只寫最近讀過（稍後閱讀走 _writeLater）。data.later 不看。
   _write: function(data) {
     const raw = JSON.stringify({ recent: data.recent });
-    try {
-      if (this._storage) this._storage.setItem(RECENT_ARTICLES_KEY, raw);
-    } catch (e) {
-      // 寫不進去（無痕、容量滿）：這次只活在記憶體。
-    }
+    // 寫不進去（無痕、容量滿）：這次只活在記憶體。
+    writeRaw('recentArticles', raw, this._storage);
     this._raw = raw;
     const map = this._laterMap();
     const next = { recent: data.recent, later: liveReadLater(map), laterMap: map };
@@ -451,11 +425,7 @@ RecentArticles.prototype = {
     recent[i] = withLine(recent[i], line);
     const next = { recent: recent, later: data.later, laterMap: data.laterMap };
     const raw = JSON.stringify({ recent: recent });
-    try {
-      if (this._storage) this._storage.setItem(RECENT_ARTICLES_KEY, raw);
-    } catch (e) {
-      // 寫不進去：只活在記憶體。
-    }
+    writeRaw('recentArticles', raw, this._storage); // 寫不進去：只活在記憶體。
     this._raw = raw;
     this._data = next;
     return true;
