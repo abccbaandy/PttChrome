@@ -84,6 +84,22 @@ export function readJson(id, storage = defaultStorage()) {
 }
 
 /**
+ * 原文字串（沒有、拿不到都回 null）。給要拿原文當快取鍵的擁有者：每一幀都要問、原文沒變就
+ * 沿用上次解析的結果（新推文標記的列表徽章；別的分頁寫的也認得出來）。其餘一律用 readJson。
+ * @param {StorageKeyId} id
+ * @param {Storage | null} [storage]
+ * @returns {string | null}
+ */
+export function readRaw(id, storage = defaultStorage()) {
+  const key = keyOf(id);
+  try {
+    return storage ? storage.getItem(key) : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
  * 寫入 JSON；回傳有沒有真的寫進去（容量滿、隱私模式 ⇒ false，呼叫端照舊只在這一頁有效）。
  * @param {StorageKeyId} id
  * @param {unknown} value

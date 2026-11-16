@@ -2,7 +2,7 @@
 // 形狀跟搬家前一樣（開＝'1'，關＝整個移除）。以及旗標類擁有者不再自己碰 localStorage。
 import fs from 'node:fs';
 import path from 'node:path';
-import { readFlag, writeFlag, readJson, writeJson, removeData } from '../../src/js/user_data';
+import { readFlag, writeFlag, readJson, readRaw, writeJson, removeData } from '../../src/js/user_data';
 import { STORAGE_KEYS, USER_DATA } from '../../src/js/user_data_keys';
 
 function memStorage() {
@@ -71,6 +71,23 @@ describe('user_data 旗標', () => {
     expect(readJson('searchHistory', throwing)).toBe(null);
     removeData('searchHistory', st);
     expect(st.m.has(STORAGE_KEYS.searchHistory)).toBe(false);
+  });
+
+  test('原文：照原樣回字串（不解析），沒有／拿不到回 null', () => {
+    const st = memStorage();
+    expect(readRaw('newComments', st)).toBe(null);
+    st.m.set(STORAGE_KEYS.newComments, '{oops');
+    expect(readRaw('newComments', st)).toBe('{oops');
+    expect(readRaw('newComments', null)).toBe(null);
+    expect(readRaw('newComments', throwing)).toBe(null);
+  });
+
+  test('新推文標記走 readRaw（列表徽章拿原文當快取鍵）＋writeJson，不再自己碰 localStorage', () => {
+    const e = USER_DATA.find((x) => x.id === 'newComments');
+    const code = fs.readFileSync(path.join(process.cwd(), e.owner), 'utf8');
+    expect(code).toMatch(/readRaw\(\s*['"]newComments['"]/);
+    expect(code).toMatch(/writeJson\(\s*['"]newComments['"]/);
+    expect(code).not.toMatch(/\.(getItem|setItem|removeItem)\(/);
   });
 
   test('JSON：寫不進去回 false、不炸（容量滿、隱私模式）', () => {
