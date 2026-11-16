@@ -1,0 +1,75 @@
+// 設定索引的欄位型別（type，架構 review A7 第十一步）：索引項記下設定頁用哪種欄位畫它，
+// 為「一般列由表 map 出來」鋪路。這裡守兩件事：①設定頁 JSX 實際用的元件跟 type 一致
+// ②type 跟預設值的型別對得上（勾選＝布林、數字＝數字、文字類＝字串）。
+import fs from "node:fs";
+import path from "node:path";
+import { PREF_SEARCH_ITEMS, prefItem } from "../../src/js/pref_search";
+import { DEFAULT_PREFS } from "../../src/js/pref_storage";
+
+const COMPONENT_TYPE = {
+  PrefCheckRow: "check",
+  PrefCheckbox: "check",
+  PrefSelect: "select",
+  PrefNumber: "number",
+  PrefText: "text",
+  PrefTextarea: "textarea",
+  PrefHotkey: "hotkey",
+};
+
+const prefs = PREF_SEARCH_ITEMS.filter((it) => it.kind === "pref");
+
+/** termSize.cols 這種點號鍵到巢狀預設值裡找。 */
+function defaultOf(key) {
+  if (key in DEFAULT_PREFS) return DEFAULT_PREFS[key];
+  return key
+    .split(".")
+    .reduce((o, k) => (o == null ? undefined : o[k]), DEFAULT_PREFS);
+}
+
+describe("設定索引的欄位型別", () => {
+  test("每個設定項都有 type，且是已知的六種之一", () => {
+    const known = new Set(Object.values(COMPONENT_TYPE));
+    for (const it of prefs)
+      expect(known.has(it.type), `${it.key}: ${it.type}`).toBe(true);
+  });
+
+  test("設定頁 JSX 用的元件跟索引的 type 一致", () => {
+    const src = fs.readFileSync(
+      path.join(process.cwd(), "src/components/ContextMenu/PrefModal.jsx"),
+      "utf8",
+    );
+    const re = new RegExp(
+      `<(${Object.keys(COMPONENT_TYPE).join("|")})\\b([^>]*?)/?>`,
+      "gs",
+    );
+    let checked = 0;
+    for (const m of src.matchAll(re)) {
+      const name = /\bname="([^"]+)"/.exec(m[2])?.[1];
+      if (!name) continue; // 動態 name（快速搜尋內建列、元件定義本身）
+      const item = prefItem(name);
+      if (!item) continue; // 刻意不進索引者由 pref_search_index.test.js 管
+      expect(item.type, `${name} 用 <${m[1]}>`).toBe(COMPONENT_TYPE[m[1]]);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(140);
+  });
+
+  test("type 跟預設值的型別對得上", () => {
+    const expected = {
+      check: ["boolean"],
+      number: ["number"],
+      text: ["string"],
+      textarea: ["string"],
+      hotkey: ["string"],
+      select: ["string", "number"],
+    };
+    for (const it of prefs) {
+      const d = defaultOf(it.key);
+      if (d === undefined) continue; // 不存預設值的（例如密碼只存在瀏覽器密碼管理員）
+      expect(
+        expected[it.type],
+        `${it.key}（${it.type}）預設值 ${JSON.stringify(d)}`,
+      ).toContain(typeof d);
+    }
+  });
+});
