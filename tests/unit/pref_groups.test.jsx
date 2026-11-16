@@ -14,6 +14,7 @@ import {
   searchPrefSettings,
 } from "../../src/js/pref_search";
 import { setupI18n, i18n } from "../../src/js/i18n";
+import { NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
 
 vi.mock("../../src/js/pref_sync", () => ({
   savePrefs: vi.fn(),
@@ -145,6 +146,28 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     }
     // 一般分區幾乎都是勾選列；少到這個數字代表掃描本身壞了。
     expect(checked).toBeGreaterThan(30);
+  });
+
+  test("安全模式開著：要蓋掉的每一項在設定頁都反灰；關掉就恢復", async () => {
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({ values: { nativeSafeMode: true } }),
+    );
+    openModal();
+    await mounted();
+    const input = (key) => document.querySelector(`input[name="${key}"]`);
+    // 名單裡每一項都要在設定頁找得到（分頁都掛著），而且是 disabled。
+    const notDisabled = NATIVE_SAFE_MODE_KEYS.filter(
+      (k) => !(input(k) && input(k).disabled),
+    );
+    expect(notDisabled).toEqual([]);
+
+    fireEvent.click(input("nativeSafeMode"));
+    await vi.waitFor(() =>
+      expect(input("enableEasyReading").disabled).toBe(false),
+    );
+    expect(input("enableHomeDashboard").disabled).toBe(false);
+    expect(input("enableCommentBar").disabled).toBe(false);
   });
 
   test("點跳轉鈕：那一段的小標停在黏住的跳轉列正下方，那顆鈕亮起", async () => {

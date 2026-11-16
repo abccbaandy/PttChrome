@@ -184,6 +184,7 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - **「一般」分區的段落**（P94）：段落定義在 `src/js/pref_groups.js`（每段只記第一項的 key），設定頁的小標／跳轉列與設定搜尋的副標共用它，是設定表的第一個欄位。守護 `tests/unit/pref_groups.test.jsx`。
 - **快速搜尋**：自訂列收成 memo 元件 `QuickSearchCustomRow`（吃整列物件＋帶 id 的穩定 callback；改一列時 `onQuickSearchCustomChange` 只換掉那一列的物件，其他列物件不變 ⇒ 只重畫那一列）。內建項目的標題（名稱＋灰字網址樣板，是 JSX）在 PrefModal 裡 `useMemo` 建一次，`PrefCheckbox` 的 memo 不再被它打穿。測試另驗改一列只重畫那一列，計數對沒有 name 的欄位以 label 計。
 - **勾選列的字從索引來**：`PrefCheckRow name="…"` 只寫 name／checked／disabled／onChange，標題與灰字說明取自設定搜尋索引（`pref_search.js#prefItem` 的 `titleKey`／`tooltipKey`）⇒ 設定頁與搜尋結果同一份文字來源。99 列（標題＋說明剛好是索引那兩個鍵的）已換；帶警告字、`description`、說明跟索引不同字的照舊手寫 `PrefCheckbox`。守護：`pref_groups.test.jsx` 驗一般分區每個勾選列的字＝索引，`pref_search_index.test.js` 掃 `PrefCheckRow` 的 name。
+- **安全模式反灰從名單來**：`PrefCheckRow` 對 `pref_storage.js#NATIVE_SAFE_MODE_KEYS` 裡的項目自己反灰（安全模式的值走 context），呼叫端的 `disabled` 只寫其他條件（上層開關沒開）。名單加一項設定頁就跟著反灰。守護 `pref_groups.test.jsx`：安全模式開著時名單每一項的 input 都 disabled。
 - **還沒做**：把索引升格成完整設定表（再帶型別、disabled 條件、子選項縮排），讓一般列直接由表 map 出來；目前 JSX 仍逐列寫元件，只有文字鍵已同源。
 
 ## Deprecated 瀏覽器 API

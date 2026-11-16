@@ -1,6 +1,8 @@
 import {
   cloneElement,
+  createContext,
   memo,
+  useContext,
   useState,
   useCallback,
   useEffect,
@@ -29,6 +31,7 @@ import { i18n } from "../../js/i18n";
 import { GENERAL_GROUPS } from "../../js/pref_groups";
 import {
   DEFAULT_PREFS,
+  NATIVE_SAFE_MODE_KEYS,
   readValuesWithDefault,
   writeValues,
 } from "../../js/pref_storage";
@@ -385,15 +388,29 @@ const PrefHint = memo(({ textKey }) => (
 // （pref_search.js#prefItem）⇒ 設定頁上的字與搜尋結果同一份來源。只給「標題＋說明」
 // 剛好就是索引那兩個鍵的列用；帶額外內容（警告字、description、說明不同字）的照舊手寫。
 // 不在索引裡就直接炸：那是寫錯 name，靜態守護 pref_search_index.test.js 也會先紅。
+//
+// 安全模式要蓋掉的項目（pref_storage.js#NATIVE_SAFE_MODE_KEYS）由這裡自己反灰：
+// 呼叫端的 disabled 只寫其他條件（例如上層開關沒開）。名單加一項，設定頁就跟著反灰，
+// 不必回來改 JSX。安全模式的值走 context：切換時只有用到它的列重畫。
+const SAFE_MODE_KEYS = new Set(NATIVE_SAFE_MODE_KEYS);
+const SafeModeContext = createContext(false);
+// Modal 外面包一層 Provider（context 穿得過 portal）。寫成元件而不是在 JSX 裡多包一層，
+// 是為了不讓整段設定頁多縮排一層。
+const SafeModeModal = ({ safeMode, ...props }) => (
+  <SafeModeContext.Provider value={safeMode}>
+    <Modal {...props} />
+  </SafeModeContext.Provider>
+);
 const PrefCheckRow = memo(({ name, checked, disabled, onChange }) => {
   const it = prefItem(name);
   if (!it) throw new Error(`PrefCheckRow: ${name} 不在設定搜尋索引裡`);
+  const safeMode = useContext(SafeModeContext) && SAFE_MODE_KEYS.has(name);
   return (
     <>
       <PrefCheckbox
         name={name}
         checked={checked}
-        disabled={disabled}
+        disabled={safeMode || disabled}
         onChange={onChange}
       >
         {i18n(it.titleKey)}
@@ -1169,7 +1186,8 @@ export const PrefModal = ({
   const aiSubDisabled = !values.enableAi || aiUnusable;
 
   return (
-    <Modal
+    <SafeModeModal
+      safeMode={!!values.nativeSafeMode}
       opened={show}
       onClose={onCloseClick}
       // marker 放在 content（可見的對話框本體）而非 mantine-Modal-root（外層 0 尺寸
@@ -1328,19 +1346,17 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="enableEasyReading"
                   checked={values.enableEasyReading}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableHelpMenuPopup"
                   checked={values.enableHelpMenuPopup}
-                  disabled={values.nativeSafeMode || !values.enableEasyReading}
+                  disabled={!values.enableEasyReading}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableEasyReadingList"
                   checked={values.enableEasyReadingList}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
@@ -1354,32 +1370,27 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="enableBoardListSmoothScroll"
                   checked={values.enableBoardListSmoothScroll}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableListNativeAutoResume"
                   checked={values.enableListNativeAutoResume}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="queueListClickWhenBusy"
                   checked={values.queueListClickWhenBusy}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="skipBoardEntryScreen"
                   checked={values.skipBoardEntryScreen}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefGroupHeading id="home" />
                 <PrefCheckRow
                   name="enableHomeDashboard"
                   checked={values.enableHomeDashboard}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
@@ -1412,19 +1423,16 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="enableBoardTabs"
                   checked={values.enableBoardTabs}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableSplitReading"
                   checked={values.enableSplitReading}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableNextArticleCard"
                   checked={values.enableNextArticleCard}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <div className="PrefModal__SubOptions">
@@ -1460,7 +1468,6 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="easyReadingEndSwitchNative"
                   checked={values.easyReadingEndSwitchNative}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefGroupHeading id="hotkeys" />
@@ -1555,7 +1562,6 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="endTurnsOnLiveUpdate"
                   checked={values.endTurnsOnLiveUpdate}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
@@ -1571,13 +1577,11 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="reconnectResume"
                   checked={values.reconnectResume}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="resumeLastPlace"
                   checked={values.resumeLastPlace}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefNumber
@@ -1618,7 +1622,6 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="enableEditorInput"
                   checked={values.enableEditorInput}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
@@ -1629,13 +1632,13 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="pushKeyOpensLongPush"
                   checked={values.pushKeyOpensLongPush}
-                  disabled={!values.enableLongPush || values.nativeSafeMode}
+                  disabled={!values.enableLongPush}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableCommentBar"
                   checked={values.enableCommentBar}
-                  disabled={!values.enableLongPush || values.nativeSafeMode}
+                  disabled={!values.enableLongPush}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
@@ -1676,7 +1679,6 @@ export const PrefModal = ({
                 <PrefCheckRow
                   name="searchKeyOpensModal"
                   checked={values.searchKeyOpensModal}
-                  disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
@@ -2882,7 +2884,7 @@ export const PrefModal = ({
           </div>
         </div>
       </Tabs>
-    </Modal>
+    </SafeModeModal>
   );
 };
 
