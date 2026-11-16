@@ -2,6 +2,8 @@
 // non-React modules (main.js, pref_sync.js) can read/write prefs without
 // importing a component module.
 
+import { STORAGE_KEYS } from "./user_data_keys";
+
 export const DEFAULT_PREFS = {
   // general
   //dbcsDetect    : false,
@@ -532,7 +534,7 @@ export const DEFAULT_PREFS = {
   enableWorkMode: false
 };
 
-const PREF_STORAGE_KEY = "pttchrome.pref.v1";
+const PREF_STORAGE_KEY = STORAGE_KEYS.prefs;
 
 export const readValuesWithDefault = () => {
   try {

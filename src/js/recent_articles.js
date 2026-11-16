@@ -15,6 +15,7 @@
 // 落地那篇確實是這一篇，才交給好讀的一次性還原（easy_reading.requestScrollRestore，累積到位
 // 才捲）。只捲視口、一個 byte 都不多送；頂端閃一行「接著上次讀到的地方｜回到開頭」。
 
+import { STORAGE_KEYS } from './user_data_keys';
 import { readEffectivePrefs } from './pref_storage';
 import { recordFor } from './reading_record';
 import { i18n } from './i18n';
@@ -32,10 +33,10 @@ import {
 
 export { READ_LATER_LIMIT };
 
-export const RECENT_ARTICLES_KEY = 'pttchrome.recentArticles.v1';
+export const RECENT_ARTICLES_KEY = STORAGE_KEYS.recentArticles;
 // 稍後閱讀（含刪除的墓碑）：read_later_sync.js 的 map，跟雲端 users/{uid}.readLater 同一個形狀。
 // 舊版放在 RECENT_ARTICLES_KEY 的 later 陣列，第一次讀時搬過來（_laterMap）。
-export const READ_LATER_KEY = 'pttchrome.readLater.v2';
+export const READ_LATER_KEY = STORAGE_KEYS.readLater;
 export const RECENT_ARTICLES_LIMIT = 30;
 // 開回去之後最多等多久落地（AID 跳文含切板通常幾秒內）。
 export const RESUME_ARM_MS = 30000;

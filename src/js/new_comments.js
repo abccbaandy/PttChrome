@@ -19,6 +19,7 @@
 // 點「+N」徽章＝開這篇並跳到新推文（armJumpOnOpen）：開文照列表原本那一下（同一條開文
 // 交易），多的只是好讀載到「以下是新推文」那一列時把視口捲過去。一樣一個 byte 都不送。
 
+import { STORAGE_KEYS } from './user_data_keys';
 import { parseComment, FloorCounter } from './comment_parse';
 import { readEffectivePrefs } from './pref_storage';
 import { parseListEntry } from './agent_parse';
@@ -26,7 +27,7 @@ import { listRowIdentity, subjectKey, subjectMatches } from './long_push_anchor'
 import { aidToFn } from './aid_codec';
 import { PAGE_STATE, screenOf } from './screen_model';
 
-export const NEW_COMMENTS_KEY = 'pttchrome.newComments.v1';
+export const NEW_COMMENTS_KEY = STORAGE_KEYS.newComments;
 // 最多記幾篇（超過丟最久沒讀的）。一篇一筆 [推文數, 時間]，一千篇約 40KB。
 export const NEW_COMMENTS_LIMIT = 1000;
 

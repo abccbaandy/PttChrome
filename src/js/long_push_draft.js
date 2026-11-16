@@ -15,7 +15,9 @@
 //
 // 守護 tests/unit/long_push_draft.test.js。
 
-const DRAFT_KEY = 'pttchrome.longPush.draft.v1';
+import { STORAGE_KEYS } from './user_data_keys';
+
+const DRAFT_KEY = STORAGE_KEYS.longPushDraft;
 
 // 上一次真的寫進去的值。每打一個字就 setItem 一次是可接受的（同步、幾百 bytes），
 // 但完全相同的值重複寫沒有意義 ⇒ 擋掉。

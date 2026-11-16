@@ -5,6 +5,7 @@
 // 其他裝置。手機上把某個顯示設定「修正」後存回去，桌機下次開站就會吃到手機的值
 // （反方向就是手機被桌機的 fixed-font-size 20px 切掉右半邊的成因）。
 
+import { STORAGE_KEYS } from './user_data_keys';
 import { TERM_COLS, calcTermSize, termLayoutOffsets } from './term_size';
 
 // pref `mobileLayout` 的值域。auto ＝依裝置判斷；on/off ＝使用者強制（誤判逃生門，
@@ -126,7 +127,7 @@ export const KEYPAD_DRAG_THRESHOLD_PX = 8;
 // localStorage、不寫 prefs**：prefs 經 pref_sync 同步到其他裝置（同「手機模式是
 // runtime 覆寫」那條規則）。預設＝桌機舊位置；手機上在底部工具列（MOBILE_TOOLBAR_PX）
 // 上方 16px。
-export const FLOAT_TOOLS_POS_STORAGE_KEY = 'pttchrome.floatToolsPos';
+export const FLOAT_TOOLS_POS_STORAGE_KEY = STORAGE_KEYS.floatToolsPos;
 export const FLOAT_TOOLS_DEFAULT_POS = { right: 16, bottom: 64 };
 
 // 把位置夾回視窗內：整個浮層（w×h）都要看得到。視窗比浮層還小時貼齊左上。

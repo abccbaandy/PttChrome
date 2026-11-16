@@ -8,6 +8,7 @@
 // has signed in before — see SYNC_FLAG_KEY). Tests run the real SDK against
 // the local Firebase Emulator Suite (yarn test:integration), not a fake.
 
+import { STORAGE_KEYS } from "./user_data_keys";
 import { FIREBASE_CONFIG, RECAPTCHA_SITE_KEY } from "./firebase_config";
 import {
   DEFAULT_PREFS,
@@ -25,7 +26,7 @@ import { authenticateGoogle, clearGoogleSignInState } from "./google_sign_in";
 // Set after the first successful sign-in so the next startup knows to load
 // the SDK and restore the session; cleared on sign-out. Keeping it separate
 // from the prefs blob means signed-out users never pay the SDK download.
-const SYNC_FLAG_KEY = "pttchrome.prefsync.enabled";
+const SYNC_FLAG_KEY = STORAGE_KEYS.prefSyncEnabled;
 
 let loadPromise = null;
 // { app, auth, db, authM, fsM } once loadPromise resolves; savePrefs reads it

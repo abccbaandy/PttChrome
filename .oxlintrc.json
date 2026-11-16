@@ -41,7 +41,14 @@
       "rules": {
         "pttchrome/no-magic-page-state": "error",
         "pttchrome/no-direct-conn-send": "error",
-        "pttchrome/no-modal-shown-assign": "error"
+        "pttchrome/no-modal-shown-assign": "error",
+        "pttchrome/no-storage-key-literal": "error"
+      }
+    },
+    {
+      "files": ["src/js/user_data_keys.js"],
+      "rules": {
+        "pttchrome/no-storage-key-literal": "off"
       }
     },
     {

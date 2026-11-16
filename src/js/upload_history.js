@@ -7,7 +7,9 @@
 //   - 也不必跟 pref 一起做 schema 遷移。
 // 純函式部分守護在 tests/unit/upload_history.test.js。
 
-const HISTORY_KEY = 'pttchrome.upload.v1';
+import { STORAGE_KEYS } from './user_data_keys';
+
+const HISTORY_KEY = STORAGE_KEYS.uploadHistory;
 export const MAX_HISTORY = 50;
 
 // entry: { url, deleteUrl, previewUrl, filename, mime, at }
