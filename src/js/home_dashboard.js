@@ -17,6 +17,7 @@
 // 面板的捲動位置是閱讀紀錄的 home 紀錄（readingPosition／requestViewportRestore）。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { readJson, writeJson } from './user_data';
 import { rowHasTitle, MAIN_MENU, BOARD_LIST, parseBoardName, isArticleListTitleRow } from './screen_titles';
 import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { parseListEntry } from './agent_parse';
@@ -320,23 +321,6 @@ export function keyDismissesHome(e) {
   return true;
 }
 
-function readJson(key) {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function writeJson(key, value) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    // 無痕視窗／被擋：這一頁的記憶體裡還有，下次開站重抓。
-  }
-}
-
 function enabled() {
   return !!readEffectivePrefs().enableHomeDashboard;
 }
@@ -353,8 +337,8 @@ export function HomeDashboard(core) {
   this._autoTimer = null;
   // 閱讀紀錄交回的待還原錨（面板下一次畫出來時套用，見 applyPendingViewport）。
   this._pendingViewport = null;
-  const fav = readJson(HOME_FAV_CACHE_KEY);
-  const recent = readJson(HOME_RECENT_KEY);
+  const fav = readJson('homeFavorites');
+  const recent = readJson('homeRecentBoards');
   this._state = {
     visible: false,
     fetching: false,
@@ -480,7 +464,7 @@ HomeDashboard.prototype = {
   _noteRecent: function(name) {
     if (this._state.recents[0] === name) return;
     const next = pushRecentBoard(this._state.recents, name);
-    writeJson(HOME_RECENT_KEY, next);
+    writeJson('homeRecentBoards', next);
     this._set({ recents: next });
   },
 
@@ -506,7 +490,7 @@ HomeDashboard.prototype = {
   _setBoards: function(boards) {
     if (boards === this._state.boards) return;
     // 「幾點更新」仍是上次整份抓的時間：這裡只改了個別板的未讀。
-    writeJson(HOME_FAV_CACHE_KEY, { at: this._state.savedAt, boards: boards });
+    writeJson('homeFavorites', { at: this._state.savedAt, boards: boards });
     this._set({ boards: boards });
   },
 
@@ -680,7 +664,7 @@ HomeDashboard.prototype = {
           finish('done');
           const boards = mergeFavEntries(pages);
           const now = Date.now();
-          writeJson(HOME_FAV_CACHE_KEY, { at: now, boards: boards });
+          writeJson('homeFavorites', { at: now, boards: boards });
           self._set({ fetching: false, boards: boards, fetchedAt: now, savedAt: now, failedAt: null });
           self._onSettled();
         }
