@@ -221,12 +221,17 @@ test.describe('文章連結的右鍵選單（離線重放）', () => {
       await rightClickPlainText(page);
       await expect(page.locator('.DropdownMenu').first()).toBeVisible();
       await expect(chip('copyArticleLinkRow')).toBeVisible();
+      // 真滑鼠停到那顆上 ⇒ 預覽行換成那顆的內容，且＝點下去實際複製的字。
+      await chip(key).hover();
+      const preview = chip('copyArticleLinkRow').locator('.DropdownMenu__preview');
+      const shown = await preview.textContent();
       await chip(key).click();
       expected.push(key);
       await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(expected.length);
       const got = await page.evaluate(() => window.__copied[window.__copied.length - 1]);
       const fn = /M\.\d+\.A\.[0-9A-F]{3}\.html/.exec(got);
       expect(got).toBe(text(fn ? fn[0] : ''));
+      expect(got).toBe(shown);
     }
     // 免費路徑：一次都沒有按 Q（畫面沒被抛回列表）。
     expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(3);

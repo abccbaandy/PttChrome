@@ -1,4 +1,6 @@
 // @unit-env browser
+// real-input: tests/e2e/offline/article_link_menu.offline.spec.js
+//   （P93 一列三顆：真滑鼠 hover 換預覽、預覽＝實際複製的字）
 // 右鍵選單的三件事：複製選項的預覽行、兩個小幫手的顯示開關，以及
 // 「在連結上沒選取時不該出現複製項」那條回歸。
 //
