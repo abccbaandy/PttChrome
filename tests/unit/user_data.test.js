@@ -2,7 +2,7 @@
 // 形狀跟搬家前一樣（開＝'1'，關＝整個移除）。以及旗標類擁有者不再自己碰 localStorage。
 import fs from 'node:fs';
 import path from 'node:path';
-import { readFlag, writeFlag, readJson, readRaw, writeJson, removeData } from '../../src/js/user_data';
+import { readFlag, writeFlag, readJson, readRaw, writeRaw, writeJson, removeData } from '../../src/js/user_data';
 import { STORAGE_KEYS, USER_DATA } from '../../src/js/user_data_keys';
 
 function memStorage() {
@@ -88,6 +88,23 @@ describe('user_data 旗標', () => {
     expect(code).toMatch(/readRaw\(\s*['"]newComments['"]/);
     expect(code).toMatch(/writeJson\(\s*['"]newComments['"]/);
     expect(code).not.toMatch(/\.(getItem|setItem|removeItem)\(/);
+  });
+
+  test('長推文草稿存原文字串（舊資料不是 JSON）：走 readRaw／writeRaw／removeData，不再自己碰 localStorage', () => {
+    const e = USER_DATA.find((x) => x.id === 'longPushDraft');
+    const code = fs.readFileSync(path.join(process.cwd(), e.owner), 'utf8');
+    expect(code).toMatch(/readRaw\(\s*['"]longPushDraft['"]/);
+    expect(code).toMatch(/writeRaw\(\s*['"]longPushDraft['"]/);
+    expect(code).toMatch(/removeData\(\s*['"]longPushDraft['"]/);
+    expect(code).not.toMatch(/\.(getItem|setItem|removeItem)\(/);
+  });
+
+  test('原文字串：寫得回來、寫不進去回 false 不炸', () => {
+    const st = memStorage();
+    expect(writeRaw('longPushDraft', '打到一半', st)).toBe(true);
+    expect(readRaw('longPushDraft', st)).toBe('打到一半');
+    expect(writeRaw('longPushDraft', 'x', null)).toBe(false);
+    expect(writeRaw('longPushDraft', 'x', throwing)).toBe(false);
   });
 
   test('JSON：寫不進去回 false、不炸（容量滿、隱私模式）', () => {

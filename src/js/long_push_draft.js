@@ -15,9 +15,7 @@
 //
 // 守護 tests/unit/long_push_draft.test.js。
 
-import { STORAGE_KEYS } from './user_data_keys';
-
-const DRAFT_KEY = STORAGE_KEYS.longPushDraft;
+import { readRaw, writeRaw, removeData } from './user_data';
 
 // 上一次真的寫進去的值。每打一個字就 setItem 一次是可接受的（同步、幾百 bytes），
 // 但完全相同的值重複寫沒有意義 ⇒ 擋掉。
@@ -29,25 +27,19 @@ let lastWritten = null;
 
 // 讀不到／被關掉／存到壞東西一律回空字串：這是附屬功能，絕不可以炸掉輸入框。
 // （隱私視窗、封鎖 site data、iframe 的 SecurityError 都會讓存取 throw。）
+// 存的是原文字串（不是 JSON，舊資料就是這個形狀）⇒ 走 readRaw／writeRaw。
 export function readDraft() {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    return typeof raw === 'string' ? raw : '';
-  } catch (e) {
-    return '';
-  }
+  const raw = readRaw('longPushDraft');
+  return typeof raw === 'string' ? raw : '';
 }
 
 export function writeDraft(text) {
   const next = typeof text === 'string' ? text : '';
   if (next === lastWritten && readDraft() === next) return;
   lastWritten = next;
-  try {
-    if (next) localStorage.setItem(DRAFT_KEY, next);
-    else localStorage.removeItem(DRAFT_KEY);
-  } catch (e) {
-    /* 寫不進去就算了，輸入框照樣能用 */
-  }
+  // 寫不進去就算了，輸入框照樣能用（user_data 的契約）。
+  if (next) writeRaw('longPushDraft', next);
+  else removeData('longPushDraft');
 }
 
 export function clearDraft() {
