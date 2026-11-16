@@ -108,3 +108,44 @@ describe("斷線提示：其他 UI 的按鍵必須放行", () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
+
+// 設定頁剛打開、焦點還在 #t（Mantine 的 focus trap 用 setTimeout 才把焦點搬進對話框）時按 Esc：
+// 攔截器比 Mantine 早掛在 window capture，以前會把這個 Esc 當終端機按鍵吃掉 ⇒ 對話框關不掉
+// （offline e2e connect_failure「Esc 與點擊遮罩也關得掉設定頁」在 CI 機器忙時重現）。
+describe("斷線提示：有對話框開著時 Esc 一律放行（讓對話框自己關）", () => {
+  const mountOpenModal = () => {
+    const dialog = document.createElement("section");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+    return dialog;
+  };
+
+  test("焦點還在 #t：Esc 不被吃掉，後掛的 window 監聽收得到", () => {
+    const t = mountTerminalInput();
+    mountAlert();
+    mountOpenModal();
+    const seen = vi.fn();
+    window.addEventListener("keydown", seen, true);
+    try {
+      expect(fireEvent.keyDown(t, { key: "Escape", keyCode: 27 })).toBe(true);
+      expect(seen).toHaveBeenCalledTimes(1);
+      expect(onDismiss).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", seen, true);
+    }
+  });
+
+  test("沒有對話框開著：#t 上的 Esc 照擋（不漏進終端機）", () => {
+    const t = mountTerminalInput();
+    mountAlert();
+    expect(fireEvent.keyDown(t, { key: "Escape", keyCode: 27 })).toBe(false);
+  });
+
+  test("對話框開著時，#t 上的其他按鍵照擋", () => {
+    const t = mountTerminalInput();
+    mountAlert();
+    mountOpenModal();
+    expect(fireEvent.keyDown(t, { key: "a", keyCode: 65 })).toBe(false);
+  });
+});
