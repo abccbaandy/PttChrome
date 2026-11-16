@@ -35,6 +35,7 @@
 //     #AID 搜尋，重連就再送等於火上加油（upstream b4d9a0e 起由 activity service 判定）。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { readJson, writeJson, removeData } from './user_data';
 import { isMainMenuRow } from './aid_navigation';
 import { recordFor } from './reading_record';
 import { boardNameFromKey } from './screen_titles';
@@ -49,14 +50,11 @@ export const SNAPSHOT_KEY = STORAGE_KEYS.rendererResume;
 // 回收後多久內回來還接得回去。再久的位置使用者多半不記得了，跳過去反而突兀。
 export const SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
+// 讀一次就刪：開機只接這一次，之後的重連要自己再存。
 function readSnapshot() {
-  try {
-    const raw = window.localStorage.getItem(SNAPSHOT_KEY);
-    window.localStorage.removeItem(SNAPSHOT_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    return null;
-  }
+  const snap = readJson('rendererResume');
+  removeData('rendererResume');
+  return snap;
 }
 
 // 存檔 → 待回目標。純函式：太舊、形狀不對都回 null。
@@ -214,19 +212,13 @@ ReconnectResume.prototype = {
       const post = bm.article && nav && nav.currentPostAid ? nav.currentPostAid() : null;
       plan = resumePlanFrom(bm, post);
     }
-    try {
-      if (plan) {
-        // 書籤裡的畫面擁有者是物件參照，存不下也用不到（還原走 core 上的現役擁有者）。
-        const bookmark = Object.assign({}, plan.bookmark, { listOwner: null, boardListOwner: null });
-        window.localStorage.setItem(
-          SNAPSHOT_KEY,
-          JSON.stringify({ at: Date.now(), plan: Object.assign({}, plan, { bookmark: bookmark }) })
-        );
-      } else {
-        window.localStorage.removeItem(SNAPSHOT_KEY);
-      }
-    } catch (e) {
-      // 存不下（被擋／滿了）：回收後就回不去，跟以前一樣。
+    // 存不下（被擋／滿了）：回收後就回不去，跟以前一樣（writeJson 安靜放棄）。
+    if (plan) {
+      // 書籤裡的畫面擁有者是物件參照，存不下也用不到（還原走 core 上的現役擁有者）。
+      const bookmark = Object.assign({}, plan.bookmark, { listOwner: null, boardListOwner: null });
+      writeJson('rendererResume', { at: Date.now(), plan: Object.assign({}, plan, { bookmark: bookmark }) });
+    } else {
+      removeData('rendererResume');
     }
     this._diag('saveSnapshot', { kind: plan ? plan.kind : null });
   },
