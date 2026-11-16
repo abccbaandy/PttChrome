@@ -1639,10 +1639,17 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
     expect(nav2.findLocalPostAid()).toBeNull();
   });
 
-  test("同一組網址重複出現（推文區又貼一次本篇網址不會有發信站）照常認得", () => {
-    const acc = ["作者 someone (某人) 看板 Browsers", "標題 [問題] 測試", "內文", "--", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN), "推 a: " + URL_ROW("Browsers", BROWSERS_FN)];
+  test("同一組「發信站＋網址」出現兩次（同一篇）照常認得", () => {
+    const acc = ["作者 someone (某人) 看板 Browsers", "標題 [問題] 測試", "內文", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN), "--", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN)];
     const { nav } = makeHarness({ pageState: 3, articleBoard: "Browsers", pageLines: acc });
     expect(nav.findLocalPostAid()).toEqual({ board: "Browsers", aid: BROWSERS_AID });
+    const rows = screen({ last: STATUS_ROW });
+    rows[4] = ORIGIN_ROW;
+    rows[5] = URL_ROW("Browsers", BROWSERS_FN);
+    rows[17] = ORIGIN_ROW;
+    rows[18] = URL_ROW("Browsers", BROWSERS_FN);
+    const { nav: nav2 } = makeHarness({ pageState: 3, articleBoard: "Browsers", screenRows: rows });
+    expect(nav2.findLocalPostAid()).toEqual({ board: "Browsers", aid: BROWSERS_AID });
   });
 
   test("網址列在畫面第一列（發信站捲出畫面外）→ null，退回按 Q", () => {
