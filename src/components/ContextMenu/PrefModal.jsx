@@ -88,7 +88,11 @@ import {
   normalizeMobileFontPx,
 } from "../../js/mobile_layout";
 import { PrefSearchBox } from "./PrefSearchBox";
-import { prefItem, prefRequiresChain } from "../../js/pref_search";
+import {
+  prefItem,
+  prefRequiresChain,
+  prefRequiresOff,
+} from "../../js/pref_search";
 import { shortcutList, isMacPlatform } from "../../js/shortcut_list";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import "./PrefModal.css";
@@ -1490,7 +1494,7 @@ export const PrefModal = ({
                 <PrefHotkey
                   name="easyReadingEndSwitchKey"
                   value={values.easyReadingEndSwitchKey}
-                  disabled={!values.easyReadingEndSwitchNative}
+                  disabled={prefRequiresOff("easyReadingEndSwitchKey", values)}
                   onKeyDown={onHotkeyCapture}
                   label={i18n("options_easyReadingEndSwitchKey")}
                   placeholder={i18n("tooltip_easyReadingEndSwitchKey")}
@@ -1543,7 +1547,7 @@ export const PrefModal = ({
                 <PrefHotkey
                   name="commandPaletteKey"
                   value={values.commandPaletteKey}
-                  disabled={!values.enableCommandPalette}
+                  disabled={prefRequiresOff("commandPaletteKey", values)}
                   onKeyDown={onHotkeyCapture}
                   label={i18n("options_commandPaletteKey")}
                   placeholder={i18n("tooltip_commandPaletteKey")}
@@ -1551,7 +1555,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="paletteQuickBoards"
                   checked={values.paletteQuickBoards}
-                  disabled={!values.enableCommandPalette}
+                  disabled={prefRequiresOff("paletteQuickBoards", values)}
                   onChange={onCheckboxChange}
                   description={i18n("tooltip_paletteQuickBoards")}
                 >
@@ -1988,7 +1992,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="mouseBrowsingHighlight"
                   checked={values.mouseBrowsingHighlight}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseBrowsingHighlight", values)}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_mouseBrowsingHighlight")}
@@ -2001,7 +2005,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="mouseLeftClick"
                   checked={values.mouseLeftClick}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseLeftClick", values)}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableMouseLeftClick")}
@@ -2022,7 +2026,7 @@ export const PrefModal = ({
                   onChange={onSelectStr}
                   label={i18n("options_mouseListClickStart")}
                   ariaLabel={i18n("options_mouseListClickStart")}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseListClickStart", values)}
                   options={MOUSE_LIST_CLICK_START_OPTIONS}
                 />
                 <PrefSelect
@@ -2031,7 +2035,7 @@ export const PrefModal = ({
                   onChange={onSelectStr}
                   label={i18n("options_mousePushClickStart")}
                   ariaLabel={i18n("options_mousePushClickStart")}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mousePushClickStart", values)}
                   options={MOUSE_PUSH_CLICK_START_OPTIONS}
                 />
                 <PrefSelect
@@ -2040,7 +2044,7 @@ export const PrefModal = ({
                   onChange={onSelectStr}
                   label={i18n("options_mousePushClickEnd")}
                   ariaLabel={i18n("options_mousePushClickEnd")}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mousePushClickEnd", values)}
                   options={MOUSE_PUSH_CLICK_END_OPTIONS}
                 />
               </PrefSection>
@@ -2051,7 +2055,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="mouseEdgePaging"
                   checked={values.mouseEdgePaging}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseEdgePaging", values)}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableMouseEdgePaging")}
@@ -2067,7 +2071,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="mouseFunctionKeys"
                   checked={values.mouseFunctionKeys}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseFunctionKeys", values)}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_enableMouseFunctionKeys")}
@@ -2081,7 +2085,7 @@ export const PrefModal = ({
                   ariaLabel={i18n("options_mouseMiddleClick")}
                   name="mouseMiddleClick"
                   value={String(values.mouseMiddleClick)}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseMiddleClick", values)}
                   onChange={onSelectNum}
                   options={MOUSE_MIDDLE_CLICK_OPTIONS}
                 />
@@ -2091,7 +2095,7 @@ export const PrefModal = ({
                   ariaLabel={i18n("options_mouseWheel")}
                   name="mouseWheel"
                   value={String(values.mouseWheel)}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseWheel", values)}
                   onChange={onSelectNum}
                   options={MOUSE_WHEEL_OPTIONS}
                 />
@@ -2101,7 +2105,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="mouseWheelSmoothScroll"
                   checked={values.mouseWheelSmoothScroll}
-                  disabled={!values.useMouseBrowsing || !values.mouseWheel}
+                  disabled={prefRequiresOff("mouseWheelSmoothScroll", values)}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_mouseWheelSmoothScroll")}
@@ -2118,7 +2122,7 @@ export const PrefModal = ({
                   ariaLabel={i18n("options_mouseBackNav")}
                   name="mouseBackNav"
                   value={String(values.mouseBackNav)}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseBackNav", values)}
                   onChange={onSelectNum}
                   options={MOUSE_BACK_NAV_OPTIONS}
                 />
@@ -2134,7 +2138,7 @@ export const PrefModal = ({
                 <PrefCheckbox
                   name="mouseServerReport"
                   checked={values.mouseServerReport}
-                  disabled={!values.useMouseBrowsing}
+                  disabled={prefRequiresOff("mouseServerReport", values)}
                   onChange={onCheckboxChange}
                 >
                   {i18n("options_mouseServerReport")}
@@ -2173,7 +2177,7 @@ export const PrefModal = ({
                   <PrefText
                     name="proxyUrl"
                     value={values.proxyUrl}
-                    disabled={!values.useProxy}
+                    disabled={prefRequiresOff("proxyUrl", values)}
                     onChange={onTextInputChange}
                     label={i18n("options_proxyUrl")}
                     description={i18n("tooltip_proxyUrl")}
@@ -2268,7 +2272,7 @@ export const PrefModal = ({
                 <PrefText
                   name="imgurProxyUrl"
                   value={values.imgurProxyUrl}
-                  disabled={!values.useImgurProxy}
+                  disabled={prefRequiresOff("imgurProxyUrl", values)}
                   onChange={onTextInputChange}
                   label={i18n("options_imgurProxyUrl")}
                   description={i18n("tooltip_imgurProxyUrl")}
@@ -2302,7 +2306,7 @@ export const PrefModal = ({
                   name="mergedCommentEachTime"
                   checked={values.mergedCommentEachTime}
                   onChange={onCheckboxChange}
-                  disabled={!values.mergeSameAuthorComments}
+                  disabled={prefRequiresOff("mergedCommentEachTime", values)}
                 >
                   {i18n("options_mergedCommentEachTime")}
                 </PrefCheckbox>
@@ -2392,7 +2396,7 @@ export const PrefModal = ({
                 <PrefTextarea
                   name="followList"
                   value={values.followList}
-                  disabled={!values.enableFollowList}
+                  disabled={prefRequiresOff("followList", values)}
                   onChange={onTextInputChange}
                   label={i18n("options_followList")}
                   placeholder={i18n("tooltip_followList")}
@@ -2401,7 +2405,7 @@ export const PrefModal = ({
                 <PrefTextarea
                   name="followTitleList"
                   value={values.followTitleList}
-                  disabled={!values.enableFollowList}
+                  disabled={prefRequiresOff("followTitleList", values)}
                   onChange={onTextInputChange}
                   label={i18n("options_followTitleList")}
                   placeholder={i18n("tooltip_followTitleList")}
