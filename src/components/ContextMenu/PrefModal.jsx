@@ -26,6 +26,7 @@ import {
   useMantineColorScheme,
 } from "@mantine/core";
 import { i18n } from "../../js/i18n";
+import { GENERAL_GROUPS } from "../../js/pref_groups";
 import {
   DEFAULT_PREFS,
   readValuesWithDefault,
@@ -382,8 +383,13 @@ const PrefHint = memo(({ textKey }) => (
 // 分區 adapter：<fieldset> + <legend>，順帶掛上 section:<legendKey> 錨點。
 // legendKey 同時是索引裡的 sectionKey（src/js/pref_search.js），靜態守護測試
 // tests/unit/pref_search_index.test.js 直接掃這個 prop。
+// 窄版（手機）點進某個分類後，上方返回列已經寫著分類名；第一個分區跟分類同名時
+// （一般、增強功能、AI…）legend 再寫一次就重複了 ⇒ 只在窄版視覺隱藏（仍留給讀屏與錨點）。
+const CATEGORY_LABEL_KEYS = new Set(PREF_CATEGORIES.map((c) => c.labelKey));
+
 const PrefSection = ({ legendKey, children, ...rest }) => {
   const flashKey = useFlashKey();
+  const narrow = useNarrow();
   const key = `section:${legendKey}`;
   return (
     <fieldset
@@ -394,11 +400,118 @@ const PrefSection = ({ legendKey, children, ...rest }) => {
       data-pref-anchor={key}
       {...rest}
     >
-      <legend>{i18n(legendKey)}</legend>
+      <legend
+        className={
+          narrow && CATEGORY_LABEL_KEYS.has(legendKey)
+            ? "PrefModal__legend--dup"
+            : undefined
+        }
+      >
+        {i18n(legendKey)}
+      </legend>
       {children}
     </fieldset>
   );
 };
+
+// 「一般」分區裡的段落小標（P94，段落定義在 js/pref_groups.js）。必須緊接在該段
+// first 那一項前面（守護 tests/unit/pref_groups.test.jsx）。
+const PrefGroupHeading = ({ id }) => {
+  const g = GENERAL_GROUPS.find((x) => x.id === id);
+  return (
+    <h3 className="PrefModal__GroupTitle" data-pref-group={id}>
+      {i18n(g.titleKey)}
+    </h3>
+  );
+};
+
+const prefersReducedMotion = () =>
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// 「一般」分區頂端的跳轉列（P94）：黏在捲動區上緣，點了捲到那一段，捲動時亮目前那段。
+// scrollRef＝右欄捲動容器。其他分頁也共用這個容器，跳轉列不在畫面上（分頁被
+// display:none）時 offsetParent 是 null，直接不算。
+const PrefGroupNav = ({ scrollRef }) => {
+  const [active, setActive] = useState(GENERAL_GROUPS[0].id);
+  const barRef = useRef(null);
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return undefined;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const bar = barRef.current;
+      if (!bar || !bar.offsetParent) return;
+      // 小標的上緣過了「黏住的跳轉列底下」那條線，就算進到那一段。
+      const line =
+        box.getBoundingClientRect().top + bar.offsetHeight + GROUP_LINE_SLACK;
+      let cur = GENERAL_GROUPS[0].id;
+      for (const g of GENERAL_GROUPS) {
+        const h = box.querySelector(`[data-pref-group="${g.id}"]`);
+        if (h && h.getBoundingClientRect().top <= line) cur = g.id;
+      }
+      setActive(cur);
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+    box.addEventListener("scroll", onScroll, { passive: true });
+    update();
+    return () => {
+      box.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [scrollRef]);
+  // 跳轉列比畫面寬時（手機、英文介面）亮起的那顆可能在列外：橫向捲到看得到。
+  // 只動跳轉列自己的 scrollLeft，不用 scrollIntoView（會連右欄一起上下捲）。
+  useEffect(() => {
+    const nav = barRef.current;
+    const btn = nav && nav.querySelector(`[data-pref-group-jump="${active}"]`);
+    if (!btn) return;
+    const left = btn.offsetLeft;
+    const right = left + btn.offsetWidth;
+    if (left < nav.scrollLeft) nav.scrollLeft = left;
+    else if (right > nav.scrollLeft + nav.clientWidth)
+      nav.scrollLeft = right - nav.clientWidth;
+  }, [active]);
+  const jump = (id) => {
+    const box = scrollRef.current;
+    const bar = barRef.current;
+    const h = box && box.querySelector(`[data-pref-group="${id}"]`);
+    if (!h || !bar) return;
+    // 目標：小標停在黏住的跳轉列正下方（跳轉列黏住時上緣＝捲動區上緣）。
+    const delta =
+      h.getBoundingClientRect().top -
+      (box.getBoundingClientRect().top + bar.offsetHeight + 4);
+    box.scrollTo({
+      top: box.scrollTop + delta,
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
+    setActive(id);
+  };
+  return (
+    <nav
+      ref={barRef}
+      className="PrefModal__GroupNav"
+      aria-label={i18n("options_groupNav")}
+    >
+      {GENERAL_GROUPS.map((g) => (
+        <button
+          key={g.id}
+          type="button"
+          data-pref-group-jump={g.id}
+          aria-current={active === g.id ? "true" : undefined}
+          onClick={() => jump(g.id)}
+        >
+          {i18n(g.titleKey)}
+        </button>
+      ))}
+    </nav>
+  );
+};
+// 判定「進到這一段」時，跳轉列底下多算幾 px（小標本身的上邊距）。
+const GROUP_LINE_SLACK = 8;
 
 // 沒有 name 屬性、也不是分區的可操作項（主題切換、色票列、debug 開關）。
 const PrefAnchor = ({ anchorKey, children, className, ...rest }) => {
@@ -599,9 +712,7 @@ export const PrefModal = ({
         `[data-pref-anchor="${pendingJump.key}"]`,
       );
       if (node && node.scrollIntoView) {
-        const reduce =
-          typeof window.matchMedia === "function" &&
-          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const reduce = prefersReducedMotion();
         node.scrollIntoView({
           block: "center",
           behavior: reduce ? "auto" : "smooth",
@@ -1057,6 +1168,8 @@ export const PrefModal = ({
           <div className="PrefModal__Grid__Col--right" ref={rightColRef}>
             <Tabs.Panel value="general">
               <PrefSection legendKey="options_general">
+                <PrefGroupNav scrollRef={rightColRef} />
+                <PrefGroupHeading id="basic" />
                 <PrefCheckbox
                   name="nativeSafeMode"
                   checked={values.nativeSafeMode}
@@ -1123,6 +1236,7 @@ export const PrefModal = ({
                   {i18n("options_showStatusHints")}
                 </PrefCheckbox>
                 <PrefHint textKey="tooltip_showStatusHints" />
+                <PrefGroupHeading id="easyReading" />
                 <PrefCheckbox
                   name="enableEasyReading"
                   checked={values.enableEasyReading}
@@ -1195,6 +1309,7 @@ export const PrefModal = ({
                   {i18n("options_skipBoardEntryScreen")}
                 </PrefCheckbox>
                 <PrefHint textKey="tooltip_skipBoardEntryScreen" />
+                <PrefGroupHeading id="home" />
                 <PrefCheckbox
                   name="enableHomeDashboard"
                   checked={values.enableHomeDashboard}
@@ -1245,6 +1360,7 @@ export const PrefModal = ({
                   {i18n("options_enableShareTarget")}
                 </PrefCheckbox>
                 <PrefHint textKey="tooltip_enableShareTarget" />
+                <PrefGroupHeading id="article" />
                 <PrefCheckbox
                   name="enableBoardTabs"
                   checked={values.enableBoardTabs}
@@ -1325,6 +1441,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_easyReadingEndSwitchNative")}
                 </PrefCheckbox>
+                <PrefGroupHeading id="hotkeys" />
                 <PrefHotkey
                   name="easyReadingEndSwitchKey"
                   value={values.easyReadingEndSwitchKey}
@@ -1395,6 +1512,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_paletteQuickBoards")}
                 </PrefCheckbox>
+                <PrefGroupHeading id="misc" />
                 <PrefCheckbox
                   name="refreshKeyIntercept"
                   checked={values.refreshKeyIntercept}

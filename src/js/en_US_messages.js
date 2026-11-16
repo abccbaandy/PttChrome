@@ -670,6 +670,27 @@ export const en_US = {
   "options_general": {
     "message": "General"
   },
+  "options_groupBasic": {
+    "message": "Basics"
+  },
+  "options_groupEasyReading": {
+    "message": "Easy reading & lists"
+  },
+  "options_groupHome": {
+    "message": "Home & favorites"
+  },
+  "options_groupArticle": {
+    "message": "Reading articles"
+  },
+  "options_groupHotkeys": {
+    "message": "Hotkeys"
+  },
+  "options_groupMisc": {
+    "message": "Connection & more"
+  },
+  "options_groupNav": {
+    "message": "Jump to a part of General"
+  },
   "options_about": {
     "message": "About"
   },

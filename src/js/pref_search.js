@@ -18,6 +18,7 @@ import { zh_TW } from "./zh_TW_messages";
 import { en_US } from "./en_US_messages";
 import { getLang } from "./i18n";
 import { IMAGE_PROXY_SITES } from "./image_proxy";
+import { groupTitleByKey } from "./pref_groups";
 
 // 下拉最多顯示幾筆。**刻意壓在「不需要捲動」的高度內**：Mantine Modal 用
 // RemoveScroll 包住自己且沒傳 shards，會 preventDefault() 掉 portal 出去的
@@ -782,6 +783,14 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("about", "about_new_title", null, []),
 ];
 
+// 「一般」分區裡每一項屬於哪一段小標（P94，src/js/pref_groups.js）。索引的順序就是
+// 設定頁上的順序，所以直接拿它切段。
+const GENERAL_GROUP_OF = groupTitleByKey(
+  PREF_SEARCH_ITEMS.filter((it) => it.sectionKey === "options_general").map(
+    (it) => it.key,
+  ),
+);
+
 const MESSAGES = { zh_tw: zh_TW, en_us: en_US };
 
 // about_new_content 的 message 是**陣列**；不扁平化的話後面的 toLowerCase()
@@ -896,7 +905,11 @@ export function searchPrefSettings(query, opts = {}) {
     const tabLabel = msg(lang, PREF_SEARCH_TABS[item.tab]);
     // 分區項不重複自己的名字；分區名與分頁名同字時也只留分頁名（否則副標會印成
     // 「增強功能 · 增強功能」——設定頁上有五個分區刻意與分頁同名）。
-    const section = msg(lang, item.sectionKey);
+    // 「一般」分區跟分頁同名，改寫它在哪一段（「一般 · 首頁與收藏」）。
+    const groupKey = GENERAL_GROUP_OF.get(item.key);
+    const section = groupKey
+      ? msg(lang, groupKey)
+      : msg(lang, item.sectionKey);
     const sectionLabel =
       item.kind === "section" || !section || section === tabLabel
         ? null

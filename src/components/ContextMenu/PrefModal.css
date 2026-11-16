@@ -206,12 +206,83 @@
   border: none;
   margin: 0 0 12px;
   padding: 0;
+  /* fieldset 的 min-width 是 min-content：裡面那條可橫滑的跳轉列（P94）會把整個分區
+     撐寬、說明文字跑出右欄。守護 pref_groups.test.jsx、mobile_pref_groups.offline.spec.js。 */
+  min-width: 0;
 }
 
 .PrefModal__Grid__Col--right__Fieldset > legend {
   font-weight: 600;
   margin-bottom: 8px;
   padding: 0;
+}
+
+/* 窄版點進分類後，跟分類同名的 legend（返回列已寫著分類名）只留給讀屏。 */
+.PrefModal__Grid__Col--right__Fieldset > legend.PrefModal__legend--dup {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 「一般」分區的段落小標與黏在上緣的跳轉列（P94，js/pref_groups.js）。 */
+.PrefModal__GroupNav {
+  position: sticky;
+  /* sticky 的 top 是從捲動區的 padding 內緣算起；拉回右欄的上 padding，黏住時才貼齊
+     上緣，後面捲過去的字不會從那條縫露出來。 */
+  top: -16px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 8px 0;
+  margin-bottom: 4px;
+  background: var(--mantine-color-body);
+}
+
+.PrefModal__GroupNav button {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 999px;
+  background: var(--mantine-color-default);
+  color: inherit;
+  font: inherit;
+  font-size: var(--mantine-font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.PrefModal__GroupNav button[aria-current="true"] {
+  border-color: transparent;
+  background: var(--mantine-primary-color-filled);
+  color: var(--mantine-color-white);
+}
+
+.PrefModal__GroupNav button:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+.PrefModal__GroupTitle {
+  margin: 20px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  color: var(--mantine-primary-color-light-color);
+  font-size: var(--mantine-font-size-md);
+  font-weight: 600;
+}
+
+.PrefModal--narrow .PrefModal__GroupNav {
+  top: -12px;
+}
+
+.PrefModal__GroupNav + .PrefModal__GroupTitle {
+  margin-top: 4px;
 }
 
 /* 關於分頁：解除 modal 整體的 user-select:none，讓 build hash／版本資訊可選取複製 */
