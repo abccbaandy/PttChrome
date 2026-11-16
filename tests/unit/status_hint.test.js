@@ -21,6 +21,12 @@ import { BoardListSession } from "../../src/js/board_list_session";
 import { AidNavigation } from "../../src/js/aid_navigation";
 import { LogoutSession } from "../../src/js/logout_session";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
+import { bottomPromptShown } from "../../src/js/status_hint";
+import { TermBuf } from "../../src/js/term_buf";
+import { AnsiParser } from "../../src/js/ansi_parser";
+import { loadBig5Tables } from "./helpers/load_big5_tables";
+import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
+import boardNoteFx from "./fixtures/ptt_src_screens/board_note.json";
 
 const flash = TermView.prototype.flashListHint;
 const setLoading = TermView.prototype.setListLoading;
@@ -102,6 +108,57 @@ describe("PTT 正在問問題時提示改到上方（placeListHint）", () => {
   test("沒有 buf（測試替身、還沒連線）⇒ 貼底", () => {
     flash.call({ showStatusHints: true, placeListHint: TermView.prototype.placeListHint }, "x");
     expect(document.querySelector(".ListHint").style.bottom).toBe(hintBottomCss(48, false));
+  });
+});
+
+// 症狀：手機文章列表按 Q（文章資訊），「已切至原生操作」貼在底部，被浮上來的「複製網址／複製 AID／
+// 分享／繼續」面板蓋住、只露出半行。PTT 停在「請按任意鍵繼續」不算 isPromptPending，但等的同樣是
+// 最底下那一列 ⇒ 一樣改到上方。真實畫面＝upstream 產的 post_info／board_note 幀。
+describe("PTT 停在「按任意鍵繼續」時提示也改到上方（bottomPromptShown）", () => {
+  const bufAt = (fx, frame) => {
+    loadBig5Tables();
+    const buf = new TermBuf(fx.cols, fx.rows);
+    buf.setView({ update() {}, updateCursorPos() {}, refreshCursorVisibility() {}, blinkOn: false });
+    buf.useMouseBrowsing = false;
+    const p = new AnsiParser(buf);
+    const end = fx.frames.findIndex((f) => f.name === frame);
+    for (let i = 0; i <= end; ++i) p.feed(fx.frames[i].bytes);
+    buf.notify();
+    clearTimeout(buf.timerUpdate);
+    if (buf._settleTimer) clearTimeout(buf._settleTimer);
+    return buf;
+  };
+  const place = (buf) => {
+    const v = { showStatusHints: true, buf, placeListHint: TermView.prototype.placeListHint };
+    flash.call(v, "已切至原生操作");
+    return document.querySelector(".ListHint");
+  };
+
+  test("文章資訊框（列表按 Q）⇒ 上方", () => {
+    const buf = bufAt(postInfoFx, "info");
+    expect(buf.isPromptPending()).toBe(false);
+    expect(bottomPromptShown(buf)).toBe(true);
+    expect(place(buf).style.top).toBe(HINT_TOP_CSS);
+  });
+  test("進板畫面的「請按任意鍵繼續」⇒ 上方", () => {
+    const buf = bufAt(boardNoteFx, "note");
+    expect(bottomPromptShown(buf)).toBe(true);
+    expect(place(buf).style.top).toBe(HINT_TOP_CSS);
+  });
+  test("對照組：一般文章列表 ⇒ 照舊貼底", () => {
+    const buf = bufAt(postInfoFx, "list");
+    expect(bottomPromptShown(buf)).toBe(false);
+    expect(place(buf).style.bottom).toBe(hintBottomCss(48, false));
+  });
+  test("設定頁蓋滿畫面時照舊貼底", () => {
+    const buf = bufAt(postInfoFx, "info");
+    const v = { showStatusHints: true, _hintDialogCover: true, buf, placeListHint: TermView.prototype.placeListHint };
+    flash.call(v, "x", 0, HINT_ERROR);
+    expect(document.querySelector(".ListHint").style.bottom).toBe(hintBottomCss(48, true));
+  });
+  test("沒有 getRowText 的替身不炸", () => {
+    expect(bottomPromptShown({ isPromptPending: () => false })).toBe(false);
+    expect(bottomPromptShown(null)).toBe(false);
   });
 });
 

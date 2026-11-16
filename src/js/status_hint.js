@@ -9,6 +9,8 @@
 // 判準：「事情沒照使用者要的發生」＝錯誤；「照著發生了、只是告訴你一聲」＝一般。
 // 「指令處理中，請稍候…」這類吞鍵提示屬一般：鍵被擋是設計，不是失敗。
 
+import { DISMISS_ANY_KEY, resolveDismiss } from './screen_dismiss';
+
 export const HINT_ERROR = 'error';
 
 export function isErrorHint(level) {
@@ -39,6 +41,21 @@ export function hintBottomCss(px, underDialog) {
 export const HINT_TOP_CSS = 'calc(var(--safe-top, 0px) + 60px)';
 export function hintPlacement(promptPending, underDialog) {
   return promptPending && !underDialog ? 'top' : 'bottom';
+}
+
+// 「PTT 正在等使用者回應」：除了輸入欄／選單（buf.isPromptPending），還有停在「請按任意鍵
+// 繼續」或 vmsg 橫幅（screen_dismiss.resolveDismiss 的 DISMISS_ANY_KEY）—— 那一列也在最底下，
+// 手機上還會浮出「繼續」面板（文章資訊 Q 是「複製網址／複製 AID／分享／繼續」四顆），
+// 提示貼底就整條躲在面板後面、只露出半行。判準跟面板與點空白處關框同一套，不另寫字串。
+export function bottomPromptShown(buf) {
+  if (!buf) return false;
+  if (typeof buf.isPromptPending === 'function' && buf.isPromptPending()) return true;
+  if (typeof buf.getRowText !== 'function') return false;
+  const d = resolveDismiss({
+    cursorOnInputField: false,
+    lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols)
+  });
+  return !!d && d.kind === DISMISS_ANY_KEY;
 }
 
 // 底色／字色。錯誤用明顯的紅底白字；一般維持原本的深灰底。

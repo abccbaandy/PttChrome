@@ -30,7 +30,7 @@ import { readSelectionText, renderChunksAround, rowsFromScrollTop } from '../ren
 import { cursorGeomSample } from './debug_recorder';
 import { isDocumentForeground } from './notification_gate';
 import { serializedOpHint } from './serialized_op_gate';
-import { hintBottomCss, hintColors, hintPlacement, shouldShowHint, HINT_TOP_CSS } from './status_hint';
+import { bottomPromptShown, hintBottomCss, hintColors, hintPlacement, shouldShowHint, HINT_TOP_CSS } from './status_hint';
 import { isPushKey, pushGateFacts, shouldInterceptPushKey } from './long_push_gate';
 import { tryOpenSearchModal } from './article_search';
 import { isRefreshKeyEvent } from './screen_refresh';
@@ -2616,13 +2616,14 @@ TermView.prototype = {
     }, ms || 1800);
   },
 
-  // 提示放上面還是下面（status_hint.hintPlacement）：PTT 正在問問題時提問就在畫面最底下幾列，
+  // 提示放上面還是下面（status_hint.hintPlacement）：PTT 正在問問題或等按任意鍵（bottomPromptShown）時
+  // 提問就在畫面最底下幾列（手機還浮著回答面板），
   // 底部提示會蓋住它 ⇒ 改到上方。顯示時算一次，之後每次畫面 settle（App 的 screenSettled）
   // 再算一次 —— 提示常常比提問早出現（送出按鍵當下就提示，PTT 的提問下一幀才到）。
   placeListHint: function() {
     var el = this._listHintEl;
     if (!el) return;
-    var pending = !!(this.buf && typeof this.buf.isPromptPending === 'function' && this.buf.isPromptPending());
+    var pending = bottomPromptShown(this.buf);
     if (hintPlacement(pending, this._hintDialogCover) === 'top') {
       el.style.bottom = 'auto';
       el.style.top = HINT_TOP_CSS;
