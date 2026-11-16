@@ -106,9 +106,10 @@ test.describe('文章連結的右鍵選單（離線重放）', () => {
     // REGRESSION：href="#" 不是網址，這兩項都不該出現。
     await expect(itemByText(page, await label(page, 'cmenu_copyLinkUrl'))).toHaveCount(0);
     await expect(itemByText(page, await label(page, 'cmenu_openUrlNewTab'))).toHaveCount(0);
-    // REGRESSION：normalEnabled 被誤關的話這一項會整個消失。
+    // REGRESSION：normalEnabled 被誤關的話「複製本篇連結」會整個消失（P93 起預設畫成
+    // 一列三顆，見下面那條）。
     await expect(
-      itemByText(page, await label(page, 'cmenu_copyArticleLink'))
+      page.locator('.DropdownMenu [data-cmenu="copyArticleLinkRow"]')
     ).toHaveCount(1);
     // 新選項。
     await expect(
@@ -198,6 +199,49 @@ test.describe('文章連結的右鍵選單（離線重放）', () => {
     await expect
       .poll(() => page.evaluate(() => window.__copied))
       .toEqual([preview]);
+  });
+
+  // P93：「複製本篇連結」一列三顆。點哪顆就複製哪種（本篇＝畫面上「※ 文章網址」換算，
+  // 免費路徑不按 Q）；關掉開關就回到原本那一項。
+  test('複製本篇連結一列三顆：PTT 網址／AID／分享連結各自進剪貼簿；關掉開關回到單一項', async ({ page }) => {
+    test.setTimeout(90000);
+    await boot(page);
+    const current = await page.evaluate(() => window.__app.aidNavigation.findLocalPostAid());
+    // 前提：本篇讀得到文章網址（不然點下去會按 Q，離線重放不會回答）。
+    expect(current && current.aid && current.board).toBeTruthy();
+    const base = await page.evaluate(() => window.location.origin + window.location.pathname);
+    const chip = (key) => page.locator(`.DropdownMenu [data-cmenu="${key}"]`);
+
+    const expected = [];
+    for (const [key, text] of [
+      ['copyArticlePttUrl', (fn) => `https://www.ptt.cc/bbs/${current.board}/${fn}`],
+      ['copyArticleCode', () => `#${current.aid} (${current.board})`],
+      ['copyArticleLink', (fn) => `${base}#${current.board}/${fn}`],
+    ]) {
+      await rightClickPlainText(page);
+      await expect(page.locator('.DropdownMenu').first()).toBeVisible();
+      await expect(chip('copyArticleLinkRow')).toBeVisible();
+      // 真滑鼠停到那顆上 ⇒ 預覽行換成那顆的內容，且＝點下去實際複製的字。
+      await chip(key).hover();
+      const preview = chip('copyArticleLinkRow').locator('.DropdownMenu__preview');
+      const shown = await preview.textContent();
+      await chip(key).click();
+      expected.push(key);
+      await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(expected.length);
+      const got = await page.evaluate(() => window.__copied[window.__copied.length - 1]);
+      const fn = /M\.\d+\.A\.[0-9A-F]{3}\.html/.exec(got);
+      expect(got).toBe(text(fn ? fn[0] : ''));
+      expect(got).toBe(shown);
+    }
+    // 免費路徑：一次都沒有按 Q（畫面沒被抛回列表）。
+    expect(await page.evaluate(() => window.__app.buf.pageState)).toBe(3);
+
+    await page.keyboard.press('Escape');
+    await ptt.applyPrefs(page, { articleCopyLinkRow: false });
+    await rightClickPlainText(page);
+    await expect(page.locator('.DropdownMenu').first()).toBeVisible();
+    await expect(chip('copyArticleLinkRow')).toHaveCount(0);
+    await expect(itemByText(page, await label(page, 'cmenu_copyArticleLink'))).toHaveCount(1);
   });
 
   // 兩個小幫手預設不顯示（enableInputHelper / enableLiveArticleHelper），

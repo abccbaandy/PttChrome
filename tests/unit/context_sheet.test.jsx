@@ -84,6 +84,37 @@ test("點項目走同一個 handler；反灰項目不能點", async () => {
   expect(handlers.onLongPushClick).toHaveBeenCalledTimes(1);
 });
 
+// P93：長按選單的「複製本篇連結」一列三顆：三顆都畫出來、點了走同一個 handler；
+// 沒有 hover ⇒ 預覽行固定是第一顆（PTT 網址）的。
+test("複製本篇連結一列三顆：預覽是 PTT 網址、點哪顆送哪個 key", async () => {
+  const PTT = "https://www.ptt.cc/bbs/Test/M.1.A.2.html";
+  const { handlers } = setup({
+    articleLinkRow: true,
+    previews: {
+      copyArticlePttUrl: PTT,
+      copyArticleCode: "#1abcDEFG (Test)",
+      copyArticleLink: "https://example/#Test/1abcDEFG",
+    },
+  });
+  const row = await vi.waitFor(() => {
+    const el = document.querySelector('[data-cmenu="copyArticleLinkRow"]');
+    expect(el).not.toBeNull();
+    return el;
+  });
+  expect(row.querySelector(".mobileSheetItemPreview").textContent).toBe(PTT);
+  const chips = [...row.querySelectorAll("button.mobileSheetChip")];
+  expect(chips.map((b) => b.getAttribute("data-cmenu"))).toEqual([
+    "copyArticlePttUrl",
+    "copyArticleCode",
+    "copyArticleLink",
+  ]);
+  fireEvent.click(chips[1]);
+  expect(handlers.onMenuSelect).toHaveBeenCalledWith(
+    "copyArticleCode",
+    expect.anything(),
+  );
+});
+
 test("開著＝modal（具名來源），收起即撤銷", async () => {
   const { sources, rerender, props } = setup();
   expect(sources.size).toBe(1);

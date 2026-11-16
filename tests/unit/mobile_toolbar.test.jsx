@@ -257,6 +257,43 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(byKey("__share")).toBeNull();
   });
 
+  // P93：「更多」裡一塊「複製本篇連結」三顆，各自帶 format 呼叫 copyCurrentPostLink。
+  test("更多：文章裡有「複製本篇連結」三顆，點哪顆就用哪種格式複製", async () => {
+    const core = makeCore({ context: ARTICLE });
+    core.deepLinkController = { copyCurrentPostLink: vi.fn(() => true) };
+    renderBar(core);
+    await openMore();
+    const row = document.querySelector("[data-copy-link-row]");
+    expect(row).not.toBeNull();
+    const chips = [...row.querySelectorAll("[data-copy-link]")];
+    expect(chips.map((b) => b.textContent)).toEqual([
+      i18n("cmenu_chipPttUrl"),
+      i18n("cmenu_chipAid"),
+      i18n("cmenu_chipShareLink"),
+    ]);
+    fireEvent.click(chips[1]);
+    expect(core.deepLinkController.copyCurrentPostLink).toHaveBeenCalledWith("aid");
+    await sheetClosed();
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+  });
+
+  test("更多：不是文章（share false）或開關關掉就沒有「複製本篇連結」", async () => {
+    renderBar(makeCore({ context: { ...ARTICLE, share: false } }));
+    await openMore();
+    expect(document.querySelector("[data-copy-link-row]")).toBeNull();
+  });
+
+  test("更多：articleCopyLinkRow 關掉 ⇒ 沒有那一塊", async () => {
+    writeValues({ ...readValuesWithDefault(), articleCopyLinkRow: false });
+    try {
+      renderBar(makeCore({ context: ARTICLE }));
+      await openMore();
+      expect(document.querySelector("[data-copy-link-row]")).toBeNull();
+    } finally {
+      window.localStorage.clear();
+    }
+  });
+
   test("重整：永遠在，context.refresh 為假時反灰；按下走 screenRefresh.refresh('toolbar')", () => {
     const core = makeCore({ context: { ...ARTICLE, refresh: false } });
     core.screenRefresh = { refresh: vi.fn(() => true) };

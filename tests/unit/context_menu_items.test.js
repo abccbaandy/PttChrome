@@ -125,6 +125,20 @@ describe("copyTextFor：預覽與實際複製同源", () => {
     ).toBe(BASE + "#movie/M.1783270974.A.0CA.html");
   });
 
+  // P93 一列三顆的另外兩顆：與 deep_link_controller 交件同一組格式函式 ⇒ 預覽＝實際複製的字。
+  test("本篇的 PTT 網址／AID 預覽也走 currentArticle；沒有看板就不給", () => {
+    expect(copyTextFor("copyArticlePttUrl", { currentArticle: article }, HREF)).toBe(
+      "https://www.ptt.cc/bbs/movie/M.1783270974.A.0CA.html"
+    );
+    expect(copyTextFor("copyArticleCode", { currentArticle: article }, HREF)).toBe(
+      "#1gIeu-3A (movie)"
+    );
+    const noBoard = { currentArticle: { board: null, aid: "1gIeu-3A" } };
+    expect(copyTextFor("copyArticlePttUrl", noBoard, HREF)).toBeNull();
+    expect(copyTextFor("copyArticleCode", noBoard, HREF)).toBeNull();
+    expect(copyTextFor("copyArticlePttUrl", { currentArticle: null }, HREF)).toBeNull();
+  });
+
   test("算不出來一律 null（不是 undefined、不是空字串）", () => {
     expect(copyTextFor("copyLinkUrl", {}, HREF)).toBeNull();
     expect(copyTextFor("copyArticleAid", {}, HREF)).toBeNull();

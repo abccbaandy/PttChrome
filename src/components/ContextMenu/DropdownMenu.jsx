@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Menu } from "@mantine/core";
 import { buildContextMenuEntries } from "./context_menu_entries";
 import "./DropdownMenu.css";
@@ -18,6 +19,42 @@ const CopyItem = ({ label, preview, onClick }) => (
     {preview && <span className="DropdownMenu__preview">{preview}</span>}
   </Menu.Item>
 );
+
+// 一列標題＋幾顆小鈕（P93「複製本篇連結」：PTT 網址／AID／分享連結）。小鈕各自是
+// Menu.Item ⇒ 方向鍵走得到、點了照常關選單；標題只是字，不能點。預覽放在標題下一行
+// （同 CopyItem），顯示滑鼠停著／鍵盤焦點所在那顆會複製什麼；都沒有就是第一顆的。
+const ChipRow = ({ entry }) => {
+  const [activeKey, setActiveKey] = useState(null);
+  const active = entry.chips.find((c) => c.key === activeKey);
+  const preview = active ? active.preview : entry.preview;
+  return (
+    <div
+      className="DropdownMenu__chipRow"
+      role="group"
+      aria-label={entry.label}
+      data-cmenu={entry.key}
+    >
+      <div className="DropdownMenu__chipHead">
+        <span>{entry.label}</span>
+        {preview && <span className="DropdownMenu__preview">{preview}</span>}
+      </div>
+      <div className="DropdownMenu__chips">
+        {entry.chips.map((c) => (
+          <Menu.Item
+            key={c.key}
+            className="DropdownMenu__chip"
+            data-cmenu={c.key}
+            onClick={c.onClick}
+            onMouseEnter={() => setActiveKey(c.key)}
+            onFocus={() => setActiveKey(c.key)}
+          >
+            {c.label}
+          </Menu.Item>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 // 右鍵 context menu。改用 Mantine Menu（受控 opened，由 index.js 的 open 狀態驅動）：
 // Menu.Target 是定位於游標 (pageX,pageY) 的零尺寸元素，floating-ui 自動處理超出邊界
@@ -56,6 +93,7 @@ export const DropdownMenu = (props) => {
         {/* 項目清單與出現條件：context_menu_entries.js（手機 bottom sheet 共用）。 */}
         {entries.map((it) => {
           if (it.type === "divider") return <Menu.Divider key={it.key} />;
+          if (it.type === "chips") return <ChipRow key={it.key} entry={it} />;
           if (it.copy)
             return (
               <CopyItem

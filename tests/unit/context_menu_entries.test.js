@@ -134,3 +134,72 @@ describe("複製推文", () => {
     expect(keys({ ...BASE, previews: {} })).not.toContain("copyCommentAll");
   });
 });
+
+// P93：文章裡「複製本篇連結」開關開著 ⇒ 一列三顆（chips），點哪顆走哪個 onMenuSelect key；
+// 「分享連結」沿用 copyArticleLink（handler 與預覽不變）。關掉 ⇒ 原本的單一項。
+describe("複製本篇連結一列三顆（P93）", () => {
+  const P = {
+    ...BASE,
+    articleLinkEnabled: true,
+    previews: {
+      copyArticleLink: "https://x/#movie/M.1.A.2.html",
+      copyArticlePttUrl: "https://www.ptt.cc/bbs/movie/M.1.A.2.html",
+      copyArticleCode: "#1abc (movie)",
+    },
+  };
+
+  test("每顆帶自己的預覽；整列的預覽＝第一顆（PTT 網址）；算不出來是 null", () => {
+    const row = buildContextMenuEntries({ ...P, articleLinkRow: true }).find(
+      (e) => e.key === "copyArticleLinkRow",
+    );
+    expect(row.chips.map((c) => c.preview)).toEqual([
+      P.previews.copyArticlePttUrl,
+      P.previews.copyArticleCode,
+      P.previews.copyArticleLink,
+    ]);
+    expect(row.preview).toBe(P.previews.copyArticlePttUrl);
+    const bare = buildContextMenuEntries({
+      ...P,
+      previews: {},
+      articleLinkRow: true,
+    }).find((e) => e.key === "copyArticleLinkRow");
+    expect(bare.preview).toBeNull();
+    expect(bare.chips.map((c) => c.preview)).toEqual([null, null, null]);
+  });
+
+  test("開著：一個 chips 項，三顆依序是 PTT 網址／AID／分享連結，桌機手機都一樣", () => {
+    for (const mobile of [false, true]) {
+      const calls = [];
+      const entries = buildContextMenuEntries({
+        ...P,
+        mobile,
+        articleLinkRow: true,
+        onMenuSelect: (k) => calls.push(k),
+      });
+      expect(entries.find((e) => e.key === "copyArticleLink")).toBeUndefined();
+      const row = entries.find((e) => e.key === "copyArticleLinkRow");
+      expect(row.type).toBe("chips");
+      expect(row.chips.map((c) => c.key)).toEqual([
+        "copyArticlePttUrl",
+        "copyArticleCode",
+        "copyArticleLink",
+      ]);
+      row.chips.forEach((c) => c.onClick({}));
+      expect(calls).toEqual([
+        "copyArticlePttUrl",
+        "copyArticleCode",
+        "copyArticleLink",
+      ]);
+    }
+  });
+
+  test("關掉：照舊只有「複製本篇文章連結」一項；不在文章裡兩種都沒有", () => {
+    expect(keys({ ...P, articleLinkRow: false })).toContain("copyArticleLink");
+    expect(keys({ ...P, articleLinkRow: false })).not.toContain(
+      "copyArticleLinkRow",
+    );
+    const k = keys({ ...P, articleLinkEnabled: false, articleLinkRow: true });
+    expect(k).not.toContain("copyArticleLink");
+    expect(k).not.toContain("copyArticleLinkRow");
+  });
+});

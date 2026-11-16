@@ -1312,6 +1312,14 @@ export const PrefModal = ({
                   {i18n("options_highlightMenuTarget")}
                 </PrefCheckbox>
                 <PrefCheckbox
+                  name="articleCopyLinkRow"
+                  checked={values.articleCopyLinkRow}
+                  onChange={onCheckboxChange}
+                >
+                  {i18n("options_articleCopyLinkRow")}
+                </PrefCheckbox>
+                <PrefHint textKey="tooltip_articleCopyLinkRow" />
+                <PrefCheckbox
                   name="enableInputHelper"
                   checked={values.enableInputHelper}
                   onChange={onCheckboxChange}

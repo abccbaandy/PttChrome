@@ -697,6 +697,77 @@ describe("複製本篇連結：免費路徑", () => {
 });
 
 // ---------------------------------------------------------------------------
+// P93「複製本篇連結」一列三顆：同一條 AID 解析（免費路徑／按 Q），只差交件格式。
+// ---------------------------------------------------------------------------
+describe("複製本篇連結：三種格式（P93）", () => {
+  const BASE = "https://example.github.io/pttchrome/";
+  const PTT_URL = "https://www.ptt.cc/bbs/movie/" + FN;
+
+  function withClipboard(ctl) {
+    const written = [];
+    ctl._locationHref = () => BASE;
+    ctl._clipboard = () => ({
+      writeText: text => {
+        written.push(text);
+        return Promise.resolve();
+      }
+    });
+    return written;
+  }
+
+  test("免費路徑：ptt ⇒ ptt.cc 網址、aid ⇒ #AID (板名)、deep／不給 ⇒ 分享連結；都不按 Q", async () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    const written = withClipboard(h.ctl);
+    expect(h.ctl.copyCurrentPostLink("ptt")).toBe(true);
+    expect(h.ctl.copyCurrentPostLink("aid")).toBe(true);
+    expect(h.ctl.copyCurrentPostLink("deep")).toBe(true);
+    expect(h.ctl.copyCurrentPostLink()).toBe(true);
+    expect(written).toEqual([PTT_URL, "#1gIeu-3A (movie)", BASE + "#movie/" + FN, BASE + "#movie/" + FN]);
+    expect(h.nav.queries).toEqual([]);
+    expect(h.nav.reopenArgs).toEqual([]);
+    await Promise.resolve();
+    expect(h.hints).toEqual(
+      expect.arrayContaining(["已複製 PTT 網址", "已複製文章代碼", "已複製本篇連結"])
+    );
+  });
+
+  test("讀不到文章網址 ⇒ 照舊按 Q、回原處，問到後交出指定的格式", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW, scrollTop: 240, chh: 20 });
+    h.nav.localAid = null;
+    const written = withClipboard(h.ctl);
+    expect(h.ctl.copyCurrentPostLink("ptt")).toBe(true);
+    expect(h.nav.queries).toHaveLength(1);
+    h.nav.queries[0].onDone({ aid: "1gIeu-3A", board: "movie" });
+    expect(h.nav.reopenArgs).toEqual([12]);
+    expect(written).toEqual([PTT_URL]);
+  });
+
+  test("剪貼簿被擋 ⇒ 把內容印在提示裡讓人手抄，AID 用「文章代碼：」字首", async () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    h.ctl._locationHref = () => BASE;
+    h.ctl._clipboard = () => ({ writeText: () => Promise.reject(new Error("denied")) });
+    h.ctl.copyCurrentPostLink("aid");
+    h.ctl.copyCurrentPostLink("ptt");
+    await vi.waitFor(() => expect(h.hints).toHaveLength(2));
+    expect(h.hints).toEqual(["文章代碼：#1gIeu-3A (movie)", "連結：" + PTT_URL]);
+  });
+
+  test("沒有看板（站內信／精華區印「不明」）⇒ 三種都不產生、給錯誤提示", () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    const written = withClipboard(h.ctl);
+    for (const f of ["ptt", "aid", "deep"]) {
+      h.nav.localAid = null;
+      h.ctl.copyCurrentPostLink(f);
+      h.nav.queries[h.nav.queries.length - 1].onDone({ aid: "1gIeu-3A", board: null });
+    }
+    expect(written).toEqual([]);
+    expect(h.hints.filter(m => m.includes("無法產生連結"))).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 網址列跟著「現在在讀哪一篇」走。資料來源只有免費的 findLocalPostAid：
 // 絕不為了填網址列去按 Q（那會把畫面抛回列表再重開）。
 // ---------------------------------------------------------------------------

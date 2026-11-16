@@ -1,4 +1,6 @@
 // @unit-env browser
+// real-input: tests/e2e/offline/article_link_menu.offline.spec.js
+//   （P93 一列三顆：真滑鼠 hover 換預覽、預覽＝實際複製的字）
 // 右鍵選單的三件事：複製選項的預覽行、兩個小幫手的顯示開關，以及
 // 「在連結上沒選取時不該出現複製項」那條回歸。
 //
@@ -123,6 +125,49 @@ describe("右鍵選單：複製預覽", () => {
       screen.getByText(i18n("cmenu_copyArticleLink"), { exact: true }),
     ).toBeTruthy();
     expect(previewTexts()).toEqual([]);
+  });
+});
+
+// P93：「複製本篇連結」一列三顆。預覽行跟著滑鼠停著／鍵盤焦點那顆換，
+// 沒停在任何一顆時是第一顆（PTT 網址）的；點哪顆送哪個 key。
+describe("右鍵選單：複製本篇連結一列三顆（P93）", () => {
+  const article = { board: "movie", aid: "1gIeu-3A" };
+  const HREF = "https://example.github.io/pttchrome/";
+  const PTT = "https://www.ptt.cc/bbs/movie/M.1783270974.A.0CA.html";
+
+  test("預覽＝停著那顆實際會複製的內容；點了送該顆的 key", () => {
+    const onMenuSelect = vi.fn();
+    renderMenu({
+      normalEnabled: true,
+      articleLinkEnabled: true,
+      articleLinkRow: true,
+      previews: copyPreviews({ currentArticle: article }, HREF),
+      onMenuSelect,
+    });
+    const row = document.querySelector('[data-cmenu="copyArticleLinkRow"]');
+    const preview = () => row.querySelector(".DropdownMenu__preview").textContent;
+    const chip = (k) => row.querySelector(`[data-cmenu="${k}"]`);
+    expect(preview()).toBe(PTT);
+    fireEvent.mouseEnter(chip("copyArticleCode"));
+    expect(preview()).toBe("#1gIeu-3A (movie)");
+    fireEvent.focus(chip("copyArticleLink"));
+    expect(preview()).toBe(HREF + "#movie/M.1783270974.A.0CA.html");
+    fireEvent.mouseEnter(chip("copyArticlePttUrl"));
+    expect(preview()).toBe(PTT);
+    fireEvent.click(chip("copyArticleCode"));
+    expect(onMenuSelect).toHaveBeenCalledWith("copyArticleCode", expect.anything());
+  });
+
+  test("算不出內容 ⇒ 沒有預覽行，三顆照樣在", () => {
+    renderMenu({
+      normalEnabled: true,
+      articleLinkEnabled: true,
+      articleLinkRow: true,
+      previews: {},
+    });
+    const row = document.querySelector('[data-cmenu="copyArticleLinkRow"]');
+    expect(row.querySelector(".DropdownMenu__preview")).toBeNull();
+    expect(row.querySelectorAll(".DropdownMenu__chip")).toHaveLength(3);
   });
 });
 

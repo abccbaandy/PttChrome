@@ -115,6 +115,13 @@ const BOARD_TOOL_ICONS = {
 //   3. mousedown／mouseup／click 必須 stopPropagation：App 的滑鼠入口掛在 window，
 //      放過去就會把這一下當成點終端機。彈出的小選單也畫在 root 底下（不用 Mantine
 //      Menu 的 portal），同一道 stopPropagation 就罩得住。
+// P93「複製本篇連結」三顆：[deep_link_controller 的 format, 字]。順序同右鍵選單那一列。
+const COPY_LINK_CHIPS = [
+  ["ptt", "cmenu_chipPttUrl"],
+  ["aid", "cmenu_chipAid"],
+  ["deep", "cmenu_chipShareLink"],
+];
+
 const swallow = (e) => {
   e.stopPropagation();
 };
@@ -169,6 +176,8 @@ export const MobileToolbar = ({
   // 「更多」裡的圖片上傳兩項跟著總開關 enableImageUpload（同桌機右鍵選單）：開 sheet
   // 當下現讀偏好；收起時不重算，退場動畫中項目才不會跳掉。
   const [imageUploadEnabled, setImageUploadEnabled] = useState(false);
+  // P93「複製本篇連結」一列三顆的開關（articleCopyLinkRow）：開「更多」當下現讀。
+  const [copyLinkRow, setCopyLinkRow] = useState(false);
   // 「更多」裡的快速搜尋（src/js/quick_search.js）：選取模式下的長按走原生選單，我們的
   // 長按選單（快速搜尋原本唯一的入口）出不來 ⇒ 選好字後按「更多」查。開 sheet 當下
   // 定案 { query, items }，收起時不重算（同 imageUploadEnabled）。
@@ -303,6 +312,7 @@ export const MobileToolbar = ({
         setImageUploadEnabled(
           !!pttchrome.imageUpload && !!prefs.enableImageUpload,
         );
+        setCopyLinkRow(!!prefs.articleCopyLinkRow);
         // 只在選取模式：模式關著時長按選單本身就有快速搜尋（長按的那個詞），而「全選」
         // 留下的整頁選取拿去查沒有意義。
         const query = pttchrome.mobileSelectMode
@@ -373,6 +383,18 @@ export const MobileToolbar = ({
     if (dl && typeof dl.shareCurrentPostLink === "function")
       dl.shareCurrentPostLink(context.appBar ? context.appBar.title : "");
   }, [pttchrome, context]);
+
+  // P93：「複製本篇連結」三顆（ptt／aid／deep）。同「分享」一樣在 click 裡同步呼叫：
+  // 免費路徑當場寫剪貼簿，user activation 還在；按 Q 那條是非同步的（同右鍵那一項）。
+  const onCopyLink = useCallback(
+    (format) => {
+      setPanel(null);
+      const dl = pttchrome.deepLinkController;
+      if (dl && typeof dl.copyCurrentPostLink === "function")
+        dl.copyCurrentPostLink(format);
+    },
+    [pttchrome],
+  );
 
   // 存到本機（P64，js/saved_articles.js）：只讀好讀累積頁，一個 byte 都不送。
   const onSaveLocal = useCallback(() => {
@@ -1066,6 +1088,31 @@ export const MobileToolbar = ({
                 </button>
               );
             })}
+          </div>
+        ) : null}
+        {context.share && copyLinkRow ? (
+          <div
+            className="mobileSheetChipRow"
+            role="group"
+            aria-label={i18n("cmenu_copyArticleLinkRow")}
+            data-copy-link-row=""
+          >
+            <span className="mobileSheetChipLabel">
+              {i18n("cmenu_copyArticleLinkRow")}
+            </span>
+            <div className="mobileSheetChips">
+              {COPY_LINK_CHIPS.map(([format, labelKey]) => (
+                <button
+                  key={format}
+                  type="button"
+                  className="nomouse_command mobileSheetChip pttRipple"
+                  data-copy-link={format}
+                  onClick={() => onCopyLink(format)}
+                >
+                  {i18n(labelKey)}
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
         {moreList.map(renderMoreListItem)}

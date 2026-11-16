@@ -19,6 +19,15 @@ import { HINT_ERROR } from './status_hint';
 import { recordFor } from './reading_record';
 import { serializedOpHint, promptPendingNow, PROMPT_PENDING_HINT } from './serialized_op_gate';
 import { PAGE_STATE } from './screen_model';
+import { articleUrl } from './article_tools';
+import { formatArticleCode } from './article_link_target';
+
+// 複製成功的提示：三種格式各說各的，使用者才知道剪貼簿裡是哪一種。
+const COPIED_HINT = {
+  deep: '已複製本篇連結',
+  ptt: '已複製 PTT 網址',
+  aid: '已複製文章代碼'
+};
 
 export function DeepLinkController(core, view, termBuf) {
   this._core = core;
@@ -87,8 +96,12 @@ DeepLinkController.prototype = {
   //
   // 差別在收尾：按 Q 那條路會被 FULLUPDATE 抛回文章列表，這裡沒有下一個指令，得自己
   // 走 reopenAfterPostInfo 回原處；免費路徑則什麼都不必做。
-  copyCurrentPostLink: function() {
-    return this._resolveCurrentPost(null);
+  //
+  // format（P93「複製本篇連結」一列三顆）：'deep'（預設，我們的分享連結）｜'ptt'（ptt.cc
+  // 網頁版網址）｜'aid'（`#AID (板名)`，同右鍵「複製文章代碼」的格式）。三種同一條 AID
+  // 解析，只差交件時組哪一種字。
+  copyCurrentPostLink: function(format) {
+    return this._resolveCurrentPost(format && format !== 'deep' ? { format: format } : null);
   },
 
   // 手機底部導覽的「分享」：同一條 AID 解析，交件改走系統分享面板
@@ -165,9 +178,14 @@ DeepLinkController.prototype = {
 
   // board 可能是 null（站內信／精華區，pttbbs 在 currboard 空時印「不明」）：
   // 沒有看板的 AID 跳不回去（# 只搜 currboard），所以那種連結不該產生。
+  // ptt／aid 兩種一樣要求有看板：ptt.cc 網址要板名，`#AID` 沒板名跳不回去（同上）。
   _deliverLink: function(info, opts) {
-    const link =
-      info && buildDeepLink(this._locationHref(), info.board, info.aid);
+    const format = (opts && opts.format) || 'deep';
+    const hasBoard = !!(info && info.board && info.aid);
+    let link = null;
+    if (format === 'ptt') link = hasBoard ? articleUrl(info.board, info.aid) : null;
+    else if (format === 'aid') link = hasBoard ? formatArticleCode(info) : null;
+    else link = info && buildDeepLink(this._locationHref(), info.board, info.aid);
     if (!link) {
       this._hint('這個畫面無法產生連結（沒有文章代碼或看板）', 4000, HINT_ERROR);
       return;
@@ -192,13 +210,14 @@ DeepLinkController.prototype = {
     const fallback = function() {
       // 剪貼簿被擋（非 secure context、或 user activation 已經過期）：至少把
       // 連結顯示出來，使用者還能自己選起來複製。
-      self._hint('連結：' + link, 12000, HINT_ERROR);
+      self._hint((format === 'aid' ? '文章代碼：' : '連結：') + link, 12000, HINT_ERROR);
     };
+    const okMsg = COPIED_HINT[format] || COPIED_HINT.deep;
     try {
       const clip = this._clipboard();
       if (!clip || !clip.writeText) return fallback();
       clip.writeText(link).then(function() {
-        self._hint('已複製本篇連結', 2000);
+        self._hint(okMsg, 2000);
       }, fallback);
     } catch (e) {
       fallback();

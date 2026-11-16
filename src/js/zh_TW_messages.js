@@ -104,6 +104,24 @@
   "cmenu_copyArticleLink": {
     "message": "複製本篇文章連結"
   },
+  "cmenu_copyArticleLinkRow": {
+    "message": "複製本篇連結"
+  },
+  "cmenu_chipPttUrl": {
+    "message": "PTT 網址"
+  },
+  "cmenu_chipAid": {
+    "message": "AID"
+  },
+  "cmenu_chipShareLink": {
+    "message": "分享連結"
+  },
+  "options_articleCopyLinkRow": {
+    "message": "文章裡「複製本篇連結」一次給三種：PTT 網址、AID、分享連結"
+  },
+  "tooltip_articleCopyLinkRow": {
+    "message": "右鍵選單、手機長按選單與「更多」面板各一列三顆，點哪顆就複製哪種。讀得到文末「文章網址」那一列時直接複製；還沒讀到會先按 Q 問一次（畫面閃一下列表再開回原處）。關掉＝只有原本的「複製本篇文章連結」一項。"
+  },
   "cmenu_copyArticleAid": {
     "message": "複製文章代碼 (AID)"
   },
