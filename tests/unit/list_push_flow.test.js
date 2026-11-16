@@ -198,6 +198,16 @@ describe("從列表上只有 → 的輸入列接手（P91）", () => {
     expect(target).toMatchObject({ author: "abcuser", num: 101, arrowOnly: true, booAllowed: false, notice });
   });
 
+  // 置齊推文的看板（BRD_ALIGNEDCMT）：bbs.c#recommend 的 aligncmt 把 id `%-*s` 補空白到 IDLEN(12)
+  // ⇒ 輸入列是「→ testuser    : 」。認得、照樣只送內容 → y。
+  test("置齊推文板：id 補空白到 12 格的輸入列也認得，第一個鍵就是內容", () => {
+    const ALIGNED = "→ " + "testuser".padEnd(12, " ") + ": ";
+    const { h, target } = setupArrow(TOO_CLOSE, ALIGNED);
+    expect(target).toMatchObject({ author: "abcuser", num: 101, arrowOnly: true });
+    expect(h.session.startFromList({ text: "hello", type: "arrow", target })).toBe(true);
+    expect(h.sent).toEqual([u2b("hello") + "\r"]);
+  });
+
   test("不送類型鍵：第一個鍵就是內容 → y，送完停在列表", () => {
     const { h, target } = setupArrow();
     expect(h.session.startFromList({ text: "hello", type: "arrow", target })).toBe(true);
