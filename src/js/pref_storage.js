@@ -2,7 +2,7 @@
 // non-React modules (main.js, pref_sync.js) can read/write prefs without
 // importing a component module.
 
-import { STORAGE_KEYS } from "./user_data_keys";
+import { readJson, writeJson } from "./user_data";
 
 export const DEFAULT_PREFS = {
   // general
@@ -542,19 +542,14 @@ export const DEFAULT_PREFS = {
   enableWorkMode: false
 };
 
-const PREF_STORAGE_KEY = STORAGE_KEYS.prefs;
-
+// 儲存形狀固定是 { values: {...} }（上線過，不能改）。讀不到／壞掉 ⇒ 全部預設值。
 export const readValuesWithDefault = () => {
-  try {
-    return {
-      ...DEFAULT_PREFS,
-      ...JSON.parse(window.localStorage.getItem(PREF_STORAGE_KEY)).values
-    };
-  } catch (e) {
-    return {
-      ...DEFAULT_PREFS
-    };
-  }
+  const stored = readJson('prefs');
+  const values = stored && typeof stored === 'object' ? stored.values : null;
+  return {
+    ...DEFAULT_PREFS,
+    ...(values && typeof values === 'object' ? values : null)
+  };
 };
 
 // 安全模式要關掉的 pref：會改寫 PTT 原生畫面、替使用者送鍵，或攔下原本會送給 PTT
@@ -595,15 +590,9 @@ export const effectivePrefs = values => {
 
 export const readEffectivePrefs = () => effectivePrefs(readValuesWithDefault());
 
+// 寫不進去（隱私模式、容量滿）就只在這一頁有效（user_data 的契約）。
 export const writeValues = values => {
-  try {
-    window.localStorage.setItem(
-      PREF_STORAGE_KEY,
-      JSON.stringify({
-        values
-      })
-    );
-  } catch (e) {}
+  writeJson('prefs', { values });
   return values;
 };
 
