@@ -100,6 +100,25 @@ export function readRaw(id, storage = defaultStorage()) {
 }
 
 /**
+ * 寫入原文字串（readRaw 的對）。只給本來就存純文字、舊資料不是 JSON 的擁有者（長推文草稿）；
+ * 其餘一律用 writeJson。回傳有沒有真的寫進去。
+ * @param {StorageKeyId} id
+ * @param {string} text
+ * @param {Storage | null} [storage]
+ * @returns {boolean}
+ */
+export function writeRaw(id, text, storage = defaultStorage()) {
+  const key = keyOf(id);
+  try {
+    if (!storage) return false;
+    storage.setItem(key, text);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+/**
  * 寫入 JSON；回傳有沒有真的寫進去（容量滿、隱私模式 ⇒ false，呼叫端照舊只在這一頁有效）。
  * @param {StorageKeyId} id
  * @param {unknown} value
