@@ -434,10 +434,13 @@ const PrefCheckRow = memo(({ name, values, disabled, onChange }) => {
         checked={values[name]}
         disabled={safeMode || parentOff || disabled}
         onChange={onChange}
+        description={
+          it.hintInBox && it.tooltipKey ? i18n(it.tooltipKey) : undefined
+        }
       >
         {i18n(it.titleKey)}
       </PrefCheckbox>
-      {it.tooltipKey && <PrefHint textKey={it.tooltipKey} />}
+      {it.tooltipKey && !it.hintInBox && <PrefHint textKey={it.tooltipKey} />}
     </>
   );
 }, samePrefCheckRow);
@@ -1431,58 +1434,6 @@ export const PrefModal = ({
                           </Text>
                         )}
                       </>
-                    ),
-                    unreadJumpProgress: (
-                      <PrefCheckbox
-                        name="unreadJumpProgress"
-                        checked={values.unreadJumpProgress}
-                        onChange={onCheckboxChange}
-                        description={i18n("tooltip_unreadJumpProgress")}
-                      >
-                        {i18n("options_unreadJumpProgress")}
-                      </PrefCheckbox>
-                    ),
-                    unreadJumpDivider: (
-                      <PrefCheckbox
-                        name="unreadJumpDivider"
-                        checked={values.unreadJumpDivider}
-                        onChange={onCheckboxChange}
-                        description={i18n("tooltip_unreadJumpDivider")}
-                      >
-                        {i18n("options_unreadJumpDivider")}
-                      </PrefCheckbox>
-                    ),
-                    enableCommandPalette: (
-                      <PrefCheckbox
-                        name="enableCommandPalette"
-                        checked={values.enableCommandPalette}
-                        onChange={onCheckboxChange}
-                        description={i18n("tooltip_enableCommandPalette")}
-                      >
-                        {i18n("options_enableCommandPalette")}
-                      </PrefCheckbox>
-                    ),
-                    paletteQuickBoards: (
-                      <PrefCheckbox
-                        name="paletteQuickBoards"
-                        checked={values.paletteQuickBoards}
-                        disabled={prefRequiresOff("paletteQuickBoards", values)}
-                        onChange={onCheckboxChange}
-                        description={i18n("tooltip_paletteQuickBoards")}
-                      >
-                        {i18n("options_paletteQuickBoards")}
-                      </PrefCheckbox>
-                    ),
-                    refreshKeyIntercept: (
-                      <PrefCheckbox
-                        name="refreshKeyIntercept"
-                        checked={values.refreshKeyIntercept}
-                        disabled={values.nativeSafeMode}
-                        onChange={onCheckboxChange}
-                        description={i18n("tooltip_refreshKeyIntercept")}
-                      >
-                        {i18n("options_refreshKeyIntercept")}
-                      </PrefCheckbox>
                     ),
                   }}
                 />
