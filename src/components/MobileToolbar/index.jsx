@@ -47,6 +47,8 @@ import {
 } from "../../js/quick_search";
 import { readSelectionText } from "../../render/screen_chunk";
 import MobileSheet from "../MobileSheet";
+import LinkRows from "../MobileSheet/LinkRows";
+import { copyTextFor } from "../../js/context_menu_items";
 import LogoutConfirm from "../LogoutConfirm";
 import { androidCanQuit } from "../../js/android_bridge";
 import {
@@ -121,6 +123,22 @@ const COPY_LINK_CHIPS = [
   ["aid", "cmenu_chipAid"],
   ["deep", "cmenu_chipShareLink"],
 ];
+// format → 右鍵選單那一列的 eventKey（預覽與複製內容共用 context_menu_items.COPY_TEXT）。
+const COPY_LINK_PREVIEW_KEYS = {
+  ptt: "copyArticlePttUrl",
+  aid: "copyArticleCode",
+  deep: "copyArticleLink",
+};
+
+function copyLinkPreviews(pttchrome) {
+  const nav = pttchrome && pttchrome.aidNavigation;
+  const currentArticle =
+    (nav && nav.findLocalPostAid && nav.findLocalPostAid()) || null;
+  const out = {};
+  for (const [format, key] of Object.entries(COPY_LINK_PREVIEW_KEYS))
+    out[format] = copyTextFor(key, { currentArticle });
+  return out;
+}
 
 const swallow = (e) => {
   e.stopPropagation();
@@ -177,7 +195,8 @@ export const MobileToolbar = ({
   // 當下現讀偏好；收起時不重算，退場動畫中項目才不會跳掉。
   const [imageUploadEnabled, setImageUploadEnabled] = useState(false);
   // P93「複製本篇連結」一列三顆的開關（articleCopyLinkRow）：開「更多」當下現讀。
-  const [copyLinkRow, setCopyLinkRow] = useState(false);
+  // null＝不畫「複製本篇連結」；否則是 { ptt, aid, deep } 三種的預覽（可能是 null）。
+  const [copyLinkRow, setCopyLinkRow] = useState(null);
   // 「更多」裡的快速搜尋（src/js/quick_search.js）：選取模式下的長按走原生選單，我們的
   // 長按選單（快速搜尋原本唯一的入口）出不來 ⇒ 選好字後按「更多」查。開 sheet 當下
   // 定案 { query, items }，收起時不重算（同 imageUploadEnabled）。
@@ -312,7 +331,11 @@ export const MobileToolbar = ({
         setImageUploadEnabled(
           !!pttchrome.imageUpload && !!prefs.enableImageUpload,
         );
-        setCopyLinkRow(!!prefs.articleCopyLinkRow);
+        // 開面板當下算三種的預覽（P95）：findLocalPostAid 只讀畫面上的文章網址列，零副作用；
+        // 讀不到就沒有預覽，點下去照舊由 deep_link_controller 補按 Q。
+        setCopyLinkRow(
+          prefs.articleCopyLinkRow ? copyLinkPreviews(pttchrome) : null,
+        );
         // 只在選取模式：模式關著時長按選單本身就有快速搜尋（長按的那個詞），而「全選」
         // 留下的整頁選取拿去查沒有意義。
         const query = pttchrome.mobileSelectMode
@@ -1091,29 +1114,18 @@ export const MobileToolbar = ({
           </div>
         ) : null}
         {context.share && copyLinkRow ? (
-          <div
-            className="mobileSheetChipRow"
-            role="group"
-            aria-label={i18n("cmenu_copyArticleLinkRow")}
+          <LinkRows
+            label={i18n("cmenu_copyArticleLinkRow")}
             data-copy-link-row=""
-          >
-            <span className="mobileSheetChipLabel">
-              {i18n("cmenu_copyArticleLinkRow")}
-            </span>
-            <div className="mobileSheetChips">
-              {COPY_LINK_CHIPS.map(([format, labelKey]) => (
-                <button
-                  key={format}
-                  type="button"
-                  className="nomouse_command mobileSheetChip pttRipple"
-                  data-copy-link={format}
-                  onClick={() => onCopyLink(format)}
-                >
-                  {i18n(labelKey)}
-                </button>
-              ))}
-            </div>
-          </div>
+            itemClassName="nomouse_command"
+            items={COPY_LINK_CHIPS.map(([format, labelKey]) => ({
+              key: format,
+              label: i18n(labelKey),
+              preview: copyLinkRow[format],
+              onClick: () => onCopyLink(format),
+              attrs: { "data-copy-link": format },
+            }))}
+          />
         ) : null}
         {moreList.map(renderMoreListItem)}
       </div>
