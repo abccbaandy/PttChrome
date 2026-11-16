@@ -1010,7 +1010,7 @@ export function ListSession(core, view, termBuf, queue) {
     // 忙時點的那一下（P47）：settle 是交易落地的地方；_onScreenSettled 中途 return 的分支很多，
     // 統一在它跑完之後判。
     if (self._pendingClick) self._flushPendingClick();
-  });
+  }, { owner: 'listSession' });
 }
 
 ListSession.prototype = {

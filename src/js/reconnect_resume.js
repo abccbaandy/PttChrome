@@ -138,7 +138,7 @@ export function ReconnectResume(core, view, termBuf) {
   // 這條連線看過主功能表了嗎（＝登入完成）。capture() 時清掉。
   this._loggedIn = false;
   if (termBuf && termBuf.addEventListener)
-    termBuf.addEventListener('screenSettled', this._onSettled.bind(this));
+    termBuf.addEventListener('screenSettled', this._onSettled.bind(this), { owner: 'reconnectResume' });
   // 倒數中的出發（開站接回）：{ timer, plan } | null。
   this._countdown = null;
   if (typeof window !== 'undefined' && window.localStorage) {

@@ -126,7 +126,7 @@ export function ArticleNav(core) {
       'screenSettled',
       this._onSettle,
       // 出錯 ⇒ 這次連線收起導覽軸（原生捲軸跟著回來），不再接 settle（event.js 故障隔離）。
-      { feature: 'enableArticleNav', disable: () => self._set({ visible: false }) }
+      { feature: 'enableArticleNav', disable: () => self._set({ visible: false }), owner: 'articleNav' }
     );
   if (typeof window !== 'undefined' && window.addEventListener)
     window.addEventListener('resize', function() {

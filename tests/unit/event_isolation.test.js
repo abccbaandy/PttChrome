@@ -150,6 +150,39 @@ describe("dev build／測試（strict）", () => {
   });
 });
 
+describe("listenerOwners（派發順序的標籤，A6）", () => {
+  test("照註冊順序回 owner；沒標的是 null；只標 owner 不影響停用", () => {
+    prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    const bus = makeBus(true);
+    const ran = [];
+    bus.addEventListener("screenSettled", () => ran.push("a"), { owner: "a" });
+    bus.addEventListener("screenSettled", () => ran.push("plain"));
+    bus.addEventListener(
+      "screenSettled",
+      () => {
+        ran.push("b");
+        throw new Error("boom");
+      },
+      { owner: "b" },
+    );
+    expect(bus.listenerOwners("screenSettled")).toEqual(["a", null, "b"]);
+    expect(bus.listenerOwners("nothing")).toEqual([]);
+    bus.dispatchEvent({ type: "screenSettled" });
+    bus.dispatchEvent({ type: "screenSettled" });
+    // owner 不是停用登記：沒帶 disable 的照舊每幀再試。
+    expect(ran).toEqual(["a", "plain", "b", "a", "plain", "b"]);
+  });
+
+  test("移除監聽者後順序跟著更新", () => {
+    const bus = makeBus(true);
+    const fa = () => {};
+    bus.addEventListener("screenSettled", fa, { owner: "a" });
+    bus.addEventListener("screenSettled", () => {}, { owner: "b" });
+    bus.removeEventListener("screenSettled", fa);
+    expect(bus.listenerOwners("screenSettled")).toEqual(["b"]);
+  });
+});
+
 describe("接線", () => {
   test("TermBuf 的事件是 isolate 的（screenSettled 那條鏈）", () => {
     const src = fs.readFileSync(path.resolve(__dirname, "../../src/js/term_buf.js"), "utf8");

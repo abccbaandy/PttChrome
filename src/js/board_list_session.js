@@ -320,7 +320,7 @@ export function BoardListSession(core, view, termBuf, queue) {
   this._lastNavAt = 0;
 
   defineOwnedRenderMode(this, termBuf, OWNER_BOARD_LIST);
-  termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
+  termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this), { owner: 'boardListSession' });
 }
 
 BoardListSession.prototype = {

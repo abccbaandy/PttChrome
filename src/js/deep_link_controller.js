@@ -29,7 +29,7 @@ export function DeepLinkController(core, view, termBuf) {
   // 這次連線看過主功能表了嗎（＝登入完成）。斷線時由 reset() 清掉。
   this._loggedIn = false;
   if (termBuf && termBuf.addEventListener)
-    termBuf.addEventListener('screenSettled', this._onSettled.bind(this));
+    termBuf.addEventListener('screenSettled', this._onSettled.bind(this), { owner: 'deepLinkController' });
 }
 
 DeepLinkController.prototype = {

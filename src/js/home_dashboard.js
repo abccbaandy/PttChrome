@@ -368,9 +368,13 @@ export function HomeDashboard(core) {
   };
   const self = this;
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self._onSettled();
-    });
+    core.buf.addEventListener(
+      'screenSettled',
+      function() {
+        self._onSettled();
+      },
+      { owner: 'homeDashboard' }
+    );
   const input = core.inputArea;
   if (input && input.addEventListener) {
     // capture：在 term_view 的處理之前看到，但**不吞**——鍵照常送給 PTT。
