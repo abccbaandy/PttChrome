@@ -198,11 +198,20 @@ export function buildCommentCard({
     const lines = [...text.children].filter(
       (n) => n.getAttribute && n.getAttribute("data-type") === "bbsline",
     );
+    // 跟上一則不同天（同一人隔天又推）⇒ 寫完整「月/日 時:分」，只寫時:分會被讀成標頭那天。
+    const stampOf = (lt) => {
+      let s = "";
+      for (let i = lt.timeStart; i < lt.timeEnd; ++i) s += chars[i] ? chars[i].ch : "";
+      return s.trim();
+    };
+    const dateOf = (lt) => stampOf(lt).split(" ")[0];
     for (let k = 1; k < r.lineTails.length && k < lines.length; ++k) {
       const lt = r.lineTails[k];
       let hm = "";
-      for (let i = hourMinuteStart(chars, lt.timeStart, lt.timeEnd); i < lt.timeEnd; ++i)
-        hm += chars[i] ? chars[i].ch : "";
+      if (dateOf(lt) !== dateOf(r.lineTails[k - 1])) hm = stampOf(lt);
+      else
+        for (let i = hourMinuteStart(chars, lt.timeStart, lt.timeEnd); i < lt.timeEnd; ++i)
+          hm += chars[i] ? chars[i].ch : "";
       if (!hm) continue;
       lines[k].insertBefore(
         el("span", { class: "commentCardLineTime", "data-time": hm }),
