@@ -375,6 +375,9 @@ export const DEFAULT_PREFS = {
   mobilePromptKeyboard: true,
   // 「請按任意鍵繼續」浮出「繼續」（P63）：使用者自己按、送空白 ⇒ 不在安全模式清單。
   mobileAnyKeyContinue: true,
+  // 列表按 Q 的文章資訊框：「繼續」前面加複製網址／複製 AID／分享（P92，prompt_choices.postInfoOnScreen）。
+  // 只讀畫面上印好的 AID、不送鍵 ⇒ 不在安全模式清單。
+  mobilePostInfoActions: true,
   // 手機好讀文章的新格式推文（「id: 內容 … [N]」與更早的「[N] id … creation」）也排成推文卡片
   // （P60，render/comment_card.buildModernCommentCard）。只改畫法、不送鍵 ⇒ 不在安全模式清單。
   mobileModernCommentCards: true,

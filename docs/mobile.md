@@ -157,6 +157,11 @@ PTT 問「選一個」時，底部導覽上方浮出可點選項（`MobileToolba
 - **P63 繼續**（pref `mobileAnyKeyContinue`，`kind: 'anyKey'`）：游標不在輸入欄、底列是 pressanykey／vmsg 橫幅
   （`resolveDismiss` 回 `DISMISS_ANY_KEY`）⇒ 一顆「繼續」送**空白、不補 ⏎**（⏎ 會變成下一個畫面的指令）。
   一律畫在最後一列 ⇒ `anchor: 'bottom'` 讓位。限速通知這類「我們不替使用者按」的畫面也會出現：按的是使用者自己。
+  - **P92 文章資訊框**（pref `mobilePostInfoActions`，`kind: 'postInfo'`）：P63 的畫面若是列表按 Q 的資訊框
+    （`bbs.c#view_postinfo`：框頂「┌」下一列「│ 文章代碼(AID): #… (板名)」，板名不明時由下一列網址補），
+    「繼續」前面多「複製網址／複製 AID／分享」三顆。三顆**不送任何 byte**，只讀畫面上的 AID／板名交給
+    `deep_link_controller.deliverPostLink`；按下時用本幀再認一次，AID 變了就不做。框頂或「│」不在 ⇒ 只有「繼續」
+    （文章內文貼了同樣字樣＋vmsg 底列不會被誤認），突變守護在 `parse_failure_degrade.test.js`。
 - 兩者都照 P61 送前用本幀再認一次（sig 含 `action` 與送不送 ⏎）。
 
 ## 浮動工具「⋯」（`render/merge_buttons.js#createFloatingTools`，桌機＋手機共用）

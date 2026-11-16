@@ -2210,6 +2210,24 @@ export const en_US = {
   "promptChoices_continue": {
     "message": "Continue"
   },
+  "promptChoices_postInfo": {
+    "message": "Post info"
+  },
+  "promptChoices_copyPttUrl": {
+    "message": "Copy URL"
+  },
+  "promptChoices_copyAid": {
+    "message": "Copy AID"
+  },
+  "promptChoices_share": {
+    "message": "Share"
+  },
+  "options_mobilePostInfoActions": {
+    "message": "Copy URL / AID / share from post info (Q) (mobile)"
+  },
+  "tooltip_mobilePostInfoActions": {
+    "message": "When you press Q on a list to see a post's info, three buttons appear before \"Continue\": copy the PTT URL, copy the post code, or open the system share sheet. Reads the code already on screen; never presses keys for you."
+  },
   "promptChoices_postType": {
     "message": "Post category"
   },

@@ -2209,6 +2209,24 @@
   "promptChoices_continue": {
     "message": "繼續"
   },
+  "promptChoices_postInfo": {
+    "message": "文章資訊"
+  },
+  "promptChoices_copyPttUrl": {
+    "message": "複製網址"
+  },
+  "promptChoices_copyAid": {
+    "message": "複製 AID"
+  },
+  "promptChoices_share": {
+    "message": "分享"
+  },
+  "options_mobilePostInfoActions": {
+    "message": "手機上文章資訊（Q）可直接複製網址／AID／分享"
+  },
+  "tooltip_mobilePostInfoActions": {
+    "message": "在列表按 Q 看文章資訊時，「繼續」前面多三顆：複製 PTT 網址、複製文章代碼、叫出系統分享。只讀畫面上的文章代碼，不替你按鍵。"
+  },
   "promptChoices_postType": {
     "message": "選擇文章種類"
   },

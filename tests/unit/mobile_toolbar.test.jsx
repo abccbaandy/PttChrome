@@ -655,6 +655,59 @@ describe("開鍵盤輸入（P62）／繼續（P63）", () => {
     fireEvent.click(document.querySelector('[data-choice="Space"]'));
     expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
   });
+
+  // P92：列表按 Q 的文章資訊框 ⇒「繼續」前面多複製網址／複製 AID／分享，三顆都不送鍵。
+  describe("文章資訊框（P92）", () => {
+    const INFO_ROWS = {
+      4: " ┌────────────────────────────────────────────────────────────┐",
+      5:" │ 文章代碼(AID): #1abcDEFG (Test) [ptt.cc] [問題] 測試",
+      6: " │ 文章網址: https://www.ptt.cc/bbs/Test/M.1700000000.A.123.html",
+      23: "                         ▄▄▄▄ 請按任意鍵繼續 ▄▄▄▄",
+    };
+    const infoBuf = () => ({ ...pauseBuf(), getRowText: (row) => INFO_ROWS[row] || "" });
+    const mountInfo = () => {
+      const buf = infoBuf();
+      const core = makeCore({
+        context: { push: false, search: [], choices: promptPanelFromBuf(buf, { ...ALL, mobilePostInfoActions: true }) },
+      });
+      core.buf = buf;
+      core.deepLinkController = { deliverPostLink: vi.fn(() => true) };
+      renderBar(core);
+      return core;
+    };
+
+    test("標題寫出 AID 與板名；按鈕依序是複製網址、複製 AID、分享、繼續", () => {
+      mountInfo();
+      expect(document.querySelector(".mobilePromptChoicesTitle").textContent).toBe(
+        i18n("promptChoices_postInfo") + " #1abcDEFG (Test)",
+      );
+      expect([...document.querySelectorAll("[data-choice]")].map((b) => b.getAttribute("data-choice"))).toEqual([
+        "copyPttUrl",
+        "copyAid",
+        "share",
+        "Space",
+      ]);
+    });
+
+    test.each([
+      ["copyPttUrl", "ptt"],
+      ["copyAid", "aid"],
+      ["share", "share"],
+    ])("點 %s ⇒ deliverPostLink(畫面上的 AID, %s)，一個 byte 都不送、框留著", (choice, format) => {
+      const core = mountInfo();
+      fireEvent.click(document.querySelector(`[data-choice="${choice}"]`));
+      expect(core.deepLinkController.deliverPostLink).toHaveBeenCalledWith({ aid: "1abcDEFG", board: "Test" }, format);
+      expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+      expect(document.getElementById("mobilePromptChoices")).not.toBeNull();
+    });
+
+    test("點下去時框已經換成別篇（AID 不同）⇒ 不複製", () => {
+      const core = mountInfo();
+      core.buf = { ...infoBuf(), getRowText: (row) => (row === 5 ? INFO_ROWS[5].replace("1abcDEFG", "1zzzzzzz") : INFO_ROWS[row] || "") };
+      fireEvent.click(document.querySelector('[data-choice="copyAid"]'));
+      expect(core.deepLinkController.deliverPostLink).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("更多（bottom sheet）", () => {

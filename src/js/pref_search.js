@@ -462,6 +462,11 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileAnyKeyContinue",
     },
     {
+      key: "mobilePostInfoActions",
+      titleKey: "options_mobilePostInfoActions",
+      tooltipKey: "tooltip_mobilePostInfoActions",
+    },
+    {
       key: "mobileModernCommentCards",
       titleKey: "options_mobileModernCommentCards",
       tooltipKey: "tooltip_mobileModernCommentCards",
