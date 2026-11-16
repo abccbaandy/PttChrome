@@ -99,6 +99,16 @@ describe('user_data 旗標', () => {
     expect(code).not.toMatch(/\.(getItem|setItem|removeItem)\(/);
   });
 
+  test('最近讀過／稍後閱讀拿原文當快取鍵（別的分頁寫的也認得）：走 readRaw／writeRaw，不再自己碰 localStorage', () => {
+    for (const id of ['recentArticles', 'readLater']) {
+      const e = USER_DATA.find((x) => x.id === id);
+      const code = fs.readFileSync(path.join(process.cwd(), e.owner), 'utf8');
+      expect(code, `${e.owner} 的 ${id} 要走 readRaw`).toMatch(new RegExp(`readRaw\\(\\s*['"]${id}['"]`));
+      expect(code, `${e.owner} 的 ${id} 要走 writeRaw`).toMatch(new RegExp(`writeRaw\\(\\s*['"]${id}['"]`));
+      expect(code, `${e.owner} 不該再直接 getItem/setItem`).not.toMatch(/\.(getItem|setItem|removeItem)\(/);
+    }
+  });
+
   test('原文字串：寫得回來、寫不進去回 false 不炸', () => {
     const st = memStorage();
     expect(writeRaw('longPushDraft', '打到一半', st)).toBe(true);
