@@ -29,6 +29,7 @@
 // vgets 一律要 ⏎ 才收（vtuikit.c#vgetstring），所以送「字＋⏎」。
 
 import { resolveDismiss, emptyAnswerCommits, DISMISS_ANY_KEY, KEY_DISMISS, KEY_ABORT } from './screen_dismiss';
+import { parsePostInfoAid, parsePostInfoUrl } from './aid_parse';
 
 const REPLY_PROMPTS = Object.freeze([
   {
@@ -221,13 +222,58 @@ export function promptPanelFromBuf(buf, prefs) {
     lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols)
   });
   if (!d || d.kind !== DISMISS_ANY_KEY) return null;
+  const cont = item(KEY_DISMISS, '', { key: '', labelKey: 'promptChoices_continue', isDefault: true, enter: false });
+  const info = p.mobilePostInfoActions ? postInfoOnScreen(buf) : null;
+  if (info) {
+    return {
+      kind: 'postInfo',
+      title: '#' + info.aid + ' (' + info.board + ')',
+      titleKey: 'promptChoices_postInfo',
+      anchor: anyKeyAnchor(buf),
+      postInfo: info,
+      items: [
+        item('', '', { key: '', labelKey: 'promptChoices_copyPttUrl', action: POST_INFO_COPY_PTT }),
+        item('', '', { key: '', labelKey: 'promptChoices_copyAid', action: POST_INFO_COPY_AID }),
+        item('', '', { key: '', labelKey: 'promptChoices_share', action: POST_INFO_SHARE }),
+        cont
+      ]
+    };
+  }
   return {
     kind: 'anyKey',
     title: '',
     titleKey: 'promptChoices_anyKey',
     anchor: anyKeyAnchor(buf),
-    items: [item(KEY_DISMISS, '', { key: '', labelKey: 'promptChoices_continue', isDefault: true, enter: false })]
+    items: [cont]
   };
+}
+
+// ---- P92：Q 文章資訊框（bbs.c#view_postinfo）上的複製／分享 ----
+// 框是 pressanykey 畫面（上面已確定底列是按任意鍵）。認得出「文章代碼(AID): #xxxxxxxx (板名)」
+// 才給（aid_parse.parsePostInfoAid，同 aid_navigation.postInfoAnswer）；板名印成「不明」時由同框
+// 第二列的網址補。少一樣（沒 AID、沒板名）⇒ null ＝照舊只有「繼續」。三顆都**不送任何 byte**：
+// 只讀畫面上已經印出來的字，交給 deep_link_controller 組字（同右鍵「複製本篇連結」的格式）。
+export const POST_INFO_COPY_PTT = 'copyPttUrl';
+export const POST_INFO_COPY_AID = 'copyAid';
+export const POST_INFO_SHARE = 'share';
+
+// 指紋＝框：bbs.c 在 col 0 先印框頂「┌───…┐」，下一列才是「│ 文章代碼(AID): …」，再下一列
+// 「│ 文章網址: …」。只比對 AID 字樣不夠：文章內文貼了同樣的字、底列又剛好是 vmsg 按任意鍵時，
+// 會把內文當成資訊框。框頂與「│」任一不在 ⇒ 不是資訊框。
+const POST_INFO_BOX_TOP_RE = /^\s*┌/;
+const POST_INFO_BOX_SIDE_RE = /^\s*│/;
+function postInfoOnScreen(buf) {
+  for (let y = 1; y < buf.rows - 1; ++y) {
+    const t = buf.getRowText(y, 0, buf.cols);
+    if (!POST_INFO_BOX_SIDE_RE.test(t)) continue;
+    if (!POST_INFO_BOX_TOP_RE.test(buf.getRowText(y - 1, 0, buf.cols))) continue;
+    const info = parsePostInfoAid(t);
+    if (!info) continue;
+    const fromUrl = parsePostInfoUrl(buf.getRowText(y + 1, 0, buf.cols));
+    const board = info.board || (fromUrl && fromUrl.aid === info.aid ? fromUrl.board : null);
+    return board ? { aid: info.aid, board: board } : null;
+  }
+  return null;
 }
 
 // 「繼續」面板讓不讓位。pressanykey／vmsg 一律畫在最後一列（vtuikit.c#vshowmsg 的 move(b_lines, 0)），

@@ -1781,6 +1781,15 @@ export const PrefModal = ({
                     </PrefCheckbox>
                     <PrefHint textKey="tooltip_mobileAnyKeyContinue" />
                     <PrefCheckbox
+                      name="mobilePostInfoActions"
+                      checked={values.mobilePostInfoActions}
+                      disabled={!values.mobileAnyKeyContinue}
+                      onChange={onCheckboxChange}
+                    >
+                      {i18n("options_mobilePostInfoActions")}
+                    </PrefCheckbox>
+                    <PrefHint textKey="tooltip_mobilePostInfoActions" />
+                    <PrefCheckbox
                       name="mobileModernCommentCards"
                       checked={values.mobileModernCommentCards}
                       onChange={onCheckboxChange}

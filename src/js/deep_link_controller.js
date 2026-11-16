@@ -113,6 +113,16 @@ DeepLinkController.prototype = {
     return this._resolveCurrentPost({ share: true, title: title || '' });
   },
 
+  // P92：文章代碼已經在畫面上（列表按 Q 的資訊框）⇒ 不必解析「本篇」，直接交件。
+  // info＝{ aid, board }（prompt_choices.postInfoOnScreen 讀的）。format 同 copyCurrentPostLink；
+  // format 'share' ＝系統分享面板（沒有／被拒退回複製分享連結）。一個 byte 都不送。
+  // 同樣要在 click handler 裡同步呼叫（剪貼簿／分享都要 user activation）。
+  deliverPostLink: function(info, format) {
+    if (!info || !info.aid || !info.board) return false;
+    this._deliverLink(info, format === 'share' ? { share: true } : format && format !== 'deep' ? { format: format } : null);
+    return true;
+  },
+
   _resolveCurrentPost: function(deliverOpts) {
     const nav = this._core.aidNavigation;
     if (!nav || nav.active || this._core.connectState !== 1) return false;

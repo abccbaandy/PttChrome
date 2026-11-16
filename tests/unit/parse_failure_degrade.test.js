@@ -55,6 +55,8 @@ import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import pushFx from "./fixtures/ptt_src_screens/push.json";
 import pushAgainFx from "./fixtures/ptt_src_screens/push_again.json";
+import postInfoFx from "./fixtures/ptt_src_screens/post_info.json";
+import { promptPanelFromBuf } from "../../src/js/prompt_choices";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 const LISTS = {
@@ -756,5 +758,68 @@ describe("列表推文列只有 →（P91）：認不出 ⇒ 原生輸入列", (
     ["兩列都有游標記號", () => withRow(cursorRow === 3 ? 4 : 3, ">" + real.rowTexts[cursorRow === 3 ? 4 : 3].slice(1))],
   ])("%s → 不接手", (_n, make) => {
     expect(listPushTarget(make())).toBeNull();
+  });
+});
+
+// P92 列表按 Q 的文章資訊框（prompt_choices.postInfoOnScreen）：認不出 AID／板名 ⇒ 面板照舊只有
+// 「繼續」，不給複製／分享（複製出錯的連結比沒有按鈕糟）。真實畫面＝upstream 產的 post_info.json info 幀。
+describe("文章資訊框（P92）：認不出 ⇒ 只有「繼續」", () => {
+  const PREFS = { mobileAnyKeyContinue: true, mobilePostInfoActions: true };
+  const realRows = (() => {
+    loadBig5Tables();
+    const buf = new TermBuf(postInfoFx.cols, postInfoFx.rows);
+    buf.setView({ update() {}, updateCursorPos() {}, refreshCursorVisibility() {}, blinkOn: false });
+    buf.useMouseBrowsing = false;
+    const p = new AnsiParser(buf);
+    for (let i = 0; i <= postInfoFx.frames.findIndex((f) => f.name === "info"); ++i) p.feed(postInfoFx.frames[i].bytes);
+    buf.notify();
+    clearTimeout(buf.timerUpdate);
+    if (buf._settleTimer) clearTimeout(buf._settleTimer);
+    const rows = [];
+    for (let y = 0; y < buf.rows; ++y) rows.push(buf.getRowText(y, 0, buf.cols));
+    return rows;
+  })();
+  // 只有畫面文字的假 buf（游標不在輸入欄 ⇒ 走「按任意鍵」那條）。
+  const stub = (rows) => ({
+    rows: rows.length,
+    cols: 80,
+    cur_y: rows.length - 1,
+    getRowText: (y) => rows[y] || "",
+    inputFieldText: () => null,
+  });
+  const aidRow = realRows.findIndex((t) => t.includes("文章代碼(AID)"));
+  const urlRow = realRows.findIndex((t) => /│\s*文章網址/.test(t));
+  const withRow = (i, text) => realRows.map((r, j) => (j === i ? text : r));
+
+  test("對照組：upstream 產的資訊框認得出 AID 與板名", () => {
+    expect(aidRow).toBeGreaterThan(0);
+    const p = promptPanelFromBuf(stub(realRows), PREFS);
+    expect(p.kind).toBe("postInfo");
+    expect(p.postInfo).toEqual({ aid: expect.stringMatching(/^[0-9A-Za-z_-]{8}$/), board: "Test" });
+  });
+
+  test.each([
+    ["AID 那列不見", () => withRow(aidRow, " ".repeat(80))],
+    ["標籤改字（文章代碼 → 代碼）", () => withRow(aidRow, realRows[aidRow].replace("文章代碼(AID)", "代碼"))],
+    ["AID 少一碼", () => withRow(aidRow, realRows[aidRow].replace(/#([0-9A-Za-z_-]{8})/, (_m, a) => "#" + a.slice(1) + " "))],
+    ["板名印成「不明」且沒有網址列", () =>
+      withRow(aidRow, realRows[aidRow].replace(/\(Test\)/, "(不明)")).map((r, j) => (j === urlRow ? " ".repeat(80) : r))],
+    ["底列不是按任意鍵", () => withRow(realRows.length - 1, " ".repeat(80))],
+    ["框頂不見", () => withRow(aidRow - 1, " ".repeat(80))],
+    ["AID 列前面沒有框線 │", () => withRow(aidRow, realRows[aidRow].replace("│", " "))],
+    // 文章內文貼了資訊框的字樣（沒有框），底列剛好是 vmsg 的按任意鍵。
+    ["文章內文含 AID 字樣＋vmsg 底列", () => {
+      const rows = Array.from({ length: realRows.length }, () => " ".repeat(80));
+      rows[3] = "文章代碼(AID): " + realRows[aidRow].match(/#[0-9A-Za-z_-]{8} \(Test\)/)[0];
+      rows[rows.length - 1] = realRows[realRows.length - 1];
+      return rows;
+    }],
+  ])("%s → 不給複製／分享", (_n, make) => {
+    const p = promptPanelFromBuf(stub(make()), PREFS);
+    expect(p ? p.kind : null).not.toBe("postInfo");
+  });
+
+  test("開關關掉 ⇒ 只有「繼續」", () => {
+    expect(promptPanelFromBuf(stub(realRows), { ...PREFS, mobilePostInfoActions: false }).kind).toBe("anyKey");
   });
 });

@@ -63,7 +63,20 @@ import {
   toolbarSlots,
   mobileToolbarContext,
 } from "../../js/mobile_toolbar";
-import { promptPanelFromBuf, promptChoicesSig } from "../../js/prompt_choices";
+import {
+  promptPanelFromBuf,
+  promptChoicesSig,
+  POST_INFO_COPY_PTT,
+  POST_INFO_COPY_AID,
+  POST_INFO_SHARE,
+} from "../../js/prompt_choices";
+
+// P92 資訊框按鈕 → deep_link_controller.deliverPostLink 的 format。
+const POST_INFO_FORMATS = {
+  [POST_INFO_COPY_PTT]: "ptt",
+  [POST_INFO_COPY_AID]: "aid",
+  [POST_INFO_SHARE]: "share",
+};
 import {
   splitMoreGrid,
   stableMoreSplit,
@@ -284,6 +297,14 @@ export const MobileToolbar = ({
       if (it.action === "keyboard") {
         if (!pttchrome.softKeyboard)
           setKeyboard(pttchrome.toggleSoftKeyboard());
+        return;
+      }
+      // P92：Q 文章資訊框上的複製／分享。只讀畫面上印好的 AID，不送鍵、框照舊開著。
+      const postInfoFormat = POST_INFO_FORMATS[it.action];
+      if (postInfoFormat) {
+        const dl = pttchrome.deepLinkController;
+        if (dl && typeof dl.deliverPostLink === "function")
+          dl.deliverPostLink(now.postInfo, postInfoFormat);
         return;
       }
       for (const ch of it.send) {
@@ -756,7 +777,11 @@ export const MobileToolbar = ({
         aria-label={i18n("promptChoices_aria")}
       >
         <div className="mobilePromptChoicesTitle">
-          {choices.titleKey ? i18n(choices.titleKey) : choices.title}
+          {choices.kind === "postInfo"
+            ? i18n(choices.titleKey) + " " + choices.title
+            : choices.titleKey
+              ? i18n(choices.titleKey)
+              : choices.title}
         </div>
         <div className="mobilePromptChoicesRow">
           {choices.items.map((it) => (
