@@ -127,12 +127,23 @@ export function browsersDir(env = process.env, platform = process.platform, home
   return path.join(env.XDG_CACHE_HOME || path.join(home, '.cache'), 'ms-playwright');
 }
 
+// package.json 直接列的套件（dependencies＋devDependencies）裡，node_modules 沒有的那些。
+// 讀不到 package.json ⇒ []（不判）。
+export function missingDirectDeps(root) {
+  const pkg = readJson(path.join(root, 'package.json'));
+  if (!pkg) return [];
+  const names = Object.keys(Object.assign({}, pkg.dependencies, pkg.devDependencies));
+  return names.filter((n) => !fs.existsSync(path.join(root, 'node_modules', n, 'package.json')));
+}
+
 // 回傳 { yarnInstall: bool, missingBrowsers: string[] }
 export function checkLocalDeps(root, dir = browsersDir()) {
   const nm = path.join(root, 'node_modules');
   if (!fs.existsSync(path.join(root, 'yarn.lock'))) return { yarnInstall: false, missingBrowsers: [] };
   const state = mtime(path.join(nm, '.yarn-state.yml'));
-  const yarnInstall = !state || mtime(path.join(root, 'yarn.lock')) > state;
+  // mtime 只是捷徑：雲端環境快取還原的 node_modules 可能比剛 clone 的 yarn.lock 還新，卻是
+  // 舊 lock 裝的（新加的 devDependency 根本不在）⇒ 再看 package.json 列的套件是不是都裝了。
+  const yarnInstall = !state || mtime(path.join(root, 'yarn.lock')) > state || missingDirectDeps(root).length > 0;
   // node_modules 還沒對齊時，裡面的 browsers.json 是舊版的，判了也不準 ⇒ 交給 install 後的提示
   if (yarnInstall) return { yarnInstall, missingBrowsers: [] };
   const manifest = readJson(path.join(nm, 'playwright-core', 'browsers.json'));
