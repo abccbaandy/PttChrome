@@ -161,6 +161,37 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     );
   });
 
+  test("手機上跳轉列比畫面寬：捲到最後一段時，亮起的那顆鈕橫向捲進列裡看得到", async () => {
+    await page.viewport(390, 800);
+    openModal();
+    fireEvent.click(
+      await vi.waitFor(() => {
+        const el = document.querySelector('[data-pref-category="general"]');
+        if (!el) throw new Error("no category list");
+        return el;
+      }),
+    );
+    await mounted();
+    const nav = bar();
+    // 前提：跳轉列真的比畫面寬，最後一顆一開始在列外。
+    expect(nav.scrollWidth).toBeGreaterThan(nav.clientWidth);
+    const box = rightCol();
+    const h = heading("misc");
+    box.scrollTop +=
+      h.getBoundingClientRect().top -
+      box.getBoundingClientRect().top -
+      nav.offsetHeight -
+      2;
+    await vi.waitFor(() => {
+      const btn = jumpBtn("misc");
+      expect(btn.getAttribute("aria-current")).toBe("true");
+      const b = btn.getBoundingClientRect();
+      const n = nav.getBoundingClientRect();
+      expect(b.left).toBeGreaterThanOrEqual(n.left - 1);
+      expect(b.right).toBeLessThanOrEqual(n.right + 1);
+    });
+  });
+
   test("跳轉列不會把分區撐寬（說明文字不跑出右欄）", async () => {
     await page.viewport(390, 800);
     openModal();

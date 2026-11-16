@@ -463,6 +463,18 @@ const PrefGroupNav = ({ scrollRef }) => {
       if (raf) cancelAnimationFrame(raf);
     };
   }, [scrollRef]);
+  // 跳轉列比畫面寬時（手機、英文介面）亮起的那顆可能在列外：橫向捲到看得到。
+  // 只動跳轉列自己的 scrollLeft，不用 scrollIntoView（會連右欄一起上下捲）。
+  useEffect(() => {
+    const nav = barRef.current;
+    const btn = nav && nav.querySelector(`[data-pref-group-jump="${active}"]`);
+    if (!btn) return;
+    const left = btn.offsetLeft;
+    const right = left + btn.offsetWidth;
+    if (left < nav.scrollLeft) nav.scrollLeft = left;
+    else if (right > nav.scrollLeft + nav.clientWidth)
+      nav.scrollLeft = right - nav.clientWidth;
+  }, [active]);
   const jump = (id) => {
     const box = scrollRef.current;
     const bar = barRef.current;
@@ -700,9 +712,7 @@ export const PrefModal = ({
         `[data-pref-anchor="${pendingJump.key}"]`,
       );
       if (node && node.scrollIntoView) {
-        const reduce =
-          typeof window.matchMedia === "function" &&
-          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const reduce = prefersReducedMotion();
         node.scrollIntoView({
           block: "center",
           behavior: reduce ? "auto" : "smooth",
