@@ -40,6 +40,12 @@ const ALL_ON = {
   mobileAnyKeyContinue: true,
   useImgurProxy: true,
   enableFollowList: true,
+  easyReadingEndSwitchNative: true,
+  enableCommandPalette: true,
+  useMouseBrowsing: true,
+  mouseWheel: 1,
+  useProxy: true,
+  mergeSameAuthorComments: true,
   nativeSafeMode: false,
 };
 
@@ -60,7 +66,31 @@ const TABLE = [
   ["imageProxyCatbox", ["useImgurProxy"], false],
   ["imageProxyTenor", ["useImgurProxy"], false],
   ["enableFollowOnly", ["enableFollowList"], false],
+  // 勾選列以外的欄位（熱鍵、下拉、文字、名單）。安全模式只管勾選列，這些照舊不反灰。
+  ["easyReadingEndSwitchKey", ["easyReadingEndSwitchNative"], false],
+  ["commandPaletteKey", ["enableCommandPalette"], false],
+  ["paletteQuickBoards", ["enableCommandPalette"], false],
+  ["mouseBrowsingHighlight", ["useMouseBrowsing"], false],
+  ["mouseLeftClick", ["useMouseBrowsing"], false],
+  ["mouseListClickStart", ["useMouseBrowsing"], false],
+  ["mousePushClickStart", ["useMouseBrowsing"], false],
+  ["mousePushClickEnd", ["useMouseBrowsing"], false],
+  ["mouseEdgePaging", ["useMouseBrowsing"], false],
+  ["mouseFunctionKeys", ["useMouseBrowsing"], false],
+  ["mouseMiddleClick", ["useMouseBrowsing"], false],
+  ["mouseWheel", ["useMouseBrowsing"], false],
+  ["mouseWheelSmoothScroll", ["useMouseBrowsing", "mouseWheel"], false],
+  ["mouseBackNav", ["useMouseBrowsing"], false],
+  ["mouseServerReport", ["useMouseBrowsing"], false],
+  ["proxyUrl", ["useProxy"], false],
+  ["imgurProxyUrl", ["useImgurProxy"], false],
+  ["mergedCommentEachTime", ["mergeSameAuthorComments"], false],
+  ["followList", ["enableFollowList"], false],
+  ["followTitleList", ["enableFollowList"], false],
 ];
+
+// 「關掉」：勾選類是 false；mouseWheel 是數字下拉（0＝關）。
+const OFF = { mouseWheel: 0 };
 
 const openTabOf = (key, prefs) => {
   window.localStorage.setItem(
@@ -96,7 +126,7 @@ describe("設定頁勾選列的前置開關", () => {
   test.each(TABLE)("%s：前置關掉任一個就反灰", (key, parents) => {
     for (const p of parents) {
       document.body.innerHTML = "";
-      const el = openTabOf(key, { [p]: false });
+      const el = openTabOf(key, { [p]: p in OFF ? OFF[p] : false });
       expect(el, `${key} 在 ${p} 關掉時`).toBeDisabled();
     }
   });

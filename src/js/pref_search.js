@@ -218,6 +218,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "easyReadingEndSwitchKey",
+      requires: "easyReadingEndSwitchNative",
       titleKey: "options_easyReadingEndSwitchKey",
       tooltipKey: "tooltip_easyReadingEndSwitchKey",
     },
@@ -253,11 +254,13 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "commandPaletteKey",
+      requires: "enableCommandPalette",
       titleKey: "options_commandPaletteKey",
       tooltipKey: "tooltip_commandPaletteKey",
     },
     {
       key: "paletteQuickBoards",
+      requires: "enableCommandPalette",
       titleKey: "options_paletteQuickBoards",
       tooltipKey: "tooltip_paletteQuickBoards",
     },
@@ -524,6 +527,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseMove", null, [
     {
       key: "mouseBrowsingHighlight",
+      requires: "useMouseBrowsing",
       titleKey: "options_mouseBrowsingHighlight",
       tooltipKey: "tooltip_mouseBrowsingHighlight",
     },
@@ -531,18 +535,20 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseLeftClick", null, [
     {
       key: "mouseLeftClick",
+      requires: "useMouseBrowsing",
       titleKey: "options_enableMouseLeftClick",
       tooltipKey: "tooltip_mouseLeftClick",
     },
   ]),
   ...inSection("mouse", "options_mouseClickRange", "tooltip_mouseClickRange", [
-    { key: "mouseListClickStart", titleKey: "options_mouseListClickStart" },
-    { key: "mousePushClickStart", titleKey: "options_mousePushClickStart" },
-    { key: "mousePushClickEnd", titleKey: "options_mousePushClickEnd" },
+    { key: "mouseListClickStart", requires: "useMouseBrowsing", titleKey: "options_mouseListClickStart" },
+    { key: "mousePushClickStart", requires: "useMouseBrowsing", titleKey: "options_mousePushClickStart" },
+    { key: "mousePushClickEnd", requires: "useMouseBrowsing", titleKey: "options_mousePushClickEnd" },
   ]),
   ...inSection("mouse", "options_mouseEdgePaging", null, [
     {
       key: "mouseEdgePaging",
+      requires: "useMouseBrowsing",
       titleKey: "options_enableMouseEdgePaging",
       tooltipKey: "tooltip_mouseEdgePaging",
     },
@@ -550,22 +556,25 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseFunctionKeys", null, [
     {
       key: "mouseFunctionKeys",
+      requires: "useMouseBrowsing",
       titleKey: "options_enableMouseFunctionKeys",
       tooltipKey: "tooltip_mouseFunctionKeys",
     },
   ]),
   // 以下四區的 legend 與區內項目標題同字 ⇒ 不另外產生 section 項。
   ...inSection("mouse", "options_mouseMiddleClick", false, [
-    { key: "mouseMiddleClick", titleKey: "options_mouseMiddleClick" },
+    { key: "mouseMiddleClick", requires: "useMouseBrowsing", titleKey: "options_mouseMiddleClick" },
   ]),
   ...inSection("mouse", "options_mouseWheel", false, [
     {
       key: "mouseWheel",
+      requires: "useMouseBrowsing",
       titleKey: "options_mouseWheel",
       tooltipKey: "tooltip_mouseWheel",
     },
     {
       key: "mouseWheelSmoothScroll",
+      requires: "mouseWheel",
       titleKey: "options_mouseWheelSmoothScroll",
       tooltipKey: "tooltip_mouseWheelSmoothScroll",
     },
@@ -573,6 +582,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseBackNav", false, [
     {
       key: "mouseBackNav",
+      requires: "useMouseBrowsing",
       titleKey: "options_mouseBackNav",
       tooltipKey: "tooltip_mouseBackNav",
     },
@@ -580,6 +590,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseServerReport", false, [
     {
       key: "mouseServerReport",
+      requires: "useMouseBrowsing",
       titleKey: "options_mouseServerReport",
       tooltipKey: "tooltip_mouseServerReport",
     },
@@ -590,6 +601,7 @@ export const PREF_SEARCH_ITEMS = [
     { key: "useProxy", titleKey: "options_useProxy" },
     {
       key: "proxyUrl",
+      requires: "useProxy",
       titleKey: "options_proxyUrl",
       tooltipKey: "tooltip_proxyUrl",
     },
@@ -622,6 +634,7 @@ export const PREF_SEARCH_ITEMS = [
     })),
     {
       key: "imgurProxyUrl",
+      requires: "useImgurProxy",
       titleKey: "options_imgurProxyUrl",
       tooltipKey: "tooltip_imgurProxyUrl",
     },
@@ -643,6 +656,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "mergedCommentEachTime",
+      requires: "mergeSameAuthorComments",
       titleKey: "options_mergedCommentEachTime",
     },
     { key: "commentBlockSpacing", titleKey: "options_commentBlockSpacing" },
@@ -700,11 +714,13 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "followList",
+      requires: "enableFollowList",
       titleKey: "options_followList",
       tooltipKey: "tooltip_followList",
     },
     {
       key: "followTitleList",
+      requires: "enableFollowList",
       titleKey: "options_followTitleList",
       tooltipKey: "tooltip_followTitleList",
     },
@@ -828,6 +844,16 @@ export function prefRequiresChain(key) {
     cur = prefItem(cur.requires);
   }
   return chain;
+}
+
+/**
+ * 前置鏈上有沒有一格是關的（＝這一格要反灰）。勾選列以外的欄位（熱鍵、下拉、文字、名單）
+ * 用它：disabled={prefRequiresOff("proxyUrl", values)}。數字下拉 0 也算關（滾輪 mouseWheel）。
+ * @param {string} key
+ * @param {Record<string, unknown>} values
+ */
+export function prefRequiresOff(key, values) {
+  return prefRequiresChain(key).some((k) => !values[k]);
 }
 
 // 「一般」分區裡每一項屬於哪一段小標（P94，src/js/pref_groups.js）。索引的順序就是
