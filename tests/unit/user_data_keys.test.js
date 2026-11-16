@@ -34,8 +34,8 @@ describe('user_data_keys 總表', () => {
       const ns = e.store === 'indexedDB' ? 'INDEXED_DB_NAMES' : 'STORAGE_KEYS';
       expect(fs.existsSync(path.join(root, e.owner)), e.owner).toBe(true);
       const code = read(e.owner);
-      const viaId = new RegExp(`(readFlag|writeFlag)\\(\\s*['"]${e.id}['"]`).test(code);
-      expect(code.includes(`${ns}.${e.id}`) || viaId, `${e.owner} 要用 ${ns}.${e.id} 或 readFlag('${e.id}')`).toBe(true);
+      const viaId = new RegExp(`(readFlag|writeFlag|readJson|writeJson|removeData)\\(\\s*['"]${e.id}['"]`).test(code);
+      expect(code.includes(`${ns}.${e.id}`) || viaId, `${e.owner} 要用 ${ns}.${e.id} 或 readJson('${e.id}')`).toBe(true);
     }
   });
 
