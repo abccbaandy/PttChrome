@@ -85,6 +85,15 @@ describe("設定索引的欄位型別", () => {
       expect(it.requires, it.key).toBeTruthy();
   });
 
+  test("hintInBox（說明畫在勾選框裡）只用在有說明的勾選列", () => {
+    const inBox = prefs.filter((it) => it.hintInBox);
+    expect(inBox.length).toBeGreaterThan(0);
+    for (const it of inBox) {
+      expect(it.type, it.key).toBe("check");
+      expect(it.tooltipKey, it.key).toBeTruthy();
+    }
+  });
+
   test("type 跟預設值的型別對得上", () => {
     const expected = {
       check: ["boolean"],

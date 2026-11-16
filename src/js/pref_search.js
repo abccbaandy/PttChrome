@@ -271,18 +271,21 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "unreadJumpProgress",
+      hintInBox: true,
       type: "check",
       titleKey: "options_unreadJumpProgress",
       tooltipKey: "tooltip_unreadJumpProgress",
     },
     {
       key: "unreadJumpDivider",
+      hintInBox: true,
       type: "check",
       titleKey: "options_unreadJumpDivider",
       tooltipKey: "tooltip_unreadJumpDivider",
     },
     {
       key: "enableCommandPalette",
+      hintInBox: true,
       type: "check",
       titleKey: "options_enableCommandPalette",
       tooltipKey: "tooltip_enableCommandPalette",
@@ -296,6 +299,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "paletteQuickBoards",
+      hintInBox: true,
       type: "check",
       requires: "enableCommandPalette",
       titleKey: "options_paletteQuickBoards",
@@ -303,6 +307,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "refreshKeyIntercept",
+      hintInBox: true,
       type: "check",
       titleKey: "options_refreshKeyIntercept",
       tooltipKey: "tooltip_refreshKeyIntercept",
@@ -940,7 +945,9 @@ export const PREF_SEARCH_ITEMS = [
 
 /**
  * min：數字欄的下限（由索引畫出的數字欄用；手寫的 PrefNumber 照舊自己帶）。
- * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number }} PrefIndexItem
+ * hintInBox：勾選列的說明畫在勾選框裡（Mantine Checkbox 的 description，緊貼標題下方），
+ *   不是勾選列下面另一行灰字（PrefHint）。舊版設定頁兩種寫法並存，照原樣記下來，畫面不變。
+ * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean }} PrefIndexItem
  */
 
 // key → 索引項（只收 kind:"pref"）。設定頁的 PrefCheckRow 從這裡拿標題與說明的文字鍵
