@@ -84,6 +84,7 @@ import {
   normalizeMobileFontPx,
 } from "../../js/mobile_layout";
 import { PrefSearchBox } from "./PrefSearchBox";
+import { prefItem } from "../../js/pref_search";
 import { shortcutList, isMacPlatform } from "../../js/shortcut_list";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import "./PrefModal.css";
@@ -379,6 +380,28 @@ const PrefHint = memo(({ textKey }) => (
     {i18n(textKey)}
   </Text>
 ));
+
+// 勾選列＝勾選框＋（有的話）灰字說明，標題與說明的文字鍵取自設定搜尋索引
+// （pref_search.js#prefItem）⇒ 設定頁上的字與搜尋結果同一份來源。只給「標題＋說明」
+// 剛好就是索引那兩個鍵的列用；帶額外內容（警告字、description、說明不同字）的照舊手寫。
+// 不在索引裡就直接炸：那是寫錯 name，靜態守護 pref_search_index.test.js 也會先紅。
+const PrefCheckRow = memo(({ name, checked, disabled, onChange }) => {
+  const it = prefItem(name);
+  if (!it) throw new Error(`PrefCheckRow: ${name} 不在設定搜尋索引裡`);
+  return (
+    <>
+      <PrefCheckbox
+        name={name}
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+      >
+        {i18n(it.titleKey)}
+      </PrefCheckbox>
+      {it.tooltipKey && <PrefHint textKey={it.tooltipKey} />}
+    </>
+  );
+});
 
 // 分區 adapter：<fieldset> + <legend>，順帶掛上 section:<legendKey> 錨點。
 // legendKey 同時是索引裡的 sectionKey（src/js/pref_search.js），靜態守護測試
@@ -1254,44 +1277,31 @@ export const PrefModal = ({
               <PrefSection legendKey="options_general">
                 <PrefGroupNav scrollRef={rightColRef} />
                 <PrefGroupHeading id="basic" />
-                <PrefCheckbox
+                <PrefCheckRow
                   name="nativeSafeMode"
                   checked={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_nativeSafeMode")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_nativeSafeMode" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enablePicPreview"
                   checked={values.enablePicPreview}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enablePicPreview")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="imageFitScreen"
                   checked={values.imageFitScreen}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_imageFitScreen")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_imageFitScreen" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="tapToLoadImagesOnMobileData"
                   checked={values.tapToLoadImagesOnMobileData}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_tapToLoadImagesOnMobileData")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_tapToLoadImagesOnMobileData" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableNotifications"
                   checked={values.enableNotifications}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableNotifications")}
-                </PrefCheckbox>
+                />
                 <PrefCheckbox
                   name="deepLinkHandoffNotify"
                   checked={values.deepLinkHandoffNotify}
@@ -1304,227 +1314,155 @@ export const PrefModal = ({
                     {i18n("options_deepLinkHandoffNotifyDenied")}
                   </Text>
                 )}
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableMessageInbox"
                   checked={values.enableMessageInbox}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableMessageInbox")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableMessageInbox" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="showStatusHints"
                   checked={values.showStatusHints}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_showStatusHints")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_showStatusHints" />
+                />
                 <PrefGroupHeading id="easyReading" />
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableEasyReading"
                   checked={values.enableEasyReading}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableEasyReading")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableHelpMenuPopup"
                   checked={values.enableHelpMenuPopup}
                   disabled={values.nativeSafeMode || !values.enableEasyReading}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableHelpMenuPopup")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableHelpMenuPopup" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableEasyReadingList"
                   checked={values.enableEasyReadingList}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableEasyReadingList")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableListFastScroll"
                   checked={values.enableListFastScroll}
                   disabled={
                     values.nativeSafeMode || !values.enableEasyReadingList
                   }
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableListFastScroll")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableListFastScroll" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableBoardListSmoothScroll"
                   checked={values.enableBoardListSmoothScroll}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableBoardListSmoothScroll")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableBoardListSmoothScroll" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableListNativeAutoResume"
                   checked={values.enableListNativeAutoResume}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableListNativeAutoResume")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableListNativeAutoResume" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="queueListClickWhenBusy"
                   checked={values.queueListClickWhenBusy}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_queueListClickWhenBusy")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_queueListClickWhenBusy" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="skipBoardEntryScreen"
                   checked={values.skipBoardEntryScreen}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_skipBoardEntryScreen")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_skipBoardEntryScreen" />
+                />
                 <PrefGroupHeading id="home" />
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableHomeDashboard"
                   checked={values.enableHomeDashboard}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableHomeDashboard")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableHomeDashboard" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="showWhatsNew"
                   checked={values.showWhatsNew}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_showWhatsNew")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_showWhatsNew" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableRecentArticles"
                   checked={values.enableRecentArticles}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableRecentArticles")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableRecentArticles" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="resumeRecentArticles"
                   checked={values.resumeRecentArticles}
                   disabled={!values.enableRecentArticles}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_resumeRecentArticles")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_resumeRecentArticles" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableSavedArticles"
                   checked={values.enableSavedArticles}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableSavedArticles")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableSavedArticles" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableShareTarget"
                   checked={values.enableShareTarget}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableShareTarget")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableShareTarget" />
+                />
                 <PrefGroupHeading id="article" />
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableBoardTabs"
                   checked={values.enableBoardTabs}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableBoardTabs")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableBoardTabs" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableSplitReading"
                   checked={values.enableSplitReading}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableSplitReading")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableSplitReading" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableNextArticleCard"
                   checked={values.enableNextArticleCard}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableNextArticleCard")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableNextArticleCard" />
+                />
                 <div className="PrefModal__SubOptions">
-                  <PrefCheckbox
+                  <PrefCheckRow
                     name="nextArticleSameSubject"
                     checked={values.nextArticleSameSubject}
                     disabled={
                       values.nativeSafeMode || !values.enableNextArticleCard
                     }
                     onChange={onCheckboxChange}
-                  >
-                    {i18n("options_nextArticleSameSubject")}
-                  </PrefCheckbox>
-                  <PrefHint textKey="tooltip_nextArticleSameSubject" />
+                  />
                 </div>
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableArticleTools"
                   checked={values.enableArticleTools}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableArticleTools")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableArticleTools" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableArticleNav"
                   checked={values.enableArticleNav}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableArticleNav")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableArticleNav" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="easyReadingFooterProgress"
                   checked={values.easyReadingFooterProgress}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_easyReadingFooterProgress")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_easyReadingFooterProgress" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="easyReadingBrowserFind"
                   checked={values.easyReadingBrowserFind}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_easyReadingBrowserFind")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_easyReadingBrowserFind" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="easyReadingEndSwitchNative"
                   checked={values.easyReadingEndSwitchNative}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_easyReadingEndSwitchNative")}
-                </PrefCheckbox>
+                />
                 <PrefGroupHeading id="hotkeys" />
                 <PrefHotkey
                   name="easyReadingEndSwitchKey"
@@ -1614,46 +1552,34 @@ export const PrefModal = ({
                   description={i18n("tooltip_refreshMinIntervalSec")}
                   min={0}
                 />
-                <PrefCheckbox
+                <PrefCheckRow
                   name="endTurnsOnLiveUpdate"
                   checked={values.endTurnsOnLiveUpdate}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_endTurnsOnLiveUpdate")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="copyOnSelect"
                   checked={values.copyOnSelect}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_copyOnSelect")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableBell"
                   checked={values.enableBell}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableBell")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="reconnectResume"
                   checked={values.reconnectResume}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_reconnectResume")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_reconnectResume" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="resumeLastPlace"
                   checked={values.resumeLastPlace}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_resumeLastPlace")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_resumeLastPlace" />
+                />
                 <PrefNumber
                   name="antiIdleTime"
                   value={values.antiIdleTime}
@@ -1669,70 +1595,50 @@ export const PrefModal = ({
                 />
               </PrefSection>
               <PrefSection legendKey="options_contextMenu">
-                <PrefCheckbox
+                <PrefCheckRow
                   name="highlightMenuTarget"
                   checked={values.highlightMenuTarget}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_highlightMenuTarget")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="articleCopyLinkRow"
                   checked={values.articleCopyLinkRow}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_articleCopyLinkRow")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_articleCopyLinkRow" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableInputHelper"
                   checked={values.enableInputHelper}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableInputHelper")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableLiveArticleHelper"
                   checked={values.enableLiveArticleHelper}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableLiveArticleHelper")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableEditorInput"
                   checked={values.enableEditorInput}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableEditorInput")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableEditorInput" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableLongPush"
                   checked={values.enableLongPush}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableLongPush")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="pushKeyOpensLongPush"
                   checked={values.pushKeyOpensLongPush}
                   disabled={!values.enableLongPush || values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_pushKeyOpensLongPush")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_pushKeyOpensLongPush" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableCommentBar"
                   checked={values.enableCommentBar}
                   disabled={!values.enableLongPush || values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableCommentBar")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableCommentBar" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="commentReplyMenu"
                   checked={values.commentReplyMenu}
                   disabled={
@@ -1741,19 +1647,13 @@ export const PrefModal = ({
                     values.nativeSafeMode
                   }
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_commentReplyMenu")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_commentReplyMenu" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableCommentFilter"
                   checked={values.enableCommentFilter}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableCommentFilter")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableCommentFilter" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="mobileCommentBarFold"
                   checked={values.mobileCommentBarFold}
                   disabled={
@@ -1762,11 +1662,8 @@ export const PrefModal = ({
                     values.nativeSafeMode
                   }
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_mobileCommentBarFold")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_mobileCommentBarFold" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="commentBarCounter"
                   checked={values.commentBarCounter}
                   disabled={
@@ -1775,53 +1672,35 @@ export const PrefModal = ({
                     values.nativeSafeMode
                   }
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_commentBarCounter")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_commentBarCounter" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="searchKeyOpensModal"
                   checked={values.searchKeyOpensModal}
                   disabled={values.nativeSafeMode}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_searchKeyOpensModal")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_searchKeyOpensModal" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableSearchStatus"
                   checked={values.enableSearchStatus}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableSearchStatus")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableSearchStatus" />
+                />
               </PrefSection>
               <PrefSection legendKey="options_appearance">
-                <PrefCheckbox
+                <PrefCheckRow
                   name="autoHideBlinkCursor"
                   checked={values.autoHideBlinkCursor}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_autoHideBlinkCursor")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_autoHideBlinkCursor" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="dimReadArticles"
                   checked={values.dimReadArticles}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_dimReadArticles")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_dimReadArticles" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="boardListUnreadMark"
                   checked={values.boardListUnreadMark}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_boardListUnreadMark")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_boardListUnreadMark" />
+                />
                 <PrefAnchor anchorKey="ui:theme">
                   <Text size="sm" fw={500} mb={4}>
                     {i18n("options_theme")}
@@ -1872,13 +1751,11 @@ export const PrefModal = ({
                       onChange={onNumberChange}
                       label={i18n("options_rows")}
                     />
-                    <PrefCheckbox
+                    <PrefCheckRow
                       name="fontFitWindowWidth"
                       checked={values.fontFitWindowWidth}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_fontFitWindowWidth")}
-                    </PrefCheckbox>
+                    />
                   </div>
                 )}
                 {values.termSizeMode === "fixed-font-size" && (
@@ -1911,159 +1788,102 @@ export const PrefModal = ({
                 )}
                 {values.mobileLayout !== "off" && (
                   <>
-                    <PrefCheckbox
+                    <PrefCheckRow
                       name="mobileAppBarScrollTop"
                       checked={values.mobileAppBarScrollTop}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileAppBarScrollTop")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileAppBarScrollTop" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileAppBarArticleDetail"
                       checked={values.mobileAppBarArticleDetail}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileAppBarArticleDetail")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileAppBarArticleDetail" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileSelectTextPage"
                       checked={values.mobileSelectTextPage}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileSelectTextPage")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileSelectTextPage" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileFindInArticle"
                       checked={values.mobileFindInArticle}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileFindInArticle")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileFindInArticle" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileCardHideTitleBox"
                       checked={values.mobileCardHideTitleBox}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileCardHideTitleBox")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileCardHideTitleBox" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileBoardCardUnread"
                       checked={values.mobileBoardCardUnread}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileBoardCardUnread")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileBoardCardUnread" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileListEndHint"
                       checked={values.mobileListEndHint}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileListEndHint")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileListEndHint" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileFloatToolsInMore"
                       checked={values.mobileFloatToolsInMore}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileFloatToolsInMore")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileFloatToolsInMore" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileBoardTools"
                       checked={values.mobileBoardTools}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileBoardTools")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileBoardTools" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileMailListTools"
                       checked={values.mobileMailListTools}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileMailListTools")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileMailListTools" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileMenuBannerCollapse"
                       checked={values.mobileMenuBannerCollapse}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileMenuBannerCollapse")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileMenuBannerCollapse" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileEssenceCards"
                       checked={values.mobileEssenceCards}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileEssenceCards")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileEssenceCards" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobilePromptChoices"
                       checked={values.mobilePromptChoices}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobilePromptChoices")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobilePromptChoices" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobilePromptKeyboard"
                       checked={values.mobilePromptKeyboard}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobilePromptKeyboard")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobilePromptKeyboard" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileAnyKeyContinue"
                       checked={values.mobileAnyKeyContinue}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileAnyKeyContinue")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileAnyKeyContinue" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobilePostInfoActions"
                       checked={values.mobilePostInfoActions}
                       disabled={!values.mobileAnyKeyContinue}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobilePostInfoActions")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobilePostInfoActions" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileModernCommentCards"
                       checked={values.mobileModernCommentCards}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileModernCommentCards")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileModernCommentCards" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileHangIndent"
                       checked={values.mobileHangIndent}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileHangIndent")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileHangIndent" />
-                    <PrefCheckbox
+                    />
+                    <PrefCheckRow
                       name="mobileEditorSave"
                       checked={values.mobileEditorSave}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_mobileEditorSave")}
-                    </PrefCheckbox>
-                    <PrefHint textKey="tooltip_mobileEditorSave" />
+                    />
                   </>
                 )}
               </PrefSection>
@@ -2073,28 +1893,21 @@ export const PrefModal = ({
                 上兩個 checkbox ＝**樣式層**（畫什麼，可同時開），
                 keyboardCursorHighlight ＝**來源層**（哪一列）。 */}
               <PrefSection legendKey="options_cursorHighlight">
-                <PrefCheckbox
+                <PrefCheckRow
                   name="cursorRowBrighten"
                   checked={values.cursorRowBrighten}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_cursorRowBrighten")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_cursorRowBrighten" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="cursorRowBackground"
                   checked={values.cursorRowBackground}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_cursorRowBackground")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="keyboardCursorHighlight"
                   checked={values.keyboardCursorHighlight}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_keyboardCursorHighlight")}
-                </PrefCheckbox>
+                />
                 <PrefAnchor anchorKey="ui:highlightColor">
                   <Text
                     size="sm"
@@ -2349,13 +2162,11 @@ export const PrefModal = ({
                 </PrefSection>
               ) : (
                 <PrefSection legendKey="options_connection_bbs">
-                  <PrefCheckbox
+                  <PrefCheckRow
                     name="useProxy"
                     checked={values.useProxy}
                     onChange={onCheckboxChange}
-                  >
-                    {i18n("options_useProxy")}
-                  </PrefCheckbox>
+                  />
                   {/* placeholder 放的是**實際生效的預設位址**（不是說明文字）：欄位
                   留空就是用它，使用者把自訂位址刪光也回得到預設。說明文字改掛
                   description。imgur 那組同理。 */}
@@ -2423,50 +2234,40 @@ export const PrefModal = ({
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_imgurProxy")}
                 </Text>
-                <PrefCheckbox
+                <PrefCheckRow
                   name="useImgurProxy"
                   checked={values.useImgurProxy}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_useImgurProxy")}
-                </PrefCheckbox>
+                />
                 {/* 各站開關（清單＝image_proxy.js#IMAGE_PROXY_SITES）。刻意逐項寫死而非
                   map：設定搜尋的靜態守護（pref_search_index.test.js）只認得字面
                   name="…"；註冊表 ↔ 畫面的一致性由 pref_modal_connection_tab.test.jsx 守。
                   總開關關閉時反灰但值保留，重開即恢復原本的逐站選擇。 */}
                 <div className="PrefModal__SubOptions">
-                  <PrefCheckbox
+                  <PrefCheckRow
                     name="imageProxyImgur"
                     checked={values.imageProxyImgur}
                     disabled={!values.useImgurProxy}
                     onChange={onCheckboxChange}
-                  >
-                    {i18n("options_imageProxySite_imgur")}
-                  </PrefCheckbox>
-                  <PrefCheckbox
+                  />
+                  <PrefCheckRow
                     name="imageProxyTwimg"
                     checked={values.imageProxyTwimg}
                     disabled={!values.useImgurProxy}
                     onChange={onCheckboxChange}
-                  >
-                    {i18n("options_imageProxySite_twimg")}
-                  </PrefCheckbox>
-                  <PrefCheckbox
+                  />
+                  <PrefCheckRow
                     name="imageProxyCatbox"
                     checked={values.imageProxyCatbox}
                     disabled={!values.useImgurProxy}
                     onChange={onCheckboxChange}
-                  >
-                    {i18n("options_imageProxySite_catbox")}
-                  </PrefCheckbox>
-                  <PrefCheckbox
+                  />
+                  <PrefCheckRow
                     name="imageProxyTenor"
                     checked={values.imageProxyTenor}
                     disabled={!values.useImgurProxy}
                     onChange={onCheckboxChange}
-                  >
-                    {i18n("options_imageProxySite_tenor")}
-                  </PrefCheckbox>
+                  />
                 </div>
                 <PrefText
                   name="imgurProxyUrl"
@@ -2491,20 +2292,16 @@ export const PrefModal = ({
             </Tabs.Panel>
             <Tabs.Panel value="enhance">
               <PrefSection legendKey="options_enhance">
-                <PrefCheckbox
+                <PrefCheckRow
                   name="showFloorNumbers"
                   checked={values.showFloorNumbers}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_showFloorNumbers")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="mergeSameAuthorComments"
                   checked={values.mergeSameAuthorComments}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_mergeSameAuthorComments")}
-                </PrefCheckbox>
+                />
                 <PrefCheckbox
                   name="mergedCommentEachTime"
                   checked={values.mergedCommentEachTime}
@@ -2513,97 +2310,68 @@ export const PrefModal = ({
                 >
                   {i18n("options_mergedCommentEachTime")}
                 </PrefCheckbox>
-                <PrefCheckbox
+                <PrefCheckRow
                   name="commentBlockSpacing"
                   checked={values.commentBlockSpacing}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_commentBlockSpacing")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="showMergeCaptionButton"
                   checked={values.showMergeCaptionButton}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_showMergeCaptionButton")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_showMergeCaptionButton" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="showLightsOnButton"
                   checked={values.showLightsOnButton}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_showLightsOnButton")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_showLightsOnButton" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="highlightAuthorComments"
                   checked={values.highlightAuthorComments}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_highlightAuthorComments")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="highlightSelfComments"
                   checked={values.highlightSelfComments}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_highlightSelfComments")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="markNewComments"
                   checked={values.markNewComments}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_markNewComments")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_markNewComments" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="markJustPushed"
                   checked={values.markJustPushed}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_markJustPushed")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_markJustPushed" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="listNewPushCount"
                   checked={values.listNewPushCount}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_listNewPushCount")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_listNewPushCount" />
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableAutoFixUrl"
                   checked={values.enableAutoFixUrl}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableAutoFixUrl")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableXMentionLink"
                   checked={values.enableXMentionLink}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableXMentionLink")}
-                </PrefCheckbox>
-                <PrefCheckbox
+                />
+                <PrefCheckRow
                   name="enableBareDomainLink"
                   checked={values.enableBareDomainLink}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableBareDomainLink")}
-                </PrefCheckbox>
+                />
                 {/* 圖片上傳的總開關。憑證（token）在「本機設定」分頁 —— 它不上雲，
                   與這個可同步的開關刻意分開放。 */}
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableImageUpload"
                   checked={values.enableImageUpload}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableImageUpload")}
-                </PrefCheckbox>
+                />
                 <PrefTextarea
                   name="blacklist"
                   value={values.blacklist}
@@ -2620,14 +2388,11 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_title_blacklist")}
                   minRows={6}
                 />
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableFollowList"
                   checked={values.enableFollowList}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableFollowList")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableFollowList" />
+                />
                 <PrefTextarea
                   name="followList"
                   value={values.followList}
@@ -2646,15 +2411,12 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_followTitleList")}
                   minRows={3}
                 />
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableFollowOnly"
                   checked={values.enableFollowOnly}
                   disabled={!values.enableFollowList}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableFollowOnly")}
-                </PrefCheckbox>
-                <PrefHint textKey="tooltip_enableFollowOnly" />
+                />
               </PrefSection>
             </Tabs.Panel>
             {/* 快速搜尋分頁：右鍵選單（選取文字後）的搜尋項目清單。內建項目只能停用
@@ -2719,13 +2481,11 @@ export const PrefModal = ({
                       onChange={onSelectStr}
                       options={AUTO_LOGIN_DUP_CONN_OPTIONS}
                     />
-                    <PrefCheckbox
+                    <PrefCheckRow
                       name="autoLoginSkipWelcome"
                       checked={values.autoLoginSkipWelcome}
                       onChange={onCheckboxChange}
-                    >
-                      {i18n("options_autoLoginSkipWelcome")}
-                    </PrefCheckbox>
+                    />
                   </PrefSection>
                   <PrefSection legendKey="options_autoLoginCredentials">
                     <Text className="PrefModal__warning">
@@ -2855,14 +2615,12 @@ export const PrefModal = ({
                 )}
               </PrefSection>
               <PrefSection legendKey="options_ai_features">
-                <PrefCheckbox
+                <PrefCheckRow
                   name="enableCaptionAi"
                   checked={values.enableCaptionAi}
                   disabled={aiSubDisabled}
                   onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableCaptionAi")}
-                </PrefCheckbox>
+                />
                 {/* 網址類複核，管兩個增強功能：裸網域自動連結（AI 只能撤掉誤連）
                   與自動修復斷掉的連結（AI 才能放行規則不敢認的候選）。兩者都
                   關掉時它無事可做。 */}

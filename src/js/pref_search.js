@@ -3,8 +3,9 @@
 // **命名**：與右鍵選單的既有功能「快速搜尋」（quick_search.js，選字跳 Google）
 // 完全無關，勿混用命名。這裡一律 settingsSearch / prefSearch。
 //
-// **索引是手動維護的第二份事實**：PrefModal.jsx 是純 hardcode JSX、沒有 schema
-// 可反射，所以這份 PREF_SEARCH_ITEMS 必須手工跟著改。唯一的防線是
+// **索引是設定頁勾選列的文字來源**：PrefModal.jsx 的 <PrefCheckRow name="…"> 直接
+// 用這裡的 titleKey／tooltipKey 畫標題與說明（prefItem）；其餘欄位（數字、下拉、
+// 帶額外內容的勾選）仍是 hardcode JSX，這份 PREF_SEARCH_ITEMS 要手工跟著改。防線是
 // tests/unit/pref_search_index.test.js——它靜態掃 PrefModal.jsx 的每個
 // name="…" 與 <legend>，漏收就紅。新增設定項卻忘了進索引，是這個功能唯一
 // 會**靜默**失效的方式（畫面一切正常，就是搜不到）。
@@ -782,6 +783,20 @@ export const PREF_SEARCH_ITEMS = [
   ]),
   ...inSection("about", "about_new_title", null, []),
 ];
+
+// key → 索引項（只收 kind:"pref"）。設定頁的 PrefCheckRow 從這裡拿標題與說明的文字鍵
+// ⇒ 那些列的字跟搜尋結果是同一份來源，不會一邊改了另一邊沒跟上。
+const PREF_ITEM_BY_KEY = new Map(
+  PREF_SEARCH_ITEMS.filter((it) => it.kind === "pref").map((it) => [it.key, it]),
+);
+
+/**
+ * @param {string} key pref key（同 data-pref-anchor）
+ * @returns {{ key: string, titleKey: string, tooltipKey?: string } | undefined}
+ */
+export function prefItem(key) {
+  return PREF_ITEM_BY_KEY.get(key);
+}
 
 // 「一般」分區裡每一項屬於哪一段小標（P94，src/js/pref_groups.js）。索引的順序就是
 // 設定頁上的順序，所以直接拿它切段。
