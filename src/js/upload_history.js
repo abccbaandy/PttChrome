@@ -7,9 +7,8 @@
 //   - 也不必跟 pref 一起做 schema 遷移。
 // 純函式部分守護在 tests/unit/upload_history.test.js。
 
-import { STORAGE_KEYS } from './user_data_keys';
+import { readJson, writeJson, removeData } from './user_data';
 
-const HISTORY_KEY = STORAGE_KEYS.uploadHistory;
 export const MAX_HISTORY = 50;
 
 // entry: { url, deleteUrl, previewUrl, filename, mime, at }
@@ -26,24 +25,16 @@ export function removeHistoryEntry(list, url) {
 
 // 讀壞掉的 JSON／localStorage 被關掉都只回空陣列：這是附屬功能，不可以炸掉呼叫端。
 export function readHistory() {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(HISTORY_KEY));
-    return Array.isArray(parsed) ? parsed.filter(it => it && it.url) : [];
-  } catch (e) {
-    return [];
-  }
+  const parsed = readJson('uploadHistory');
+  return Array.isArray(parsed) ? parsed.filter(it => it && it.url) : [];
 }
 
 export function writeHistory(list) {
-  try {
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify((list || []).slice(0, MAX_HISTORY)));
-  } catch (e) {}
+  writeJson('uploadHistory', (list || []).slice(0, MAX_HISTORY));
   return list;
 }
 
 export function clearHistory() {
-  try {
-    window.localStorage.removeItem(HISTORY_KEY);
-  } catch (e) {}
+  removeData('uploadHistory');
   return [];
 }

@@ -14,6 +14,7 @@
 // 背景抓我的最愛的那一下）只是暫時藏起來（visible:false），清單（items）留著。
 // 只改顯示，一個 byte 都不送給 PTT；卡片不是 modal，鍵盤照常送 PTT。
 import { STORAGE_KEYS } from './user_data_keys';
+import { readJson, writeJson } from './user_data';
 import { rowHasTitle, MAIN_MENU } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
 
@@ -65,26 +66,19 @@ export function pendingFeatures(features, seen) {
 }
 
 export function readSeen() {
-  try {
-    const v = JSON.parse(window.localStorage.getItem(WHATS_NEW_SEEN_KEY));
-    return Array.isArray(v) ? v : null;
-  } catch (e) {
-    return null;
-  }
+  const v = readJson('whatsNewSeen');
+  return Array.isArray(v) ? v : null;
 }
 
 // 跟原有紀錄取聯集再寫：還開著舊版的分頁（README 比較短）寫回來時，不會把新版記下的名稱蓋掉、
 // 讓那些功能下次又被當成新的列一次。
 export function writeSeen(features) {
-  try {
-    const prev = readSeen() || [];
-    const names = features.map((f) => f.name);
-    const known = new Set(names);
-    const merged = names.concat(prev.filter((n) => !known.has(n)));
-    window.localStorage.setItem(WHATS_NEW_SEEN_KEY, JSON.stringify(merged));
-  } catch (e) {
-    // 無痕視窗／被擋：下次開站又是「沒有紀錄」⇒ 默默記、不顯示，不會每次都跳。
-  }
+  const prev = readSeen() || [];
+  const names = features.map((f) => f.name);
+  const known = new Set(names);
+  const merged = names.concat(prev.filter((n) => !known.has(n)));
+  // 無痕視窗／被擋：寫不進去 ⇒ 下次開站又是「沒有紀錄」⇒ 默默記、不顯示，不會每次都跳。
+  writeJson('whatsNewSeen', merged);
 }
 
 const loadBundledReadme = () => import('../../README.md?raw').then((m) => m.default);

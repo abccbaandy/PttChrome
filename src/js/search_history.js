@@ -6,6 +6,7 @@
 // 守護 tests/unit/search_history.test.js。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { readJson, writeJson } from './user_data';
 
 const HISTORY_KEY = STORAGE_KEYS.searchHistory;
 export const MAX_SEARCH_HISTORY = 20;
@@ -31,21 +32,17 @@ export function addSearchEntry(history, kind, text) {
 // 讀壞掉的 JSON／localStorage 被關掉都只回空記憶：附屬功能不可以炸掉呼叫端。
 export function readSearchHistory() {
   const out = emptyHistory();
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(HISTORY_KEY));
-    if (!parsed || typeof parsed !== 'object') return out;
-    KINDS.forEach((k) => {
-      if (Array.isArray(parsed[k]))
-        out[k] = parsed[k].filter((it) => typeof it === 'string' && it).slice(0, MAX_SEARCH_HISTORY);
-    });
-  } catch (e) {}
+  const parsed = readJson('searchHistory');
+  if (!parsed || typeof parsed !== 'object') return out;
+  KINDS.forEach((k) => {
+    if (Array.isArray(parsed[k]))
+      out[k] = parsed[k].filter((it) => typeof it === 'string' && it).slice(0, MAX_SEARCH_HISTORY);
+  });
   return out;
 }
 
 export function writeSearchHistory(history) {
-  try {
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  } catch (e) {}
+  writeJson('searchHistory', history);
   return history;
 }
 

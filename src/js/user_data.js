@@ -8,7 +8,8 @@
 // 契約：讀不到（沒有 storage、存取丟例外）⇒ 回預設值；寫不進去 ⇒ 安靜放棄，只在這一頁有效。
 // 附屬功能的記憶不可以炸掉呼叫端。
 //
-// 目前只有旗標（'1'／不存在）。JSON 類（紀錄、快取）之後一類一類搬，搬的時候在這裡加 readJson／writeJson。
+// 旗標（'1'／不存在）用 readFlag／writeFlag；JSON 類（紀錄、快取）用 readJson／writeJson／removeData，
+// 擁有者一個一個搬（docs/user-data.md 寫了搬到哪）。
 
 import { STORAGE_KEYS } from './user_data_keys';
 
@@ -61,5 +62,55 @@ export function writeFlag(id, on, storage = defaultStorage()) {
     else storage.removeItem(key);
   } catch (_e) {
     // 存不了（隱私模式、容量滿）就只在這一頁有效。
+  }
+}
+
+/**
+ * JSON 資料：沒有這筆、JSON 壞掉、拿不到 storage 都回 null。**形狀檢查留給擁有者**
+ * （每種資料的合法形狀不同，手改壞的、舊版留下的都要在那裡濾掉）。
+ * @param {StorageKeyId} id
+ * @param {Storage | null} [storage]
+ * @returns {unknown}
+ */
+export function readJson(id, storage = defaultStorage()) {
+  const key = keyOf(id);
+  try {
+    if (!storage) return null;
+    const raw = storage.getItem(key);
+    return raw == null ? null : JSON.parse(raw);
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * 寫入 JSON；回傳有沒有真的寫進去（容量滿、隱私模式 ⇒ false，呼叫端照舊只在這一頁有效）。
+ * @param {StorageKeyId} id
+ * @param {unknown} value
+ * @param {Storage | null} [storage]
+ * @returns {boolean}
+ */
+export function writeJson(id, value, storage = defaultStorage()) {
+  const key = keyOf(id);
+  try {
+    if (!storage) return false;
+    storage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+/**
+ * 整筆移除（任何形狀的資料都適用）。
+ * @param {StorageKeyId} id
+ * @param {Storage | null} [storage]
+ */
+export function removeData(id, storage = defaultStorage()) {
+  const key = keyOf(id);
+  try {
+    if (storage) storage.removeItem(key);
+  } catch (_e) {
+    // 拿不到就算了：下次讀照樣回預設。
   }
 }
