@@ -80,280 +80,331 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("general", "options_general", false, [
     {
       key: "nativeSafeMode",
+      type: "check",
       titleKey: "options_nativeSafeMode",
       tooltipKey: "tooltip_nativeSafeMode",
     },
-    { key: "enablePicPreview", titleKey: "options_enablePicPreview" },
+    { key: "enablePicPreview", type: "check", titleKey: "options_enablePicPreview" },
     {
       key: "imageFitScreen",
+      type: "check",
       titleKey: "options_imageFitScreen",
       tooltipKey: "tooltip_imageFitScreen",
     },
     {
       key: "tapToLoadImagesOnMobileData",
+      type: "check",
       titleKey: "options_tapToLoadImagesOnMobileData",
       tooltipKey: "tooltip_tapToLoadImagesOnMobileData",
     },
-    { key: "enableNotifications", titleKey: "options_enableNotifications" },
-    { key: "deepLinkHandoffNotify", titleKey: "options_deepLinkHandoffNotify" },
+    { key: "enableNotifications", type: "check", titleKey: "options_enableNotifications" },
+    { key: "deepLinkHandoffNotify", type: "check", titleKey: "options_deepLinkHandoffNotify" },
     {
       key: "enableMessageInbox",
+      type: "check",
       titleKey: "options_enableMessageInbox",
       tooltipKey: "tooltip_enableMessageInbox",
     },
     {
       key: "showStatusHints",
+      type: "check",
       titleKey: "options_showStatusHints",
       tooltipKey: "tooltip_showStatusHints",
     },
-    { key: "enableEasyReading", titleKey: "options_enableEasyReading" },
+    { key: "enableEasyReading", type: "check", titleKey: "options_enableEasyReading" },
     {
       key: "enableHelpMenuPopup",
+      type: "check",
       requires: "enableEasyReading",
       titleKey: "options_enableHelpMenuPopup",
       tooltipKey: "tooltip_enableHelpMenuPopup",
     },
-    { key: "enableEasyReadingList", titleKey: "options_enableEasyReadingList" },
+    { key: "enableEasyReadingList", type: "check", titleKey: "options_enableEasyReadingList" },
     {
       key: "enableListFastScroll",
+      type: "check",
       requires: "enableEasyReadingList",
       titleKey: "options_enableListFastScroll",
       tooltipKey: "tooltip_enableListFastScroll",
     },
     {
       key: "enableBoardListSmoothScroll",
+      type: "check",
       titleKey: "options_enableBoardListSmoothScroll",
       tooltipKey: "tooltip_enableBoardListSmoothScroll",
     },
     {
       key: "enableListNativeAutoResume",
+      type: "check",
       titleKey: "options_enableListNativeAutoResume",
       tooltipKey: "tooltip_enableListNativeAutoResume",
     },
     {
       key: "queueListClickWhenBusy",
+      type: "check",
       titleKey: "options_queueListClickWhenBusy",
       tooltipKey: "tooltip_queueListClickWhenBusy",
     },
     {
       key: "skipBoardEntryScreen",
+      type: "check",
       titleKey: "options_skipBoardEntryScreen",
       tooltipKey: "tooltip_skipBoardEntryScreen",
     },
     {
       key: "enableHomeDashboard",
+      type: "check",
       titleKey: "options_enableHomeDashboard",
       tooltipKey: "tooltip_enableHomeDashboard",
     },
     {
       key: "showWhatsNew",
+      type: "check",
       titleKey: "options_showWhatsNew",
       tooltipKey: "tooltip_showWhatsNew",
     },
     {
       key: "enableRecentArticles",
+      type: "check",
       titleKey: "options_enableRecentArticles",
       tooltipKey: "tooltip_enableRecentArticles",
     },
     {
       key: "resumeRecentArticles",
+      type: "check",
       requires: "enableRecentArticles",
       titleKey: "options_resumeRecentArticles",
       tooltipKey: "tooltip_resumeRecentArticles",
     },
     {
       key: "enableSavedArticles",
+      type: "check",
       titleKey: "options_enableSavedArticles",
       tooltipKey: "tooltip_enableSavedArticles",
     },
     {
       key: "enableShareTarget",
+      type: "check",
       titleKey: "options_enableShareTarget",
       tooltipKey: "tooltip_enableShareTarget",
     },
     {
       key: "enableBoardTabs",
+      type: "check",
       titleKey: "options_enableBoardTabs",
       tooltipKey: "tooltip_enableBoardTabs",
     },
     {
       key: "enableSplitReading",
+      type: "check",
       titleKey: "options_enableSplitReading",
       tooltipKey: "tooltip_enableSplitReading",
     },
     {
       key: "enableNextArticleCard",
+      type: "check",
       titleKey: "options_enableNextArticleCard",
       tooltipKey: "tooltip_enableNextArticleCard",
     },
     {
       key: "nextArticleSameSubject",
+      type: "check",
       requires: "enableNextArticleCard",
       titleKey: "options_nextArticleSameSubject",
       tooltipKey: "tooltip_nextArticleSameSubject",
     },
     {
       key: "enableArticleTools",
+      type: "check",
       titleKey: "options_enableArticleTools",
       tooltipKey: "tooltip_enableArticleTools",
     },
     {
       key: "enableArticleNav",
+      type: "check",
       titleKey: "options_enableArticleNav",
       tooltipKey: "tooltip_enableArticleNav",
     },
     {
       key: "easyReadingFooterProgress",
+      type: "check",
       titleKey: "options_easyReadingFooterProgress",
       tooltipKey: "tooltip_easyReadingFooterProgress",
     },
     {
       key: "easyReadingBrowserFind",
+      type: "check",
       titleKey: "options_easyReadingBrowserFind",
       tooltipKey: "tooltip_easyReadingBrowserFind",
     },
     {
       key: "easyReadingEndSwitchNative",
+      type: "check",
       titleKey: "options_easyReadingEndSwitchNative",
     },
     {
       key: "easyReadingEndSwitchKey",
+      type: "hotkey",
       requires: "easyReadingEndSwitchNative",
       titleKey: "options_easyReadingEndSwitchKey",
       tooltipKey: "tooltip_easyReadingEndSwitchKey",
     },
     {
       key: "aidNavBackKey",
+      type: "hotkey",
       titleKey: "options_aidNavBackKey",
       tooltipKey: "tooltip_aidNavBackKey",
     },
     {
       key: "deepLinkCopyKey",
+      type: "hotkey",
       titleKey: "options_deepLinkCopyKey",
       tooltipKey: "tooltip_deepLinkCopyKey",
     },
     {
       key: "unreadJumpKey",
+      type: "hotkey",
       titleKey: "options_unreadJumpKey",
       tooltipKey: "tooltip_unreadJumpKey",
     },
     {
       key: "unreadJumpProgress",
+      type: "check",
       titleKey: "options_unreadJumpProgress",
       tooltipKey: "tooltip_unreadJumpProgress",
     },
     {
       key: "unreadJumpDivider",
+      type: "check",
       titleKey: "options_unreadJumpDivider",
       tooltipKey: "tooltip_unreadJumpDivider",
     },
     {
       key: "enableCommandPalette",
+      type: "check",
       titleKey: "options_enableCommandPalette",
       tooltipKey: "tooltip_enableCommandPalette",
     },
     {
       key: "commandPaletteKey",
+      type: "hotkey",
       requires: "enableCommandPalette",
       titleKey: "options_commandPaletteKey",
       tooltipKey: "tooltip_commandPaletteKey",
     },
     {
       key: "paletteQuickBoards",
+      type: "check",
       requires: "enableCommandPalette",
       titleKey: "options_paletteQuickBoards",
       tooltipKey: "tooltip_paletteQuickBoards",
     },
     {
       key: "refreshKeyIntercept",
+      type: "check",
       titleKey: "options_refreshKeyIntercept",
       tooltipKey: "tooltip_refreshKeyIntercept",
     },
     {
       key: "refreshMinIntervalSec",
+      type: "number",
       titleKey: "options_refreshMinIntervalSec",
       tooltipKey: "tooltip_refreshMinIntervalSec",
     },
-    { key: "endTurnsOnLiveUpdate", titleKey: "options_endTurnsOnLiveUpdate" },
-    { key: "copyOnSelect", titleKey: "options_copyOnSelect" },
-    { key: "enableBell", titleKey: "options_enableBell" },
+    { key: "endTurnsOnLiveUpdate", type: "check", titleKey: "options_endTurnsOnLiveUpdate" },
+    { key: "copyOnSelect", type: "check", titleKey: "options_copyOnSelect" },
+    { key: "enableBell", type: "check", titleKey: "options_enableBell" },
     {
       key: "reconnectResume",
+      type: "check",
       titleKey: "options_reconnectResume",
       tooltipKey: "tooltip_reconnectResume",
     },
     {
       key: "resumeLastPlace",
+      type: "check",
       titleKey: "options_resumeLastPlace",
       tooltipKey: "tooltip_resumeLastPlace",
     },
     {
       key: "antiIdleTime",
+      type: "number",
       titleKey: "options_antiIdleTime",
       tooltipKey: "tooltip_antiIdleTime",
     },
-    { key: "lineWrap", titleKey: "options_lineWrap" },
+    { key: "lineWrap", type: "number", titleKey: "options_lineWrap" },
   ]),
   ...inSection("general", "options_contextMenu", null, [
-    { key: "highlightMenuTarget", titleKey: "options_highlightMenuTarget" },
+    { key: "highlightMenuTarget", type: "check", titleKey: "options_highlightMenuTarget" },
     {
       key: "articleCopyLinkRow",
+      type: "check",
       titleKey: "options_articleCopyLinkRow",
       tooltipKey: "tooltip_articleCopyLinkRow",
     },
-    { key: "enableInputHelper", titleKey: "options_enableInputHelper" },
+    { key: "enableInputHelper", type: "check", titleKey: "options_enableInputHelper" },
     {
       key: "enableLiveArticleHelper",
+      type: "check",
       titleKey: "options_enableLiveArticleHelper",
     },
     {
       key: "enableEditorInput",
+      type: "check",
       titleKey: "options_enableEditorInput",
       tooltipKey: "tooltip_enableEditorInput",
     },
-    { key: "enableLongPush", titleKey: "options_enableLongPush" },
+    { key: "enableLongPush", type: "check", titleKey: "options_enableLongPush" },
     {
       key: "pushKeyOpensLongPush",
+      type: "check",
       requires: "enableLongPush",
       titleKey: "options_pushKeyOpensLongPush",
       tooltipKey: "tooltip_pushKeyOpensLongPush",
     },
     {
       key: "enableCommentBar",
+      type: "check",
       requires: "enableLongPush",
       titleKey: "options_enableCommentBar",
       tooltipKey: "tooltip_enableCommentBar",
     },
     {
       key: "commentReplyMenu",
+      type: "check",
       requires: "enableCommentBar",
       titleKey: "options_commentReplyMenu",
       tooltipKey: "tooltip_commentReplyMenu",
     },
     {
       key: "enableCommentFilter",
+      type: "check",
       titleKey: "options_enableCommentFilter",
       tooltipKey: "tooltip_enableCommentFilter",
     },
     {
       key: "mobileCommentBarFold",
+      type: "check",
       requires: "enableCommentBar",
       titleKey: "options_mobileCommentBarFold",
       tooltipKey: "tooltip_mobileCommentBarFold",
     },
     {
       key: "commentBarCounter",
+      type: "check",
       requires: "enableCommentBar",
       titleKey: "options_commentBarCounter",
       tooltipKey: "tooltip_commentBarCounter",
     },
     {
       key: "searchKeyOpensModal",
+      type: "check",
       titleKey: "options_searchKeyOpensModal",
       tooltipKey: "tooltip_searchKeyOpensModal",
     },
     {
       key: "enableSearchStatus",
+      type: "check",
       titleKey: "options_enableSearchStatus",
       tooltipKey: "tooltip_enableSearchStatus",
     },
@@ -361,138 +412,164 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("general", "options_appearance", null, [
     {
       key: "autoHideBlinkCursor",
+      type: "check",
       titleKey: "options_autoHideBlinkCursor",
       tooltipKey: "tooltip_autoHideBlinkCursor",
     },
     {
       key: "dimReadArticles",
+      type: "check",
       titleKey: "options_dimReadArticles",
       tooltipKey: "tooltip_dimReadArticles",
     },
     {
       key: "boardListUnreadMark",
+      type: "check",
       titleKey: "options_boardListUnreadMark",
       tooltipKey: "tooltip_boardListUnreadMark",
     },
     { kind: "ui", key: "ui:theme", titleKey: "options_theme" },
     {
       key: "fontFace",
+      type: "text",
       titleKey: "options_fontFace",
       tooltipKey: "tooltip_fontFace",
     },
-    { key: "bbsMargin", titleKey: "options_bbsMargin" },
+    { key: "bbsMargin", type: "number", titleKey: "options_bbsMargin" },
     {
       key: "termSizeMode",
+      type: "select",
       titleKey: "options_termSize",
       tooltipKey: "tooltip_termSize",
     },
-    { key: "termSize.cols", titleKey: "options_cols" },
-    { key: "termSize.rows", titleKey: "options_rows" },
-    { key: "fontFitWindowWidth", titleKey: "options_fontFitWindowWidth" },
-    { key: "fontSize", titleKey: "options_fontSize" },
+    { key: "termSize.cols", type: "number", titleKey: "options_cols" },
+    { key: "termSize.rows", type: "number", titleKey: "options_rows" },
+    { key: "fontFitWindowWidth", type: "check", titleKey: "options_fontFitWindowWidth" },
+    { key: "fontSize", type: "number", titleKey: "options_fontSize" },
     {
       key: "mobileLayout",
+      type: "select",
       titleKey: "options_mobileLayout",
       tooltipKey: "tooltip_mobileLayout",
     },
     {
       key: "mobileFontSize",
+      type: "select",
       titleKey: "options_mobileFontSize",
       tooltipKey: "tooltip_mobileFontSize",
     },
     {
       key: "mobileAppBarScrollTop",
+      type: "check",
       titleKey: "options_mobileAppBarScrollTop",
       tooltipKey: "tooltip_mobileAppBarScrollTop",
     },
     {
       key: "mobileAppBarArticleDetail",
+      type: "check",
       titleKey: "options_mobileAppBarArticleDetail",
       tooltipKey: "tooltip_mobileAppBarArticleDetail",
     },
     {
       key: "mobileSelectTextPage",
+      type: "check",
       titleKey: "options_mobileSelectTextPage",
       tooltipKey: "tooltip_mobileSelectTextPage",
     },
     {
       key: "mobileFindInArticle",
+      type: "check",
       titleKey: "options_mobileFindInArticle",
       tooltipKey: "tooltip_mobileFindInArticle",
     },
     {
       key: "mobileCardHideTitleBox",
+      type: "check",
       titleKey: "options_mobileCardHideTitleBox",
       tooltipKey: "tooltip_mobileCardHideTitleBox",
     },
     {
       key: "mobileBoardCardUnread",
+      type: "check",
       titleKey: "options_mobileBoardCardUnread",
       tooltipKey: "tooltip_mobileBoardCardUnread",
     },
     {
       key: "mobileListEndHint",
+      type: "check",
       titleKey: "options_mobileListEndHint",
       tooltipKey: "tooltip_mobileListEndHint",
     },
     {
       key: "mobileFloatToolsInMore",
+      type: "check",
       titleKey: "options_mobileFloatToolsInMore",
       tooltipKey: "tooltip_mobileFloatToolsInMore",
     },
     {
       key: "mobileBoardTools",
+      type: "check",
       titleKey: "options_mobileBoardTools",
       tooltipKey: "tooltip_mobileBoardTools",
     },
     {
       key: "mobileMailListTools",
+      type: "check",
       titleKey: "options_mobileMailListTools",
       tooltipKey: "tooltip_mobileMailListTools",
     },
     {
       key: "mobileMenuBannerCollapse",
+      type: "check",
       titleKey: "options_mobileMenuBannerCollapse",
       tooltipKey: "tooltip_mobileMenuBannerCollapse",
     },
     {
       key: "mobileEssenceCards",
+      type: "check",
       titleKey: "options_mobileEssenceCards",
       tooltipKey: "tooltip_mobileEssenceCards",
     },
     {
       key: "mobilePromptChoices",
+      type: "check",
       titleKey: "options_mobilePromptChoices",
       tooltipKey: "tooltip_mobilePromptChoices",
     },
     {
       key: "mobilePromptKeyboard",
+      type: "check",
       titleKey: "options_mobilePromptKeyboard",
       tooltipKey: "tooltip_mobilePromptKeyboard",
     },
     {
       key: "mobileAnyKeyContinue",
+      type: "check",
       titleKey: "options_mobileAnyKeyContinue",
       tooltipKey: "tooltip_mobileAnyKeyContinue",
     },
     {
       key: "mobilePostInfoActions",
+      type: "check",
       requires: "mobileAnyKeyContinue",
       titleKey: "options_mobilePostInfoActions",
       tooltipKey: "tooltip_mobilePostInfoActions",
     },
     {
       key: "mobileModernCommentCards",
+      type: "check",
       titleKey: "options_mobileModernCommentCards",
       tooltipKey: "tooltip_mobileModernCommentCards",
     },
     {
       key: "mobileHangIndent",
+      type: "check",
       titleKey: "options_mobileHangIndent",
       tooltipKey: "tooltip_mobileHangIndent",
     },
     {
       key: "mobileEditorSave",
+      type: "check",
       titleKey: "options_mobileEditorSave",
       tooltipKey: "tooltip_mobileEditorSave",
     },
@@ -500,12 +577,14 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("general", "options_cursorHighlight", null, [
     {
       key: "cursorRowBrighten",
+      type: "check",
       titleKey: "options_cursorRowBrighten",
       tooltipKey: "tooltip_cursorRowBrighten",
     },
-    { key: "cursorRowBackground", titleKey: "options_cursorRowBackground" },
+    { key: "cursorRowBackground", type: "check", titleKey: "options_cursorRowBackground" },
     {
       key: "keyboardCursorHighlight",
+      type: "check",
       titleKey: "options_keyboardCursorHighlight",
     },
     {
@@ -520,6 +599,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseBrowsing", null, [
     {
       key: "useMouseBrowsing",
+      type: "check",
       titleKey: "options_useMouseBrowsing",
       tooltipKey: "tooltip_useMouseBrowsing",
     },
@@ -527,6 +607,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseMove", null, [
     {
       key: "mouseBrowsingHighlight",
+      type: "check",
       requires: "useMouseBrowsing",
       titleKey: "options_mouseBrowsingHighlight",
       tooltipKey: "tooltip_mouseBrowsingHighlight",
@@ -535,19 +616,21 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseLeftClick", null, [
     {
       key: "mouseLeftClick",
+      type: "check",
       requires: "useMouseBrowsing",
       titleKey: "options_enableMouseLeftClick",
       tooltipKey: "tooltip_mouseLeftClick",
     },
   ]),
   ...inSection("mouse", "options_mouseClickRange", "tooltip_mouseClickRange", [
-    { key: "mouseListClickStart", requires: "useMouseBrowsing", titleKey: "options_mouseListClickStart" },
-    { key: "mousePushClickStart", requires: "useMouseBrowsing", titleKey: "options_mousePushClickStart" },
-    { key: "mousePushClickEnd", requires: "useMouseBrowsing", titleKey: "options_mousePushClickEnd" },
+    { key: "mouseListClickStart", type: "select", requires: "useMouseBrowsing", titleKey: "options_mouseListClickStart" },
+    { key: "mousePushClickStart", type: "select", requires: "useMouseBrowsing", titleKey: "options_mousePushClickStart" },
+    { key: "mousePushClickEnd", type: "select", requires: "useMouseBrowsing", titleKey: "options_mousePushClickEnd" },
   ]),
   ...inSection("mouse", "options_mouseEdgePaging", null, [
     {
       key: "mouseEdgePaging",
+      type: "check",
       requires: "useMouseBrowsing",
       titleKey: "options_enableMouseEdgePaging",
       tooltipKey: "tooltip_mouseEdgePaging",
@@ -556,6 +639,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseFunctionKeys", null, [
     {
       key: "mouseFunctionKeys",
+      type: "check",
       requires: "useMouseBrowsing",
       titleKey: "options_enableMouseFunctionKeys",
       tooltipKey: "tooltip_mouseFunctionKeys",
@@ -563,17 +647,19 @@ export const PREF_SEARCH_ITEMS = [
   ]),
   // 以下四區的 legend 與區內項目標題同字 ⇒ 不另外產生 section 項。
   ...inSection("mouse", "options_mouseMiddleClick", false, [
-    { key: "mouseMiddleClick", requires: "useMouseBrowsing", titleKey: "options_mouseMiddleClick" },
+    { key: "mouseMiddleClick", type: "select", requires: "useMouseBrowsing", titleKey: "options_mouseMiddleClick" },
   ]),
   ...inSection("mouse", "options_mouseWheel", false, [
     {
       key: "mouseWheel",
+      type: "select",
       requires: "useMouseBrowsing",
       titleKey: "options_mouseWheel",
       tooltipKey: "tooltip_mouseWheel",
     },
     {
       key: "mouseWheelSmoothScroll",
+      type: "check",
       requires: "mouseWheel",
       titleKey: "options_mouseWheelSmoothScroll",
       tooltipKey: "tooltip_mouseWheelSmoothScroll",
@@ -582,6 +668,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseBackNav", false, [
     {
       key: "mouseBackNav",
+      type: "select",
       requires: "useMouseBrowsing",
       titleKey: "options_mouseBackNav",
       tooltipKey: "tooltip_mouseBackNav",
@@ -590,6 +677,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseServerReport", false, [
     {
       key: "mouseServerReport",
+      type: "check",
       requires: "useMouseBrowsing",
       titleKey: "options_mouseServerReport",
       tooltipKey: "tooltip_mouseServerReport",
@@ -598,9 +686,10 @@ export const PREF_SEARCH_ITEMS = [
 
   // ── 連線 ────────────────────────────────────────────────────────
   ...inSection("connection", "options_connection_bbs", null, [
-    { key: "useProxy", titleKey: "options_useProxy" },
+    { key: "useProxy", type: "check", titleKey: "options_useProxy" },
     {
       key: "proxyUrl",
+      type: "text",
       requires: "useProxy",
       titleKey: "options_proxyUrl",
       tooltipKey: "tooltip_proxyUrl",
@@ -609,11 +698,13 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("connection", "options_connectionProtocol", false, [
     {
       key: "connectionProtocol",
+      type: "select",
       titleKey: "options_connectionProtocol",
       tooltipKey: "tooltip_connectionProtocol",
     },
     {
       key: "sshRelayUrl",
+      type: "text",
       titleKey: "options_sshRelayUrl",
       tooltipKey: "tooltip_sshRelayUrl",
     },
@@ -621,19 +712,22 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("connection", "options_connectionEncoding", false, [
     {
       key: "connectionEncoding",
+      type: "select",
       titleKey: "options_connectionEncoding",
       tooltipKey: "tooltip_connectionEncoding",
     },
   ]),
   ...inSection("connection", "options_imgurProxy", "tooltip_imgurProxy", [
-    { key: "useImgurProxy", titleKey: "options_useImgurProxy" },
+    { key: "useImgurProxy", type: "check", titleKey: "options_useImgurProxy" },
     ...IMAGE_PROXY_SITES.map((site) => ({
       key: site.prefKey,
+      type: "check",
       titleKey: site.labelKey,
       requires: "useImgurProxy",
     })),
     {
       key: "imgurProxyUrl",
+      type: "text",
       requires: "useImgurProxy",
       titleKey: "options_imgurProxyUrl",
       tooltipKey: "tooltip_imgurProxyUrl",
@@ -642,6 +736,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("connection", "options_openCache", null, [
     {
       key: "enableOpenCache",
+      type: "check",
       titleKey: "options_enableOpenCache",
       tooltipKey: "tooltip_enableOpenCache",
     },
@@ -649,83 +744,98 @@ export const PREF_SEARCH_ITEMS = [
 
   // ── 增強 ────────────────────────────────────────────────────────
   ...inSection("enhance", "options_enhance", false, [
-    { key: "showFloorNumbers", titleKey: "options_showFloorNumbers" },
+    { key: "showFloorNumbers", type: "check", titleKey: "options_showFloorNumbers" },
     {
       key: "mergeSameAuthorComments",
+      type: "check",
       titleKey: "options_mergeSameAuthorComments",
     },
     {
       key: "mergedCommentEachTime",
+      type: "check",
       requires: "mergeSameAuthorComments",
       titleKey: "options_mergedCommentEachTime",
     },
-    { key: "commentBlockSpacing", titleKey: "options_commentBlockSpacing" },
+    { key: "commentBlockSpacing", type: "check", titleKey: "options_commentBlockSpacing" },
     {
       key: "showMergeCaptionButton",
+      type: "check",
       titleKey: "options_showMergeCaptionButton",
       tooltipKey: "tooltip_showMergeCaptionButton",
     },
     {
       key: "showLightsOnButton",
+      type: "check",
       titleKey: "options_showLightsOnButton",
       tooltipKey: "tooltip_showLightsOnButton",
     },
     {
       key: "highlightAuthorComments",
+      type: "check",
       titleKey: "options_highlightAuthorComments",
     },
     {
       key: "highlightSelfComments",
+      type: "check",
       titleKey: "options_highlightSelfComments",
     },
     {
       key: "markNewComments",
+      type: "check",
       titleKey: "options_markNewComments",
       tooltipKey: "tooltip_markNewComments",
     },
     {
       key: "markJustPushed",
+      type: "check",
       titleKey: "options_markJustPushed",
       tooltipKey: "tooltip_markJustPushed",
     },
     {
       key: "listNewPushCount",
+      type: "check",
       titleKey: "options_listNewPushCount",
       tooltipKey: "tooltip_listNewPushCount",
     },
-    { key: "enableAutoFixUrl", titleKey: "options_enableAutoFixUrl" },
-    { key: "enableXMentionLink", titleKey: "options_enableXMentionLink" },
-    { key: "enableBareDomainLink", titleKey: "options_enableBareDomainLink" },
-    { key: "enableImageUpload", titleKey: "options_enableImageUpload" },
+    { key: "enableAutoFixUrl", type: "check", titleKey: "options_enableAutoFixUrl" },
+    { key: "enableXMentionLink", type: "check", titleKey: "options_enableXMentionLink" },
+    { key: "enableBareDomainLink", type: "check", titleKey: "options_enableBareDomainLink" },
+    { key: "enableImageUpload", type: "check", titleKey: "options_enableImageUpload" },
     {
       key: "blacklist",
+      type: "textarea",
       titleKey: "options_blacklist",
       tooltipKey: "tooltip_blacklist",
     },
     {
       key: "titleBlacklist",
+      type: "textarea",
       titleKey: "options_title_blacklist",
       tooltipKey: "tooltip_title_blacklist",
     },
     {
       key: "enableFollowList",
+      type: "check",
       titleKey: "options_enableFollowList",
       tooltipKey: "tooltip_enableFollowList",
     },
     {
       key: "followList",
+      type: "textarea",
       requires: "enableFollowList",
       titleKey: "options_followList",
       tooltipKey: "tooltip_followList",
     },
     {
       key: "followTitleList",
+      type: "textarea",
       requires: "enableFollowList",
       titleKey: "options_followTitleList",
       tooltipKey: "tooltip_followTitleList",
     },
     {
       key: "enableFollowOnly",
+      type: "check",
       requires: "enableFollowList",
       titleKey: "options_enableFollowOnly",
       tooltipKey: "tooltip_enableFollowOnly",
@@ -745,17 +855,19 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("autologin", "options_autoLogin", "tooltip_autoLoginSynced", [
     {
       key: "autoLogin",
+      type: "check",
       titleKey: "options_autoLoginEnable",
       tooltipKey: "tooltip_autoLogin",
     },
-    { key: "autoLoginDupConn", titleKey: "options_autoLoginDupConn" },
-    { key: "autoLoginSkipWelcome", titleKey: "options_autoLoginSkipWelcome" },
+    { key: "autoLoginDupConn", type: "select", titleKey: "options_autoLoginDupConn" },
+    { key: "autoLoginSkipWelcome", type: "check", titleKey: "options_autoLoginSkipWelcome" },
   ]),
   ...inSection("autologin", "options_autoLoginCredentials", null, [
-    { key: "autoLoginUser", titleKey: "options_autoLoginUser" },
-    { key: "autoLoginPassword", titleKey: "options_autoLoginPassword" },
+    { key: "autoLoginUser", type: "text", titleKey: "options_autoLoginUser" },
+    { key: "autoLoginPassword", type: "text", titleKey: "options_autoLoginPassword" },
     {
       key: "autoLoginOtpSecret",
+      type: "text",
       titleKey: "options_autoLoginOtpSecret",
       tooltipKey: "tooltip_autoLoginOtpSecret",
     },
@@ -763,12 +875,13 @@ export const PREF_SEARCH_ITEMS = [
 
   // ── AI ──────────────────────────────────────────────────────────
   ...inSection("ai", "options_ai", false, [
-    { key: "enableAi", titleKey: "options_enableAi", tooltipKey: "tooltip_ai" },
+    { key: "enableAi", type: "check", titleKey: "options_enableAi", tooltipKey: "tooltip_ai" },
   ]),
   ...inSection("ai", "options_ai_features", null, [
-    { key: "enableCaptionAi", titleKey: "options_enableCaptionAi" },
+    { key: "enableCaptionAi", type: "check", titleKey: "options_enableCaptionAi" },
     {
       key: "enableUrlAi",
+      type: "check",
       titleKey: "options_enableUrlAi",
       tooltipKey: "tooltip_enableUrlAi",
     },
@@ -778,11 +891,13 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("local", "options_local", false, [
     {
       key: "enableWorkMode",
+      type: "check",
       titleKey: "options_enableWorkMode",
       tooltipKey: "tooltip_local",
     },
     {
       key: "imageUploadToken",
+      type: "text",
       titleKey: "options_imageUploadToken",
       tooltipKey: "tooltip_imageUploadToken",
     },
@@ -805,12 +920,18 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "bgDebugRecord",
+      type: "check",
       titleKey: "options_bgDebugRecord",
       tooltipKey: "options_bgDebugRecord_desc",
     },
   ]),
   ...inSection("about", "about_new_title", null, []),
 ];
+
+// 索引項的 type＝設定頁用哪種欄位畫它（架構 review A7 第十一步，朝宣告式設定表走）：
+// check＝勾選、select＝下拉、number＝數字、text＝單行文字、textarea＝名單、hotkey＝熱鍵。
+// 守護 tests/unit/pref_field_type_index.test.js：JSX 的元件與預設值型別都要對得上。
+/** @typedef {"check" | "select" | "number" | "text" | "textarea" | "hotkey"} PrefFieldType */
 
 // key → 索引項（只收 kind:"pref"）。設定頁的 PrefCheckRow 從這裡拿標題與說明的文字鍵
 // ⇒ 那些列的字跟搜尋結果是同一份來源，不會一邊改了另一邊沒跟上。
@@ -820,7 +941,7 @@ const PREF_ITEM_BY_KEY = new Map(
 
 /**
  * @param {string} key pref key（同 data-pref-anchor）
- * @returns {{ key: string, titleKey: string, tooltipKey?: string, requires?: string } | undefined}
+ * @returns {{ key: string, type?: PrefFieldType, titleKey: string, tooltipKey?: string, requires?: string } | undefined}
  */
 export function prefItem(key) {
   return PREF_ITEM_BY_KEY.get(key);
