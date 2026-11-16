@@ -396,6 +396,7 @@ export function AidNavigation(core, view, termBuf, queue, history) {
   this._urlScanLen = 0;
   this._urlScanHit = null;
   this._urlScanForwarded = false; // 掃到轉錄標頭了：之後的網址都不是本篇
+  this._urlScanAmbiguous = false; // 掃到兩組不同的「發信站＋網址」：分不出本篇
   this._urlScanInst = undefined; // 掃的是哪一篇（view._articleInstanceId）
   // 這一輪的結束回呼（只有 agent 工具會給，見 startBoard）。
   this._onRunEnd = null;
@@ -1281,7 +1282,10 @@ AidNavigation.prototype = {
         this.resetLocalPostAidScan();
       this._urlScanInst = inst;
       this._urlScanHead = head;
-      if (!this._urlScanHit && !this._urlScanForwarded) {
+      // 命中之後**繼續掃**：內文整段貼了同板另一篇的結尾（板主公告、原文恢復）時，貼來的那段
+      // 也是「※ 發信站」緊接「※ 文章網址」，前一列條件擋不住；系統寫的只有一組 ⇒ 看到第二組
+      // 不同的網址就分不出誰是本篇，整篇改走按 Q（_urlScanAmbiguous）。
+      if (!this._urlScanForwarded && !this._urlScanAmbiguous) {
         for (let r = this._urlScanRow; r < acc.length; ++r) {
           const text = buf.getRowText(r, 0, buf.cols, acc);
           // 轉錄標頭在網址之前 ⇒ 之後的網址都是被轉錄的原文（見 aid_parse.isCrossPostHeaderLine）。
@@ -1291,24 +1295,32 @@ AidNavigation.prototype = {
           }
           const found = r > 0 ? parseOwnArticleUrlLine(buf.getRowText(r - 1, 0, buf.cols, acc), text) : null;
           if (found) {
+            if (this._urlScanHit && this._urlScanHit.aid !== found.aid) {
+              this._urlScanAmbiguous = true;
+              break;
+            }
             this._urlScanHit = found;
-            break;
           }
         }
         this._urlScanRow = acc.length;
       }
       this._urlScanLen = acc.length;
-      hit = this._urlScanForwarded ? null : this._urlScanHit;
+      hit = this._urlScanForwarded || this._urlScanAmbiguous ? null : this._urlScanHit;
     } else {
       // 原生模式沒有累積頁，只有眼前這 24 列——每次重掃即可（便宜，也不會過期）。
       // 轉錄標頭可能已經捲出這一屏：只看得到網址時仍會誤認 ⇒ 這是原生模式的已知
       // 盲點（看不到就不知道），好讀累積頁從第一列掃起才是完整判準。
       this.resetLocalPostAidScan();
+      // 同上：一屏裡有兩組不同的「發信站＋網址」⇒ 分不出本篇，退回按 Q。
       let prev = '';
-      for (let r = 0; r < buf.rows && !hit; ++r) {
+      for (let r = 0; r < buf.rows; ++r) {
         const text = buf.getRowText(r, 0, buf.cols);
         if (isCrossPostHeaderLine(text)) return null;
-        hit = parseOwnArticleUrlLine(prev, text);
+        const found = parseOwnArticleUrlLine(prev, text);
+        if (found) {
+          if (hit && hit.aid !== found.aid) return null;
+          hit = found;
+        }
         prev = text;
       }
     }
@@ -1324,6 +1336,7 @@ AidNavigation.prototype = {
     this._urlScanHead = '';
     this._urlScanHit = null;
     this._urlScanForwarded = false;
+    this._urlScanAmbiguous = false;
   },
 
   // 取得本篇 AID 的統一入口：先試免費路徑，落空才按 Q。

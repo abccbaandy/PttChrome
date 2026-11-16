@@ -368,6 +368,11 @@ test('findArticleUrl：轉錄標頭之後、看板不符、內文貼的網址都
   // 系統寫的那行緊接在「※ 發信站」之後（edit.c#addsimplesignature＋bbs.c 的 file_appendf）；
   // 內文貼的同板網址沒有 ⇒ 不是本篇。
   expect(findArticleUrl(['前情提要：', url], 'Gossiping')).toBe(null);
+  // 內文整段貼了同板另一篇的結尾（也有發信站＋網址）：兩組不同 ⇒ 分不出本篇。
+  const other = '※ 文章網址: https://www.ptt.cc/bbs/Gossiping/M.1700000000.A.ABC.html';
+  expect(findArticleUrl([origin, other, '內文', origin, url], 'Gossiping')).toBe(null);
+  // 同一組出現兩次照常認得。
+  expect(findArticleUrl([origin, url, origin, url], 'Gossiping')).toMatchObject({ board: 'Gossiping' });
 });
 
 describe('ptt_read_screen／ptt_send_keys', () => {
