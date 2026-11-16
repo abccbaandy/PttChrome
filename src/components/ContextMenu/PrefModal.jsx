@@ -199,30 +199,37 @@ const PrefNumber = memo(
   ),
 );
 
-// 下拉選單 adapter（同 PrefNumber：吃 name＋共用 onSelectStr(name, value)）。options 是
-// 元件外的常數 [value, i18n key]，data 在這裡 useMemo 組 ⇒ props 穩定、memo 生效。
-// labelAsAria：同時把 label 掛成 aria-label（滑鼠分頁那兩顆原本就這樣寫，e2e 靠它抓）。
+// 下拉選單 adapter（同 PrefNumber：吃 name＋共用 onSelectStr／onSelectNum(name, value)）。
+// options 是元件外的常數 [value, i18n key]，data 在這裡 useMemo 組 ⇒ props 穩定、memo 生效；
+// 選項文字不走 i18n 的（手機字級「14 px」）改傳元件外的常數 data。
+// 存成數字的設定（滑鼠中鍵／滾輪／返回）由呼叫端傳 String(value)＋onSelectNum。
+// ariaLabel：掛在 input 上的 aria-label（e2e 靠它抓）。只有 legend 沒有 label 的那幾顆
+// 只傳 ariaLabel 不傳 label。
 const PrefSelect = memo(
   ({
     name,
     value,
     onChange,
     label,
+    ariaLabel,
     description,
-    labelAsAria,
     disabled,
     options,
+    data: fixedData,
+    autoComplete,
   }) => {
     const data = useMemo(
-      () => options.map(([v, k]) => ({ value: v, label: i18n(k) })),
-      [options],
+      () =>
+        fixedData || options.map(([v, k]) => ({ value: v, label: i18n(k) })),
+      [options, fixedData],
     );
     return (
       <Select
         label={label}
-        aria-label={labelAsAria ? label : undefined}
+        aria-label={ariaLabel}
         description={description}
         name={name}
+        autoComplete={autoComplete}
         value={value}
         allowDeselect={false}
         disabled={disabled}
@@ -253,17 +260,40 @@ const PrefHotkey = memo(
 );
 
 // 文字欄 adapter：onChange 是穩定的 onTextInputChange（讀 event.target.name）。
+// 憑證欄（自動登入帳密／2FA、上傳 token）多帶 type／autoComplete／maxLength／error／onBlur：
+// 都是字串或穩定的 callback，memo 照樣擋得住。error 由呼叫端算好傳字串（或 null）。
+// mt：原本間距在上方的那一欄（上傳 token）照舊放上方，不加 mb。
 const PrefText = memo(
-  ({ name, value, disabled, onChange, label, description, placeholder }) => (
+  ({
+    name,
+    value,
+    disabled,
+    onChange,
+    onBlur,
+    label,
+    description,
+    placeholder,
+    type,
+    autoComplete,
+    maxLength,
+    error,
+    mt,
+  }) => (
     <TextInput
       label={label}
       description={description}
       name={name}
+      type={type}
+      autoComplete={autoComplete}
+      maxLength={maxLength}
       disabled={disabled}
       value={value}
       placeholder={placeholder}
+      error={error}
       onChange={onChange}
-      mb="xs"
+      onBlur={onBlur}
+      mt={mt}
+      mb={mt ? undefined : "xs"}
       {...anchorFor(name, useFlashKey())}
     />
   ),
@@ -312,6 +342,32 @@ const MOUSE_PUSH_CLICK_END_OPTIONS = [
   ["content", "options_clickToContent"],
   ["date", "options_clickToDate"],
   ["time", "options_clickToTime"],
+];
+// 存成數字（index）的滑鼠設定：value 是 index 字串（PrefSelect＋onSelectNum 存回數字）。
+const MOUSE_MIDDLE_CLICK_OPTIONS = [
+  ["0", "options_none"],
+  ["1", "options_doPaste"],
+  ["2", "options_leftKey"],
+];
+const MOUSE_WHEEL_OPTIONS = [
+  ["0", "options_none"],
+  ["1", "options_pageUpDown"],
+];
+const MOUSE_BACK_NAV_OPTIONS = [
+  ["0", "options_none"],
+  ["1", "options_leftKey"],
+];
+const CONNECTION_PROTOCOL_OPTIONS = [
+  ["websocket", "options_protocolWebsocket"],
+  ["ssh", "options_protocolSsh"],
+];
+const CONNECTION_ENCODING_OPTIONS = [
+  ["big5", "options_encodingBig5"],
+  ["utf8", "options_encodingUtf8"],
+];
+const AUTO_LOGIN_DUP_CONN_OPTIONS = [
+  ["N", "options_autoLoginDupConnNo"],
+  ["Y", "options_autoLoginDupConnYes"],
 ];
 
 // 設定項下方的灰字說明。跟 PrefCheckbox 一樣包 memo：設定頁每改一個值整份
@@ -415,10 +471,6 @@ const changeNestedValue = (obj, key, newValue) => {
     [key]: newValue,
   };
 };
-
-// Build Mantine Select data (index-as-value) from i18n keys.
-const selectData = (keys) =>
-  keys.map((key, index) => ({ value: String(index), label: i18n(key) }));
 
 // The About tab's version blurb embeds clickable links; these never change, so
 // build them once at module load (was recompose's static initial state).
@@ -1646,16 +1698,13 @@ export const PrefModal = ({
                 {/* 手機字級：下拉選單而非數字框（手機上不必叫鍵盤，值也只有偶數）。
                   手機版面關掉時用不到，收起來。 */}
                 {values.mobileLayout !== "off" && (
-                  <Select
+                  <PrefSelect
                     label={i18n("options_mobileFontSize")}
                     description={i18n("tooltip_mobileFontSize")}
                     name="mobileFontSize"
                     value={String(normalizeMobileFontPx(values.mobileFontSize))}
-                    allowDeselect={false}
-                    onChange={(val) => onSelectNum("mobileFontSize", val)}
+                    onChange={onSelectNum}
                     data={MOBILE_FONT_PX_CHOICES}
-                    mb="xs"
-                    {...anchor("mobileFontSize")}
                   />
                 )}
                 {values.mobileLayout !== "off" && (
@@ -1957,7 +2006,7 @@ export const PrefModal = ({
                   value={values.mouseListClickStart}
                   onChange={onSelectStr}
                   label={i18n("options_mouseListClickStart")}
-                  labelAsAria
+                  ariaLabel={i18n("options_mouseListClickStart")}
                   disabled={!values.useMouseBrowsing}
                   options={MOUSE_LIST_CLICK_START_OPTIONS}
                 />
@@ -1966,7 +2015,7 @@ export const PrefModal = ({
                   value={values.mousePushClickStart}
                   onChange={onSelectStr}
                   label={i18n("options_mousePushClickStart")}
-                  labelAsAria
+                  ariaLabel={i18n("options_mousePushClickStart")}
                   disabled={!values.useMouseBrowsing}
                   options={MOUSE_PUSH_CLICK_START_OPTIONS}
                 />
@@ -1975,7 +2024,7 @@ export const PrefModal = ({
                   value={values.mousePushClickEnd}
                   onChange={onSelectStr}
                   label={i18n("options_mousePushClickEnd")}
-                  labelAsAria
+                  ariaLabel={i18n("options_mousePushClickEnd")}
                   disabled={!values.useMouseBrowsing}
                   options={MOUSE_PUSH_CLICK_END_OPTIONS}
                 />
@@ -2013,33 +2062,23 @@ export const PrefModal = ({
                 </Text>
               </PrefSection>
               <PrefSection legendKey="options_mouseMiddleClick">
-                <Select
-                  aria-label={i18n("options_mouseMiddleClick")}
+                <PrefSelect
+                  ariaLabel={i18n("options_mouseMiddleClick")}
                   name="mouseMiddleClick"
                   value={String(values.mouseMiddleClick)}
-                  allowDeselect={false}
                   disabled={!values.useMouseBrowsing}
-                  onChange={(val) => onSelectNum("mouseMiddleClick", val)}
-                  data={selectData([
-                    "options_none",
-                    "options_doPaste",
-                    "options_leftKey",
-                  ])}
-                  mb="xs"
-                  {...anchor("mouseMiddleClick")}
+                  onChange={onSelectNum}
+                  options={MOUSE_MIDDLE_CLICK_OPTIONS}
                 />
               </PrefSection>
               <PrefSection legendKey="options_mouseWheel">
-                <Select
-                  aria-label={i18n("options_mouseWheel")}
+                <PrefSelect
+                  ariaLabel={i18n("options_mouseWheel")}
                   name="mouseWheel"
                   value={String(values.mouseWheel)}
-                  allowDeselect={false}
                   disabled={!values.useMouseBrowsing}
-                  onChange={(val) => onSelectNum("mouseWheel", val)}
-                  data={selectData(["options_none", "options_pageUpDown"])}
-                  mb="xs"
-                  {...anchor("mouseWheel")}
+                  onChange={onSelectNum}
+                  options={MOUSE_WHEEL_OPTIONS}
                 />
                 <PrefHint textKey="tooltip_mouseWheel" />
                 {/* 平滑捲動只在文章列表好讀模式有作用，且是滾輪的子行為
@@ -2060,16 +2099,13 @@ export const PrefModal = ({
                 → 左方向鍵。**一個 pref、一條實作**（history sentinel），刻意不
                 掛在滾輪底下 —— 見 mouse_regions.resolveMouseGates。 */}
               <PrefSection legendKey="options_mouseBackNav">
-                <Select
-                  aria-label={i18n("options_mouseBackNav")}
+                <PrefSelect
+                  ariaLabel={i18n("options_mouseBackNav")}
                   name="mouseBackNav"
                   value={String(values.mouseBackNav)}
-                  allowDeselect={false}
                   disabled={!values.useMouseBrowsing}
-                  onChange={(val) => onSelectNum("mouseBackNav", val)}
-                  data={selectData(["options_none", "options_leftKey"])}
-                  mb="xs"
-                  {...anchor("mouseBackNav")}
+                  onChange={onSelectNum}
+                  options={MOUSE_BACK_NAV_OPTIONS}
                 />
                 <Text size="xs" c="dimmed">
                   {i18n("tooltip_mouseBackNav")}
@@ -2137,22 +2173,13 @@ export const PrefModal = ({
                 兩個欄位都是本機專屬（LOCAL_ONLY_PREF_KEYS），不同步、不進備份。 */}
               {!isAndroidApp() && sshSupported() && (
                 <PrefSection legendKey="options_connectionProtocol">
-                  <Select
-                    aria-label={i18n("options_connectionProtocol")}
+                  <PrefSelect
+                    ariaLabel={i18n("options_connectionProtocol")}
                     description={i18n("tooltip_connectionProtocol")}
                     name="connectionProtocol"
                     value={values.connectionProtocol}
-                    allowDeselect={false}
-                    onChange={(val) => onSelectStr("connectionProtocol", val)}
-                    data={[
-                      {
-                        value: "websocket",
-                        label: i18n("options_protocolWebsocket"),
-                      },
-                      { value: "ssh", label: i18n("options_protocolSsh") },
-                    ]}
-                    mb="xs"
-                    {...anchor("connectionProtocol")}
+                    onChange={onSelectStr}
+                    options={CONNECTION_PROTOCOL_OPTIONS}
                   />
                   <PrefText
                     name="sshRelayUrl"
@@ -2179,19 +2206,13 @@ export const PrefModal = ({
               {/* 線路編碼在 telnet 層轉（js/wire_charset.js、js/unicode_cells.js），APK 的 WebView 也走同一層，
                 所以不放進上面的 isAndroidApp 分支。 */}
               <PrefSection legendKey="options_connectionEncoding">
-                <Select
-                  aria-label={i18n("options_connectionEncoding")}
+                <PrefSelect
+                  ariaLabel={i18n("options_connectionEncoding")}
                   description={i18n("tooltip_connectionEncoding")}
                   name="connectionEncoding"
                   value={values.connectionEncoding}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectStr("connectionEncoding", val)}
-                  data={[
-                    { value: "big5", label: i18n("options_encodingBig5") },
-                    { value: "utf8", label: i18n("options_encodingUtf8") },
-                  ]}
-                  mb="xs"
-                  {...anchor("connectionEncoding")}
+                  onChange={onSelectStr}
+                  options={CONNECTION_ENCODING_OPTIONS}
                 />
               </PrefSection>
               <PrefSection legendKey="options_imgurProxy">
@@ -2560,27 +2581,15 @@ export const PrefModal = ({
                     >
                       {i18n("options_autoLoginEnable")}
                     </PrefCheckbox>
-                    <Select
+                    <PrefSelect
                       label={i18n("options_autoLoginDupConn")}
                       name="autoLoginDupConn"
                       /* Chrome 曾把這顆 Select 的內層 input 當成「帳號欄」配對到下面的
                    密鑰欄，跳出「使用者名稱：刪除其他連線 (Y)」的假儲存提示。 */
                       autoComplete="off"
                       value={values.autoLoginDupConn}
-                      allowDeselect={false}
-                      onChange={(val) => onSelectStr("autoLoginDupConn", val)}
-                      data={[
-                        {
-                          value: "N",
-                          label: i18n("options_autoLoginDupConnNo"),
-                        },
-                        {
-                          value: "Y",
-                          label: i18n("options_autoLoginDupConnYes"),
-                        },
-                      ]}
-                      mb="xs"
-                      {...anchor("autoLoginDupConn")}
+                      onChange={onSelectStr}
+                      options={AUTO_LOGIN_DUP_CONN_OPTIONS}
                     />
                     <PrefCheckbox
                       name="autoLoginSkipWelcome"
@@ -2602,7 +2611,7 @@ export const PrefModal = ({
                       </Text>
                     )}
                     <PrefHint textKey="tooltip_autoLoginUpdate" />
-                    <TextInput
+                    <PrefText
                       label={i18n("options_autoLoginUser")}
                       name="autoLoginUser"
                       autoComplete="off"
@@ -2613,10 +2622,8 @@ export const PrefModal = ({
                       }
                       value={values.autoLoginUser}
                       onChange={onTextInputChange}
-                      mb="xs"
-                      {...anchor("autoLoginUser")}
                     />
-                    <TextInput
+                    <PrefText
                       label={i18n("options_autoLoginPassword")}
                       type="password"
                       name="autoLoginPassword"
@@ -2629,8 +2636,6 @@ export const PrefModal = ({
                       }
                       value={values.autoLoginPassword}
                       onChange={onTextInputChange}
-                      mb="xs"
-                      {...anchor("autoLoginPassword")}
                     />
                     {/* 2FA 密鑰是長期憑證，且與密碼存在同一個保險庫 → 風險必須寫在
                   欄位前面，並附上兩條降級做法（留空手動輸入／PTT 端改用僅新 IP
@@ -2642,7 +2647,7 @@ export const PrefModal = ({
                   登入表單，抓最近的文字輸入當帳號、把密鑰當密碼跳出假的儲存提示，
                   並開始自動填入（那會讓「欄位空白＝已交給密碼管理員」的說明失真）。
                   密鑰本來就是 PTT 在終端機上以明文印出來給使用者抄的東西。 */}
-                    <TextInput
+                    <PrefText
                       label={i18n("options_autoLoginOtpSecret")}
                       name="autoLoginOtpSecret"
                       autoComplete="off"
@@ -2661,8 +2666,6 @@ export const PrefModal = ({
                       value={values.autoLoginOtpSecret}
                       onChange={onTextInputChange}
                       onBlur={onOtpSecretBlur}
-                      mb="xs"
-                      {...anchor("autoLoginOtpSecret")}
                     />
                     <Text size="xs" c="dimmed" mb="xs">
                       {i18n("options_autoLoginLocalStatus_" + credentialStatus)}
@@ -2772,7 +2775,7 @@ export const PrefModal = ({
                   **刻意不是 type=password**（同 autoLoginOtpSecret 的理由）：整頁
                   多一個密碼欄，Chrome 就會把設定頁判成登入表單 → 跳假的「儲存密碼」
                   提示並開始自動填入。守護在 pref_modal_autologin_tab.test.jsx。 */}
-                <TextInput
+                <PrefText
                   label={i18n("options_imageUploadToken")}
                   name="imageUploadToken"
                   autoComplete="off"
@@ -2780,7 +2783,6 @@ export const PrefModal = ({
                   placeholder={i18n("tooltip_imageUploadToken")}
                   onChange={onTextInputChange}
                   mt="xs"
-                  {...anchor("imageUploadToken")}
                 />
               </PrefSection>
             </Tabs.Panel>

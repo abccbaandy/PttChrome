@@ -180,7 +180,8 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - **數字欄 `PrefNumber`**（7 個 `NumberInput` 全部換掉）：吃 `name` 與共用的 `onNumberChange(name, value)`，inline arrow 收進元件裡。同一支測試另數 `NumberInput`：勾一格時數字欄一格都不動、改一個數字欄只有那一欄重畫。
 - **下拉選單 `PrefSelect`**（5 個形狀單純的：`termSizeMode`、`mobileLayout`、滑鼠點擊範圍三顆）：選項寫成元件外的常數 `[value, i18n key]`，`data` 在元件內 `useMemo` 組。測試另數 `Select`，只管已收的這幾顆。
 - **熱鍵欄 `PrefHotkey`、文字欄 `PrefText`、名單欄 `PrefTextarea`**（5 個熱鍵、字型／三個代理位址、黑名單與追蹤名單四個 `Textarea`）：handler 本來就是穩定的 `onHotkeyCapture`／`onTextInputChange`，直接收進 memo adapter。名單欄是 autosize，在其中一格打字時其他三格原本每個字都要重量高度。測試另數 `TextInput`／`Textarea`，只管已收的這幾格。
-- **還沒做**：其餘 `Select`（`data` 由函式／變數產生、`value={String(...)}` 轉換、帶額外屬性的連線／自動登入那幾顆）與帶額外屬性的 `TextInput`（自動登入帳密／2FA、圖片上傳 token、自訂快速搜尋）仍是 inline ⇒ 每次照畫。再往下是「從設定表產生一般列」。
+- **其餘下拉選單與憑證欄**：存成數字的滑鼠三顆（中鍵／滾輪／返回）由呼叫端傳 `String(value)`＋`onSelectNum`，選項常數的 value 就是 index 字串；只有 legend 沒有 label 的傳 `ariaLabel`；手機字級的選項文字不走 i18n，傳元件外的常數 `data`；連線方式／編碼、自動登入重複連線也收進 `PrefSelect`（`autoComplete` 照帶）。自動登入帳密／2FA、圖片上傳 token 收進 `PrefText`（多帶 `type`／`autoComplete`／`maxLength`／`error` 字串／`onBlur`／`mt`）。測試另驗改滾輪只重畫那一顆、自動登入分頁打帳號只重畫帳號欄。
+- **還沒做**：快速搜尋自訂列（每列一個勾選＋名稱＋網址＋比對，handler 帶 `c.id`，是動態清單）仍是 inline ⇒ 每次照畫。再往下是「從設定表產生一般列」（P94 分段可以一起做）。
 
 ## Deprecated 瀏覽器 API
 
