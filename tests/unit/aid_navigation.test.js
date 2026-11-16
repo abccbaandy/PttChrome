@@ -1614,6 +1614,37 @@ describe("findLocalPostAid（免費取得本篇 AID）", () => {
     expect(nav.findLocalPostAid()).toEqual({ board: "Browsers", aid: BROWSERS_AID });
   });
 
+  // 內文整段貼了同板另一篇的結尾（板主公告、原文恢復常這樣貼）：貼來的那段也有「※ 發信站」緊接
+  // 「※ 文章網址」，前一列條件擋不住。系統寫的那組只有一組 ⇒ 看到兩組就分不出誰是本篇，
+  // 一律退回按 Q（認錯的話長推文的守門會送那篇的 #AID、推到別篇）。
+  test("畫面上有兩組「發信站＋同板網址」→ null，退回按 Q", () => {
+    const rows = screen({ last: STATUS_ROW });
+    rows[4] = ORIGIN_ROW;
+    rows[5] = URL_ROW("Browsers", OTHER_FN);
+    rows[17] = ORIGIN_ROW;
+    rows[18] = URL_ROW("Browsers", BROWSERS_FN);
+    const { nav } = makeHarness({ pageState: 3, articleBoard: "Browsers", screenRows: rows });
+    expect(nav.findLocalPostAid()).toBeNull();
+  });
+
+  test("好讀累積頁先載到貼來的那組、之後又載到第二組 → 改回 null", () => {
+    const acc = ["作者 someone (某人) 看板 Browsers", "標題 [公告] 原文恢復", "", ORIGIN_ROW, URL_ROW("Browsers", OTHER_FN), "內文……"];
+    const { nav, termBuf } = makeHarness({ pageState: 3, articleBoard: "Browsers", pageLines: acc });
+    termBuf.pageLines = acc.concat(["--", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN)]);
+    expect(nav.findLocalPostAid()).toBeNull();
+    // 分兩次掃（先只載到第一組）也一樣：第二組出現後不能沿用第一組的快取。
+    const { nav: nav2, termBuf: tb2 } = makeHarness({ pageState: 3, articleBoard: "Browsers", pageLines: acc.slice() });
+    nav2.findLocalPostAid();
+    tb2.pageLines = acc.concat(["--", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN)]);
+    expect(nav2.findLocalPostAid()).toBeNull();
+  });
+
+  test("同一組網址重複出現（推文區又貼一次本篇網址不會有發信站）照常認得", () => {
+    const acc = ["作者 someone (某人) 看板 Browsers", "標題 [問題] 測試", "內文", "--", ORIGIN_ROW, URL_ROW("Browsers", BROWSERS_FN), "推 a: " + URL_ROW("Browsers", BROWSERS_FN)];
+    const { nav } = makeHarness({ pageState: 3, articleBoard: "Browsers", pageLines: acc });
+    expect(nav.findLocalPostAid()).toEqual({ board: "Browsers", aid: BROWSERS_AID });
+  });
+
   test("網址列在畫面第一列（發信站捲出畫面外）→ null，退回按 Q", () => {
     const rows = screen({ last: STATUS_ROW });
     rows[0] = URL_ROW("Browsers", BROWSERS_FN);

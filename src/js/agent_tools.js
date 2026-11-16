@@ -88,19 +88,22 @@ export function readScreen(core) {
 
 // 全文的「※ 文章網址」→ { board, aid, url }。守門同 aid_navigation.findLocalPostAid：
 // 只認緊接在「※ 發信站」之後的那行（內文貼的不算）；轉錄標頭之後的網址是原文的；看板不符的
-// 網址是轉錄帶進來的（pttbbs 擋同板轉錄）。
+// 網址是轉錄帶進來的（pttbbs 擋同板轉錄）；有兩組不同的「發信站＋網址」（內文整段貼了別篇的結尾）
+// 就分不出本篇 ⇒ null。
 export function findArticleUrl(lines, board) {
   let prev = '';
+  let out = null;
   for (const text of lines) {
     if (isCrossPostHeaderLine(text)) return null;
     const hit = parseOwnArticleUrlLine(prev, text);
     prev = text;
     if (!hit) continue;
+    if (out && out.aid !== hit.aid) return null;
     if (board && hit.board.toLowerCase() !== board.toLowerCase()) return null;
     const m = text.match(/https?:\/\/\S+/);
-    return { board: hit.board, aid: hit.aid, url: m ? m[0] : null };
+    out = { board: hit.board, aid: hit.aid, url: m ? m[0] : null };
   }
-  return null;
+  return out;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
