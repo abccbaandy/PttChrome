@@ -20,6 +20,7 @@
 // 交易），多的只是好讀載到「以下是新推文」那一列時把視口捲過去。一樣一個 byte 都不送。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { defaultStorage, readRaw, writeJson } from './user_data';
 import { parseComment, FloorCounter } from './comment_parse';
 import { readEffectivePrefs } from './pref_storage';
 import { parseListEntry } from './agent_parse';
@@ -75,11 +76,7 @@ export function articleKey(board, aid) {
 }
 
 function readAll(storage) {
-  try {
-    return parseAll(storage.getItem(NEW_COMMENTS_KEY));
-  } catch (e) {
-    return {};
-  }
+  return parseAll(readRaw('newComments', storage || null));
 }
 
 function parseAll(raw) {
@@ -126,11 +123,8 @@ export function saveSeen(storage, key, count, now, limit, info) {
       .slice(0, keys.length - cap)
       .forEach((k) => delete all[k]);
   }
-  try {
-    storage.setItem(NEW_COMMENTS_KEY, JSON.stringify(all));
-  } catch (e) {
-    // 滿了／被擋：這次不記，下次照樣不標。
-  }
+  // 滿了／被擋：這次不記，下次照樣不標（writeJson 安靜放棄）。
+  writeJson('newComments', all, storage);
 }
 
 // 列表「+N」的快取鍵（進 annotationsKey）：紀錄的原文或看板一變就換號，整批重算。
@@ -206,13 +200,6 @@ export function isListNewPushTarget(target) {
   return !!(target && typeof target.closest === 'function' && target.closest('.listNewPush'));
 }
 
-function defaultStorage() {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage : null;
-  } catch (e) {
-    return null;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // 控制器
@@ -348,12 +335,7 @@ NewComments.prototype = {
   listBadge: function(board) {
     if (!board || !this._storage || !readEffectivePrefs().listNewPushCount) return null;
     // 列表每一幀都會問：原文沒變就沿用上次解析的結果（別的分頁寫的也認得出來）。
-    let raw = null;
-    try {
-      raw = this._storage.getItem(NEW_COMMENTS_KEY);
-    } catch (e) {
-      return null;
-    }
+    const raw = readRaw('newComments', this._storage);
     const lb = String(board).toLowerCase();
     let c = this._badgeCache;
     if (!c || c.raw !== raw || c.board !== lb) {
