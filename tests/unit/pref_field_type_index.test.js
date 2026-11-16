@@ -56,7 +56,11 @@ describe("設定索引的欄位型別", () => {
       checked++;
     }
     // 由索引畫出的分區（<PrefIndexRows>）照 type 選元件，不必再比；這裡只比還手寫的格子。
-    expect(checked).toBeGreaterThan(100);
+    // 門檻算「手寫＋由索引畫出」：分區陸續改由索引畫出時不用每次調；掃描壞掉才會掉到門檻下。
+    const fromIndex = [
+      ...src.matchAll(/<PrefIndexRows\s+sectionKey="([^"]+)"/g),
+    ].reduce((n, m) => n + prefSectionItems(m[1]).length, 0);
+    expect(checked + fromIndex).toBeGreaterThan(140);
   });
 
   test("索引的 sub（縮排子選項）＝設定頁畫在 .PrefModal__SubOptions 裡的那幾格", () => {

@@ -572,7 +572,7 @@ const PrefIndexRows = ({
   onNumberChange,
 }) => {
   const field = (it) => {
-    if (Object.prototype.hasOwnProperty.call(custom, it.key))
+    if (custom && Object.prototype.hasOwnProperty.call(custom, it.key))
       return custom[it.key];
     switch (it.type) {
       case "check":
@@ -1488,75 +1488,12 @@ export const PrefModal = ({
                 />
               </PrefSection>
               <PrefSection legendKey="options_contextMenu">
-                <PrefCheckRow
-                  name="highlightMenuTarget"
+                <PrefIndexRows
+                  sectionKey="options_contextMenu"
                   values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="articleCopyLinkRow"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableInputHelper"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableLiveArticleHelper"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableEditorInput"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableLongPush"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="pushKeyOpensLongPush"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableCommentBar"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="commentReplyMenu"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableCommentFilter"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="mobileCommentBarFold"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="commentBarCounter"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="searchKeyOpensModal"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableSearchStatus"
-                  values={values}
-                  onChange={onCheckboxChange}
+                  onCheckboxChange={onCheckboxChange}
+                  onHotkeyCapture={onHotkeyCapture}
+                  onNumberChange={onNumberChange}
                 />
               </PrefSection>
               <PrefSection legendKey="options_appearance">
