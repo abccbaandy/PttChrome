@@ -109,6 +109,14 @@ describe('user_data 旗標', () => {
     }
   });
 
+  test('設定本身走 readJson／writeJson（形狀 {values} 不變），pref_storage 不再自己碰 localStorage', () => {
+    const e = USER_DATA.find((x) => x.id === 'prefs');
+    const code = fs.readFileSync(path.join(process.cwd(), e.owner), 'utf8');
+    expect(code).toMatch(/readJson\(\s*['"]prefs['"]/);
+    expect(code).toMatch(/writeJson\(\s*['"]prefs['"]/);
+    expect(code).not.toMatch(/\.(getItem|setItem|removeItem)\(/);
+  });
+
   test('原文字串：寫得回來、寫不進去回 false 不炸', () => {
     const st = memStorage();
     expect(writeRaw('longPushDraft', '打到一半', st)).toBe(true);
