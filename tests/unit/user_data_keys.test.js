@@ -29,11 +29,13 @@ describe('user_data_keys 總表', () => {
     }
   });
 
-  test('擁有者檔案存在，而且真的從總表拿這個鍵', () => {
+  test('擁有者檔案存在，而且真的從總表拿這個鍵（直接拿鍵名，或經 user_data.js 用 id）', () => {
     for (const e of USER_DATA) {
       const ns = e.store === 'indexedDB' ? 'INDEXED_DB_NAMES' : 'STORAGE_KEYS';
       expect(fs.existsSync(path.join(root, e.owner)), e.owner).toBe(true);
-      expect(read(e.owner), `${e.owner} 要用 ${ns}.${e.id}`).toContain(`${ns}.${e.id}`);
+      const code = read(e.owner);
+      const viaId = new RegExp(`(readFlag|writeFlag)\\(\\s*['"]${e.id}['"]`).test(code);
+      expect(code.includes(`${ns}.${e.id}`) || viaId, `${e.owner} 要用 ${ns}.${e.id} 或 readFlag('${e.id}')`).toBe(true);
     }
   });
 

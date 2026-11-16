@@ -13,6 +13,7 @@
 //   4. 切換狀態只存本機（localStorage `pttchrome.followOnly`），不同步；功能開關是 pref
 //      enableFollowOnly（預設開），關注名單是空的或名單開關關著 ⇒ 不出現。
 import { STORAGE_KEYS } from './user_data_keys';
+import { defaultStorage, readFlag, writeFlag } from './user_data';
 import { readEffectivePrefs } from './pref_storage';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
 import { PAGE_STATE } from './screen_model';
@@ -24,30 +25,13 @@ export function isFollowOnlyTarget(el) {
   return !!(el && typeof el.closest === 'function' && el.closest('#' + FOLLOW_ONLY_ID));
 }
 
-function defaultStorage() {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage : null;
-  } catch (e) {
-    return null;
-  }
-}
-
 function readOn(storage) {
-  try {
-    return !!storage && storage.getItem(FOLLOW_ONLY_KEY) === '1';
-  } catch (e) {
-    return false;
-  }
+  return readFlag('followOnly', storage);
 }
 
+// 私密視窗／存不了：這一頁照樣切，只是不記得（user_data.writeFlag 的契約）。
 function writeOn(storage, on) {
-  try {
-    if (!storage) return;
-    if (on) storage.setItem(FOLLOW_ONLY_KEY, '1');
-    else storage.removeItem(FOLLOW_ONLY_KEY);
-  } catch (e) {
-    // 私密視窗／存不了：這一頁照樣切，只是不記得。
-  }
+  writeFlag('followOnly', !!on, storage);
 }
 
 // 這一幀要不要出現鈕（純函式）。facts：{ enabled, followListOn, hasFollow, listWindow, pageState }。

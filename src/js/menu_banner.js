@@ -14,6 +14,7 @@
 // 切換只存本機（localStorage），不同步、不送鍵；功能開關是 pref。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { defaultStorage, readFlag, writeFlag } from './user_data';
 import { MENU_BANNER_LAST_ROW } from './menu_items';
 
 export const MENU_BANNER_EXPANDED_KEY = STORAGE_KEYS.menuBannerExpanded;
@@ -51,22 +52,9 @@ export function bannerSummaryText(text) {
   return READABLE.test(s) ? s : '';
 }
 
-/** @returns {Storage | null} */
-function defaultStorage() {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage : null;
-  } catch (_e) {
-    return null;
-  }
-}
-
 /** @param {Storage | null} [storage] */
 export function readMenuBannerExpanded(storage = defaultStorage()) {
-  try {
-    return !!storage && storage.getItem(MENU_BANNER_EXPANDED_KEY) === '1';
-  } catch (_e) {
-    return false;
-  }
+  return readFlag('menuBannerExpanded', storage);
 }
 
 /**
@@ -74,13 +62,7 @@ export function readMenuBannerExpanded(storage = defaultStorage()) {
  * @param {Storage | null} [storage]
  */
 export function writeMenuBannerExpanded(on, storage = defaultStorage()) {
-  try {
-    if (!storage) return;
-    if (on) storage.setItem(MENU_BANNER_EXPANDED_KEY, '1');
-    else storage.removeItem(MENU_BANNER_EXPANDED_KEY);
-  } catch (_e) {
-    // 存不了（隱私模式、容量滿）就只在這一頁有效。
-  }
+  writeFlag('menuBannerExpanded', on, storage);
 }
 
 /**

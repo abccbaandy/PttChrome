@@ -14,6 +14,7 @@
 //      在終端機左邊的空白裡，放不下（視窗太窄、字太大、手機）就不出現，不推動終端機。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { readFlag, writeFlag } from './user_data';
 import { isArticleListTitleRow, parseBoardName } from './screen_titles';
 import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { parseListEntry } from './agent_parse';
@@ -247,20 +248,12 @@ function enabled() {
 }
 
 function readCollapsed() {
-  try {
-    return window.localStorage.getItem(SPLIT_COLLAPSED_KEY) === '1';
-  } catch (e) {
-    return false;
-  }
+  return readFlag('splitReaderCollapsed');
 }
 
 function writeCollapsed(v) {
-  try {
-    if (v) window.localStorage.setItem(SPLIT_COLLAPSED_KEY, '1');
-    else window.localStorage.removeItem(SPLIT_COLLAPSED_KEY);
-  } catch (e) {
-    // 無痕視窗／被擋：只記在這一頁。
-  }
+  // 無痕視窗／被擋：只記在這一頁（user_data.writeFlag 的契約）。
+  writeFlag('splitReaderCollapsed', !!v);
 }
 
 // ---------------------------------------------------------------------------
