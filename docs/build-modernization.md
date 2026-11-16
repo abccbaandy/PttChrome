@@ -177,7 +177,8 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 
 - **勾選列 `PrefCheckbox` 與灰字說明 `PrefHint` 包 `React.memo`**：props 沒變就跳過。前提是 props 都是穩定值（`name`／`checked`／`disabled` 是原始值、`onChange` 是 `useCallback` 出來的、children 是字串）。實測（headless Chromium，一般分頁，連點同一格 5 次）：每點一下約 70 ms → 約 35 ms，mount 不變（約 100 ms）。守護 `tests/unit/pref_modal_rerender.test.jsx`：數 Mantine `Checkbox` 的 render，點一格只准那一格重畫。
 - **會讓 memo 失效的寫法**：在 `<PrefCheckbox>` 上傳 inline 物件／函式、children 放 JSX（快速搜尋內建項目那三列就是，刻意不管）、把共用 handler 改成每次 render 新建。
-- **還沒做**：`NumberInput`／`Select`／`TextInput`（一般分頁各 6～7 個）都是 inline `onChange={(v) => onNumberChange("x", v)}`、`Select` 的 `data` 每次新建 ⇒ 每次照畫，是剩下的大頭。下一步做 `PrefNumber`／`PrefSelect`（吃 `name` 與共用 handler，`data` 提到元件外或 `useMemo`），再往「從設定表產生一般列」走。
+- **數字欄 `PrefNumber`**（7 個 `NumberInput` 全部換掉）：吃 `name` 與共用的 `onNumberChange(name, value)`，inline arrow 收進元件裡。同一支測試另數 `NumberInput`：勾一格時數字欄一格都不動、改一個數字欄只有那一欄重畫。
+- **還沒做**：`Select`／`TextInput` 仍是 inline `onChange`，`Select` 的 `data` 多半每次新建（還有 `value={String(...)}` 這類轉換）⇒ 每次照畫。下一步做 `PrefSelect`（`data` 提到元件外、選項 label 用 i18n key 在元件內轉），再往「從設定表產生一般列」走。
 
 ## Deprecated 瀏覽器 API
 
