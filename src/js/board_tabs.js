@@ -14,6 +14,7 @@
 //   3. 分頁清單只存本機（localStorage `pttchrome.boardTabs.v1`），不同步。順序照第一次去的
 //      先後（像瀏覽器分頁，不跟著 MRU 跳動）；滿了丟掉最久沒去的那個（不丟現在這個）。
 import { STORAGE_KEYS } from './user_data_keys';
+import { defaultStorage, readJson, writeJson } from './user_data';
 import { readEffectivePrefs } from './pref_storage';
 import { parseBoardName } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
@@ -71,29 +72,13 @@ export function tabsToShow(names, current) {
 }
 
 function readTabs(storage) {
-  try {
-    const raw = storage && storage.getItem(BOARD_TABS_KEY);
-    const v = raw ? JSON.parse(raw) : null;
-    return Array.isArray(v) ? v.filter((t) => t && typeof t.name === 'string' && t.name) : [];
-  } catch (e) {
-    return [];
-  }
+  const v = readJson('boardTabs', storage || null);
+  return Array.isArray(v) ? v.filter((t) => t && typeof t.name === 'string' && t.name) : [];
 }
 
+// 存不了（隱私模式、配額）：這一頁照常用，下次開站從空的開始。
 function writeTabs(storage, tabs) {
-  try {
-    if (storage) storage.setItem(BOARD_TABS_KEY, JSON.stringify(tabs));
-  } catch (e) {
-    // 存不了（隱私模式、配額）：這一頁照常用，下次開站從空的開始。
-  }
-}
-
-function defaultStorage() {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage : null;
-  } catch (e) {
-    return null;
-  }
+  writeJson('boardTabs', tabs, storage || null);
 }
 
 const HIDDEN_PATCH = { visible: false };
