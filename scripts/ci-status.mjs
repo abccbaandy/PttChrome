@@ -119,6 +119,20 @@ export function isSideRun(run) {
   return false;
 }
 
+// 這次要看的 run：head_sha 等於目標 commit、不是 side run。**沒有目標就沒有 run**——
+// 不可退回「API 回的最新一顆」：--branch 剛 push 完時最新那顆是上一個 commit 的，
+// 會把還沒跑的新 commit 報成全綠。
+export function runsForHead(runs, head) {
+  if (!head) return [];
+  return (runs || []).filter((r) => r.head_sha === head && !isSideRun(r));
+}
+
+// GET /repos/{repo}/branches/{branch} 的回應 → 分支現在的完整 sha；形狀不對 ⇒ null。
+export function branchHeadSha(json) {
+  const sha = json && json.commit && json.commit.sha;
+  return isFullSha(sha) ? sha : null;
+}
+
 export function projectRuns(runs) {
   return (runs || []).filter(isProjectRun);
 }
@@ -235,6 +249,23 @@ async function main() {
   }
   const branch = arg("branch") || sh("git", ["rev-parse", "--abbrev-ref", "HEAD"]) || "dev";
   const wait = !flag("no-wait");
+  // --branch（或沒給 --sha）：先問 GitHub 分支**現在**的 head，之後一律以那個 sha 查。
+  // 只抓分支最新 N 筆 run 再取第一顆的話，剛 push 完時拿到的是上一個 commit 的 run。
+  if (!sha) {
+    let json = null;
+    try {
+      json = await api(`/repos/${repo}/branches/${encodeURIComponent(branch)}`);
+    } catch (e) {
+      console.error(`查不到分支 ${branch} 的 head（${e.message}）。分支還沒 push，或名稱有誤。`);
+      return 2;
+    }
+    sha = branchHeadSha(json);
+    if (!sha) {
+      console.error(`分支 ${branch} 的回應裡沒有 head sha，無法判斷要看哪個 commit。`);
+      return 2;
+    }
+    console.log(`  --branch ${branch} → head ${sha.slice(0, 7)}`);
+  }
 
   console.log(`repo=${repo} ${sha ? `sha=${sha.slice(0, 7)}` : `branch=${branch}`}`);
 
@@ -250,14 +281,9 @@ async function main() {
   for (;;) {
     // 指定 sha 一定要走 API 的 head_sha 參數：只抓最新 N 筆再自己過濾的話，
     // 稍舊的 commit 永遠落在頁外 → 誤報「查無 run」。
-    const query = sha
-      ? `head_sha=${encodeURIComponent(sha)}`
-      : `branch=${encodeURIComponent(branch)}&per_page=10`;
-    const data = await api(`/repos/${repo}/actions/runs?${query}`);
-    const all = data.workflow_runs || [];
+    const data = await api(`/repos/${repo}/actions/runs?head_sha=${encodeURIComponent(sha)}`);
     // 同一個 commit 可能觸發多個 workflow（deploy + CodeQL）→ 全部都要看。
-    const head = sha || (all[0] && all[0].head_sha);
-    runs = all.filter((r) => r.head_sha === head && !isSideRun(r));
+    runs = runsForHead(data.workflow_runs || [], sha);
     if (!runs.length) {
       // 剛 push 完 run 還沒建立 → 寬限期內繼續等，別把「還沒出現」當成「查不到」。
       // 看過 run 之後的空回應是 API 暫時性的 → 照 CI 逾時繼續等（noRunAction）。
