@@ -6,6 +6,7 @@
 // （反方向就是手機被桌機的 fixed-font-size 20px 切掉右半邊的成因）。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { readJson, writeJson } from './user_data';
 import { TERM_COLS, calcTermSize, termLayoutOffsets } from './term_size';
 
 // pref `mobileLayout` 的值域。auto ＝依裝置判斷；on/off ＝使用者強制（誤判逃生門，
@@ -146,29 +147,17 @@ export function clampFloatPos(pos, { vw, vh, w, h }, defaults) {
   };
 }
 
-// storage 注入（測試用）；預設 window.localStorage。私密視窗／封鎖網站資料時存取會
-// throw ⇒ 一律退回預設位置，不影響功能。
-export function loadFloatPos(key, defaults, storage) {
-  try {
-    const st = storage || window.localStorage;
-    const raw = st.getItem(key);
-    if (!raw) return { ...defaults };
-    const v = JSON.parse(raw);
-    if (!v || !Number.isFinite(v.right) || !Number.isFinite(v.bottom))
-      return { ...defaults };
-    return { right: v.right, bottom: v.bottom };
-  } catch (e) {
-    return { ...defaults };
-  }
+// storage 注入（測試用）；沒給＝window.localStorage。私密視窗／封鎖網站資料時存取會
+// throw ⇒ 一律退回預設位置，不影響功能（user_data 讀不到回 null）。
+export function loadFloatPos(defaults, storage) {
+  const v = readJson('floatToolsPos', storage || undefined);
+  if (!v || !Number.isFinite(v.right) || !Number.isFinite(v.bottom)) return { ...defaults };
+  return { right: v.right, bottom: v.bottom };
 }
 
-export function saveFloatPos(key, pos, storage) {
-  try {
-    const st = storage || window.localStorage;
-    st.setItem(key, JSON.stringify({ right: pos.right, bottom: pos.bottom }));
-  } catch (e) {
-    // 存不了就只在這次開頁有效。
-  }
+// 存不了就只在這次開頁有效（writeJson 安靜放棄）。
+export function saveFloatPos(pos, storage) {
+  writeJson('floatToolsPos', { right: pos.right, bottom: pos.bottom }, storage || undefined);
 }
 
 // #t 的 inputmode。手機上預設 'none'：焦點照舊停在 #t（既有十幾個 setInputAreaFocus

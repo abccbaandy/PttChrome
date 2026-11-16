@@ -337,8 +337,8 @@ describe("浮動工具「⋯」位置（泛用版）", () => {
 
   test("存取 round-trip；存的是專用 key，不是 prefs", () => {
     const st = memStorage();
-    saveFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, { right: 5, bottom: 6 }, st);
-    expect(loadFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, FLOAT_TOOLS_DEFAULT_POS, st)).toEqual({
+    saveFloatPos({ right: 5, bottom: 6 }, st);
+    expect(loadFloatPos(FLOAT_TOOLS_DEFAULT_POS, st)).toEqual({
       right: 5,
       bottom: 6,
     });
@@ -351,11 +351,11 @@ describe("浮動工具「⋯」位置（泛用版）", () => {
         throw new Error("denied");
       },
     };
-    expect(loadFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, FLOAT_TOOLS_DEFAULT_POS, boom)).toEqual(
+    expect(loadFloatPos(FLOAT_TOOLS_DEFAULT_POS, boom)).toEqual(
       FLOAT_TOOLS_DEFAULT_POS,
     );
     expect(
-      loadFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, FLOAT_TOOLS_DEFAULT_POS, { getItem: () => "[" }),
+      loadFloatPos(FLOAT_TOOLS_DEFAULT_POS, { getItem: () => "[" }),
     ).toEqual(FLOAT_TOOLS_DEFAULT_POS);
   });
 });
