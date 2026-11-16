@@ -97,7 +97,7 @@ describe('user_data 旗標', () => {
   });
 
   test('已搬到共用讀寫的 JSON 擁有者不再自己碰 localStorage', () => {
-    for (const id of ['uploadHistory', 'searchHistory', 'whatsNewSeen', 'boardTabs', 'homeFavorites', 'homeRecentBoards', 'rendererResume']) {
+    for (const id of ['uploadHistory', 'searchHistory', 'whatsNewSeen', 'boardTabs', 'homeFavorites', 'homeRecentBoards', 'rendererResume', 'floatToolsPos']) {
       const e = USER_DATA.find((x) => x.id === id);
       const code = fs.readFileSync(path.join(process.cwd(), e.owner), 'utf8');
       expect(code, `${e.owner} 的 ${id} 要走 readJson`).toMatch(new RegExp(`readJson\\(\\s*['"]${id}['"]`));

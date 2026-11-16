@@ -15,7 +15,6 @@
 import { i18n } from "../js/i18n";
 import { el, applyStyle } from "./dom";
 import {
-  FLOAT_TOOLS_POS_STORAGE_KEY,
   FLOAT_TOOLS_DEFAULT_POS,
   KEYPAD_DRAG_THRESHOLD_PX,
   clampFloatPos,
@@ -55,11 +54,7 @@ export function createFloatingTools(storage) {
     { id: "floatTools", class: "floatTools", "data-own-control": "" },
     [panel, fab],
   );
-  let pos = loadFloatPos(
-    FLOAT_TOOLS_POS_STORAGE_KEY,
-    FLOAT_TOOLS_DEFAULT_POS,
-    storage,
-  );
+  let pos = loadFloatPos(FLOAT_TOOLS_DEFAULT_POS, storage);
   let drag = null;
   let suppressClick = false;
   let tools = [];
@@ -136,7 +131,7 @@ export function createFloatingTools(storage) {
     drag = null;
     if (!moved) return;
     suppressClick = true;
-    saveFloatPos(FLOAT_TOOLS_POS_STORAGE_KEY, pos, storage);
+    saveFloatPos(pos, storage);
   };
   fab.addEventListener("pointerup", endDrag);
   fab.addEventListener("pointercancel", endDrag);
