@@ -158,6 +158,41 @@ describe("右鍵選單：複製本篇連結一列三顆（P93）", () => {
     expect(onMenuSelect).toHaveBeenCalledWith("copyArticleCode", expect.anything());
   });
 
+  // REGRESSION：選單是 max-content 寬，預覽行原本只放停著那顆的字 ⇒ 滑鼠在三顆間
+  // 移動，選單跟著變寬變窄（AID 短、分享連結長）一直抖。寬度要恆為最長那顆的。
+  test("hover 換顆時選單寬度不變（不隨預覽長短抖動）", () => {
+    renderMenu({
+      normalEnabled: true,
+      articleLinkEnabled: true,
+      articleLinkRow: true,
+      previews: copyPreviews({ currentArticle: article }, HREF),
+    });
+    const menu = document.querySelector(".DropdownMenu");
+    const row = document.querySelector('[data-cmenu="copyArticleLinkRow"]');
+    const chip = (k) => row.querySelector(`[data-cmenu="${k}"]`);
+    const preview = () => row.querySelector(".DropdownMenu__preview");
+    const width = () => menu.getBoundingClientRect().width;
+    const widths = {};
+    for (const k of ["copyArticlePttUrl", "copyArticleCode", "copyArticleLink"]) {
+      fireEvent.mouseEnter(chip(k));
+      widths[k] = width();
+    }
+    // 前提：三顆的預覽長短真的差很多（不然寬度相同是假綠）。
+    expect(
+      row.querySelectorAll(".DropdownMenu__previewSizer").length,
+    ).toBe(3);
+    expect(preview().scrollWidth).toBeGreaterThan(0);
+    expect(widths.copyArticleCode).toBe(widths.copyArticlePttUrl);
+    expect(widths.copyArticleLink).toBe(widths.copyArticlePttUrl);
+    // 寬度撐得下最長的預覽（停在分享連結時不被截斷）。
+    expect(preview().scrollWidth).toBeLessThanOrEqual(preview().clientWidth + 1);
+    // 只佔位的那幾份不進無障礙樹，畫面上看得到的預覽只有一份。
+    for (const el of row.querySelectorAll(".DropdownMenu__previewSizer")) {
+      expect(el.getAttribute("aria-hidden")).toBe("true");
+      expect(getComputedStyle(el).visibility).toBe("hidden");
+    }
+  });
+
   test("算不出內容 ⇒ 沒有預覽行，三顆照樣在", () => {
     renderMenu({
       normalEnabled: true,

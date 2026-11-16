@@ -36,7 +36,26 @@ const ChipRow = ({ entry }) => {
     >
       <div className="DropdownMenu__chipHead">
         <span>{entry.label}</span>
-        {preview && <span className="DropdownMenu__preview">{preview}</span>}
+        {preview && (
+          // 選單是 max-content 寬：預覽行直接放「目前那顆」的字，滑鼠在三顆間移動
+          // 選單就跟著變寬變窄（AID 短、網址長）一直抖。所以把每顆的預覽都疊在同一格
+          // （grid 同一個 area），非作用中的只佔寬不顯示 ⇒ 寬度恆為最長那顆，不隨 hover 變。
+          // 真正顯示的仍是唯一一個 .DropdownMenu__preview（e2e 讀它的 textContent）。
+          <span className="DropdownMenu__previewStack">
+            {entry.chips.map((c) =>
+              c.preview ? (
+                <span
+                  key={c.key}
+                  className="DropdownMenu__previewSizer"
+                  aria-hidden="true"
+                >
+                  {c.preview}
+                </span>
+              ) : null
+            )}
+            <span className="DropdownMenu__preview">{preview}</span>
+          </span>
+        )}
       </div>
       <div className="DropdownMenu__chips">
         {entry.chips.map((c) => (
