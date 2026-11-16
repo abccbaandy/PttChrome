@@ -19,6 +19,8 @@ import {
   runMark,
   runsFailed,
   noRunAction,
+  runsForHead,
+  branchHeadSha,
   DEFAULT_DEADLINE_MS,
 } from "../../scripts/ci-status.mjs";
 
@@ -350,4 +352,34 @@ describe("runMark / runsFailed", () => {
 // 舊預設 15 分鐘 ⇒ 每次都在它跑完前逾時，還沒跑完的 run 被判「不綠」回 exit 1。
 test("預設等待時間蓋得過最慢的 job（>= 30 分鐘）", () => {
   expect(DEFAULT_DEADLINE_MS).toBeGreaterThanOrEqual(30 * 60 * 1000);
+});
+
+// --branch 模式：剛 push 完新 commit 的 run 還沒建立時，分支上最新的 run 是**上一個 commit** 的。
+// 舊版拿「最新一顆 run 的 head_sha」當目標 ⇒ 直接回報上一個 commit 全綠（exit 0），新 commit 根本還沒跑。
+// 一律先問 GitHub 分支現在的 head，只認那個 sha 的 run。
+describe("runsForHead／branchHeadSha：--branch 只認分支現在的 head", () => {
+  const OLD = "a".repeat(40);
+  const NEW = "b".repeat(40);
+  const oldGreen = { head_sha: OLD, name: "PR Test", path: ".github/workflows/pr.yml", event: "pull_request", status: "completed", conclusion: "success" };
+
+  test("分支 head 已是新 commit、新 run 還沒建立 ⇒ 沒有可看的 run（等，不可報上一個 commit 的綠）", () => {
+    expect(runsForHead([oldGreen], NEW)).toEqual([]);
+  });
+
+  test("沒有 head（分支解不出來）⇒ 沒有可看的 run，不退回「最新那顆」", () => {
+    expect(runsForHead([oldGreen], undefined)).toEqual([]);
+    expect(runsForHead([oldGreen], "")).toEqual([]);
+  });
+
+  test("head 對得上才算；side run（flaky hunt）照舊排除", () => {
+    const hunt = { ...oldGreen, path: ".github/workflows/flaky-hunt.yml", event: "schedule" };
+    expect(runsForHead([oldGreen, hunt], OLD)).toEqual([oldGreen]);
+  });
+
+  test("branchHeadSha 從 branches API 回應取完整 sha，形狀不對回 null", () => {
+    expect(branchHeadSha({ name: "dev", commit: { sha: NEW } })).toBe(NEW);
+    expect(branchHeadSha({ commit: { sha: "abc" } })).toBe(null);
+    expect(branchHeadSha({ message: "Branch not found" })).toBe(null);
+    expect(branchHeadSha(null)).toBe(null);
+  });
 });
