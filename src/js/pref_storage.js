@@ -133,6 +133,11 @@ export const DEFAULT_PREFS = {
   // 「複製本篇連結」（deep link）的快捷鍵。預設 F2：上面那串被 Chrome 佔用的
   // F 鍵之外，F8/F9 又已經給了上面兩個功能，剩下的就是 F2/F4。
   deepLinkCopyKey: "F2",
+  // 文章裡「複製本篇連結」一列三顆（P93：PTT 網址／AID／分享連結；右鍵選單、手機長按
+  // 選單、「更多」面板）。三顆走同一條 AID 解析（deep_link_controller）：讀得到文末網址列
+  // 就免費換算，否則照舊按 Q（跟原本那一項一樣）。使用者自己點才動、沒有新的送鍵方式
+  // ⇒ 不在安全模式名單（同原本的「複製本篇文章連結」）。關＝只有原本那一項。
+  articleCopyLinkRow: true,
   // 「跳到第一篇未讀」（文章列表，docs/unread-jump.md）的快捷鍵。預設 F7（使用者指定）：
   // Chrome 的 F7 是「鍵盤瀏覽模式」對話框，keydown 被 preventDefault 就不會出現。
   unreadJumpKey: "F7",

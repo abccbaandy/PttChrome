@@ -8,6 +8,8 @@ import { quickSearchLabel } from "../../js/quick_search";
 // entry：
 //   { type: "item", key, label, preview?, disabled?, right?, className?, onClick(e) }
 //   { type: "divider", key }
+//   { type: "chips", key, label, preview?, chips: [{ key, label, onClick(e) }] }
+//     一列標題＋幾顆小鈕（P93「複製本篇連結」三顆），點哪顆做哪顆。
 // preview：複製類選項的第二行（「按下去實際會複製什麼」，context_menu_items.copyPreviews）。
 export function buildContextMenuEntries(p) {
   const out = [];
@@ -196,10 +198,14 @@ export function buildContextMenuEntries(p) {
     );
   }
   if (p.saveLocalEnabled)
-    item("saveLocal", i18n("saved_action"), (e) => p.onMenuSelect("saveLocal", e));
+    item("saveLocal", i18n("saved_action"), (e) =>
+      p.onMenuSelect("saveLocal", e),
+    );
   // 手機「選取文字」頁（P81）：只有手機長按選單（ContextSheet）有。
   if (p.mobile && p.selectTextTarget)
-    item("selectText", i18n("selectText_title"), (e) => p.onMenuSelect("selectText", e));
+    item("selectText", i18n("selectText_title"), (e) =>
+      p.onMenuSelect("selectText", e),
+    );
   divider("d-main");
   if (p.normalEnabled) {
     // 全選、圖片上傳兩項：手機搬到工具列「更多」（p.mobile ＝ ContextSheet 畫的）。
@@ -214,7 +220,25 @@ export function buildContextMenuEntries(p) {
       );
     // 複製本篇文章的 deep link（外部程式貼上後點開即跳回這篇）。只在
     // 文章畫面出現：要靠 Q 資訊框才問得出本篇的 AID。
-    if (p.articleLinkEnabled)
+    // P93：開關開著（預設）畫成一列三顆，點哪顆複製哪種；三顆走同一條 AID 解析。
+    // 「分享連結」那顆沿用 copyArticleLink 的 key 與預覽（handler 不變）。
+    if (p.articleLinkEnabled && p.articleLinkRow)
+      out.push({
+        type: "chips",
+        key: "copyArticleLinkRow",
+        label: i18n("cmenu_copyArticleLinkRow"),
+        preview: previews.copyArticleLink,
+        chips: [
+          ["copyArticlePttUrl", "cmenu_chipPttUrl"],
+          ["copyArticleCode", "cmenu_chipAid"],
+          ["copyArticleLink", "cmenu_chipShareLink"],
+        ].map(([key, labelKey]) => ({
+          key,
+          label: i18n(labelKey),
+          onClick: (e) => p.onMenuSelect(key, e),
+        })),
+      });
+    else if (p.articleLinkEnabled)
       item(
         "copyArticleLink",
         i18n("cmenu_copyArticleLink"),

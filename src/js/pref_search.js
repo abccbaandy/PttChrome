@@ -287,6 +287,11 @@ export const PREF_SEARCH_ITEMS = [
   ]),
   ...inSection("general", "options_contextMenu", null, [
     { key: "highlightMenuTarget", titleKey: "options_highlightMenuTarget" },
+    {
+      key: "articleCopyLinkRow",
+      titleKey: "options_articleCopyLinkRow",
+      tooltipKey: "tooltip_articleCopyLinkRow",
+    },
     { key: "enableInputHelper", titleKey: "options_enableInputHelper" },
     {
       key: "enableLiveArticleHelper",

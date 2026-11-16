@@ -48,3 +48,37 @@
   line-height: 1.3;
   margin-top: 2px;
 }
+
+/* P93「複製本篇連結」一列三顆：標題（＋預覽）一行，下面一排膠囊鈕。左右留白對齊
+   Mantine Menu.Item 的 padding（--mantine-spacing-sm 左右）。 */
+.DropdownMenu__chipRow {
+  padding: 6px 12px 6px;
+  font-size: var(--mantine-font-size-sm);
+}
+
+.DropdownMenu__chipHead {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.DropdownMenu__chipHead > * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.DropdownMenu__chips {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.DropdownMenu .DropdownMenu__chip {
+  width: auto;
+  flex: none;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--mantine-color-default-hover);
+}

@@ -206,6 +206,11 @@ const menuHandlerByEventKey = {
   // 自己回原處（見 deep_link_controller）。copyTextFor 那條只服務預覽。
   copyArticleLink: (pttchrome) =>
     pttchrome.deepLinkController.copyCurrentPostLink(),
+  // P93 一列三顆的另外兩顆：同一條 AID 解析（免費路徑或按 Q），只差交件格式。
+  copyArticlePttUrl: (pttchrome) =>
+    pttchrome.deepLinkController.copyCurrentPostLink("ptt"),
+  copyArticleCode: (pttchrome) =>
+    pttchrome.deepLinkController.copyCurrentPostLink("aid"),
   // 游標下那篇（不是「本篇」）：文章代碼與分享連結。target 在開選單當下就算好了。
   copyArticleAid: (pttchrome, state) =>
     pttchrome.doCopy(copyTextFor("copyArticleAid", state)),
@@ -424,6 +429,8 @@ const initialState = {
   menuAnchor: null,
   // 右鍵當下是不是在文章畫面（決定「複製本篇連結」出不出現）。
   articleLinkEnabled: false,
+  // P93：「複製本篇連結」畫成一列三顆（PTT 網址／AID／分享連結）；關掉＝舊的單一項。
+  articleLinkRow: false,
   // Quick search items shown for the current selection (already filtered by the
   // enabled flag + each item's match rule), and the normalized query they use.
   quickSearchItems: [],
@@ -880,6 +887,7 @@ export const ContextMenu = ({ pttchrome }) => {
         articleLinkEnabled:
           pttchrome.buf.pageState === PAGE_STATE.READING &&
           !pttchrome.buf.pagerFromEssence,
+        articleLinkRow: !!prefs.articleCopyLinkRow,
         // 圖片上傳與兩個小幫手的選項各自跟著自己的開關走（同樣是現讀）。
         imageUploadEnabled: !!prefs.enableImageUpload,
         inputHelperEnabled: !!prefs.enableInputHelper,
@@ -1705,6 +1713,7 @@ export const ContextMenu = ({ pttchrome }) => {
     saveLocalEnabled,
     selectTextTarget,
     articleLinkEnabled,
+    articleLinkRow,
     contextArticle,
     previews,
     quickSearchItems,
@@ -1769,6 +1778,7 @@ export const ContextMenu = ({ pttchrome }) => {
         boardMarkReadTarget={boardMarkReadTarget}
         menuAnchor={menuAnchor}
         articleLinkEnabled={articleLinkEnabled}
+        articleLinkRow={articleLinkRow}
         imageUploadEnabled={imageUploadEnabled}
         inputHelperEnabled={inputHelperEnabled}
         liveArticleHelperEnabled={liveArticleHelperEnabled}

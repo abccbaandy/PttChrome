@@ -104,6 +104,24 @@ export const en_US = {
   "cmenu_copyArticleLink": {
     "message": "Copy link to this article"
   },
+  "cmenu_copyArticleLinkRow": {
+    "message": "Copy this article's"
+  },
+  "cmenu_chipPttUrl": {
+    "message": "PTT URL"
+  },
+  "cmenu_chipAid": {
+    "message": "AID"
+  },
+  "cmenu_chipShareLink": {
+    "message": "Share link"
+  },
+  "options_articleCopyLinkRow": {
+    "message": "\"Copy link\" in articles offers three kinds: PTT URL, AID, share link"
+  },
+  "tooltip_articleCopyLinkRow": {
+    "message": "The context menu, the mobile long-press menu and the More panel each get a row of three buttons; tap one to copy that kind. Copied directly when the article's URL line has been read; otherwise PTT is asked once with Q (the list flashes briefly, then the article reopens where you were). Off = only the original \"Copy link to this article\" item."
+  },
   "cmenu_copyArticleAid": {
     "message": "Copy article code (AID)"
   },
