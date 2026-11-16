@@ -52,8 +52,35 @@ vi.mock("../../src/js/prompt_api", () => ({
 beforeAll(() => setupI18n());
 beforeEach(() => window.localStorage.clear());
 
-// 已收成 PrefSelect 的下拉選單（其餘 Select 仍是 inline data，還沒做，不在這裡管）。
-const MEMO_SELECTS = new Set(["termSizeMode", "mobileLayout"]);
+// 已收成 PrefSelect 的下拉選單。不在這裡的只剩快速搜尋自訂列的「比對」（一列一個、
+// 沒有 name，下一步跟自訂列一起收）。
+const MEMO_SELECTS = new Set([
+  "termSizeMode",
+  "mobileLayout",
+  "mobileFontSize",
+  "mouseListClickStart",
+  "mousePushClickStart",
+  "mousePushClickEnd",
+  "mouseMiddleClick",
+  "mouseWheel",
+  "mouseBackNav",
+  "connectionProtocol",
+  "connectionEncoding",
+  "autoLoginDupConn",
+]);
+// 一定會畫出來的那些（連線方式只在支援 SSH 的瀏覽器、自動登入只在該分頁打開時才畫）。
+const ALWAYS_SELECTS = [
+  "connectionEncoding",
+  "mobileFontSize",
+  "mobileLayout",
+  "mouseBackNav",
+  "mouseListClickStart",
+  "mouseMiddleClick",
+  "mousePushClickEnd",
+  "mousePushClickStart",
+  "mouseWheel",
+  "termSizeMode",
+];
 const memoSelects = () =>
   [...counter.selects.keys()].filter((name) => MEMO_SELECTS.has(name));
 
@@ -120,9 +147,36 @@ test("改一個數字欄：只有那一欄重畫，勾選列與其他數字欄�
   ).toEqual([]);
 });
 
-test("一般分頁的 PrefSelect 有被計數（不然上面「不動」會假綠）", () => {
+test("PrefSelect 有被計數（不然上面「不動」會假綠）", () => {
   openGeneralTab();
-  expect(memoSelects().sort()).toEqual(["mobileLayout", "termSizeMode"]);
+  expect(memoSelects().sort()).toEqual(expect.arrayContaining(ALWAYS_SELECTS));
+});
+
+test("改一個數字型下拉選單（滑鼠滾輪）：只有那一顆重畫", () => {
+  openGeneralTab();
+  fireEvent.click(screen.getByRole("tab", { name: i18n("options_mouse") }));
+  counter.selects.clear();
+  counter.renders.clear();
+  // 點開選單選「無」（同 pref_modal_mouse_tab 的 pick）。
+  const input = [
+    ...document.querySelectorAll("input[aria-haspopup='listbox']"),
+  ].find((el) => el.getAttribute("aria-label") === i18n("options_mouseWheel"));
+  fireEvent.click(input);
+  fireEvent.click(
+    [
+      ...document
+        .getElementById(input.getAttribute("aria-controls"))
+        .querySelectorAll("[role='option']"),
+    ].find((el) => el.textContent === i18n("options_none")),
+  );
+  expect(input).toHaveValue(i18n("options_none"));
+  expect(memoSelects()).toEqual(["mouseWheel"]);
+  // 平滑捲動掛在滾輪底下（disabled={!mouseWheel}）⇒ 它本來就該跟著重畫，其他勾選列不動。
+  expect(
+    [...counter.renders.keys()].filter(
+      (name) => !name.startsWith("quickSearchBuiltin-"),
+    ),
+  ).toEqual(["mouseWheelSmoothScroll"]);
 });
 
 // 已收成 PrefHotkey／PrefText／PrefTextarea 的欄位（其餘 TextInput 帶額外屬性，還沒做）。
@@ -140,6 +194,10 @@ const MEMO_TEXTS = new Set([
   "titleBlacklist",
   "followList",
   "followTitleList",
+  "imageUploadToken",
+  "autoLoginUser",
+  "autoLoginPassword",
+  "autoLoginOtpSecret",
 ]);
 const memoTexts = () =>
   [...counter.texts.keys()].filter((name) => MEMO_TEXTS.has(name));
@@ -176,4 +234,27 @@ test("在黑名單打字：只有黑名單那一格重畫", () => {
       (name) => !name.startsWith("quickSearchBuiltin-"),
     ),
   ).toEqual([]);
+});
+
+test("自動登入分頁打帳號：只有帳號欄重畫，密碼／2FA 欄與下拉選單不動", () => {
+  openGeneralTab();
+  fireEvent.click(
+    screen.getByRole("tab", { name: i18n("options_autoLoginTab") }),
+  );
+  const user = document.querySelector('input[name="autoLoginUser"]');
+  expect(user).not.toBeNull();
+  // 三個憑證欄＋重複連線下拉都有被計數（不然「不動」會假綠）。
+  expect(
+    ["autoLoginUser", "autoLoginPassword", "autoLoginOtpSecret"].every((n) =>
+      counter.texts.has(n),
+    ),
+  ).toBe(true);
+  expect(counter.selects.has("autoLoginDupConn")).toBe(true);
+
+  counter.texts.clear();
+  counter.selects.clear();
+  fireEvent.change(user, { target: { value: "someone" } });
+  expect(user).toHaveValue("someone");
+  expect(memoTexts()).toEqual(["autoLoginUser"]);
+  expect(memoSelects()).toEqual([]);
 });
