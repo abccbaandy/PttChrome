@@ -11,6 +11,7 @@ import { PrefModal } from "../../src/components/ContextMenu/PrefModal";
 import { GENERAL_GROUPS, groupTitleByKey } from "../../src/js/pref_groups";
 import {
   PREF_SEARCH_ITEMS,
+  prefSectionItems,
   searchPrefSettings,
 } from "../../src/js/pref_search";
 import { setupI18n, i18n } from "../../src/js/i18n";
@@ -146,6 +147,35 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     }
     // 一般分區幾乎都是勾選列；少到這個數字代表掃描本身壞了。
     expect(checked).toBeGreaterThan(30);
+  });
+
+  // 架構 review A7 第十三步：「一般」分區由索引畫出（PrefModal.jsx#PrefIndexRows）。
+  // 索引的順序就是畫面順序；sub 的格子在縮排區裡；前置鏈關掉的熱鍵反灰。
+  test("由索引畫出：一般分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
+    openModal();
+    await mounted();
+    const general = document.querySelector(
+      '[data-pref-anchor="section:options_general"]',
+    );
+    const shown = [...general.querySelectorAll("[data-pref-anchor]")].map(
+      (el) => el.dataset.prefAnchor,
+    );
+    const items = prefSectionItems("options_general");
+    expect(shown).toEqual(items.map((it) => it.key));
+    for (const it of items) {
+      const el = general.querySelector(`[data-pref-anchor="${it.key}"]`);
+      expect(!!el.closest(".PrefModal__SubOptions"), it.key).toBe(!!it.sub);
+    }
+    expect(items.some((it) => it.sub)).toBe(true);
+
+    const input = (key) => document.querySelector(`input[name="${key}"]`);
+    expect(input("commandPaletteKey").disabled).toBe(false);
+    expect(input("aidNavBackKey").disabled).toBe(false);
+    fireEvent.click(input("enableCommandPalette"));
+    await vi.waitFor(() =>
+      expect(input("commandPaletteKey").disabled).toBe(true),
+    );
+    expect(input("aidNavBackKey").disabled).toBe(false);
   });
 
   test("安全模式開著：要蓋掉的每一項在設定頁都反灰；關掉就恢復", async () => {
