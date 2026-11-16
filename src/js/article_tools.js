@@ -11,6 +11,7 @@
 //      不推動終端機（docs/terminal-size.md LOCKED）。
 
 import { STORAGE_KEYS } from './user_data_keys';
+import { readFlag, writeFlag } from './user_data';
 import { parseArticleHeader, mentionsUser } from './comment_parse';
 import { parseCommentLine, parseModernCommentLine } from './agent_parse';
 import { modernCommentBodyText } from './comment_parse';
@@ -135,20 +136,12 @@ function enabled() {
 }
 
 function readCollapsed() {
-  try {
-    return window.localStorage.getItem(ARTICLE_TOOLS_COLLAPSED_KEY) === '1';
-  } catch (e) {
-    return false;
-  }
+  return readFlag('articleToolsCollapsed');
 }
 
 function writeCollapsed(v) {
-  try {
-    if (v) window.localStorage.setItem(ARTICLE_TOOLS_COLLAPSED_KEY, '1');
-    else window.localStorage.removeItem(ARTICLE_TOOLS_COLLAPSED_KEY);
-  } catch (e) {
-    // 無痕視窗／被擋：只記在這一頁。
-  }
+  // 無痕視窗／被擋：只記在這一頁（user_data.writeFlag 的契約）。
+  writeFlag('articleToolsCollapsed', !!v);
 }
 
 const EMPTY = { author: null, stats: { push: 0, boo: 0, arrow: 0, modern: 0 }, comments: [], users: [], images: [], mentions: [] };

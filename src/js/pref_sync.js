@@ -5,10 +5,10 @@
 //
 // SDK loading: npm modular SDK behind dynamic import() — Vite/Rolldown splits it
 // into a lazy chunk, so nothing is downloaded until the user signs in (or
-// has signed in before — see SYNC_FLAG_KEY). Tests run the real SDK against
-// the local Firebase Emulator Suite (yarn test:integration), not a fake.
+// has signed in before — see the prefSyncEnabled flag). Tests run the real SDK
+// against the local Firebase Emulator Suite (yarn test:integration), not a fake.
 
-import { STORAGE_KEYS } from "./user_data_keys";
+import { readFlag, writeFlag } from "./user_data";
 import { FIREBASE_CONFIG, RECAPTCHA_SITE_KEY } from "./firebase_config";
 import {
   DEFAULT_PREFS,
@@ -23,10 +23,10 @@ import {
 } from "./pref_sync_logic";
 import { authenticateGoogle, clearGoogleSignInState } from "./google_sign_in";
 
-// Set after the first successful sign-in so the next startup knows to load
-// the SDK and restore the session; cleared on sign-out. Keeping it separate
-// from the prefs blob means signed-out users never pay the SDK download.
-const SYNC_FLAG_KEY = STORAGE_KEYS.prefSyncEnabled;
+// 旗標 prefSyncEnabled（user_data_keys.js）：Set after the first successful
+// sign-in so the next startup knows to load the SDK and restore the session;
+// cleared on sign-out. Keeping it separate from the prefs blob means
+// signed-out users never pay the SDK download.
 
 let loadPromise = null;
 // { app, auth, db, authM, fsM } once loadPromise resolves; savePrefs reads it
@@ -303,11 +303,7 @@ export const onAuthState = cb => {
 // e2e/guest path stays free of any Firebase network traffic. Cloud values are
 // delivered through the callback registered via registerOnCloudValues.
 export const startIfPreviouslySignedIn = () => {
-  try {
-    if (window.localStorage.getItem(SYNC_FLAG_KEY) !== "1") return;
-  } catch (e) {
-    return;
-  }
+  if (!readFlag("prefSyncEnabled")) return;
   (async () => {
     try {
       await init();
@@ -334,9 +330,7 @@ export const startIfPreviouslySignedIn = () => {
 export const signIn = async (onCloudValues, authenticate) => {
   const f = await init();
   await (authenticate || authenticateGoogle)(f);
-  try {
-    window.localStorage.setItem(SYNC_FLAG_KEY, "1");
-  } catch (e) {}
+  writeFlag("prefSyncEnabled", true);
   await waitForUser();
   const values = await attachSnapshotListener();
   if (onCloudValues) onCloudValues(values);
@@ -348,9 +342,7 @@ export const signIn = async (onCloudValues, authenticate) => {
 // auth does, or the open stream errors with permission-denied.
 export const signOut = async () => {
   detachSnapshotListener();
-  try {
-    window.localStorage.removeItem(SYNC_FLAG_KEY);
-  } catch (e) {}
+  writeFlag("prefSyncEnabled", false);
   clearGoogleSignInState();
   if (!loadPromise) return;
   const f = await init();
