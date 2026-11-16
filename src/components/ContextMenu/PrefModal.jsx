@@ -414,6 +414,70 @@ const PrefSection = ({ legendKey, children, ...rest }) => {
   );
 };
 
+// 快速搜尋自訂項目的一列（A7）。entry 是 values.quickSearchCustom 裡的那個物件：
+// onQuickSearchCustomChange 只替換被改的那一列（其他列物件不變）⇒ memo 擋得住，
+// 改一列只重畫那一列。onChange／onDelete 是 PrefModal 的穩定 callback（帶 id）。
+const QUICK_SEARCH_MATCH_OPTIONS = [
+  [MATCH_ANY, "options_quickSearchMatchAny"],
+  [MATCH_DIGITS, "options_quickSearchMatchDigits"],
+];
+const QuickSearchCustomRow = memo(({ entry: c, onChange, onDelete }) => {
+  const matchData = useMemo(
+    () =>
+      QUICK_SEARCH_MATCH_OPTIONS.map(([v, k]) => ({
+        value: v,
+        label: i18n(k),
+      })),
+    [],
+  );
+  // 整列空白＝剛按下「新增」還沒填，不要馬上噴紅字（關閉時會被
+  // pruneQuickSearchEntries 丟掉）。
+  const touched = !!(
+    String(c.name || "").trim() || String(c.urlTemplate || "").trim()
+  );
+  const err = touched ? validateQuickSearchEntry(c) : null;
+  return (
+    <div className="PrefModal__QuickSearchRow">
+      <Checkbox
+        checked={c.enabled !== false}
+        aria-label={i18n("options_quickSearchEnabled")}
+        onChange={(e) => onChange(c.id, { enabled: !!e.target.checked })}
+      />
+      <TextInput
+        label={i18n("options_quickSearchName")}
+        value={c.name}
+        error={err === "quicksearch_err_name" ? i18n(err) : null}
+        onChange={(e) => onChange(c.id, { name: e.target.value })}
+        className="PrefModal__QuickSearchRow__Name"
+      />
+      <TextInput
+        label={i18n("options_quickSearchUrl")}
+        value={c.urlTemplate}
+        placeholder="https://example.com/search?q=%s"
+        error={err === "quicksearch_err_url" ? i18n(err) : null}
+        onChange={(e) => onChange(c.id, { urlTemplate: e.target.value })}
+        className="PrefModal__QuickSearchRow__Url"
+      />
+      <Select
+        label={i18n("options_quickSearchMatch")}
+        value={c.match === MATCH_DIGITS ? MATCH_DIGITS : MATCH_ANY}
+        allowDeselect={false}
+        onChange={(val) => onChange(c.id, { match: val })}
+        data={matchData}
+        className="PrefModal__QuickSearchRow__Match"
+      />
+      <ActionIcon
+        variant="subtle"
+        color="red"
+        aria-label={i18n("options_quickSearchDelete")}
+        onClick={() => onDelete(c.id)}
+      >
+        ✕
+      </ActionIcon>
+    </div>
+  );
+});
+
 // 「一般」分區裡的段落小標（P94，段落定義在 js/pref_groups.js）。必須緊接在該段
 // first 那一項前面（守護 tests/unit/pref_groups.test.jsx）。
 const PrefGroupHeading = ({ id }) => {
@@ -874,6 +938,26 @@ export const PrefModal = ({
     },
     [],
   );
+
+  // 內建快速搜尋那幾列的標題（名稱＋灰字網址樣板）是 JSX：每次 render 新建就讓
+  // PrefCheckbox 的 memo 失效 ⇒ 建一次就好（內容只跟語系有關，開著設定頁不會換語系）。
+  const builtinQuickSearchLabels = useMemo(() => {
+    const out = {};
+    for (const b of BUILTIN_QUICK_SEARCH) {
+      out[b.id] = (
+        <>
+          {i18n(b.nameKey)}
+          <Text span size="xs" c="dimmed" ml="xs">
+            {b.urlTemplate}
+            {b.match === MATCH_DIGITS
+              ? ` (${i18n("options_quickSearchMatchDigits")})`
+              : ""}
+          </Text>
+        </>
+      );
+    }
+    return out;
+  }, []);
 
   const onQuickSearchCustomChange = useCallback((id, patch) => {
     setValues((v) => ({
@@ -2588,93 +2672,19 @@ export const PrefModal = ({
                     }
                     onChange={onQuickSearchBuiltinToggle}
                   >
-                    {i18n(b.nameKey)}
-                    <Text span size="xs" c="dimmed" ml="xs">
-                      {b.urlTemplate}
-                      {b.match === MATCH_DIGITS
-                        ? ` (${i18n("options_quickSearchMatchDigits")})`
-                        : ""}
-                    </Text>
+                    {builtinQuickSearchLabels[b.id]}
                   </PrefCheckbox>
                 ))}
               </PrefSection>
               <PrefSection legendKey="options_quickSearchCustom">
-                {(values.quickSearchCustom || []).map((c) => {
-                  // 整列空白＝剛按下「新增」還沒填，不要馬上噴紅字（關閉時會被
-                  // pruneQuickSearchEntries 丟掉）。
-                  const touched = !!(
-                    String(c.name || "").trim() ||
-                    String(c.urlTemplate || "").trim()
-                  );
-                  const err = touched ? validateQuickSearchEntry(c) : null;
-                  return (
-                    <div className="PrefModal__QuickSearchRow" key={c.id}>
-                      <Checkbox
-                        checked={c.enabled !== false}
-                        aria-label={i18n("options_quickSearchEnabled")}
-                        onChange={(e) =>
-                          onQuickSearchCustomChange(c.id, {
-                            enabled: !!e.target.checked,
-                          })
-                        }
-                      />
-                      <TextInput
-                        label={i18n("options_quickSearchName")}
-                        value={c.name}
-                        error={
-                          err === "quicksearch_err_name" ? i18n(err) : null
-                        }
-                        onChange={(e) =>
-                          onQuickSearchCustomChange(c.id, {
-                            name: e.target.value,
-                          })
-                        }
-                        className="PrefModal__QuickSearchRow__Name"
-                      />
-                      <TextInput
-                        label={i18n("options_quickSearchUrl")}
-                        value={c.urlTemplate}
-                        placeholder="https://example.com/search?q=%s"
-                        error={err === "quicksearch_err_url" ? i18n(err) : null}
-                        onChange={(e) =>
-                          onQuickSearchCustomChange(c.id, {
-                            urlTemplate: e.target.value,
-                          })
-                        }
-                        className="PrefModal__QuickSearchRow__Url"
-                      />
-                      <Select
-                        label={i18n("options_quickSearchMatch")}
-                        value={
-                          c.match === MATCH_DIGITS ? MATCH_DIGITS : MATCH_ANY
-                        }
-                        allowDeselect={false}
-                        onChange={(val) =>
-                          onQuickSearchCustomChange(c.id, { match: val })
-                        }
-                        data={[
-                          {
-                            value: MATCH_ANY,
-                            label: i18n("options_quickSearchMatchAny"),
-                          },
-                          {
-                            value: MATCH_DIGITS,
-                            label: i18n("options_quickSearchMatchDigits"),
-                          },
-                        ]}
-                        className="PrefModal__QuickSearchRow__Match"
-                      />
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        aria-label={i18n("options_quickSearchDelete")}
-                        onClick={() => onQuickSearchCustomDelete(c.id)}
-                      >
-                        ✕
-                      </ActionIcon>
-                    </div>
-                  );
-                })}
+                {(values.quickSearchCustom || []).map((c) => (
+                  <QuickSearchCustomRow
+                    key={c.id}
+                    entry={c}
+                    onChange={onQuickSearchCustomChange}
+                    onDelete={onQuickSearchCustomDelete}
+                  />
+                ))}
                 <Button variant="default" onClick={onQuickSearchCustomAdd}>
                   {i18n("options_quickSearchAdd")}
                 </Button>
