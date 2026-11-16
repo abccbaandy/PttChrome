@@ -23,7 +23,9 @@ vi.mock("@mantine/core", async (importOriginal) => {
   const mod = await importOriginal();
   const counting = (Real, map) =>
     Object.assign((props) => {
-      map.set(props.name, (map.get(props.name) || 0) + 1);
+      // 沒有 name 的（快速搜尋自訂列、設定搜尋框）以 label／aria-label 計。
+      const key = props.name ?? (props["aria-label"] || props.label);
+      map.set(key, (map.get(key) || 0) + 1);
       return <Real {...props} />;
     }, Real);
   return {
@@ -113,11 +115,9 @@ test("勾一格：只有那一格的 Checkbox 重畫，其他勾選列不動", (
   fireEvent.click(box);
   expect(box).not.toBeChecked();
 
-  // 快速搜尋分頁的三個內建項目 children 是 JSX（網址樣板的灰字），每次都是新元素 ⇒
-  // memo 擋不住，只有三列，刻意不管。
-  const rerendered = [...counter.renders.keys()].filter(
-    (name) => !name.startsWith("quickSearchBuiltin-"),
-  );
+  // 快速搜尋分頁的內建項目（children 是名稱＋灰字網址樣板的 JSX）也算在內：標題在
+  // PrefModal 裡只建一次，memo 照樣擋得住。
+  const rerendered = [...counter.renders.keys()];
   // enablePicPreview 沒有子開關 ⇒ 除了它自己，一格都不該重畫。
   expect(rerendered).toEqual(["enablePicPreview"]);
   // 數字欄、PrefSelect 管的下拉選單一格都不動。
@@ -140,11 +140,7 @@ test("改一個數字欄：只有那一欄重畫，勾選列與其他數字欄�
 
   expect([...counter.numbers.keys()]).toEqual(["antiIdleTime"]);
   expect(memoSelects()).toEqual([]);
-  expect(
-    [...counter.renders.keys()].filter(
-      (name) => !name.startsWith("quickSearchBuiltin-"),
-    ),
-  ).toEqual([]);
+  expect([...counter.renders.keys()]).toEqual([]);
 });
 
 test("PrefSelect 有被計數（不然上面「不動」會假綠）", () => {
@@ -172,11 +168,7 @@ test("改一個數字型下拉選單（滑鼠滾輪）：只有那一顆重畫",
   expect(input).toHaveValue(i18n("options_none"));
   expect(memoSelects()).toEqual(["mouseWheel"]);
   // 平滑捲動掛在滾輪底下（disabled={!mouseWheel}）⇒ 它本來就該跟著重畫，其他勾選列不動。
-  expect(
-    [...counter.renders.keys()].filter(
-      (name) => !name.startsWith("quickSearchBuiltin-"),
-    ),
-  ).toEqual(["mouseWheelSmoothScroll"]);
+  expect([...counter.renders.keys()]).toEqual(["mouseWheelSmoothScroll"]);
 });
 
 // 已收成 PrefHotkey／PrefText／PrefTextarea 的欄位（其餘 TextInput 帶額外屬性，還沒做）。
@@ -229,11 +221,7 @@ test("在黑名單打字：只有黑名單那一格重畫", () => {
   fireEvent.change(area, { target: { value: "someone" } });
   expect(area).toHaveValue("someone");
   expect(memoTexts()).toEqual(["blacklist"]);
-  expect(
-    [...counter.renders.keys()].filter(
-      (name) => !name.startsWith("quickSearchBuiltin-"),
-    ),
-  ).toEqual([]);
+  expect([...counter.renders.keys()]).toEqual([]);
 });
 
 test("自動登入分頁打帳號：只有帳號欄重畫，密碼／2FA 欄與下拉選單不動", () => {
@@ -257,4 +245,60 @@ test("自動登入分頁打帳號：只有帳號欄重畫，密碼／2FA 欄與�
   expect(user).toHaveValue("someone");
   expect(memoTexts()).toEqual(["autoLoginUser"]);
   expect(memoSelects()).toEqual([]);
+});
+
+test("快速搜尋自訂項目：改一列的名稱只重畫那一列，其他列與內建項目不動", () => {
+  window.localStorage.setItem(
+    "pttchrome.pref.v1",
+    JSON.stringify({
+      values: {
+        quickSearchCustom: [
+          {
+            id: "c1",
+            name: "甲",
+            urlTemplate: "https://a.test/?q=%s",
+            match: "any",
+            enabled: true,
+          },
+          {
+            id: "c2",
+            name: "乙",
+            urlTemplate: "https://b.test/?q=%s",
+            match: "any",
+            enabled: true,
+          },
+          {
+            id: "c3",
+            name: "丙",
+            urlTemplate: "https://c.test/?q=%s",
+            match: "any",
+            enabled: true,
+          },
+        ],
+      },
+    }),
+  );
+  openGeneralTab();
+  fireEvent.click(
+    screen.getByRole("tab", { name: i18n("options_quickSearch") }),
+  );
+  const names = screen.getAllByLabelText(i18n("options_quickSearchName"));
+  expect(names).toHaveLength(3);
+  // 三列都有被計數（不然下面的「只重畫一列」會假綠）。
+  expect(counter.texts.get(i18n("options_quickSearchName"))).toBe(3);
+  expect(counter.texts.get(i18n("options_quickSearchUrl"))).toBe(3);
+
+  counter.texts.clear();
+  counter.renders.clear();
+  counter.selects.clear();
+  fireEvent.change(names[1], { target: { value: "乙改" } });
+  expect(names[1]).toHaveValue("乙改");
+  // 只有第二列重畫：名稱＋網址兩個 TextInput、一個比對 Select、一個啟用勾勾。
+  expect(counter.texts.get(i18n("options_quickSearchName"))).toBe(1);
+  expect(counter.texts.get(i18n("options_quickSearchUrl"))).toBe(1);
+  expect(counter.selects.get(i18n("options_quickSearchMatch"))).toBe(1);
+  // 勾選列只有這一列的啟用勾勾（內建項目三列不動）。
+  expect([...counter.renders.entries()]).toEqual([
+    [i18n("options_quickSearchEnabled"), 1],
+  ]);
 });
