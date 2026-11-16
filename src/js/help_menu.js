@@ -199,7 +199,7 @@ export function HelpMenuController(core, termBuf, opts) {
   this.onChange = null;
   this._reset();
   if (termBuf && termBuf.addEventListener)
-    termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
+    termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this), { owner: 'helpMenu' });
 }
 
 HelpMenuController.prototype = {

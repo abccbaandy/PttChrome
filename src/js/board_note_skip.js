@@ -193,7 +193,7 @@ export function BoardNoteSkip(core, view, termBuf, queue) {
   // queue 的 onSend 立起、noteSent 消費：分辨「這串 bytes 是我們送的」。
   this._ownSend = false;
   if (termBuf && termBuf.addEventListener)
-    termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
+    termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this), { owner: 'boardNoteSkip' });
   // 代按的那一鍵在線上時線路歸我們。使用者此時自己按鍵會先收掉畫面，我們的鍵就落進
   // 文章列表（← 會直接離板）。只擋 in-flight 這一個來回（busy），arm 等待期不擋。
   const self = this;

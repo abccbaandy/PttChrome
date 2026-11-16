@@ -184,9 +184,13 @@ export function CommentBar(core) {
   this._listSuppressed = false;
   const self = this;
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self.refresh();
-    });
+    core.buf.addEventListener(
+      'screenSettled',
+      function() {
+        self.refresh();
+      },
+      { owner: 'commentBar' }
+    );
   if (typeof window !== 'undefined' && window.addEventListener)
     window.addEventListener('resize', function() {
       self.refresh();

@@ -52,14 +52,31 @@ Event.mixin = function(obj, opts) {
   if (opts && opts.isolate) obj._isolateListeners = true;
 };
 
-// opts（只對 isolate 的物件有意義）：{ feature: 設定鍵（提示用名稱）, disable: 出錯時把功能收乾淨 }。
+// opts（只對 isolate 的物件有意義）：{ feature: 設定鍵（提示用名稱）, disable: 出錯時把功能收乾淨,
+//   owner: 誰掛的（App 上的屬性名，例 'listSession'） }。
+// owner 只是標籤：給 listenerOwners 讀派發順序（App 建構子裡「順序有意義」的那幾段由
+// tests/e2e/offline/listener_order.offline.spec.js 守，架構 review A6）、出錯時一起記進 onError。
 Event.prototype.addEventListener = function(type, listener, opts) {
   this._listeners = this._listeners || {};
   (this._listeners[type] = this._listeners[type] || []).push(listener);
-  if (opts && (opts.feature || opts.disable)) {
+  if (opts && (opts.feature || opts.disable || opts.owner)) {
     this._listenerMeta = this._listenerMeta || new Map();
-    this._listenerMeta.set(listener, { feature: opts.feature || null, disable: opts.disable || null });
+    this._listenerMeta.set(listener, {
+      feature: opts.feature || null,
+      disable: opts.disable || null,
+      owner: opts.owner || null
+    });
   }
+};
+
+// 某個事件目前的派發順序，每個監聽者回它的 owner（沒標的是 null）。
+Event.prototype.listenerOwners = function(type) {
+  var fns = (this._listeners && this._listeners[type]) || [];
+  var meta = this._listenerMeta;
+  return fns.map(function(fn) {
+    var m = meta && meta.get(fn);
+    return (m && m.owner) || null;
+  });
 };
 
 Event.prototype.dispatchEvent = function(e) {

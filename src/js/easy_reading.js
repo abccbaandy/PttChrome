@@ -542,7 +542,7 @@ export function EasyReading(core, view, termBuf) {
   // while pageState stays 3), catching the case where the per-frame loop stalled
   // because the cursor parked on the status row in a content-less (changed=false)
   // frame _onChanged never sees. See _onScreenSettled and docs/easy-reading.md.
-  this._termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this));
+  this._termBuf.addEventListener('screenSettled', this._onScreenSettled.bind(this), { owner: 'easyReading' });
 };
 
 // 只在 pageState 0 時才讀畫面：其餘狀態這個判定不會被用到（settledFromListOrMenu
