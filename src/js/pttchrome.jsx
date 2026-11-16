@@ -818,6 +818,8 @@ App.prototype.onClose = function(e) {
     unmountFrom(container);
     this.enableProxyAndReconnect();
   };
+  // 斷線提示攔鍵時要知道「設定頁這類對話框是不是開著」（Esc 要留給對話框關自己）。
+  const isModalOpen = () => this.modalShown;
   const container = document.getElementById('reactAlert');
   // 「登出並關閉 App」：上面的收攤（閱讀紀錄、列表 session…）照做完，App 直接結束、不畫提示。
   // 關不了（不該發生：按鈕只在 androidCanQuit 時出現）就退回一般的「已登出」。
@@ -828,7 +830,7 @@ App.prototype.onClose = function(e) {
   if (loggedOut) {
     // 正常登出：不是連線失敗，不跑診斷，只給「已登出／重新連線」。
     renderInto(container, <MantineRoot><ConnectionAlert
-      onDismiss={onDismiss} loggedOut /></MantineRoot>);
+      onDismiss={onDismiss} loggedOut isModalOpen={isModalOpen} /></MantineRoot>);
     this.updateTabIcon('disconnect');
     return;
   }
@@ -838,7 +840,7 @@ App.prototype.onClose = function(e) {
   renderInto(container, <MantineRoot><ConnectionAlert
     onDismiss={onDismiss} diagnose={loginBlocked ? undefined : diagnose}
     onEnableProxy={onEnableProxy} onSwitchProtocol={onSwitchProtocol}
-    loginBlocked={loginBlocked} /></MantineRoot>);
+    loginBlocked={loginBlocked} isModalOpen={isModalOpen} /></MantineRoot>);
   this.updateTabIcon('disconnect');
 };
 

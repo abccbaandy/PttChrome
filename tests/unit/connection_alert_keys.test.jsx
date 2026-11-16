@@ -142,6 +142,29 @@ describe("斷線提示：有對話框開著時 Esc 一律放行（讓對話框�
     expect(fireEvent.keyDown(t, { key: "Escape", keyCode: 27 })).toBe(false);
   });
 
+  test("App 說對話框開著（modalShown）：#t 上的 Esc 放行", () => {
+    const t = mountTerminalInput();
+    render(
+      <MantineProvider>
+        <ConnectionAlert onDismiss={onDismiss} isModalOpen={() => true} />
+      </MantineProvider>,
+    );
+    expect(fireEvent.keyDown(t, { key: "Escape", keyCode: 27 })).toBe(true);
+  });
+
+  // 對話框關掉後的退場動畫期間 DOM 還在，但 App 的 modalShown 已經是 false：
+  // 那時終端機已經在收鍵，#t 上的 Esc 要照擋，不能因為 DOM 還在就放行。
+  test("對話框在退場動畫（DOM 還在、App 說已關）：#t 上的 Esc 照擋", () => {
+    const t = mountTerminalInput();
+    render(
+      <MantineProvider>
+        <ConnectionAlert onDismiss={onDismiss} isModalOpen={() => false} />
+      </MantineProvider>,
+    );
+    mountOpenModal();
+    expect(fireEvent.keyDown(t, { key: "Escape", keyCode: 27 })).toBe(false);
+  });
+
   test("對話框開著時，#t 上的其他按鍵照擋", () => {
     const t = mountTerminalInput();
     mountAlert();
