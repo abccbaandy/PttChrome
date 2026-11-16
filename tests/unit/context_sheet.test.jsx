@@ -84,16 +84,16 @@ test("點項目走同一個 handler；反灰項目不能點", async () => {
   expect(handlers.onLongPushClick).toHaveBeenCalledTimes(1);
 });
 
-// P93：長按選單的「複製本篇連結」一列三顆：三顆都畫出來、點了走同一個 handler；
-// 沒有 hover ⇒ 預覽行固定是第一顆（PTT 網址）的。
-test("複製本篇連結一列三顆：預覽是 PTT 網址、點哪顆送哪個 key", async () => {
-  const PTT = "https://www.ptt.cc/bbs/Test/M.1.A.2.html";
+// P93／P95：長按選單的「複製本篇連結」一區三列：三種都畫出來、各帶自己的預覽（手機沒有
+// hover，不能只給第一種），長網址中段省略保住檔名；點了走同一個 handler。
+test("複製本篇連結三列：每種各自看得到預覽、點哪列送哪個 key", async () => {
+  const PTT = "https://www.ptt.cc/bbs/LongBoardName/M.1786465191.A.DBD.html";
   const { handlers } = setup({
     articleLinkRow: true,
     previews: {
       copyArticlePttUrl: PTT,
       copyArticleCode: "#1abcDEFG (Test)",
-      copyArticleLink: "https://example/#Test/1abcDEFG",
+      copyArticleLink: null,
     },
   });
   const row = await vi.waitFor(() => {
@@ -101,13 +101,24 @@ test("複製本篇連結一列三顆：預覽是 PTT 網址、點哪顆送哪個
     expect(el).not.toBeNull();
     return el;
   });
-  expect(row.querySelector(".mobileSheetItemPreview").textContent).toBe(PTT);
-  const chips = [...row.querySelectorAll("button.mobileSheetChip")];
+  const chips = [...row.querySelectorAll("button")];
   expect(chips.map((b) => b.getAttribute("data-cmenu"))).toEqual([
     "copyArticlePttUrl",
     "copyArticleCode",
     "copyArticleLink",
   ]);
+  const previewOf = (b) => {
+    const p = b.querySelector(".mobileSheetItemPreview");
+    return p ? p.textContent : null;
+  };
+  // 長網址：中段省略，結尾的檔名還在。
+  expect(previewOf(chips[0])).toMatch(
+    /^https:\/\/www\.pt.*…1786465191\.A\.DBD\.html$/,
+  );
+  expect(previewOf(chips[0]).length).toBeLessThanOrEqual(36);
+  expect(previewOf(chips[1])).toBe("#1abcDEFG (Test)");
+  // 讀不到的那種只畫名稱，照樣點得到。
+  expect(previewOf(chips[2])).toBeNull();
   fireEvent.click(chips[1]);
   expect(handlers.onMenuSelect).toHaveBeenCalledWith(
     "copyArticleCode",

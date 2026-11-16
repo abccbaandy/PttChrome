@@ -9,6 +9,7 @@ import {
   IconBan,
 } from "@tabler/icons-react";
 import MobileSheet from "../MobileSheet";
+import LinkRows from "../MobileSheet/LinkRows";
 import { buildContextMenuEntries } from "./context_menu_entries";
 import { floatMenuPlacement } from "../../js/sheet_placement";
 import { i18n } from "../../js/i18n";
@@ -88,33 +89,20 @@ export const ContextSheet = (props) => {
         it.type === "divider" ? (
           <div key={it.key} className="mobileSheetDivider" role="separator" />
         ) : it.type === "chips" ? (
-          // P93：一列三顆（手機長按選單也給，跟「更多」面板那塊同一組動作）。
-          // 沒有 hover ⇒ 預覽固定給第一顆（PTT 網址：板名＋檔名一眼看得出是哪篇）。
-          <div
+          // P93 的一列三顆：手機沒有 hover ⇒ 攤成三列、各帶自己的預覽（P95，跟「更多」面板
+          // 那塊同一個元件）。
+          <LinkRows
             key={it.key}
-            className="mobileSheetChipRow"
-            role="group"
-            aria-label={it.label}
+            label={it.label}
             data-cmenu={it.key}
-          >
-            <span className="mobileSheetChipLabel">{it.label}</span>
-            {it.preview ? (
-              <span className="mobileSheetItemPreview">{it.preview}</span>
-            ) : null}
-            <div className="mobileSheetChips">
-              {it.chips.map((c) => (
-                <button
-                  key={c.key}
-                  type="button"
-                  className="mobileSheetChip pttRipple"
-                  data-cmenu={c.key}
-                  onClick={c.onClick}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
+            items={it.chips.map((c) => ({
+              key: c.key,
+              label: c.label,
+              preview: c.preview,
+              onClick: c.onClick,
+              attrs: { "data-cmenu": c.key },
+            }))}
+          />
         ) : (
           <button
             key={it.key}

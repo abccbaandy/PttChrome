@@ -277,6 +277,36 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
   });
 
+  // P95：手機沒有 hover ⇒ 三種各自帶一行預覽（開面板當下從畫面上的文章網址列算，零送鍵），
+  // 網址中段省略、保住尾巴的檔名。
+  test("更多：「複製本篇連結」三種各自看得到預覽", async () => {
+    const core = makeCore({ context: ARTICLE });
+    core.deepLinkController = { copyCurrentPostLink: vi.fn(() => true) };
+    core.aidNavigation = { findLocalPostAid: vi.fn(() => ({ board: "Test", aid: "1abcDEFG" })) };
+    renderBar(core);
+    await openMore();
+    const items = [...document.querySelectorAll("[data-copy-link-row] [data-copy-link]")];
+    const previews = items.map((b) => b.querySelector(".mobileSheetItemPreview")?.textContent ?? null);
+    expect(previews[0]).toMatch(/^https:\/\/www\.pt.*…\d+\.A\.[0-9A-F]{3}\.html$/);
+    expect(previews[1]).toBe("#1abcDEFG (Test)");
+    // 分享連結（本站網址＋同一個檔名）。
+    expect(previews[2]).toMatch(/^https?:\/\/.*…\d+\.A\.[0-9A-F]{3}\.html$/);
+    expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+  });
+
+  test("更多：讀不到本篇代碼 ⇒ 三列只有名稱，照樣點得到", async () => {
+    const core = makeCore({ context: ARTICLE });
+    core.deepLinkController = { copyCurrentPostLink: vi.fn(() => true) };
+    core.aidNavigation = { findLocalPostAid: vi.fn(() => null) };
+    renderBar(core);
+    await openMore();
+    const items = [...document.querySelectorAll("[data-copy-link-row] [data-copy-link]")];
+    expect(items).toHaveLength(3);
+    expect(document.querySelector("[data-copy-link-row] .mobileSheetItemPreview")).toBeNull();
+    fireEvent.click(items[0]);
+    expect(core.deepLinkController.copyCurrentPostLink).toHaveBeenCalledWith("ptt");
+  });
+
   test("更多：不是文章（share false）或開關關掉就沒有「複製本篇連結」", async () => {
     renderBar(makeCore({ context: { ...ARTICLE, share: false } }));
     await openMore();

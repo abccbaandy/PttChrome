@@ -222,8 +222,8 @@ export function buildContextMenuEntries(p) {
     // 文章畫面出現：要靠 Q 資訊框才問得出本篇的 AID。
     // P93：開關開著（預設）畫成一列三顆，點哪顆複製哪種；三顆走同一條 AID 解析。
     // 「分享連結」那顆沿用 copyArticleLink 的 key 與預覽（handler 不變）。
-    // 每顆帶自己的預覽；整列的 preview＝第一顆（PTT 網址）的，給沒有 hover 的手機長按
-    // 選單用（桌機 ChipRow 會隨滑鼠／焦點換成那一顆的）。
+    // 每顆帶自己的預覽：手機長按選單攤成三列各畫各的（P95，MobileSheet/LinkRows）；
+    // 桌機 ChipRow 先顯示整列的 preview（＝第一顆），再隨滑鼠／焦點換成那一顆的。
     if (p.articleLinkEnabled && p.articleLinkRow) {
       const chips = [
         ["copyArticlePttUrl", "cmenu_chipPttUrl"],
