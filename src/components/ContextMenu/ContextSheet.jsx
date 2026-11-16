@@ -89,6 +89,7 @@ export const ContextSheet = (props) => {
           <div key={it.key} className="mobileSheetDivider" role="separator" />
         ) : it.type === "chips" ? (
           // P93：一列三顆（手機長按選單也給，跟「更多」面板那塊同一組動作）。
+          // 沒有 hover ⇒ 預覽固定給第一顆（PTT 網址：板名＋檔名一眼看得出是哪篇）。
           <div
             key={it.key}
             className="mobileSheetChipRow"
@@ -97,6 +98,9 @@ export const ContextSheet = (props) => {
             data-cmenu={it.key}
           >
             <span className="mobileSheetChipLabel">{it.label}</span>
+            {it.preview ? (
+              <span className="mobileSheetItemPreview">{it.preview}</span>
+            ) : null}
             <div className="mobileSheetChips">
               {it.chips.map((c) => (
                 <button

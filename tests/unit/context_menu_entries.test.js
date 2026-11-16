@@ -141,8 +141,31 @@ describe("複製本篇連結一列三顆（P93）", () => {
   const P = {
     ...BASE,
     articleLinkEnabled: true,
-    previews: { copyArticleLink: "https://x/#movie/M.1.A.2.html" },
+    previews: {
+      copyArticleLink: "https://x/#movie/M.1.A.2.html",
+      copyArticlePttUrl: "https://www.ptt.cc/bbs/movie/M.1.A.2.html",
+      copyArticleCode: "#1abc (movie)",
+    },
   };
+
+  test("每顆帶自己的預覽；整列的預覽＝第一顆（PTT 網址）；算不出來是 null", () => {
+    const row = buildContextMenuEntries({ ...P, articleLinkRow: true }).find(
+      (e) => e.key === "copyArticleLinkRow",
+    );
+    expect(row.chips.map((c) => c.preview)).toEqual([
+      P.previews.copyArticlePttUrl,
+      P.previews.copyArticleCode,
+      P.previews.copyArticleLink,
+    ]);
+    expect(row.preview).toBe(P.previews.copyArticlePttUrl);
+    const bare = buildContextMenuEntries({
+      ...P,
+      previews: {},
+      articleLinkRow: true,
+    }).find((e) => e.key === "copyArticleLinkRow");
+    expect(bare.preview).toBeNull();
+    expect(bare.chips.map((c) => c.preview)).toEqual([null, null, null]);
+  });
 
   test("開著：一個 chips 項，三顆依序是 PTT 網址／AID／分享連結，桌機手機都一樣", () => {
     for (const mobile of [false, true]) {
@@ -156,7 +179,6 @@ describe("複製本篇連結一列三顆（P93）", () => {
       expect(entries.find((e) => e.key === "copyArticleLink")).toBeUndefined();
       const row = entries.find((e) => e.key === "copyArticleLinkRow");
       expect(row.type).toBe("chips");
-      expect(row.preview).toBe(P.previews.copyArticleLink);
       expect(row.chips.map((c) => c.key)).toEqual([
         "copyArticlePttUrl",
         "copyArticleCode",

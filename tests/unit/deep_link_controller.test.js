@@ -743,6 +743,17 @@ describe("複製本篇連結：三種格式（P93）", () => {
     expect(written).toEqual([PTT_URL]);
   });
 
+  test("剪貼簿被擋 ⇒ 把內容印在提示裡讓人手抄，AID 用「文章代碼：」字首", async () => {
+    const h = makeHarness({ lastRow: STATUS_ROW });
+    h.nav.localAid = { aid: "1gIeu-3A", board: "movie" };
+    h.ctl._locationHref = () => BASE;
+    h.ctl._clipboard = () => ({ writeText: () => Promise.reject(new Error("denied")) });
+    h.ctl.copyCurrentPostLink("aid");
+    h.ctl.copyCurrentPostLink("ptt");
+    await vi.waitFor(() => expect(h.hints).toHaveLength(2));
+    expect(h.hints).toEqual(["文章代碼：#1gIeu-3A (movie)", "連結：" + PTT_URL]);
+  });
+
   test("沒有看板（站內信／精華區印「不明」）⇒ 三種都不產生、給錯誤提示", () => {
     const h = makeHarness({ lastRow: STATUS_ROW });
     const written = withClipboard(h.ctl);

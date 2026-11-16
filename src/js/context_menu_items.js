@@ -8,6 +8,7 @@
 
 import { formatArticleCode } from "./article_link_target";
 import { buildDeepLink } from "./deep_link";
+import { articleUrl } from "./article_tools";
 
 // 右鍵當下要畫哪一組選項。
 //
@@ -55,6 +56,16 @@ const COPY_TEXT = {
   copyArticleLink: (s, href) =>
     s.currentArticle
       ? buildDeepLink(href, s.currentArticle.board, s.currentArticle.aid)
+      : null,
+  // P93 一列三顆的另外兩顆（「分享連結」那顆就是上面的 copyArticleLink）。與
+  // deep_link_controller._deliverLink 同一組格式函式 ⇒ 預覽＝實際複製的內容。
+  copyArticlePttUrl: s =>
+    s.currentArticle
+      ? articleUrl(s.currentArticle.board, s.currentArticle.aid)
+      : null,
+  copyArticleCode: s =>
+    s.currentArticle && s.currentArticle.board
+      ? formatArticleCode(s.currentArticle)
       : null,
   // 手機推文卡片：長按那一則／整張合併塊（render/comment_card.commentCardCopyText）。
   // 「整段」只在合併塊（count>1）才有意義，單則時與上一項重複，不給。

@@ -222,23 +222,27 @@ export function buildContextMenuEntries(p) {
     // 文章畫面出現：要靠 Q 資訊框才問得出本篇的 AID。
     // P93：開關開著（預設）畫成一列三顆，點哪顆複製哪種；三顆走同一條 AID 解析。
     // 「分享連結」那顆沿用 copyArticleLink 的 key 與預覽（handler 不變）。
-    if (p.articleLinkEnabled && p.articleLinkRow)
+    // 每顆帶自己的預覽；整列的 preview＝第一顆（PTT 網址）的，給沒有 hover 的手機長按
+    // 選單用（桌機 ChipRow 會隨滑鼠／焦點換成那一顆的）。
+    if (p.articleLinkEnabled && p.articleLinkRow) {
+      const chips = [
+        ["copyArticlePttUrl", "cmenu_chipPttUrl"],
+        ["copyArticleCode", "cmenu_chipAid"],
+        ["copyArticleLink", "cmenu_chipShareLink"],
+      ].map(([key, labelKey]) => ({
+        key,
+        label: i18n(labelKey),
+        preview: previews[key] || null,
+        onClick: (e) => p.onMenuSelect(key, e),
+      }));
       out.push({
         type: "chips",
         key: "copyArticleLinkRow",
         label: i18n("cmenu_copyArticleLinkRow"),
-        preview: previews.copyArticleLink,
-        chips: [
-          ["copyArticlePttUrl", "cmenu_chipPttUrl"],
-          ["copyArticleCode", "cmenu_chipAid"],
-          ["copyArticleLink", "cmenu_chipShareLink"],
-        ].map(([key, labelKey]) => ({
-          key,
-          label: i18n(labelKey),
-          onClick: (e) => p.onMenuSelect(key, e),
-        })),
+        preview: chips[0].preview,
+        chips,
       });
-    else if (p.articleLinkEnabled)
+    } else if (p.articleLinkEnabled)
       item(
         "copyArticleLink",
         i18n("cmenu_copyArticleLink"),
