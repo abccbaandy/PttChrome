@@ -10,6 +10,7 @@
 //   3. **只用空白處**：與雙欄閱讀的左欄同一套（split_reader.paneWidthFor），放不下就不出現，
 //      不推動終端機（docs/terminal-size.md LOCKED）。
 
+import { STORAGE_KEYS } from './user_data_keys';
 import { parseArticleHeader, mentionsUser } from './comment_parse';
 import { parseCommentLine, parseModernCommentLine } from './agent_parse';
 import { modernCommentBodyText } from './comment_parse';
@@ -22,7 +23,7 @@ import { HINT_ERROR } from './status_hint';
 import { screenOf, SCREEN_KIND } from './screen_model';
 
 export const ARTICLE_TOOLS_ID = 'articleTools';
-export const ARTICLE_TOOLS_COLLAPSED_KEY = 'pttchrome.articleTools.collapsed.v1';
+export const ARTICLE_TOOLS_COLLAPSED_KEY = STORAGE_KEYS.articleToolsCollapsed;
 // 推文者排行列幾個人。
 export const TOP_USERS = 8;
 // 圖片牆最多幾張（長文的圖可以上百張，全部縮圖等於全部下載）。

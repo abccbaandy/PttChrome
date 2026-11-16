@@ -13,10 +13,11 @@
 // **按「知道了」（小卡是 ✕）才算看過**：在那之前每次回主功能表都在。離開主功能表（包括首頁儀表板
 // 背景抓我的最愛的那一下）只是暫時藏起來（visible:false），清單（items）留著。
 // 只改顯示，一個 byte 都不送給 PTT；卡片不是 modal，鍵盤照常送 PTT。
+import { STORAGE_KEYS } from './user_data_keys';
 import { rowHasTitle, MAIN_MENU } from './screen_titles';
 import { readEffectivePrefs } from './pref_storage';
 
-export const WHATS_NEW_SEEN_KEY = 'pttchrome.whatsNew.seen.v1';
+export const WHATS_NEW_SEEN_KEY = STORAGE_KEYS.whatsNewSeen;
 export const WHATS_NEW_ID = 'whatsNewCard';
 // 卡片收起時最多列幾條名稱，其餘收在「看全部」。
 export const WHATS_NEW_PREVIEW = 3;

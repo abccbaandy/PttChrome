@@ -16,6 +16,7 @@
 // （newestArticleUnread），使用者自己開原生我的最愛時照抄那一頁的 ˇ —— 一個 byte 都不送。
 // 面板的捲動位置是閱讀紀錄的 home 紀錄（readingPosition／requestViewportRestore）。
 
+import { STORAGE_KEYS } from './user_data_keys';
 import { rowHasTitle, MAIN_MENU, BOARD_LIST, parseBoardName, isArticleListTitleRow } from './screen_titles';
 import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { parseListEntry } from './agent_parse';
@@ -40,8 +41,8 @@ import { HINT_ERROR } from './status_hint';
 
 export const HOME_FAV_FETCH_FLAG = 'homeFavFetchInFlight';
 export const HOME_FAV_FETCH_HINT = '正在更新我的最愛，請稍候…';
-export const HOME_FAV_CACHE_KEY = 'pttchrome.homeFavorites.v1';
-export const HOME_RECENT_KEY = 'pttchrome.homeRecentBoards.v1';
+export const HOME_FAV_CACHE_KEY = STORAGE_KEYS.homeFavorites;
+export const HOME_RECENT_KEY = STORAGE_KEYS.homeRecentBoards;
 // 快取多久算新鮮（面板打開時超過就自動重抓一次）。
 export const FAV_TTL_MS = 5 * 60 * 1000;
 // 最多讀幾頁（一頁 20 個）：抓太多頁＝面板開著要等很久，我的最愛通常一兩頁。

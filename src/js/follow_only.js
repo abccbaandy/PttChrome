@@ -12,12 +12,13 @@
 //   3. 整段都被收起時鈕上寫「這一段沒有」，不會只剩一片空白卻不知道為什麼。
 //   4. 切換狀態只存本機（localStorage `pttchrome.followOnly`），不同步；功能開關是 pref
 //      enableFollowOnly（預設開），關注名單是空的或名單開關關著 ⇒ 不出現。
+import { STORAGE_KEYS } from './user_data_keys';
 import { readEffectivePrefs } from './pref_storage';
 import { OWNER_ARTICLE_LIST } from './list_render_owner';
 import { PAGE_STATE } from './screen_model';
 
 export const FOLLOW_ONLY_ID = 'followOnlyChip';
-export const FOLLOW_ONLY_KEY = 'pttchrome.followOnly';
+export const FOLLOW_ONLY_KEY = STORAGE_KEYS.followOnly;
 
 export function isFollowOnlyTarget(el) {
   return !!(el && typeof el.closest === 'function' && el.closest('#' + FOLLOW_ONLY_ID));

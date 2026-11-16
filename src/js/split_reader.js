@@ -13,6 +13,7 @@
 //   3. **只用空白處**：終端機恆 80 欄、水平置中（docs/terminal-size.md LOCKED），左欄只放
 //      在終端機左邊的空白裡，放不下（視窗太窄、字太大、手機）就不出現，不推動終端機。
 
+import { STORAGE_KEYS } from './user_data_keys';
 import { isArticleListTitleRow, parseBoardName } from './screen_titles';
 import { isArticleListFooter, isSubListFooter } from './screen_captions';
 import { parseListEntry } from './agent_parse';
@@ -27,7 +28,7 @@ import { HINT_ERROR } from './status_hint';
 import { PAGE_STATE } from './screen_model';
 
 export const SPLIT_READER_ID = 'splitReader';
-export const SPLIT_COLLAPSED_KEY = 'pttchrome.splitReader.collapsed.v1';
+export const SPLIT_COLLAPSED_KEY = STORAGE_KEYS.splitReaderCollapsed;
 // 左邊空白至少要這麼寬才放左欄（標題折兩行，一行十個中文字上下）。預設的「固定終端機
 // 大小」會把字放大到撐滿視窗，實測（offline e2e，Chromium）常見桌機視窗左邊只剩：
 // 1920×960 → 155px、2560×1300 → 195px、1536×730 → 163px、1366×650 → 158px；

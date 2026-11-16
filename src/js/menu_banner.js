@@ -13,9 +13,10 @@
 // 展開時：那一區照舊縮小格線，標題列（row 0，平常收起）改畫一條「收起 ▴」。
 // 切換只存本機（localStorage），不同步、不送鍵；功能開關是 pref。
 
+import { STORAGE_KEYS } from './user_data_keys';
 import { MENU_BANNER_LAST_ROW } from './menu_items';
 
-export const MENU_BANNER_EXPANDED_KEY = 'pttchrome.menuBannerExpanded';
+export const MENU_BANNER_EXPANDED_KEY = STORAGE_KEYS.menuBannerExpanded;
 
 /** @param {number} row */
 export function isMenuBannerRow(row) {

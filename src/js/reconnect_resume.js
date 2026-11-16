@@ -34,6 +34,7 @@
 //     vmsg「偵測到異常高頻自動搜尋行為…」，之後 abort_bbs）⇒ 作廢：回到原處本身就是一次
 //     #AID 搜尋，重連就再送等於火上加油（upstream b4d9a0e 起由 activity service 判定）。
 
+import { STORAGE_KEYS } from './user_data_keys';
 import { isMainMenuRow } from './aid_navigation';
 import { recordFor } from './reading_record';
 import { boardNameFromKey } from './screen_titles';
@@ -44,7 +45,7 @@ import { isAndroidApp, androidRestored, STOP_EVENT } from './android_bridge';
 export const OPEN_RESUME_DELAY_MS = 2500;
 export const RESUME_TOAST_ID = 'resumeLastPlace';
 
-export const SNAPSHOT_KEY = 'pttchrome.rendererResume.v1';
+export const SNAPSHOT_KEY = STORAGE_KEYS.rendererResume;
 // 回收後多久內回來還接得回去。再久的位置使用者多半不記得了，跳過去反而突兀。
 export const SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 

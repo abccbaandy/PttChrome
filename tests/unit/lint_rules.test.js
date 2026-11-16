@@ -80,11 +80,31 @@ describe("pttchrome/no-modal-shown-assign", () => {
   });
 });
 
+describe("pttchrome/no-storage-key-literal", () => {
+  tester.run("no-storage-key-literal", plugin.rules["no-storage-key-literal"], {
+    valid: [
+      "localStorage.getItem(STORAGE_KEYS.boardTabs);",
+      "const KEY = STORAGE_KEYS.prefs;",
+      "// localStorage 'pttchrome.boardTabs.v1'",
+      "const f = 'pttchrome.jsx';",
+      "const note = `pttchrome.jsx 建構子`;",
+      "const ch = 'pttchrome-deeplink';", // BroadcastChannel 名，不是 localStorage 鍵
+      "const s = 'xpttchrome.foo';",
+    ],
+    invalid: [
+      bad("const KEY = 'pttchrome.boardTabs.v1';"),
+      bad('localStorage.setItem("pttchrome.newThing", "1");'),
+      bad("const k = `pttchrome.${name}.v1`;"),
+      bad("const k = `pttchrome.cache`;"),
+    ],
+  });
+});
+
 describe(".oxlintrc.json 有開這些規則", () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), ".oxlintrc.json"), "utf8"));
   const RULES = Object.keys(plugin.rules).map((r) => `pttchrome/${r}`);
 
-  test("plugin 有載入、三條規則對整個 src 是 error", () => {
+  test("plugin 有載入、每條規則對整個 src 是 error", () => {
     expect(cfg.jsPlugins).toContain("./tools/lint/pttchrome_rules.mjs");
     const src = cfg.overrides.find((o) => o.files.length === 1 && o.files[0] === "src/**");
     expect(src, "overrides 要有一段 files: [\"src/**\"]").toBeTruthy();
@@ -106,6 +126,8 @@ describe(".oxlintrc.json 有開這些規則", () => {
         "src/js/websocket.js",
         "src/js/ssh/ssh_transport.js",
       ],
+      // 鍵名總表本身。
+      "pttchrome/no-storage-key-literal": ["src/js/user_data_keys.js"],
     });
   });
 

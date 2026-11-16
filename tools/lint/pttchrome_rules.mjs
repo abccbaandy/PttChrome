@@ -136,10 +136,38 @@ const noModalShownAssign = {
   },
 };
 
+// ---- 使用者資料的鍵名只寫在 user_data_keys.js（架構 review A10，docs/user-data.md）----
+// 「這台機器存了哪些東西、哪些上雲、備份涵蓋哪些」要能從一張表回答；在別的檔案直接寫
+// `'pttchrome.xxx.v1'` 就是一份總表看不到的資料。檔名（`pttchrome.jsx`）不是鍵名，放行。
+
+const STORAGE_KEY_LITERAL = /^pttchrome\.[A-Za-z]/;
+const SOURCE_FILE_NAME = /^pttchrome\.(m?js|jsx)\b/;
+const STORAGE_KEY_MSG =
+  "localStorage 鍵名只寫在 src/js/user_data_keys.js 的 STORAGE_KEYS（並補 USER_DATA 一列、docs/user-data.md 一行）";
+const isStorageKeyText = (s) => typeof s === "string" && STORAGE_KEY_LITERAL.test(s) && !SOURCE_FILE_NAME.test(s);
+
+const noStorageKeyLiteral = {
+  meta: { type: "problem", docs: { description: STORAGE_KEY_MSG }, schema: [] },
+  create(context) {
+    return {
+      Literal(node) {
+        if (isStorageKeyText(node.value)) context.report({ node, message: STORAGE_KEY_MSG });
+      },
+      // `pttchrome.${name}.v1` 這種拼出來的鍵名：看開頭那一段。
+      TemplateLiteral(node) {
+        const head = node.quasis[0] && node.quasis[0].value.cooked;
+        if (typeof head === "string" && (head === "pttchrome." || isStorageKeyText(head)))
+          context.report({ node, message: STORAGE_KEY_MSG });
+      },
+    };
+  },
+};
+
 export const rules = {
   "no-magic-page-state": noMagicPageState,
   "no-direct-conn-send": noDirectConnSend,
   "no-modal-shown-assign": noModalShownAssign,
+  "no-storage-key-literal": noStorageKeyLiteral,
 };
 
 export default {

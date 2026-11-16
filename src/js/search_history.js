@@ -5,7 +5,9 @@
 // 混進去會被雲端同步與設定匯出帶走；使用者也明確要求只存本機。
 // 守護 tests/unit/search_history.test.js。
 
-const HISTORY_KEY = 'pttchrome.searchHistory.v1';
+import { STORAGE_KEYS } from './user_data_keys';
+
+const HISTORY_KEY = STORAGE_KEYS.searchHistory;
 export const MAX_SEARCH_HISTORY = 20;
 const KINDS = ['title', 'author', 'push', 'board'];
 

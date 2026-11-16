@@ -13,6 +13,7 @@
 //      （別板的搜尋結果／文摘，也不回 getkeep 記的位置）。看不出是不是子列表也不顯示。
 //   3. 分頁清單只存本機（localStorage `pttchrome.boardTabs.v1`），不同步。順序照第一次去的
 //      先後（像瀏覽器分頁，不跟著 MRU 跳動）；滿了丟掉最久沒去的那個（不丟現在這個）。
+import { STORAGE_KEYS } from './user_data_keys';
 import { readEffectivePrefs } from './pref_storage';
 import { parseBoardName } from './screen_titles';
 import { isArticleListFooter } from './screen_captions';
@@ -21,7 +22,7 @@ import { listChromeIntact, searchListMode } from './search_status';
 import { HINT_ERROR } from './status_hint';
 
 export const BOARD_TABS_ID = 'boardTabs';
-export const BOARD_TABS_KEY = 'pttchrome.boardTabs.v1';
+export const BOARD_TABS_KEY = STORAGE_KEYS.boardTabs;
 export const BOARD_TABS_MAX = 6;
 
 export function isBoardTabsTarget(el) {

@@ -8,9 +8,10 @@
 //   2. **滿了就拒絕，不自動刪舊的**：存檔是使用者明確留下的東西，偷偷刪掉比存不進去更糟。
 //   3. IndexedDB 在私密視窗／被封鎖時會 throw 或 open 失敗 ⇒ 每個操作都回 Promise，失敗
 //      resolve 成 { ok: false, reason }（不 reject），呼叫端只要照結果提示。
+import { INDEXED_DB_NAMES } from './user_data_keys';
 import { savedArticleMeta } from './saved_article_codec';
 
-export const SAVED_DB_NAME = 'pttchrome-saved-articles';
+export const SAVED_DB_NAME = INDEXED_DB_NAMES.savedArticles;
 export const SAVED_DB_VERSION = 1;
 export const SAVED_ARTICLES_LIMIT = 200;
 // 單篇上限（列數）。22000 行的超長文約 1.8M 格，放得下；再大就拒絕，免得一篇吃掉配額。
