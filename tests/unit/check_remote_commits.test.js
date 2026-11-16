@@ -18,6 +18,7 @@ import {
   checkLocalDeps,
   checkRemote,
   installTargets,
+  missingDirectDeps,
 } from '../../scripts/check-remote-commits.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/check-remote-commits.mjs', import.meta.url));
@@ -179,6 +180,29 @@ describe('check-remote-commits（真 git repo）', { timeout: GIT_FIXTURE_TIMEOU
     const now = new Date();
     fs.utimesSync(path.join(nm, '.yarn-state.yml'), now, now);
     fs.utimesSync(path.join(local, 'yarn.lock'), old, old);
+    expect(checkLocalDeps(local, tmp).yarnInstall).toBe(false);
+  });
+
+  // 雲端環境快取還原的 node_modules 比剛 clone 的 yarn.lock 新，卻是舊 lock 裝的（新加的 oxlint
+  // 不在）：只看 mtime 會判成「已對齊」，yarn lint 直接 command not found。
+  test('本地：state 比 lock 新，但 package.json 列的套件沒裝 ⇒ 照樣 yarn install', () => {
+    const nm = path.join(local, 'node_modules');
+    fs.mkdirSync(path.join(nm, 'react'), { recursive: true });
+    fs.writeFileSync(path.join(nm, 'react', 'package.json'), '{}');
+    fs.writeFileSync(path.join(nm, '.yarn-state.yml'), '');
+    fs.writeFileSync(path.join(local, 'yarn.lock'), '');
+    fs.writeFileSync(
+      path.join(local, 'package.json'),
+      JSON.stringify({ dependencies: { react: '1' }, devDependencies: { oxlint: '1' } }),
+    );
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(path.join(local, 'yarn.lock'), old, old);
+    expect(missingDirectDeps(local)).toEqual(['oxlint']);
+    expect(checkLocalDeps(local, tmp).yarnInstall).toBe(true);
+
+    fs.mkdirSync(path.join(nm, 'oxlint'));
+    fs.writeFileSync(path.join(nm, 'oxlint', 'package.json'), '{}');
+    expect(missingDirectDeps(local)).toEqual([]);
     expect(checkLocalDeps(local, tmp).yarnInstall).toBe(false);
   });
 
