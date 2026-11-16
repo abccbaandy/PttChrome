@@ -50,12 +50,10 @@ const anchorKeys = matchAll(/<PrefAnchor\s+anchorKey="([^"]+)"/g);
 // 非 checkbox 的輸入元件（TextInput/NumberInput/Select/Textarea/Switch）走
 // {...anchor("…")}。PrefCheckbox 則由 adapter 自動掛，不需要寫在這裡。
 const spreadAnchors = matchAll(/\{\.\.\.anchor\("([^"]+)"\)\}/g);
-// PrefCheckbox／PrefNumber 的 name＝它的錨點 key（adapter 內 anchorFor(name, …)）。
+// PrefCheckbox／PrefNumber／PrefSelect 的 name＝它的錨點 key（adapter 內 anchorFor(name, …)）。
 const checkboxNames = [
-  ...SRC.matchAll(/<Pref(?:Checkbox|Number)\b[^>]*?\bname="([^"]+)"/g),
-].map(
-  (m) => m[1],
-);
+  ...SRC.matchAll(/<Pref(?:Checkbox|Number|Select)\b[^>]*?\bname="([^"]+)"/g),
+].map((m) => m[1]);
 const panelTabs = matchAll(/<Tabs\.Panel\s+value="([^"]+)"/g);
 
 const indexedPrefKeys = new Set(
@@ -147,16 +145,18 @@ describe("設定搜尋索引 ↔ PrefModal.jsx", () => {
       ...spreadAnchors,
       ...checkboxNames,
     ]);
-    const missing = PREF_SEARCH_ITEMS.filter(
-      (it) => !rendered.has(it.key),
-    ).map((it) => it.key);
+    const missing = PREF_SEARCH_ITEMS.filter((it) => !rendered.has(it.key)).map(
+      (it) => it.key,
+    );
     expect(`缺錨點: ${missing.join(", ")}`).toBe("缺錨點: ");
   });
 
   test("畫面上的 {...anchor()} 都在索引裡", () => {
     const indexed = new Set(PREF_SEARCH_ITEMS.map((it) => it.key));
     const stale = spreadAnchors.filter((k) => !indexed.has(k));
-    expect(`anchor() 沒進索引: ${stale.join(", ")}`).toBe("anchor() 沒進索引: ");
+    expect(`anchor() 沒進索引: ${stale.join(", ")}`).toBe(
+      "anchor() 沒進索引: ",
+    );
   });
 
   test("畫面上的 PrefAnchor 都在索引裡（沒有孤兒錨點）", () => {

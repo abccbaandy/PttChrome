@@ -4,6 +4,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useSyncExternalStore,
 } from "react";
@@ -197,6 +198,68 @@ const PrefNumber = memo(
     />
   ),
 );
+
+// 下拉選單 adapter（同 PrefNumber：吃 name＋共用 onSelectStr(name, value)）。options 是
+// 元件外的常數 [value, i18n key]，data 在這裡 useMemo 組 ⇒ props 穩定、memo 生效。
+// labelAsAria：同時把 label 掛成 aria-label（滑鼠分頁那兩顆原本就這樣寫，e2e 靠它抓）。
+const PrefSelect = memo(
+  ({
+    name,
+    value,
+    onChange,
+    label,
+    description,
+    labelAsAria,
+    disabled,
+    options,
+  }) => {
+    const data = useMemo(
+      () => options.map(([v, k]) => ({ value: v, label: i18n(k) })),
+      [options],
+    );
+    return (
+      <Select
+        label={label}
+        aria-label={labelAsAria ? label : undefined}
+        description={description}
+        name={name}
+        value={value}
+        allowDeselect={false}
+        disabled={disabled}
+        onChange={(val) => onChange(name, val)}
+        data={data}
+        mb="xs"
+        {...anchorFor(name, useFlashKey())}
+      />
+    );
+  },
+);
+
+// PrefSelect 的選項（[value, i18n key]）。放元件外 ⇒ 每次 render 同一個陣列，memo 才擋得住。
+const TERM_SIZE_MODE_OPTIONS = [
+  ["fixed-term-size", "options_fixedTermSize"],
+  ["fixed-font-size", "options_fixedFontSize"],
+];
+const MOBILE_LAYOUT_OPTIONS = [
+  ["auto", "options_mobileLayoutAuto"],
+  ["on", "options_mobileLayoutOn"],
+  ["off", "options_mobileLayoutOff"],
+];
+const MOUSE_LIST_CLICK_START_OPTIONS = [
+  ["push", "options_clickFromPush"],
+  ["date", "options_clickFromDate"],
+  ["author", "options_clickFromAuthor"],
+  ["title", "options_clickFromTitle"],
+];
+const MOUSE_PUSH_CLICK_START_OPTIONS = [
+  ["author", "options_clickFromPusher"],
+  ["content", "options_clickFromContent"],
+];
+const MOUSE_PUSH_CLICK_END_OPTIONS = [
+  ["content", "options_clickToContent"],
+  ["date", "options_clickToDate"],
+  ["time", "options_clickToTime"],
+];
 
 // 設定項下方的灰字說明。跟 PrefCheckbox 一樣包 memo：設定頁每改一個值整份
 // PrefModal 重畫，props 沒變的列直接跳過（改一格的重畫時間約減半，量測見
@@ -1497,25 +1560,13 @@ export const PrefModal = ({
                   onChange={onNumberChange}
                   label={i18n("options_bbsMargin")}
                 />
-                <Select
-                  label={i18n("options_termSize")}
-                  description={i18n("tooltip_termSize")}
+                <PrefSelect
                   name="termSizeMode"
                   value={values.termSizeMode}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectStr("termSizeMode", val)}
-                  data={[
-                    {
-                      value: "fixed-term-size",
-                      label: i18n("options_fixedTermSize"),
-                    },
-                    {
-                      value: "fixed-font-size",
-                      label: i18n("options_fixedFontSize"),
-                    },
-                  ]}
-                  mb="xs"
-                  {...anchor("termSizeMode")}
+                  onChange={onSelectStr}
+                  label={i18n("options_termSize")}
+                  description={i18n("tooltip_termSize")}
+                  options={TERM_SIZE_MODE_OPTIONS}
                 />
                 {values.termSizeMode === "fixed-term-size" && (
                   <div>
@@ -1548,20 +1599,13 @@ export const PrefModal = ({
                     label={i18n("options_fontSize")}
                   />
                 )}
-                <Select
-                  label={i18n("options_mobileLayout")}
-                  description={i18n("tooltip_mobileLayout")}
+                <PrefSelect
                   name="mobileLayout"
                   value={values.mobileLayout}
-                  allowDeselect={false}
-                  onChange={(val) => onSelectStr("mobileLayout", val)}
-                  data={[
-                    { value: "auto", label: i18n("options_mobileLayoutAuto") },
-                    { value: "on", label: i18n("options_mobileLayoutOn") },
-                    { value: "off", label: i18n("options_mobileLayoutOff") },
-                  ]}
-                  mb="xs"
-                  {...anchor("mobileLayout")}
+                  onChange={onSelectStr}
+                  label={i18n("options_mobileLayout")}
+                  description={i18n("tooltip_mobileLayout")}
+                  options={MOBILE_LAYOUT_OPTIONS}
                 />
                 {/* 手機字級：下拉選單而非數字框（手機上不必叫鍵盤，值也只有偶數）。
                   手機版面關掉時用不到，收起來。 */}
@@ -1863,56 +1907,32 @@ export const PrefModal = ({
                 —— 總開關關掉時沒有東西要分區（resolveMouseGates.clickRange）。 */}
               <PrefSection legendKey="options_mouseClickRange">
                 <PrefHint textKey="tooltip_mouseClickRange" />
-                <Select
-                  label={i18n("options_mouseListClickStart")}
-                  aria-label={i18n("options_mouseListClickStart")}
+                <PrefSelect
                   name="mouseListClickStart"
                   value={values.mouseListClickStart}
-                  allowDeselect={false}
+                  onChange={onSelectStr}
+                  label={i18n("options_mouseListClickStart")}
+                  labelAsAria
                   disabled={!values.useMouseBrowsing}
-                  onChange={(val) => onSelectStr("mouseListClickStart", val)}
-                  data={[
-                    { value: "push", label: i18n("options_clickFromPush") },
-                    { value: "date", label: i18n("options_clickFromDate") },
-                    { value: "author", label: i18n("options_clickFromAuthor") },
-                    { value: "title", label: i18n("options_clickFromTitle") },
-                  ]}
-                  mb="xs"
-                  {...anchor("mouseListClickStart")}
+                  options={MOUSE_LIST_CLICK_START_OPTIONS}
                 />
-                <Select
-                  label={i18n("options_mousePushClickStart")}
-                  aria-label={i18n("options_mousePushClickStart")}
+                <PrefSelect
                   name="mousePushClickStart"
                   value={values.mousePushClickStart}
-                  allowDeselect={false}
+                  onChange={onSelectStr}
+                  label={i18n("options_mousePushClickStart")}
+                  labelAsAria
                   disabled={!values.useMouseBrowsing}
-                  onChange={(val) => onSelectStr("mousePushClickStart", val)}
-                  data={[
-                    { value: "author", label: i18n("options_clickFromPusher") },
-                    {
-                      value: "content",
-                      label: i18n("options_clickFromContent"),
-                    },
-                  ]}
-                  mb="xs"
-                  {...anchor("mousePushClickStart")}
+                  options={MOUSE_PUSH_CLICK_START_OPTIONS}
                 />
-                <Select
-                  label={i18n("options_mousePushClickEnd")}
-                  aria-label={i18n("options_mousePushClickEnd")}
+                <PrefSelect
                   name="mousePushClickEnd"
                   value={values.mousePushClickEnd}
-                  allowDeselect={false}
+                  onChange={onSelectStr}
+                  label={i18n("options_mousePushClickEnd")}
+                  labelAsAria
                   disabled={!values.useMouseBrowsing}
-                  onChange={(val) => onSelectStr("mousePushClickEnd", val)}
-                  data={[
-                    { value: "content", label: i18n("options_clickToContent") },
-                    { value: "date", label: i18n("options_clickToDate") },
-                    { value: "time", label: i18n("options_clickToTime") },
-                  ]}
-                  mb="xs"
-                  {...anchor("mousePushClickEnd")}
+                  options={MOUSE_PUSH_CLICK_END_OPTIONS}
                 />
               </PrefSection>
               {/* 邊緣點擊翻頁（2026-09 從 term.ptt.cc 原版找回）：頂列 Home／底列

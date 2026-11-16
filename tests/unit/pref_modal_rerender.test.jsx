@@ -2,8 +2,9 @@
 // 設定頁改一格只重畫那一格（A7 第一步，docs/build-modernization.md「設定頁重畫」）。
 //
 // PrefModal 的 values 是一整個 state：改任何一個值整份元件重畫。勾選列（PrefCheckbox）、
-// 數字欄（PrefNumber）與灰字說明（PrefHint）包了 React.memo，props 沒變就跳過；這支
-// 測試數 Mantine Checkbox／NumberInput 的 render 次數，鎖住「改一格 ⇒ 只有那格重畫」。
+// 數字欄（PrefNumber）、下拉選單（PrefSelect）與灰字說明（PrefHint）包了 React.memo，
+// props 沒變就跳過；這支測試數 Mantine Checkbox／NumberInput／Select 的 render 次數，
+// 鎖住「改一格 ⇒ 只有那格重畫」。PrefSelect 的 options 必須是元件外的常數。
 // 會讓它紅的改法：拿掉 memo、把 onCheckboxChange／onNumberChange 改成每次 render 都換
 // 一個新函式、在 <PrefCheckbox>／<PrefNumber> 上傳 inline 物件／函式 prop。
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -11,7 +12,11 @@ import { MantineProvider } from "@mantine/core";
 import { PrefModal } from "../../src/components/ContextMenu/PrefModal";
 import { setupI18n, i18n } from "../../src/js/i18n";
 
-const counter = vi.hoisted(() => ({ renders: new Map(), numbers: new Map() }));
+const counter = vi.hoisted(() => ({
+  renders: new Map(),
+  numbers: new Map(),
+  selects: new Map(),
+}));
 
 vi.mock("@mantine/core", async (importOriginal) => {
   const mod = await importOriginal();
@@ -24,6 +29,7 @@ vi.mock("@mantine/core", async (importOriginal) => {
     ...mod,
     Checkbox: counting(mod.Checkbox, counter.renders),
     NumberInput: counting(mod.NumberInput, counter.numbers),
+    Select: counting(mod.Select, counter.selects),
   };
 });
 
@@ -42,6 +48,11 @@ vi.mock("../../src/js/prompt_api", () => ({
 
 beforeAll(() => setupI18n());
 beforeEach(() => window.localStorage.clear());
+
+// 已收成 PrefSelect 的下拉選單（其餘 Select 仍是 inline data，還沒做，不在這裡管）。
+const MEMO_SELECTS = new Set(["termSizeMode", "mobileLayout"]);
+const memoSelects = () =>
+  [...counter.selects.keys()].filter((name) => MEMO_SELECTS.has(name));
 
 function openGeneralTab() {
   render(
@@ -68,6 +79,7 @@ test("勾一格：只有那一格的 Checkbox 重畫，其他勾選列不動", (
 
   counter.renders.clear();
   counter.numbers.clear();
+  counter.selects.clear();
   fireEvent.click(box);
   expect(box).not.toBeChecked();
 
@@ -78,8 +90,9 @@ test("勾一格：只有那一格的 Checkbox 重畫，其他勾選列不動", (
   );
   // enablePicPreview 沒有子開關 ⇒ 除了它自己，一格都不該重畫。
   expect(rerendered).toEqual(["enablePicPreview"]);
-  // 數字欄一格都不動。
+  // 數字欄、PrefSelect 管的下拉選單一格都不動。
   expect([...counter.numbers.keys()]).toEqual([]);
+  expect(memoSelects()).toEqual([]);
 });
 
 test("改一個數字欄：只有那一欄重畫，勾選列與其他數字欄不動", () => {
@@ -91,13 +104,20 @@ test("改一個數字欄：只有那一欄重畫，勾選列與其他數字欄�
 
   counter.renders.clear();
   counter.numbers.clear();
+  counter.selects.clear();
   fireEvent.change(field, { target: { value: "123" } });
   expect(field).toHaveValue("123");
 
   expect([...counter.numbers.keys()]).toEqual(["antiIdleTime"]);
+  expect(memoSelects()).toEqual([]);
   expect(
     [...counter.renders.keys()].filter(
       (name) => !name.startsWith("quickSearchBuiltin-"),
     ),
   ).toEqual([]);
+});
+
+test("一般分頁的 PrefSelect 有被計數（不然上面「不動」會假綠）", () => {
+  openGeneralTab();
+  expect(memoSelects().sort()).toEqual(["mobileLayout", "termSizeMode"]);
 });
