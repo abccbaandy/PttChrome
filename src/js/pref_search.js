@@ -209,6 +209,7 @@ export const PREF_SEARCH_ITEMS = [
     {
       key: "nextArticleSameSubject",
       type: "check",
+      sub: true,
       requires: "enableNextArticleCard",
       titleKey: "options_nextArticleSameSubject",
       tooltipKey: "tooltip_nextArticleSameSubject",
@@ -722,6 +723,7 @@ export const PREF_SEARCH_ITEMS = [
     ...IMAGE_PROXY_SITES.map((site) => ({
       key: site.prefKey,
       type: "check",
+      sub: true,
       titleKey: site.labelKey,
       requires: "useImgurProxy",
     })),
@@ -930,6 +932,7 @@ export const PREF_SEARCH_ITEMS = [
 
 // 索引項的 type＝設定頁用哪種欄位畫它（架構 review A7 第十一步，朝宣告式設定表走）：
 // check＝勾選、select＝下拉、number＝數字、text＝單行文字、textarea＝名單、hotkey＝熱鍵。
+// sub: true＝設定頁把它縮排畫在上層開關底下（.PrefModal__SubOptions，第十二步）。
 // 守護 tests/unit/pref_field_type_index.test.js：JSX 的元件與預設值型別都要對得上。
 /** @typedef {"check" | "select" | "number" | "text" | "textarea" | "hotkey"} PrefFieldType */
 
@@ -941,7 +944,7 @@ const PREF_ITEM_BY_KEY = new Map(
 
 /**
  * @param {string} key pref key（同 data-pref-anchor）
- * @returns {{ key: string, type?: PrefFieldType, titleKey: string, tooltipKey?: string, requires?: string } | undefined}
+ * @returns {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string } | undefined}
  */
 export function prefItem(key) {
   return PREF_ITEM_BY_KEY.get(key);

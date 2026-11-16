@@ -54,6 +54,24 @@ describe("設定索引的欄位型別", () => {
     expect(checked).toBeGreaterThan(140);
   });
 
+  test("索引的 sub（縮排子選項）＝設定頁畫在 .PrefModal__SubOptions 裡的那幾格", () => {
+    const src = fs.readFileSync(
+      path.join(process.cwd(), "src/components/ContextMenu/PrefModal.jsx"),
+      "utf8",
+    );
+    const inJsx = new Set();
+    for (const m of src.matchAll(
+      /<div className="PrefModal__SubOptions">([\s\S]*?)<\/div>/g,
+    ))
+      for (const n of m[1].matchAll(/\bname="([^"]+)"/g)) inJsx.add(n[1]);
+    const inIndex = new Set(prefs.filter((it) => it.sub).map((it) => it.key));
+    expect(inJsx.size).toBeGreaterThan(0);
+    expect([...inIndex].sort()).toEqual([...inJsx].sort());
+    // 縮排的子選項一定有上層開關（縮排就是在說「它屬於上面那格」）。
+    for (const it of prefs.filter((p) => p.sub))
+      expect(it.requires, it.key).toBeTruthy();
+  });
+
   test("type 跟預設值的型別對得上", () => {
     const expected = {
       check: ["boolean"],
