@@ -16,6 +16,7 @@ const counter = vi.hoisted(() => ({
   renders: new Map(),
   numbers: new Map(),
   selects: new Map(),
+  texts: new Map(),
 }));
 
 vi.mock("@mantine/core", async (importOriginal) => {
@@ -30,6 +31,8 @@ vi.mock("@mantine/core", async (importOriginal) => {
     Checkbox: counting(mod.Checkbox, counter.renders),
     NumberInput: counting(mod.NumberInput, counter.numbers),
     Select: counting(mod.Select, counter.selects),
+    TextInput: counting(mod.TextInput, counter.texts),
+    Textarea: counting(mod.Textarea, counter.texts),
   };
 });
 
@@ -120,4 +123,57 @@ test("改一個數字欄：只有那一欄重畫，勾選列與其他數字欄�
 test("一般分頁的 PrefSelect 有被計數（不然上面「不動」會假綠）", () => {
   openGeneralTab();
   expect(memoSelects().sort()).toEqual(["mobileLayout", "termSizeMode"]);
+});
+
+// 已收成 PrefHotkey／PrefText／PrefTextarea 的欄位（其餘 TextInput 帶額外屬性，還沒做）。
+const MEMO_TEXTS = new Set([
+  "easyReadingEndSwitchKey",
+  "aidNavBackKey",
+  "deepLinkCopyKey",
+  "unreadJumpKey",
+  "commandPaletteKey",
+  "fontFace",
+  "proxyUrl",
+  "sshRelayUrl",
+  "imgurProxyUrl",
+  "blacklist",
+  "titleBlacklist",
+  "followList",
+  "followTitleList",
+]);
+const memoTexts = () =>
+  [...counter.texts.keys()].filter((name) => MEMO_TEXTS.has(name));
+
+test("勾一格：熱鍵欄、文字欄、名單欄一格都不重畫", () => {
+  openGeneralTab();
+  // 一般分頁的熱鍵欄與字型欄；太少代表計數包裝沒接上，下面的「不動」會假綠。
+  expect(memoTexts().length).toBeGreaterThanOrEqual(6);
+
+  counter.texts.clear();
+  fireEvent.click(document.querySelector('input[name="enablePicPreview"]'));
+  expect(memoTexts()).toEqual([]);
+});
+
+test("在黑名單打字：只有黑名單那一格重畫", () => {
+  openGeneralTab();
+  fireEvent.click(screen.getByRole("tab", { name: i18n("options_enhance") }));
+  const area = document.querySelector('textarea[name="blacklist"]');
+  expect(area).not.toBeNull();
+  // 增強分頁的四個名單欄都有被計數（不然「不動」會假綠）。
+  expect(
+    ["blacklist", "titleBlacklist", "followList", "followTitleList"].every(
+      (n) => counter.texts.has(n),
+    ),
+  ).toBe(true);
+
+  counter.texts.clear();
+  counter.renders.clear();
+  fireEvent.change(area, { target: { value: "someone" } });
+  expect(area).toHaveValue("someone");
+  expect(memoTexts()).toEqual(["blacklist"]);
+  expect(
+    [...counter.renders.keys()].filter(
+      (name) => !name.startsWith("quickSearchBuiltin-"),
+    ),
+  ).toEqual([]);
 });

@@ -235,6 +235,59 @@ const PrefSelect = memo(
   },
 );
 
+// 熱鍵欄 adapter：唯讀 TextInput，按下的鍵由 onKeyDown（穩定的 onHotkeyCapture）寫回。
+const PrefHotkey = memo(
+  ({ name, value, disabled, onKeyDown, label, placeholder }) => (
+    <TextInput
+      label={label}
+      name={name}
+      readOnly
+      disabled={disabled}
+      value={value}
+      placeholder={placeholder}
+      onKeyDown={onKeyDown}
+      mb="xs"
+      {...anchorFor(name, useFlashKey())}
+    />
+  ),
+);
+
+// 文字欄 adapter：onChange 是穩定的 onTextInputChange（讀 event.target.name）。
+const PrefText = memo(
+  ({ name, value, disabled, onChange, label, description, placeholder }) => (
+    <TextInput
+      label={label}
+      description={description}
+      name={name}
+      disabled={disabled}
+      value={value}
+      placeholder={placeholder}
+      onChange={onChange}
+      mb="xs"
+      {...anchorFor(name, useFlashKey())}
+    />
+  ),
+);
+
+// 多行清單（黑名單、追蹤名單）adapter。每打一個字整份 PrefModal 重畫，
+// 其他三個 autosize Textarea 不必跟著量高度。
+const PrefTextarea = memo(
+  ({ name, value, disabled, onChange, label, placeholder, minRows }) => (
+    <Textarea
+      label={label}
+      name={name}
+      autosize
+      minRows={minRows}
+      disabled={disabled}
+      value={value}
+      placeholder={placeholder}
+      onChange={onChange}
+      mb="xs"
+      {...anchorFor(name, useFlashKey())}
+    />
+  ),
+);
+
 // PrefSelect 的選項（[value, i18n key]）。放元件外 ⇒ 每次 render 同一個陣列，memo 才擋得住。
 const TERM_SIZE_MODE_OPTIONS = [
   ["fixed-term-size", "options_fixedTermSize"],
@@ -1220,46 +1273,34 @@ export const PrefModal = ({
                 >
                   {i18n("options_easyReadingEndSwitchNative")}
                 </PrefCheckbox>
-                <TextInput
-                  label={i18n("options_easyReadingEndSwitchKey")}
+                <PrefHotkey
                   name="easyReadingEndSwitchKey"
-                  readOnly
-                  disabled={!values.easyReadingEndSwitchNative}
                   value={values.easyReadingEndSwitchKey}
+                  disabled={!values.easyReadingEndSwitchNative}
+                  onKeyDown={onHotkeyCapture}
+                  label={i18n("options_easyReadingEndSwitchKey")}
                   placeholder={i18n("tooltip_easyReadingEndSwitchKey")}
-                  onKeyDown={onHotkeyCapture}
-                  mb="xs"
-                  {...anchor("easyReadingEndSwitchKey")}
                 />
-                <TextInput
-                  label={i18n("options_aidNavBackKey")}
+                <PrefHotkey
                   name="aidNavBackKey"
-                  readOnly
                   value={values.aidNavBackKey}
+                  onKeyDown={onHotkeyCapture}
+                  label={i18n("options_aidNavBackKey")}
                   placeholder={i18n("tooltip_aidNavBackKey")}
-                  onKeyDown={onHotkeyCapture}
-                  mb="xs"
-                  {...anchor("aidNavBackKey")}
                 />
-                <TextInput
-                  label={i18n("options_deepLinkCopyKey")}
+                <PrefHotkey
                   name="deepLinkCopyKey"
-                  readOnly
                   value={values.deepLinkCopyKey}
+                  onKeyDown={onHotkeyCapture}
+                  label={i18n("options_deepLinkCopyKey")}
                   placeholder={i18n("tooltip_deepLinkCopyKey")}
-                  onKeyDown={onHotkeyCapture}
-                  mb="xs"
-                  {...anchor("deepLinkCopyKey")}
                 />
-                <TextInput
-                  label={i18n("options_unreadJumpKey")}
+                <PrefHotkey
                   name="unreadJumpKey"
-                  readOnly
                   value={values.unreadJumpKey}
-                  placeholder={i18n("tooltip_unreadJumpKey")}
                   onKeyDown={onHotkeyCapture}
-                  mb="xs"
-                  {...anchor("unreadJumpKey")}
+                  label={i18n("options_unreadJumpKey")}
+                  placeholder={i18n("tooltip_unreadJumpKey")}
                 />
                 <PrefCheckbox
                   name="unreadJumpProgress"
@@ -1285,16 +1326,13 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableCommandPalette")}
                 </PrefCheckbox>
-                <TextInput
-                  label={i18n("options_commandPaletteKey")}
+                <PrefHotkey
                   name="commandPaletteKey"
-                  readOnly
-                  disabled={!values.enableCommandPalette}
                   value={values.commandPaletteKey}
-                  placeholder={i18n("tooltip_commandPaletteKey")}
+                  disabled={!values.enableCommandPalette}
                   onKeyDown={onHotkeyCapture}
-                  mb="xs"
-                  {...anchor("commandPaletteKey")}
+                  label={i18n("options_commandPaletteKey")}
+                  placeholder={i18n("tooltip_commandPaletteKey")}
                 />
                 <PrefCheckbox
                   name="paletteQuickBoards"
@@ -1545,14 +1583,12 @@ export const PrefModal = ({
                     mb="xs"
                   />
                 </PrefAnchor>
-                <TextInput
-                  label={i18n("options_fontFace")}
-                  description={i18n("tooltip_fontFace")}
+                <PrefText
                   name="fontFace"
                   value={values.fontFace}
                   onChange={onTextInputChange}
-                  mb="xs"
-                  {...anchor("fontFace")}
+                  label={i18n("options_fontFace")}
+                  description={i18n("tooltip_fontFace")}
                 />
                 <PrefNumber
                   name="bbsMargin"
@@ -2076,16 +2112,14 @@ export const PrefModal = ({
                   {/* placeholder 放的是**實際生效的預設位址**（不是說明文字）：欄位
                   留空就是用它，使用者把自訂位址刪光也回得到預設。說明文字改掛
                   description。imgur 那組同理。 */}
-                  <TextInput
+                  <PrefText
+                    name="proxyUrl"
+                    value={values.proxyUrl}
+                    disabled={!values.useProxy}
+                    onChange={onTextInputChange}
                     label={i18n("options_proxyUrl")}
                     description={i18n("tooltip_proxyUrl")}
-                    name="proxyUrl"
-                    disabled={!values.useProxy}
-                    value={values.proxyUrl}
                     placeholder={DEFAULT_PROXY_HOST}
-                    onChange={onTextInputChange}
-                    mb="xs"
-                    {...anchor("proxyUrl")}
                   />
                 </PrefSection>
               )}
@@ -2111,16 +2145,14 @@ export const PrefModal = ({
                     mb="xs"
                     {...anchor("connectionProtocol")}
                   />
-                  <TextInput
+                  <PrefText
+                    name="sshRelayUrl"
+                    value={values.sshRelayUrl}
+                    disabled={values.connectionProtocol !== "ssh"}
+                    onChange={onTextInputChange}
                     label={i18n("options_sshRelayUrl")}
                     description={i18n("tooltip_sshRelayUrl")}
-                    name="sshRelayUrl"
-                    disabled={values.connectionProtocol !== "ssh"}
-                    value={values.sshRelayUrl}
                     placeholder={DEFAULT_SSH_RELAY_HOST}
-                    onChange={onTextInputChange}
-                    mb="xs"
-                    {...anchor("sshRelayUrl")}
                   />
                   <Text size="xs" c="dimmed">
                     {i18n("tooltip_sshLocalOnly")}{" "}
@@ -2204,16 +2236,14 @@ export const PrefModal = ({
                     {i18n("options_imageProxySite_tenor")}
                   </PrefCheckbox>
                 </div>
-                <TextInput
+                <PrefText
+                  name="imgurProxyUrl"
+                  value={values.imgurProxyUrl}
+                  disabled={!values.useImgurProxy}
+                  onChange={onTextInputChange}
                   label={i18n("options_imgurProxyUrl")}
                   description={i18n("tooltip_imgurProxyUrl")}
-                  name="imgurProxyUrl"
-                  disabled={!values.useImgurProxy}
-                  value={values.imgurProxyUrl}
                   placeholder={DEFAULT_IMGUR_PROXY_BASE}
-                  onChange={onTextInputChange}
-                  mb="xs"
-                  {...anchor("imgurProxyUrl")}
                 />
               </PrefSection>
               <PrefSection legendKey="options_openCache">
@@ -2342,27 +2372,21 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableImageUpload")}
                 </PrefCheckbox>
-                <Textarea
-                  label={i18n("options_blacklist")}
+                <PrefTextarea
                   name="blacklist"
-                  autosize
-                  minRows={6}
                   value={values.blacklist}
+                  onChange={onTextInputChange}
+                  label={i18n("options_blacklist")}
                   placeholder={i18n("tooltip_blacklist")}
-                  onChange={onTextInputChange}
-                  mb="xs"
-                  {...anchor("blacklist")}
-                />
-                <Textarea
-                  label={i18n("options_title_blacklist")}
-                  name="titleBlacklist"
-                  autosize
                   minRows={6}
+                />
+                <PrefTextarea
+                  name="titleBlacklist"
                   value={values.titleBlacklist}
-                  placeholder={i18n("tooltip_title_blacklist")}
                   onChange={onTextInputChange}
-                  mb="xs"
-                  {...anchor("titleBlacklist")}
+                  label={i18n("options_title_blacklist")}
+                  placeholder={i18n("tooltip_title_blacklist")}
+                  minRows={6}
                 />
                 <PrefCheckbox
                   name="enableFollowList"
@@ -2372,29 +2396,23 @@ export const PrefModal = ({
                   {i18n("options_enableFollowList")}
                 </PrefCheckbox>
                 <PrefHint textKey="tooltip_enableFollowList" />
-                <Textarea
-                  label={i18n("options_followList")}
+                <PrefTextarea
                   name="followList"
-                  autosize
-                  minRows={3}
-                  disabled={!values.enableFollowList}
                   value={values.followList}
-                  placeholder={i18n("tooltip_followList")}
-                  onChange={onTextInputChange}
-                  mb="xs"
-                  {...anchor("followList")}
-                />
-                <Textarea
-                  label={i18n("options_followTitleList")}
-                  name="followTitleList"
-                  autosize
-                  minRows={3}
                   disabled={!values.enableFollowList}
-                  value={values.followTitleList}
-                  placeholder={i18n("tooltip_followTitleList")}
                   onChange={onTextInputChange}
-                  mb="xs"
-                  {...anchor("followTitleList")}
+                  label={i18n("options_followList")}
+                  placeholder={i18n("tooltip_followList")}
+                  minRows={3}
+                />
+                <PrefTextarea
+                  name="followTitleList"
+                  value={values.followTitleList}
+                  disabled={!values.enableFollowList}
+                  onChange={onTextInputChange}
+                  label={i18n("options_followTitleList")}
+                  placeholder={i18n("tooltip_followTitleList")}
+                  minRows={3}
                 />
                 <PrefCheckbox
                   name="enableFollowOnly"

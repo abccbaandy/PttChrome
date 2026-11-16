@@ -50,9 +50,12 @@ const anchorKeys = matchAll(/<PrefAnchor\s+anchorKey="([^"]+)"/g);
 // 非 checkbox 的輸入元件（TextInput/NumberInput/Select/Textarea/Switch）走
 // {...anchor("…")}。PrefCheckbox 則由 adapter 自動掛，不需要寫在這裡。
 const spreadAnchors = matchAll(/\{\.\.\.anchor\("([^"]+)"\)\}/g);
-// PrefCheckbox／PrefNumber／PrefSelect 的 name＝它的錨點 key（adapter 內 anchorFor(name, …)）。
+// Pref* 輸入 adapter（Checkbox／Number／Select／Hotkey／Text／Textarea）的 name＝它的錨點 key
+// （adapter 內 anchorFor(name, …)）。
 const checkboxNames = [
-  ...SRC.matchAll(/<Pref(?:Checkbox|Number|Select)\b[^>]*?\bname="([^"]+)"/g),
+  ...SRC.matchAll(
+    /<Pref(?:Checkbox|Number|Select|Hotkey|Text|Textarea)\b[^>]*?\bname="([^"]+)"/g,
+  ),
 ].map((m) => m[1]);
 const panelTabs = matchAll(/<Tabs\.Panel\s+value="([^"]+)"/g);
 

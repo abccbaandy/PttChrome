@@ -179,7 +179,8 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - **會讓 memo 失效的寫法**：在 `<PrefCheckbox>` 上傳 inline 物件／函式、children 放 JSX（快速搜尋內建項目那三列就是，刻意不管）、把共用 handler 改成每次 render 新建。
 - **數字欄 `PrefNumber`**（7 個 `NumberInput` 全部換掉）：吃 `name` 與共用的 `onNumberChange(name, value)`，inline arrow 收進元件裡。同一支測試另數 `NumberInput`：勾一格時數字欄一格都不動、改一個數字欄只有那一欄重畫。
 - **下拉選單 `PrefSelect`**（5 個形狀單純的：`termSizeMode`、`mobileLayout`、滑鼠點擊範圍三顆）：選項寫成元件外的常數 `[value, i18n key]`，`data` 在元件內 `useMemo` 組。測試另數 `Select`，只管已收的這幾顆。
-- **還沒做**：其餘 `Select`（`data` 由函式／變數產生、`value={String(...)}` 轉換、帶額外屬性的連線／自動登入那幾顆）與所有 `TextInput` 仍是 inline ⇒ 每次照畫。再往下是「從設定表產生一般列」。
+- **熱鍵欄 `PrefHotkey`、文字欄 `PrefText`、名單欄 `PrefTextarea`**（5 個熱鍵、字型／三個代理位址、黑名單與追蹤名單四個 `Textarea`）：handler 本來就是穩定的 `onHotkeyCapture`／`onTextInputChange`，直接收進 memo adapter。名單欄是 autosize，在其中一格打字時其他三格原本每個字都要重量高度。測試另數 `TextInput`／`Textarea`，只管已收的這幾格。
+- **還沒做**：其餘 `Select`（`data` 由函式／變數產生、`value={String(...)}` 轉換、帶額外屬性的連線／自動登入那幾顆）與帶額外屬性的 `TextInput`（自動登入帳密／2FA、圖片上傳 token、自訂快速搜尋）仍是 inline ⇒ 每次照畫。再往下是「從設定表產生一般列」。
 
 ## Deprecated 瀏覽器 API
 
