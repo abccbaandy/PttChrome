@@ -109,12 +109,14 @@ export const PREF_SEARCH_ITEMS = [
     { key: "enableEasyReading", titleKey: "options_enableEasyReading" },
     {
       key: "enableHelpMenuPopup",
+      requires: "enableEasyReading",
       titleKey: "options_enableHelpMenuPopup",
       tooltipKey: "tooltip_enableHelpMenuPopup",
     },
     { key: "enableEasyReadingList", titleKey: "options_enableEasyReadingList" },
     {
       key: "enableListFastScroll",
+      requires: "enableEasyReadingList",
       titleKey: "options_enableListFastScroll",
       tooltipKey: "tooltip_enableListFastScroll",
     },
@@ -155,6 +157,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "resumeRecentArticles",
+      requires: "enableRecentArticles",
       titleKey: "options_resumeRecentArticles",
       tooltipKey: "tooltip_resumeRecentArticles",
     },
@@ -185,6 +188,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "nextArticleSameSubject",
+      requires: "enableNextArticleCard",
       titleKey: "options_nextArticleSameSubject",
       tooltipKey: "tooltip_nextArticleSameSubject",
     },
@@ -307,16 +311,19 @@ export const PREF_SEARCH_ITEMS = [
     { key: "enableLongPush", titleKey: "options_enableLongPush" },
     {
       key: "pushKeyOpensLongPush",
+      requires: "enableLongPush",
       titleKey: "options_pushKeyOpensLongPush",
       tooltipKey: "tooltip_pushKeyOpensLongPush",
     },
     {
       key: "enableCommentBar",
+      requires: "enableLongPush",
       titleKey: "options_enableCommentBar",
       tooltipKey: "tooltip_enableCommentBar",
     },
     {
       key: "commentReplyMenu",
+      requires: "enableCommentBar",
       titleKey: "options_commentReplyMenu",
       tooltipKey: "tooltip_commentReplyMenu",
     },
@@ -327,11 +334,13 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "mobileCommentBarFold",
+      requires: "enableCommentBar",
       titleKey: "options_mobileCommentBarFold",
       tooltipKey: "tooltip_mobileCommentBarFold",
     },
     {
       key: "commentBarCounter",
+      requires: "enableCommentBar",
       titleKey: "options_commentBarCounter",
       tooltipKey: "tooltip_commentBarCounter",
     },
@@ -465,6 +474,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "mobilePostInfoActions",
+      requires: "mobileAnyKeyContinue",
       titleKey: "options_mobilePostInfoActions",
       tooltipKey: "tooltip_mobilePostInfoActions",
     },
@@ -608,6 +618,7 @@ export const PREF_SEARCH_ITEMS = [
     ...IMAGE_PROXY_SITES.map((site) => ({
       key: site.prefKey,
       titleKey: site.labelKey,
+      requires: "useImgurProxy",
     })),
     {
       key: "imgurProxyUrl",
@@ -699,6 +710,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "enableFollowOnly",
+      requires: "enableFollowList",
       titleKey: "options_enableFollowOnly",
       tooltipKey: "tooltip_enableFollowOnly",
     },
@@ -792,10 +804,30 @@ const PREF_ITEM_BY_KEY = new Map(
 
 /**
  * @param {string} key pref key（同 data-pref-anchor）
- * @returns {{ key: string, titleKey: string, tooltipKey?: string } | undefined}
+ * @returns {{ key: string, titleKey: string, tooltipKey?: string, requires?: string } | undefined}
  */
 export function prefItem(key) {
   return PREF_ITEM_BY_KEY.get(key);
+}
+
+// 前置開關（架構 review A7 第九步）：索引項的 requires＝「這一格要那一格開著才有作用」，
+// 關掉時設定頁把這一格反灰（值照舊保留）。可以一層接一層（推文列的子選項 → 推文列 → 長推文）。
+// 回傳由近到遠的整條前置鏈；鏈上任一格關掉，這一格就反灰。
+/**
+ * @param {string} key
+ * @returns {string[]}
+ */
+export function prefRequiresChain(key) {
+  /** @type {string[]} */
+  const chain = [];
+  let cur = prefItem(key);
+  while (cur && cur.requires) {
+    if (cur.requires === key || chain.includes(cur.requires))
+      throw new Error(`prefRequiresChain: ${key} 的前置開關繞成圈`);
+    chain.push(cur.requires);
+    cur = prefItem(cur.requires);
+  }
+  return chain;
 }
 
 // 「一般」分區裡每一項屬於哪一段小標（P94，src/js/pref_groups.js）。索引的順序就是

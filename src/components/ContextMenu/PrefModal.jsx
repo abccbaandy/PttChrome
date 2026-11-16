@@ -88,7 +88,7 @@ import {
   normalizeMobileFontPx,
 } from "../../js/mobile_layout";
 import { PrefSearchBox } from "./PrefSearchBox";
-import { prefItem } from "../../js/pref_search";
+import { prefItem, prefRequiresChain } from "../../js/pref_search";
 import { shortcutList, isMacPlatform } from "../../js/shortcut_list";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import "./PrefModal.css";
@@ -390,9 +390,13 @@ const PrefHint = memo(({ textKey }) => (
 // 剛好就是索引那兩個鍵的列用；帶額外內容（警告字、description、說明不同字）的照舊手寫。
 // 不在索引裡就直接炸：那是寫錯 name，靜態守護 pref_search_index.test.js 也會先紅。
 //
-// 安全模式要蓋掉的項目（pref_storage.js#NATIVE_SAFE_MODE_KEYS）由這裡自己反灰：
-// 呼叫端的 disabled 只寫其他條件（例如上層開關沒開）。名單加一項，設定頁就跟著反灰，
-// 不必回來改 JSX。安全模式的值走 context：切換時只有用到它的列重畫。
+// 反灰也由這裡自己判斷，呼叫端只給 name＋values（架構 review A7 第九步）：
+//   - 前置開關（索引的 requires，pref_search.js#prefRequiresChain）：鏈上任一格關掉就反灰；
+//   - 安全模式要蓋掉的項目（pref_storage.js#NATIVE_SAFE_MODE_KEYS）：自己或前置鏈上有一格在名單裡
+//     就反灰（上層被安全模式蓋掉，下層也沒作用）。
+// 呼叫端的 disabled 只留索引表達不了的條件（AI 模型不能用之類）。名單或索引改一項，設定頁就跟著
+// 反灰，不必回來改 JSX。安全模式的值走 context：切換時只有用到它的列重畫。
+// memo 只比這一格與它前置鏈的值 ⇒ 改別格時這一列不重畫（tests/unit/pref_modal_rerender.test.jsx）。
 const SAFE_MODE_KEYS = new Set(NATIVE_SAFE_MODE_KEYS);
 const SafeModeContext = createContext(false);
 // Modal 外面包一層 Provider（context 穿得過 portal）。寫成元件而不是在 JSX 裡多包一層，
@@ -402,16 +406,27 @@ const SafeModeModal = ({ safeMode, ...props }) => (
     <Modal {...props} />
   </SafeModeContext.Provider>
 );
-const PrefCheckRow = memo(({ name, checked, disabled, onChange }) => {
+const samePrefCheckRow = (a, b) =>
+  a.name === b.name &&
+  a.disabled === b.disabled &&
+  a.onChange === b.onChange &&
+  a.values[a.name] === b.values[b.name] &&
+  prefRequiresChain(a.name).every((k) => a.values[k] === b.values[k]);
+
+const PrefCheckRow = memo(({ name, values, disabled, onChange }) => {
   const it = prefItem(name);
   if (!it) throw new Error(`PrefCheckRow: ${name} 不在設定搜尋索引裡`);
-  const safeMode = useContext(SafeModeContext) && SAFE_MODE_KEYS.has(name);
+  const chain = prefRequiresChain(name);
+  const safeMode =
+    useContext(SafeModeContext) &&
+    (SAFE_MODE_KEYS.has(name) || chain.some((k) => SAFE_MODE_KEYS.has(k)));
+  const parentOff = chain.some((k) => !values[k]);
   return (
     <>
       <PrefCheckbox
         name={name}
-        checked={checked}
-        disabled={safeMode || disabled}
+        checked={values[name]}
+        disabled={safeMode || parentOff || disabled}
         onChange={onChange}
       >
         {i18n(it.titleKey)}
@@ -419,7 +434,7 @@ const PrefCheckRow = memo(({ name, checked, disabled, onChange }) => {
       {it.tooltipKey && <PrefHint textKey={it.tooltipKey} />}
     </>
   );
-});
+}, samePrefCheckRow);
 
 // 分區 adapter：<fieldset> + <legend>，順帶掛上 section:<legendKey> 錨點。
 // legendKey 同時是索引裡的 sectionKey（src/js/pref_search.js），靜態守護測試
@@ -1306,27 +1321,27 @@ export const PrefModal = ({
                 <PrefGroupHeading id="basic" />
                 <PrefCheckRow
                   name="nativeSafeMode"
-                  checked={values.nativeSafeMode}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enablePicPreview"
-                  checked={values.enablePicPreview}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="imageFitScreen"
-                  checked={values.imageFitScreen}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="tapToLoadImagesOnMobileData"
-                  checked={values.tapToLoadImagesOnMobileData}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableNotifications"
-                  checked={values.enableNotifications}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckbox
@@ -1343,140 +1358,132 @@ export const PrefModal = ({
                 )}
                 <PrefCheckRow
                   name="enableMessageInbox"
-                  checked={values.enableMessageInbox}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="showStatusHints"
-                  checked={values.showStatusHints}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefGroupHeading id="easyReading" />
                 <PrefCheckRow
                   name="enableEasyReading"
-                  checked={values.enableEasyReading}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableHelpMenuPopup"
-                  checked={values.enableHelpMenuPopup}
-                  disabled={!values.enableEasyReading}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableEasyReadingList"
-                  checked={values.enableEasyReadingList}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableListFastScroll"
-                  checked={values.enableListFastScroll}
-                  disabled={
-                    values.nativeSafeMode || !values.enableEasyReadingList
-                  }
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableBoardListSmoothScroll"
-                  checked={values.enableBoardListSmoothScroll}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableListNativeAutoResume"
-                  checked={values.enableListNativeAutoResume}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="queueListClickWhenBusy"
-                  checked={values.queueListClickWhenBusy}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="skipBoardEntryScreen"
-                  checked={values.skipBoardEntryScreen}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefGroupHeading id="home" />
                 <PrefCheckRow
                   name="enableHomeDashboard"
-                  checked={values.enableHomeDashboard}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="showWhatsNew"
-                  checked={values.showWhatsNew}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableRecentArticles"
-                  checked={values.enableRecentArticles}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="resumeRecentArticles"
-                  checked={values.resumeRecentArticles}
-                  disabled={!values.enableRecentArticles}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableSavedArticles"
-                  checked={values.enableSavedArticles}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableShareTarget"
-                  checked={values.enableShareTarget}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefGroupHeading id="article" />
                 <PrefCheckRow
                   name="enableBoardTabs"
-                  checked={values.enableBoardTabs}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableSplitReading"
-                  checked={values.enableSplitReading}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableNextArticleCard"
-                  checked={values.enableNextArticleCard}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <div className="PrefModal__SubOptions">
                   <PrefCheckRow
                     name="nextArticleSameSubject"
-                    checked={values.nextArticleSameSubject}
-                    disabled={
-                      values.nativeSafeMode || !values.enableNextArticleCard
-                    }
+                    values={values}
                     onChange={onCheckboxChange}
                   />
                 </div>
                 <PrefCheckRow
                   name="enableArticleTools"
-                  checked={values.enableArticleTools}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableArticleNav"
-                  checked={values.enableArticleNav}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="easyReadingFooterProgress"
-                  checked={values.easyReadingFooterProgress}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="easyReadingBrowserFind"
-                  checked={values.easyReadingBrowserFind}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="easyReadingEndSwitchNative"
-                  checked={values.easyReadingEndSwitchNative}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefGroupHeading id="hotkeys" />
@@ -1570,27 +1577,27 @@ export const PrefModal = ({
                 />
                 <PrefCheckRow
                   name="endTurnsOnLiveUpdate"
-                  checked={values.endTurnsOnLiveUpdate}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="copyOnSelect"
-                  checked={values.copyOnSelect}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableBell"
-                  checked={values.enableBell}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="reconnectResume"
-                  checked={values.reconnectResume}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="resumeLastPlace"
-                  checked={values.resumeLastPlace}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefNumber
@@ -1610,106 +1617,89 @@ export const PrefModal = ({
               <PrefSection legendKey="options_contextMenu">
                 <PrefCheckRow
                   name="highlightMenuTarget"
-                  checked={values.highlightMenuTarget}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="articleCopyLinkRow"
-                  checked={values.articleCopyLinkRow}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableInputHelper"
-                  checked={values.enableInputHelper}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableLiveArticleHelper"
-                  checked={values.enableLiveArticleHelper}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableEditorInput"
-                  checked={values.enableEditorInput}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableLongPush"
-                  checked={values.enableLongPush}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="pushKeyOpensLongPush"
-                  checked={values.pushKeyOpensLongPush}
-                  disabled={!values.enableLongPush}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableCommentBar"
-                  checked={values.enableCommentBar}
-                  disabled={!values.enableLongPush}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="commentReplyMenu"
-                  checked={values.commentReplyMenu}
-                  disabled={
-                    !values.enableLongPush ||
-                    !values.enableCommentBar ||
-                    values.nativeSafeMode
-                  }
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableCommentFilter"
-                  checked={values.enableCommentFilter}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="mobileCommentBarFold"
-                  checked={values.mobileCommentBarFold}
-                  disabled={
-                    !values.enableLongPush ||
-                    !values.enableCommentBar ||
-                    values.nativeSafeMode
-                  }
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="commentBarCounter"
-                  checked={values.commentBarCounter}
-                  disabled={
-                    !values.enableLongPush ||
-                    !values.enableCommentBar ||
-                    values.nativeSafeMode
-                  }
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="searchKeyOpensModal"
-                  checked={values.searchKeyOpensModal}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableSearchStatus"
-                  checked={values.enableSearchStatus}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
               </PrefSection>
               <PrefSection legendKey="options_appearance">
                 <PrefCheckRow
                   name="autoHideBlinkCursor"
-                  checked={values.autoHideBlinkCursor}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="dimReadArticles"
-                  checked={values.dimReadArticles}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="boardListUnreadMark"
-                  checked={values.boardListUnreadMark}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefAnchor anchorKey="ui:theme">
@@ -1764,7 +1754,7 @@ export const PrefModal = ({
                     />
                     <PrefCheckRow
                       name="fontFitWindowWidth"
-                      checked={values.fontFitWindowWidth}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                   </div>
@@ -1801,98 +1791,97 @@ export const PrefModal = ({
                   <>
                     <PrefCheckRow
                       name="mobileAppBarScrollTop"
-                      checked={values.mobileAppBarScrollTop}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileAppBarArticleDetail"
-                      checked={values.mobileAppBarArticleDetail}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileSelectTextPage"
-                      checked={values.mobileSelectTextPage}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileFindInArticle"
-                      checked={values.mobileFindInArticle}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileCardHideTitleBox"
-                      checked={values.mobileCardHideTitleBox}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileBoardCardUnread"
-                      checked={values.mobileBoardCardUnread}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileListEndHint"
-                      checked={values.mobileListEndHint}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileFloatToolsInMore"
-                      checked={values.mobileFloatToolsInMore}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileBoardTools"
-                      checked={values.mobileBoardTools}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileMailListTools"
-                      checked={values.mobileMailListTools}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileMenuBannerCollapse"
-                      checked={values.mobileMenuBannerCollapse}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileEssenceCards"
-                      checked={values.mobileEssenceCards}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobilePromptChoices"
-                      checked={values.mobilePromptChoices}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobilePromptKeyboard"
-                      checked={values.mobilePromptKeyboard}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileAnyKeyContinue"
-                      checked={values.mobileAnyKeyContinue}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobilePostInfoActions"
-                      checked={values.mobilePostInfoActions}
-                      disabled={!values.mobileAnyKeyContinue}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileModernCommentCards"
-                      checked={values.mobileModernCommentCards}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileHangIndent"
-                      checked={values.mobileHangIndent}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                     <PrefCheckRow
                       name="mobileEditorSave"
-                      checked={values.mobileEditorSave}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                   </>
@@ -1906,17 +1895,17 @@ export const PrefModal = ({
               <PrefSection legendKey="options_cursorHighlight">
                 <PrefCheckRow
                   name="cursorRowBrighten"
-                  checked={values.cursorRowBrighten}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="cursorRowBackground"
-                  checked={values.cursorRowBackground}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="keyboardCursorHighlight"
-                  checked={values.keyboardCursorHighlight}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefAnchor anchorKey="ui:highlightColor">
@@ -2175,7 +2164,7 @@ export const PrefModal = ({
                 <PrefSection legendKey="options_connection_bbs">
                   <PrefCheckRow
                     name="useProxy"
-                    checked={values.useProxy}
+                    values={values}
                     onChange={onCheckboxChange}
                   />
                   {/* placeholder 放的是**實際生效的預設位址**（不是說明文字）：欄位
@@ -2247,7 +2236,7 @@ export const PrefModal = ({
                 </Text>
                 <PrefCheckRow
                   name="useImgurProxy"
-                  checked={values.useImgurProxy}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 {/* 各站開關（清單＝image_proxy.js#IMAGE_PROXY_SITES）。刻意逐項寫死而非
@@ -2257,26 +2246,22 @@ export const PrefModal = ({
                 <div className="PrefModal__SubOptions">
                   <PrefCheckRow
                     name="imageProxyImgur"
-                    checked={values.imageProxyImgur}
-                    disabled={!values.useImgurProxy}
+                    values={values}
                     onChange={onCheckboxChange}
                   />
                   <PrefCheckRow
                     name="imageProxyTwimg"
-                    checked={values.imageProxyTwimg}
-                    disabled={!values.useImgurProxy}
+                    values={values}
                     onChange={onCheckboxChange}
                   />
                   <PrefCheckRow
                     name="imageProxyCatbox"
-                    checked={values.imageProxyCatbox}
-                    disabled={!values.useImgurProxy}
+                    values={values}
                     onChange={onCheckboxChange}
                   />
                   <PrefCheckRow
                     name="imageProxyTenor"
-                    checked={values.imageProxyTenor}
-                    disabled={!values.useImgurProxy}
+                    values={values}
                     onChange={onCheckboxChange}
                   />
                 </div>
@@ -2305,12 +2290,12 @@ export const PrefModal = ({
               <PrefSection legendKey="options_enhance">
                 <PrefCheckRow
                   name="showFloorNumbers"
-                  checked={values.showFloorNumbers}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="mergeSameAuthorComments"
-                  checked={values.mergeSameAuthorComments}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckbox
@@ -2323,64 +2308,64 @@ export const PrefModal = ({
                 </PrefCheckbox>
                 <PrefCheckRow
                   name="commentBlockSpacing"
-                  checked={values.commentBlockSpacing}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="showMergeCaptionButton"
-                  checked={values.showMergeCaptionButton}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="showLightsOnButton"
-                  checked={values.showLightsOnButton}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="highlightAuthorComments"
-                  checked={values.highlightAuthorComments}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="highlightSelfComments"
-                  checked={values.highlightSelfComments}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="markNewComments"
-                  checked={values.markNewComments}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="markJustPushed"
-                  checked={values.markJustPushed}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="listNewPushCount"
-                  checked={values.listNewPushCount}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableAutoFixUrl"
-                  checked={values.enableAutoFixUrl}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableXMentionLink"
-                  checked={values.enableXMentionLink}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefCheckRow
                   name="enableBareDomainLink"
-                  checked={values.enableBareDomainLink}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 {/* 圖片上傳的總開關。憑證（token）在「本機設定」分頁 —— 它不上雲，
                   與這個可同步的開關刻意分開放。 */}
                 <PrefCheckRow
                   name="enableImageUpload"
-                  checked={values.enableImageUpload}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefTextarea
@@ -2401,7 +2386,7 @@ export const PrefModal = ({
                 />
                 <PrefCheckRow
                   name="enableFollowList"
-                  checked={values.enableFollowList}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
                 <PrefTextarea
@@ -2424,8 +2409,7 @@ export const PrefModal = ({
                 />
                 <PrefCheckRow
                   name="enableFollowOnly"
-                  checked={values.enableFollowOnly}
-                  disabled={!values.enableFollowList}
+                  values={values}
                   onChange={onCheckboxChange}
                 />
               </PrefSection>
@@ -2494,7 +2478,7 @@ export const PrefModal = ({
                     />
                     <PrefCheckRow
                       name="autoLoginSkipWelcome"
-                      checked={values.autoLoginSkipWelcome}
+                      values={values}
                       onChange={onCheckboxChange}
                     />
                   </PrefSection>
@@ -2628,7 +2612,7 @@ export const PrefModal = ({
               <PrefSection legendKey="options_ai_features">
                 <PrefCheckRow
                   name="enableCaptionAi"
-                  checked={values.enableCaptionAi}
+                  values={values}
                   disabled={aiSubDisabled}
                   onChange={onCheckboxChange}
                 />
