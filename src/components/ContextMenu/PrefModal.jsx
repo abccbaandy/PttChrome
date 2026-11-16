@@ -1,4 +1,5 @@
 import {
+  Fragment,
   cloneElement,
   createContext,
   memo,
@@ -92,6 +93,7 @@ import {
   prefItem,
   prefRequiresChain,
   prefRequiresOff,
+  prefSectionItems,
 } from "../../js/pref_search";
 import { shortcutList, isMacPlatform } from "../../js/shortcut_list";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
@@ -547,6 +549,91 @@ const PrefGroupHeading = ({ id }) => {
       {i18n(g.titleKey)}
     </h3>
   );
+};
+
+// 由索引畫出的分區（架構 review A7 第十三步）：照 pref_search.js 索引裡這個分區的順序，
+// 依每項的 type 畫欄位，不再逐格手寫 JSX ⇒ 新增一格只要在索引放對位置。
+//   - check  → PrefCheckRow（標題／說明／反灰都取自索引）；
+//   - hotkey → PrefHotkey（說明當 placeholder，前置鏈關掉就反灰）；
+//   - number → PrefNumber（說明當 description，下限取索引的 min）；
+//   - sub: true 的連續幾格包進同一個 .PrefModal__SubOptions（縮排子選項）；
+//   - 段落第一項（pref_groups.js 的 first）前面畫小標。
+// 長得跟上面不一樣的格子（帶警告字、說明放在勾選框裡、另有 onChange）由呼叫端放進 custom
+// （key → 那一格的 JSX），位置仍照索引。索引有、這裡畫不出的 type 直接炸：寫錯比靜默少一格好。
+// 守護：tests/unit/pref_groups.test.jsx「由索引畫出」（畫面順序＝索引順序）。
+const GROUP_ID_BY_FIRST = new Map(GENERAL_GROUPS.map((g) => [g.first, g.id]));
+
+const PrefIndexRows = ({
+  sectionKey,
+  values,
+  custom,
+  onCheckboxChange,
+  onHotkeyCapture,
+  onNumberChange,
+}) => {
+  const field = (it) => {
+    if (Object.prototype.hasOwnProperty.call(custom, it.key))
+      return custom[it.key];
+    switch (it.type) {
+      case "check":
+        return (
+          <PrefCheckRow
+            name={it.key}
+            values={values}
+            onChange={onCheckboxChange}
+          />
+        );
+      case "hotkey":
+        return (
+          <PrefHotkey
+            name={it.key}
+            value={values[it.key]}
+            disabled={it.requires ? prefRequiresOff(it.key, values) : undefined}
+            onKeyDown={onHotkeyCapture}
+            label={i18n(it.titleKey)}
+            placeholder={it.tooltipKey && i18n(it.tooltipKey)}
+          />
+        );
+      case "number":
+        return (
+          <PrefNumber
+            name={it.key}
+            value={values[it.key]}
+            onChange={onNumberChange}
+            label={i18n(it.titleKey)}
+            description={it.tooltipKey && i18n(it.tooltipKey)}
+            min={it.min}
+          />
+        );
+      default:
+        throw new Error(
+          `PrefIndexRows: ${it.key} 的 type ${it.type} 要放進 custom 手寫`,
+        );
+    }
+  };
+  const out = [];
+  let subRun = null;
+  for (const it of prefSectionItems(sectionKey)) {
+    const group = GROUP_ID_BY_FIRST.get(it.key);
+    if (group) out.push(<PrefGroupHeading key={`group:${group}`} id={group} />);
+    const node = <Fragment key={it.key}>{field(it)}</Fragment>;
+    if (it.sub && subRun) {
+      subRun.push(node);
+      continue;
+    }
+    if (it.sub) {
+      subRun = [node];
+      out.push(
+        <div key={`sub:${it.key}`} className="PrefModal__SubOptions">
+          {subRun}
+        </div>,
+      );
+      continue;
+    }
+    subRun = null;
+    out.push(node);
+  }
+  return out;
 };
 
 const prefersReducedMotion = () =>
@@ -1322,300 +1409,82 @@ export const PrefModal = ({
             <Tabs.Panel value="general">
               <PrefSection legendKey="options_general">
                 <PrefGroupNav scrollRef={rightColRef} />
-                <PrefGroupHeading id="basic" />
-                <PrefCheckRow
-                  name="nativeSafeMode"
+                <PrefIndexRows
+                  sectionKey="options_general"
                   values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enablePicPreview"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="imageFitScreen"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="tapToLoadImagesOnMobileData"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableNotifications"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckbox
-                  name="deepLinkHandoffNotify"
-                  checked={values.deepLinkHandoffNotify}
-                  onChange={onHandoffNotifyChange}
-                >
-                  {i18n("options_deepLinkHandoffNotify")}
-                </PrefCheckbox>
-                {notifyDenied && (
-                  <Text className="PrefModal__warning">
-                    {i18n("options_deepLinkHandoffNotifyDenied")}
-                  </Text>
-                )}
-                <PrefCheckRow
-                  name="enableMessageInbox"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="showStatusHints"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefGroupHeading id="easyReading" />
-                <PrefCheckRow
-                  name="enableEasyReading"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableHelpMenuPopup"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableEasyReadingList"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableListFastScroll"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableBoardListSmoothScroll"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableListNativeAutoResume"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="queueListClickWhenBusy"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="skipBoardEntryScreen"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefGroupHeading id="home" />
-                <PrefCheckRow
-                  name="enableHomeDashboard"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="showWhatsNew"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableRecentArticles"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="resumeRecentArticles"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableSavedArticles"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableShareTarget"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefGroupHeading id="article" />
-                <PrefCheckRow
-                  name="enableBoardTabs"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableSplitReading"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableNextArticleCard"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <div className="PrefModal__SubOptions">
-                  <PrefCheckRow
-                    name="nextArticleSameSubject"
-                    values={values}
-                    onChange={onCheckboxChange}
-                  />
-                </div>
-                <PrefCheckRow
-                  name="enableArticleTools"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableArticleNav"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="easyReadingFooterProgress"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="easyReadingBrowserFind"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="easyReadingEndSwitchNative"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefGroupHeading id="hotkeys" />
-                <PrefHotkey
-                  name="easyReadingEndSwitchKey"
-                  value={values.easyReadingEndSwitchKey}
-                  disabled={prefRequiresOff("easyReadingEndSwitchKey", values)}
-                  onKeyDown={onHotkeyCapture}
-                  label={i18n("options_easyReadingEndSwitchKey")}
-                  placeholder={i18n("tooltip_easyReadingEndSwitchKey")}
-                />
-                <PrefHotkey
-                  name="aidNavBackKey"
-                  value={values.aidNavBackKey}
-                  onKeyDown={onHotkeyCapture}
-                  label={i18n("options_aidNavBackKey")}
-                  placeholder={i18n("tooltip_aidNavBackKey")}
-                />
-                <PrefHotkey
-                  name="deepLinkCopyKey"
-                  value={values.deepLinkCopyKey}
-                  onKeyDown={onHotkeyCapture}
-                  label={i18n("options_deepLinkCopyKey")}
-                  placeholder={i18n("tooltip_deepLinkCopyKey")}
-                />
-                <PrefHotkey
-                  name="unreadJumpKey"
-                  value={values.unreadJumpKey}
-                  onKeyDown={onHotkeyCapture}
-                  label={i18n("options_unreadJumpKey")}
-                  placeholder={i18n("tooltip_unreadJumpKey")}
-                />
-                <PrefCheckbox
-                  name="unreadJumpProgress"
-                  checked={values.unreadJumpProgress}
-                  onChange={onCheckboxChange}
-                  description={i18n("tooltip_unreadJumpProgress")}
-                >
-                  {i18n("options_unreadJumpProgress")}
-                </PrefCheckbox>
-                <PrefCheckbox
-                  name="unreadJumpDivider"
-                  checked={values.unreadJumpDivider}
-                  onChange={onCheckboxChange}
-                  description={i18n("tooltip_unreadJumpDivider")}
-                >
-                  {i18n("options_unreadJumpDivider")}
-                </PrefCheckbox>
-                <PrefCheckbox
-                  name="enableCommandPalette"
-                  checked={values.enableCommandPalette}
-                  onChange={onCheckboxChange}
-                  description={i18n("tooltip_enableCommandPalette")}
-                >
-                  {i18n("options_enableCommandPalette")}
-                </PrefCheckbox>
-                <PrefHotkey
-                  name="commandPaletteKey"
-                  value={values.commandPaletteKey}
-                  disabled={prefRequiresOff("commandPaletteKey", values)}
-                  onKeyDown={onHotkeyCapture}
-                  label={i18n("options_commandPaletteKey")}
-                  placeholder={i18n("tooltip_commandPaletteKey")}
-                />
-                <PrefCheckbox
-                  name="paletteQuickBoards"
-                  checked={values.paletteQuickBoards}
-                  disabled={prefRequiresOff("paletteQuickBoards", values)}
-                  onChange={onCheckboxChange}
-                  description={i18n("tooltip_paletteQuickBoards")}
-                >
-                  {i18n("options_paletteQuickBoards")}
-                </PrefCheckbox>
-                <PrefGroupHeading id="misc" />
-                <PrefCheckbox
-                  name="refreshKeyIntercept"
-                  checked={values.refreshKeyIntercept}
-                  disabled={values.nativeSafeMode}
-                  onChange={onCheckboxChange}
-                  description={i18n("tooltip_refreshKeyIntercept")}
-                >
-                  {i18n("options_refreshKeyIntercept")}
-                </PrefCheckbox>
-                <PrefNumber
-                  name="refreshMinIntervalSec"
-                  value={values.refreshMinIntervalSec}
-                  onChange={onNumberChange}
-                  label={i18n("options_refreshMinIntervalSec")}
-                  description={i18n("tooltip_refreshMinIntervalSec")}
-                  min={0}
-                />
-                <PrefCheckRow
-                  name="endTurnsOnLiveUpdate"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="copyOnSelect"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableBell"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="reconnectResume"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="resumeLastPlace"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefNumber
-                  name="antiIdleTime"
-                  value={values.antiIdleTime}
-                  onChange={onNumberChange}
-                  label={i18n("options_antiIdleTime")}
-                  description={i18n("tooltip_antiIdleTime")}
-                />
-                <PrefNumber
-                  name="lineWrap"
-                  value={values.lineWrap}
-                  onChange={onNumberChange}
-                  label={i18n("options_lineWrap")}
+                  onCheckboxChange={onCheckboxChange}
+                  onHotkeyCapture={onHotkeyCapture}
+                  onNumberChange={onNumberChange}
+                  custom={{
+                    deepLinkHandoffNotify: (
+                      <>
+                        <PrefCheckbox
+                          name="deepLinkHandoffNotify"
+                          checked={values.deepLinkHandoffNotify}
+                          onChange={onHandoffNotifyChange}
+                        >
+                          {i18n("options_deepLinkHandoffNotify")}
+                        </PrefCheckbox>
+                        {notifyDenied && (
+                          <Text className="PrefModal__warning">
+                            {i18n("options_deepLinkHandoffNotifyDenied")}
+                          </Text>
+                        )}
+                      </>
+                    ),
+                    unreadJumpProgress: (
+                      <PrefCheckbox
+                        name="unreadJumpProgress"
+                        checked={values.unreadJumpProgress}
+                        onChange={onCheckboxChange}
+                        description={i18n("tooltip_unreadJumpProgress")}
+                      >
+                        {i18n("options_unreadJumpProgress")}
+                      </PrefCheckbox>
+                    ),
+                    unreadJumpDivider: (
+                      <PrefCheckbox
+                        name="unreadJumpDivider"
+                        checked={values.unreadJumpDivider}
+                        onChange={onCheckboxChange}
+                        description={i18n("tooltip_unreadJumpDivider")}
+                      >
+                        {i18n("options_unreadJumpDivider")}
+                      </PrefCheckbox>
+                    ),
+                    enableCommandPalette: (
+                      <PrefCheckbox
+                        name="enableCommandPalette"
+                        checked={values.enableCommandPalette}
+                        onChange={onCheckboxChange}
+                        description={i18n("tooltip_enableCommandPalette")}
+                      >
+                        {i18n("options_enableCommandPalette")}
+                      </PrefCheckbox>
+                    ),
+                    paletteQuickBoards: (
+                      <PrefCheckbox
+                        name="paletteQuickBoards"
+                        checked={values.paletteQuickBoards}
+                        disabled={prefRequiresOff("paletteQuickBoards", values)}
+                        onChange={onCheckboxChange}
+                        description={i18n("tooltip_paletteQuickBoards")}
+                      >
+                        {i18n("options_paletteQuickBoards")}
+                      </PrefCheckbox>
+                    ),
+                    refreshKeyIntercept: (
+                      <PrefCheckbox
+                        name="refreshKeyIntercept"
+                        checked={values.refreshKeyIntercept}
+                        disabled={values.nativeSafeMode}
+                        onChange={onCheckboxChange}
+                        description={i18n("tooltip_refreshKeyIntercept")}
+                      >
+                        {i18n("options_refreshKeyIntercept")}
+                      </PrefCheckbox>
+                    ),
+                  }}
                 />
               </PrefSection>
               <PrefSection legendKey="options_contextMenu">

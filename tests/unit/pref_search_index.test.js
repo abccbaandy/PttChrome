@@ -12,6 +12,7 @@ import {
   PREF_SEARCH_ITEMS,
   PREF_SEARCH_EXEMPT_NAMES,
   PREF_SEARCH_TABS,
+  prefSectionItems,
 } from "../../src/js/pref_search";
 import { zh_TW as zh } from "../../src/js/zh_TW_messages";
 import { en_US as en } from "../../src/js/en_US_messages";
@@ -40,8 +41,18 @@ const SRC = stripComments(fs.readFileSync(SRC_PATH, "utf8"));
 
 const matchAll = (re) => [...SRC.matchAll(re)].map((m) => m[1]);
 
+// 由索引畫出的分區（<PrefIndexRows sectionKey="…">，架構 review A7 第十三步）：那一區的
+// 設定項沒有逐格寫在 JSX，而是照索引的 type 畫（name＝錨點＝key）。這裡把它們當成
+// 「畫面上有」；畫面真的照索引畫出來，由 pref_groups.test.jsx「由索引畫出」在真瀏覽器守。
+const indexRenderedSections = matchAll(
+  /<PrefIndexRows\s+sectionKey="([^"]+)"/g,
+);
+const indexRenderedNames = indexRenderedSections.flatMap((k) =>
+  prefSectionItems(k).map((it) => it.key),
+);
+
 // name="foo" 與 name={`quickSearchBuiltin-${b.id}`} 兩種寫法。
-const staticNames = matchAll(/\bname="([^"]+)"/g);
+const staticNames = [...matchAll(/\bname="([^"]+)"/g), ...indexRenderedNames];
 const templateNames = matchAll(/\bname=\{`([^`$]*)\$\{/g);
 // 分區一律走 <PrefSection legendKey="…">（adapter 負責 fieldset/legend 與錨點）。
 const legendKeys = matchAll(/<PrefSection\s+legendKey="([^"]+)"/g);
@@ -56,7 +67,9 @@ const checkboxNames = [
   ...SRC.matchAll(
     /<Pref(?:Checkbox|CheckRow|Number|Select|Hotkey|Text|Textarea)\b[^>]*?\bname="([^"]+)"/g,
   ),
-].map((m) => m[1]);
+]
+  .map((m) => m[1])
+  .concat(indexRenderedNames);
 const panelTabs = matchAll(/<Tabs\.Panel\s+value="([^"]+)"/g);
 
 const indexedPrefKeys = new Set(
@@ -66,6 +79,8 @@ const exemptKeys = Object.keys(PREF_SEARCH_EXEMPT_NAMES);
 
 describe("設定搜尋索引 ↔ PrefModal.jsx", () => {
   test("抽得到東西（掃描本身沒壞掉）", () => {
+    expect(indexRenderedSections).toContain("options_general");
+    expect(indexRenderedNames.length).toBeGreaterThan(40);
     expect(staticNames.length).toBeGreaterThan(50);
     expect(legendKeys.length).toBeGreaterThan(20);
     expect(panelTabs.length).toBe(11);

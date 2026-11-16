@@ -4,7 +4,8 @@
 // 完全無關，勿混用命名。這裡一律 settingsSearch / prefSearch。
 //
 // **索引是設定頁勾選列的文字來源**：PrefModal.jsx 的 <PrefCheckRow name="…"> 直接
-// 用這裡的 titleKey／tooltipKey 畫標題與說明（prefItem）；其餘欄位（數字、下拉、
+// 用這裡的 titleKey／tooltipKey 畫標題與說明（prefItem）；「一般」分區整區由這裡的
+// 順序與 type 畫出（<PrefIndexRows>，prefSectionItems）。其他分區的其餘欄位（數字、下拉、
 // 帶額外內容的勾選）仍是 hardcode JSX，這份 PREF_SEARCH_ITEMS 要手工跟著改。防線是
 // tests/unit/pref_search_index.test.js——它靜態掃 PrefModal.jsx 的每個
 // name="…" 與 <legend>，漏收就紅。新增設定項卻忘了進索引，是這個功能唯一
@@ -309,6 +310,7 @@ export const PREF_SEARCH_ITEMS = [
     {
       key: "refreshMinIntervalSec",
       type: "number",
+      min: 0,
       titleKey: "options_refreshMinIntervalSec",
       tooltipKey: "tooltip_refreshMinIntervalSec",
     },
@@ -936,6 +938,11 @@ export const PREF_SEARCH_ITEMS = [
 // 守護 tests/unit/pref_field_type_index.test.js：JSX 的元件與預設值型別都要對得上。
 /** @typedef {"check" | "select" | "number" | "text" | "textarea" | "hotkey"} PrefFieldType */
 
+/**
+ * min：數字欄的下限（由索引畫出的數字欄用；手寫的 PrefNumber 照舊自己帶）。
+ * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number }} PrefIndexItem
+ */
+
 // key → 索引項（只收 kind:"pref"）。設定頁的 PrefCheckRow 從這裡拿標題與說明的文字鍵
 // ⇒ 那些列的字跟搜尋結果是同一份來源，不會一邊改了另一邊沒跟上。
 const PREF_ITEM_BY_KEY = new Map(
@@ -944,10 +951,22 @@ const PREF_ITEM_BY_KEY = new Map(
 
 /**
  * @param {string} key pref key（同 data-pref-anchor）
- * @returns {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string } | undefined}
+ * @returns {PrefIndexItem | undefined}
  */
 export function prefItem(key) {
   return PREF_ITEM_BY_KEY.get(key);
+}
+
+/**
+ * 某個分區（sectionKey＝該分區 legend 的 i18n key）的設定項，照設定頁上的順序。
+ * 設定頁由索引畫出的分區（PrefModal.jsx 的 <PrefIndexRows>，架構 review A7 第十三步）就照這個順序畫。
+ * @param {string} sectionKey
+ * @returns {PrefIndexItem[]}
+ */
+export function prefSectionItems(sectionKey) {
+  return PREF_SEARCH_ITEMS.filter(
+    (it) => it.kind === "pref" && it.sectionKey === sectionKey,
+  );
 }
 
 // 前置開關（架構 review A7 第九步）：索引項的 requires＝「這一格要那一格開著才有作用」，

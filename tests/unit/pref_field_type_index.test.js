@@ -3,7 +3,11 @@
 // ②type 跟預設值的型別對得上（勾選＝布林、數字＝數字、文字類＝字串）。
 import fs from "node:fs";
 import path from "node:path";
-import { PREF_SEARCH_ITEMS, prefItem } from "../../src/js/pref_search";
+import {
+  PREF_SEARCH_ITEMS,
+  prefItem,
+  prefSectionItems,
+} from "../../src/js/pref_search";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 
 const COMPONENT_TYPE = {
@@ -51,7 +55,8 @@ describe("設定索引的欄位型別", () => {
       expect(item.type, `${name} 用 <${m[1]}>`).toBe(COMPONENT_TYPE[m[1]]);
       checked++;
     }
-    expect(checked).toBeGreaterThan(140);
+    // 由索引畫出的分區（<PrefIndexRows>）照 type 選元件，不必再比；這裡只比還手寫的格子。
+    expect(checked).toBeGreaterThan(100);
   });
 
   test("索引的 sub（縮排子選項）＝設定頁畫在 .PrefModal__SubOptions 裡的那幾格", () => {
@@ -64,6 +69,10 @@ describe("設定索引的欄位型別", () => {
       /<div className="PrefModal__SubOptions">([\s\S]*?)<\/div>/g,
     ))
       for (const n of m[1].matchAll(/\bname="([^"]+)"/g)) inJsx.add(n[1]);
+    // 由索引畫出的分區：sub 本身就是畫進 .PrefModal__SubOptions 的依據（PrefIndexRows），
+    // 畫面上真的縮排由 pref_groups.test.jsx「由索引畫出」守。
+    for (const m of src.matchAll(/<PrefIndexRows\s+sectionKey="([^"]+)"/g))
+      for (const it of prefSectionItems(m[1])) if (it.sub) inJsx.add(it.key);
     const inIndex = new Set(prefs.filter((it) => it.sub).map((it) => it.key));
     expect(inJsx.size).toBeGreaterThan(0);
     expect([...inIndex].sort()).toEqual([...inJsx].sort());

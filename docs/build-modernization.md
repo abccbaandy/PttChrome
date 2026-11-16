@@ -186,7 +186,8 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - **勾選列的字從索引來**：`PrefCheckRow name="…"` 只寫 name／checked／disabled／onChange，標題與灰字說明取自設定搜尋索引（`pref_search.js#prefItem` 的 `titleKey`／`tooltipKey`）⇒ 設定頁與搜尋結果同一份文字來源。99 列（標題＋說明剛好是索引那兩個鍵的）已換；帶警告字、`description`、說明跟索引不同字的照舊手寫 `PrefCheckbox`。守護：`pref_groups.test.jsx` 驗一般分區每個勾選列的字＝索引，`pref_search_index.test.js` 掃 `PrefCheckRow` 的 name。
 - **安全模式反灰從名單來**：`PrefCheckRow` 對 `pref_storage.js#NATIVE_SAFE_MODE_KEYS` 裡的項目自己反灰（安全模式的值走 context）。名單加一項設定頁就跟著反灰。守護 `pref_groups.test.jsx`：安全模式開著時名單每一項的 input 都 disabled。
 - **前置開關從索引來**（A7 第九步）：索引項的 `requires`＝「要那一格開著才有作用」（可以一層接一層，`pref_search.js#prefRequiresChain`）。`PrefCheckRow` 只收 `name`＋`values`，自己判斷：前置鏈任一格關掉、或安全模式開著且自己／前置鏈上有一格在名單裡 ⇒ 反灰。memo 比較器只比這一格與前置鏈的值，改別格不重畫。呼叫端的 `disabled` 只留索引表達不了的條件（AI 模型不能用）。勾選列以外的欄位（熱鍵、下拉、文字、名單；A7 第十步）一律寫 `disabled={prefRequiresOff("<key>", values)}`，前置條件同樣只記在索引（數字下拉 0 也算關，例：平滑捲動要滾輪 `mouseWheel` 不是 0）；安全模式只管勾選列，這些欄位照舊不跟著反灰。守護：`pref_modal_requires.test.jsx`（逐列行為表）、`pref_requires_index.test.js`（資料對得起來、JSX 不再手寫 checked 與「上層沒開」）。
-- **還沒做**：把索引升格成完整設定表（再帶型別、disabled 條件、子選項縮排），讓一般列直接由表 map 出來；目前 JSX 仍逐列寫元件，只有文字鍵已同源。
+- **「一般」分區由索引畫出**（A7 第十三步）：`PrefModal.jsx#PrefIndexRows sectionKey="options_general"` 照索引順序、依每項 `type` 畫欄位（check→`PrefCheckRow`、hotkey→`PrefHotkey`、number→`PrefNumber`，下限取索引的 `min`），`sub` 的連續幾格包進 `.PrefModal__SubOptions`，段落第一項前畫小標。長得不一樣的格子（說明放在勾選框裡、帶警告字、另有 onChange 或另有反灰條件）由呼叫端放進 `custom`（key → JSX），位置仍照索引；索引有、畫不出的 type 直接 throw。新增一般分區的設定只要在索引放對位置。改版前後整個設定頁 DOM 逐字相同。守護：`pref_groups.test.jsx`「由索引畫出」（畫面順序＝索引順序、sub 縮排、前置鏈關掉熱鍵反灰）；靜態掃描（`pref_search_index`／`pref_field_type_index`）把 `<PrefIndexRows>` 那幾區的項目當成畫面上有。
+- **還沒做**：其他分區也改用 `PrefIndexRows`（先把「說明放在勾選框裡」那種寫法收成索引的一個欄位，`custom` 才會變少）；select／text／textarea 的通用畫法（選項常數、onChange 種類要進索引）。
 
 ## Deprecated 瀏覽器 API
 
