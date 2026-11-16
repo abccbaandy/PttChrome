@@ -670,6 +670,27 @@
   "options_general": {
     "message": "一般"
   },
+  "options_groupBasic": {
+    "message": "基本"
+  },
+  "options_groupEasyReading": {
+    "message": "好讀與列表"
+  },
+  "options_groupHome": {
+    "message": "首頁與收藏"
+  },
+  "options_groupArticle": {
+    "message": "讀文章"
+  },
+  "options_groupHotkeys": {
+    "message": "快捷鍵"
+  },
+  "options_groupMisc": {
+    "message": "連線與其他"
+  },
+  "options_groupNav": {
+    "message": "跳到「一般」的哪一段"
+  },
   "options_about": {
     "message": "關於"
   },
