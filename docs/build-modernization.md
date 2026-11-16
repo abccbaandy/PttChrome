@@ -171,6 +171,14 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - **Mantine 樣式只載用得到的元件**（`src/css/mantine.css`，`@mantine/core/styles/<元件>.css` 逐一 `@import`）：整份 `styles.css` 約 295 KB、是擋第一次繪製的 CSS，換成用到的 35 個檔後約 130 KB。實測（Vite 8.3）開站 CSS 326 → 189 KB（gzip 49 → 30 KB）；拆前後各頁截圖逐像素比對（設定頁每個分頁、右鍵選單、設定搜尋、指令面板、連線失敗提示、手機選單／更多／搜尋 sheet）除閃爍游標與 build 時間字串外完全相同。名單由 `tests/unit/mantine_css_subset.test.js` 守：從 src 的 `import { … } from '@mantine/core'` 沿 Mantine esm import 圖收集用得到的 class，缺哪個檔就紅並列出檔名，順序要照整份 `styles.css`。新用一個 Mantine 元件時照它的訊息補一行。unit 測試要真版面的仍注入整份 `styles.css?raw`（`?inline` 在 Vitest 裡不展開 `@import`），同一個元件的規則兩邊相同。
 - react-dom（約 200 KB）、Mantine 共用核心（Modal／Button／Portal 等，開站就會用到的提示框都靠它）、核心畫面模組是真的開站必載，不在拆檔範圍。
 
+## 設定頁重畫
+
+`PrefModal` 的 `values` 是一整個 state，改任何一格整份元件重畫（作用中分頁約 1,600 個 DOM 節點）。架構 review A7 的方向是宣告式設定表，第一步先讓重畫便宜：
+
+- **勾選列 `PrefCheckbox` 與灰字說明 `PrefHint` 包 `React.memo`**：props 沒變就跳過。前提是 props 都是穩定值（`name`／`checked`／`disabled` 是原始值、`onChange` 是 `useCallback` 出來的、children 是字串）。實測（headless Chromium，一般分頁，連點同一格 5 次）：每點一下約 70 ms → 約 35 ms，mount 不變（約 100 ms）。守護 `tests/unit/pref_modal_rerender.test.jsx`：數 Mantine `Checkbox` 的 render，點一格只准那一格重畫。
+- **會讓 memo 失效的寫法**：在 `<PrefCheckbox>` 上傳 inline 物件／函式、children 放 JSX（快速搜尋內建項目那三列就是，刻意不管）、把共用 handler 改成每次 render 新建。
+- **還沒做**：`NumberInput`／`Select`／`TextInput`（一般分頁各 6～7 個）都是 inline `onChange={(v) => onNumberChange("x", v)}`、`Select` 的 `data` 每次新建 ⇒ 每次照畫，是剩下的大頭。下一步做 `PrefNumber`／`PrefSelect`（吃 `name` 與共用 handler，`data` 提到元件外或 `useMemo`），再往「從設定表產生一般列」走。
+
 ## Deprecated 瀏覽器 API
 
 已清零：`execCommand('copy')`→`navigator.clipboard.writeText`（正規化在純函式 `string_util.js#normalizeCopyText`，unit＋`ui_behavior.offline.spec.js` 複製冒煙測試守護）、`createEvent('MouseEvents')`→`new MouseEvent`、`touch_controller.js`＋Chrome UA sniffing 整份移除（目標＝桌機瀏覽器）。paste 攔截（`onDOMPaste`）非 deprecated，保留。**別再重複掃描這一區**。

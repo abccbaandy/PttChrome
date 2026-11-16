@@ -1,5 +1,6 @@
 import {
   cloneElement,
+  memo,
   useState,
   useCallback,
   useEffect,
@@ -163,26 +164,30 @@ const anchorFor = (key, flashKey) => ({
 
 // Checkbox adapter：保留 id={`pref-check-${name}`}（label[for=...] e2e marker，且
 // 點 label 文字才能切換）、name（input[name=...] marker）、event.target.checked 契約。
-const PrefCheckbox = ({
-  name,
-  checked,
-  disabled,
-  onChange,
-  description,
-  children,
-}) => (
-  <Checkbox
-    id={`pref-check-${name}`}
-    name={name}
-    checked={checked}
-    disabled={disabled}
-    onChange={onChange}
-    label={children}
-    description={description}
-    mb="xs"
-    {...anchorFor(name, useFlashKey())}
-  />
+const PrefCheckbox = memo(
+  ({ name, checked, disabled, onChange, description, children }) => (
+    <Checkbox
+      id={`pref-check-${name}`}
+      name={name}
+      checked={checked}
+      disabled={disabled}
+      onChange={onChange}
+      label={children}
+      description={description}
+      mb="xs"
+      {...anchorFor(name, useFlashKey())}
+    />
+  ),
 );
+
+// 設定項下方的灰字說明。跟 PrefCheckbox 一樣包 memo：設定頁每改一個值整份
+// PrefModal 重畫，props 沒變的列直接跳過（改一格的重畫時間約減半，量測見
+// docs/build-modernization.md「設定頁重畫」）。
+const PrefHint = memo(({ textKey }) => (
+  <Text size="xs" c="dimmed" mb="xs">
+    {i18n(textKey)}
+  </Text>
+));
 
 // 分區 adapter：<fieldset> + <legend>，順帶掛上 section:<legendKey> 錨點。
 // legendKey 同時是索引裡的 sectionKey（src/js/pref_search.js），靜態守護測試
@@ -873,9 +878,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_nativeSafeMode")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_nativeSafeMode")}
-                </Text>
+                <PrefHint textKey="tooltip_nativeSafeMode" />
                 <PrefCheckbox
                   name="enablePicPreview"
                   checked={values.enablePicPreview}
@@ -890,9 +893,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_imageFitScreen")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_imageFitScreen")}
-                </Text>
+                <PrefHint textKey="tooltip_imageFitScreen" />
                 <PrefCheckbox
                   name="tapToLoadImagesOnMobileData"
                   checked={values.tapToLoadImagesOnMobileData}
@@ -900,9 +901,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_tapToLoadImagesOnMobileData")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_tapToLoadImagesOnMobileData")}
-                </Text>
+                <PrefHint textKey="tooltip_tapToLoadImagesOnMobileData" />
                 <PrefCheckbox
                   name="enableNotifications"
                   checked={values.enableNotifications}
@@ -929,9 +928,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableMessageInbox")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableMessageInbox")}
-                </Text>
+                <PrefHint textKey="tooltip_enableMessageInbox" />
                 <PrefCheckbox
                   name="showStatusHints"
                   checked={values.showStatusHints}
@@ -939,9 +936,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_showStatusHints")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_showStatusHints")}
-                </Text>
+                <PrefHint textKey="tooltip_showStatusHints" />
                 <PrefCheckbox
                   name="enableEasyReading"
                   checked={values.enableEasyReading}
@@ -958,9 +953,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableHelpMenuPopup")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableHelpMenuPopup")}
-                </Text>
+                <PrefHint textKey="tooltip_enableHelpMenuPopup" />
                 <PrefCheckbox
                   name="enableEasyReadingList"
                   checked={values.enableEasyReadingList}
@@ -979,9 +972,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableListFastScroll")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableListFastScroll")}
-                </Text>
+                <PrefHint textKey="tooltip_enableListFastScroll" />
                 <PrefCheckbox
                   name="enableBoardListSmoothScroll"
                   checked={values.enableBoardListSmoothScroll}
@@ -990,9 +981,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableBoardListSmoothScroll")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableBoardListSmoothScroll")}
-                </Text>
+                <PrefHint textKey="tooltip_enableBoardListSmoothScroll" />
                 <PrefCheckbox
                   name="enableListNativeAutoResume"
                   checked={values.enableListNativeAutoResume}
@@ -1001,9 +990,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableListNativeAutoResume")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableListNativeAutoResume")}
-                </Text>
+                <PrefHint textKey="tooltip_enableListNativeAutoResume" />
                 <PrefCheckbox
                   name="queueListClickWhenBusy"
                   checked={values.queueListClickWhenBusy}
@@ -1012,9 +999,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_queueListClickWhenBusy")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_queueListClickWhenBusy")}
-                </Text>
+                <PrefHint textKey="tooltip_queueListClickWhenBusy" />
                 <PrefCheckbox
                   name="skipBoardEntryScreen"
                   checked={values.skipBoardEntryScreen}
@@ -1023,9 +1008,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_skipBoardEntryScreen")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_skipBoardEntryScreen")}
-                </Text>
+                <PrefHint textKey="tooltip_skipBoardEntryScreen" />
                 <PrefCheckbox
                   name="enableHomeDashboard"
                   checked={values.enableHomeDashboard}
@@ -1034,9 +1017,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableHomeDashboard")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableHomeDashboard")}
-                </Text>
+                <PrefHint textKey="tooltip_enableHomeDashboard" />
                 <PrefCheckbox
                   name="showWhatsNew"
                   checked={values.showWhatsNew}
@@ -1044,9 +1025,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_showWhatsNew")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_showWhatsNew")}
-                </Text>
+                <PrefHint textKey="tooltip_showWhatsNew" />
                 <PrefCheckbox
                   name="enableRecentArticles"
                   checked={values.enableRecentArticles}
@@ -1054,9 +1033,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableRecentArticles")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableRecentArticles")}
-                </Text>
+                <PrefHint textKey="tooltip_enableRecentArticles" />
                 <PrefCheckbox
                   name="resumeRecentArticles"
                   checked={values.resumeRecentArticles}
@@ -1065,9 +1042,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_resumeRecentArticles")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_resumeRecentArticles")}
-                </Text>
+                <PrefHint textKey="tooltip_resumeRecentArticles" />
                 <PrefCheckbox
                   name="enableSavedArticles"
                   checked={values.enableSavedArticles}
@@ -1075,9 +1050,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableSavedArticles")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableSavedArticles")}
-                </Text>
+                <PrefHint textKey="tooltip_enableSavedArticles" />
                 <PrefCheckbox
                   name="enableShareTarget"
                   checked={values.enableShareTarget}
@@ -1085,9 +1058,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableShareTarget")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableShareTarget")}
-                </Text>
+                <PrefHint textKey="tooltip_enableShareTarget" />
                 <PrefCheckbox
                   name="enableBoardTabs"
                   checked={values.enableBoardTabs}
@@ -1096,9 +1067,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableBoardTabs")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableBoardTabs")}
-                </Text>
+                <PrefHint textKey="tooltip_enableBoardTabs" />
                 <PrefCheckbox
                   name="enableSplitReading"
                   checked={values.enableSplitReading}
@@ -1107,9 +1076,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableSplitReading")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableSplitReading")}
-                </Text>
+                <PrefHint textKey="tooltip_enableSplitReading" />
                 <PrefCheckbox
                   name="enableNextArticleCard"
                   checked={values.enableNextArticleCard}
@@ -1118,9 +1085,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableNextArticleCard")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableNextArticleCard")}
-                </Text>
+                <PrefHint textKey="tooltip_enableNextArticleCard" />
                 <div className="PrefModal__SubOptions">
                   <PrefCheckbox
                     name="nextArticleSameSubject"
@@ -1132,9 +1097,7 @@ export const PrefModal = ({
                   >
                     {i18n("options_nextArticleSameSubject")}
                   </PrefCheckbox>
-                  <Text size="xs" c="dimmed" mb="xs">
-                    {i18n("tooltip_nextArticleSameSubject")}
-                  </Text>
+                  <PrefHint textKey="tooltip_nextArticleSameSubject" />
                 </div>
                 <PrefCheckbox
                   name="enableArticleTools"
@@ -1143,9 +1106,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableArticleTools")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableArticleTools")}
-                </Text>
+                <PrefHint textKey="tooltip_enableArticleTools" />
                 <PrefCheckbox
                   name="enableArticleNav"
                   checked={values.enableArticleNav}
@@ -1153,9 +1114,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableArticleNav")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableArticleNav")}
-                </Text>
+                <PrefHint textKey="tooltip_enableArticleNav" />
                 <PrefCheckbox
                   name="easyReadingFooterProgress"
                   checked={values.easyReadingFooterProgress}
@@ -1163,9 +1122,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_easyReadingFooterProgress")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_easyReadingFooterProgress")}
-                </Text>
+                <PrefHint textKey="tooltip_easyReadingFooterProgress" />
                 <PrefCheckbox
                   name="easyReadingBrowserFind"
                   checked={values.easyReadingBrowserFind}
@@ -1173,9 +1130,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_easyReadingBrowserFind")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_easyReadingBrowserFind")}
-                </Text>
+                <PrefHint textKey="tooltip_easyReadingBrowserFind" />
                 <PrefCheckbox
                   name="easyReadingEndSwitchNative"
                   checked={values.easyReadingEndSwitchNative}
@@ -1320,9 +1275,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_reconnectResume")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_reconnectResume")}
-                </Text>
+                <PrefHint textKey="tooltip_reconnectResume" />
                 <PrefCheckbox
                   name="resumeLastPlace"
                   checked={values.resumeLastPlace}
@@ -1331,9 +1284,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_resumeLastPlace")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_resumeLastPlace")}
-                </Text>
+                <PrefHint textKey="tooltip_resumeLastPlace" />
                 <NumberInput
                   label={i18n("options_antiIdleTime")}
                   description={i18n("tooltip_antiIdleTime")}
@@ -1382,9 +1333,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableEditorInput")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableEditorInput")}
-                </Text>
+                <PrefHint textKey="tooltip_enableEditorInput" />
                 <PrefCheckbox
                   name="enableLongPush"
                   checked={values.enableLongPush}
@@ -1400,9 +1349,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_pushKeyOpensLongPush")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_pushKeyOpensLongPush")}
-                </Text>
+                <PrefHint textKey="tooltip_pushKeyOpensLongPush" />
                 <PrefCheckbox
                   name="enableCommentBar"
                   checked={values.enableCommentBar}
@@ -1411,9 +1358,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableCommentBar")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableCommentBar")}
-                </Text>
+                <PrefHint textKey="tooltip_enableCommentBar" />
                 <PrefCheckbox
                   name="commentReplyMenu"
                   checked={values.commentReplyMenu}
@@ -1426,9 +1371,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_commentReplyMenu")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_commentReplyMenu")}
-                </Text>
+                <PrefHint textKey="tooltip_commentReplyMenu" />
                 <PrefCheckbox
                   name="enableCommentFilter"
                   checked={values.enableCommentFilter}
@@ -1436,9 +1379,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableCommentFilter")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableCommentFilter")}
-                </Text>
+                <PrefHint textKey="tooltip_enableCommentFilter" />
                 <PrefCheckbox
                   name="mobileCommentBarFold"
                   checked={values.mobileCommentBarFold}
@@ -1451,9 +1392,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_mobileCommentBarFold")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_mobileCommentBarFold")}
-                </Text>
+                <PrefHint textKey="tooltip_mobileCommentBarFold" />
                 <PrefCheckbox
                   name="commentBarCounter"
                   checked={values.commentBarCounter}
@@ -1466,9 +1405,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_commentBarCounter")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_commentBarCounter")}
-                </Text>
+                <PrefHint textKey="tooltip_commentBarCounter" />
                 <PrefCheckbox
                   name="searchKeyOpensModal"
                   checked={values.searchKeyOpensModal}
@@ -1477,9 +1414,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_searchKeyOpensModal")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_searchKeyOpensModal")}
-                </Text>
+                <PrefHint textKey="tooltip_searchKeyOpensModal" />
                 <PrefCheckbox
                   name="enableSearchStatus"
                   checked={values.enableSearchStatus}
@@ -1487,9 +1422,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableSearchStatus")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableSearchStatus")}
-                </Text>
+                <PrefHint textKey="tooltip_enableSearchStatus" />
               </PrefSection>
               <PrefSection legendKey="options_appearance">
                 <PrefCheckbox
@@ -1499,9 +1432,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_autoHideBlinkCursor")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_autoHideBlinkCursor")}
-                </Text>
+                <PrefHint textKey="tooltip_autoHideBlinkCursor" />
                 <PrefCheckbox
                   name="dimReadArticles"
                   checked={values.dimReadArticles}
@@ -1509,9 +1440,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_dimReadArticles")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_dimReadArticles")}
-                </Text>
+                <PrefHint textKey="tooltip_dimReadArticles" />
                 <PrefCheckbox
                   name="boardListUnreadMark"
                   checked={values.boardListUnreadMark}
@@ -1519,9 +1448,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_boardListUnreadMark")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_boardListUnreadMark")}
-                </Text>
+                <PrefHint textKey="tooltip_boardListUnreadMark" />
                 <PrefAnchor anchorKey="ui:theme">
                   <Text size="sm" fw={500} mb={4}>
                     {i18n("options_theme")}
@@ -1650,9 +1577,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileAppBarScrollTop")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileAppBarScrollTop")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileAppBarScrollTop" />
                     <PrefCheckbox
                       name="mobileAppBarArticleDetail"
                       checked={values.mobileAppBarArticleDetail}
@@ -1660,9 +1585,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileAppBarArticleDetail")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileAppBarArticleDetail")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileAppBarArticleDetail" />
                     <PrefCheckbox
                       name="mobileSelectTextPage"
                       checked={values.mobileSelectTextPage}
@@ -1670,9 +1593,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileSelectTextPage")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileSelectTextPage")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileSelectTextPage" />
                     <PrefCheckbox
                       name="mobileFindInArticle"
                       checked={values.mobileFindInArticle}
@@ -1680,9 +1601,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileFindInArticle")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileFindInArticle")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileFindInArticle" />
                     <PrefCheckbox
                       name="mobileCardHideTitleBox"
                       checked={values.mobileCardHideTitleBox}
@@ -1690,9 +1609,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileCardHideTitleBox")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileCardHideTitleBox")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileCardHideTitleBox" />
                     <PrefCheckbox
                       name="mobileBoardCardUnread"
                       checked={values.mobileBoardCardUnread}
@@ -1700,9 +1617,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileBoardCardUnread")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileBoardCardUnread")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileBoardCardUnread" />
                     <PrefCheckbox
                       name="mobileListEndHint"
                       checked={values.mobileListEndHint}
@@ -1710,9 +1625,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileListEndHint")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileListEndHint")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileListEndHint" />
                     <PrefCheckbox
                       name="mobileFloatToolsInMore"
                       checked={values.mobileFloatToolsInMore}
@@ -1720,9 +1633,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileFloatToolsInMore")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileFloatToolsInMore")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileFloatToolsInMore" />
                     <PrefCheckbox
                       name="mobileBoardTools"
                       checked={values.mobileBoardTools}
@@ -1730,9 +1641,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileBoardTools")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileBoardTools")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileBoardTools" />
                     <PrefCheckbox
                       name="mobileMailListTools"
                       checked={values.mobileMailListTools}
@@ -1740,9 +1649,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileMailListTools")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileMailListTools")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileMailListTools" />
                     <PrefCheckbox
                       name="mobileMenuBannerCollapse"
                       checked={values.mobileMenuBannerCollapse}
@@ -1750,9 +1657,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileMenuBannerCollapse")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileMenuBannerCollapse")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileMenuBannerCollapse" />
                     <PrefCheckbox
                       name="mobileEssenceCards"
                       checked={values.mobileEssenceCards}
@@ -1760,9 +1665,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileEssenceCards")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileEssenceCards")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileEssenceCards" />
                     <PrefCheckbox
                       name="mobilePromptChoices"
                       checked={values.mobilePromptChoices}
@@ -1770,9 +1673,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobilePromptChoices")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobilePromptChoices")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobilePromptChoices" />
                     <PrefCheckbox
                       name="mobilePromptKeyboard"
                       checked={values.mobilePromptKeyboard}
@@ -1780,9 +1681,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobilePromptKeyboard")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobilePromptKeyboard")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobilePromptKeyboard" />
                     <PrefCheckbox
                       name="mobileAnyKeyContinue"
                       checked={values.mobileAnyKeyContinue}
@@ -1790,9 +1689,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileAnyKeyContinue")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileAnyKeyContinue")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileAnyKeyContinue" />
                     <PrefCheckbox
                       name="mobileModernCommentCards"
                       checked={values.mobileModernCommentCards}
@@ -1800,9 +1697,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileModernCommentCards")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileModernCommentCards")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileModernCommentCards" />
                     <PrefCheckbox
                       name="mobileHangIndent"
                       checked={values.mobileHangIndent}
@@ -1810,9 +1705,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileHangIndent")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileHangIndent")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileHangIndent" />
                     <PrefCheckbox
                       name="mobileEditorSave"
                       checked={values.mobileEditorSave}
@@ -1820,9 +1713,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_mobileEditorSave")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_mobileEditorSave")}
-                    </Text>
+                    <PrefHint textKey="tooltip_mobileEditorSave" />
                   </>
                 )}
               </PrefSection>
@@ -1839,9 +1730,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_cursorRowBrighten")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_cursorRowBrighten")}
-                </Text>
+                <PrefHint textKey="tooltip_cursorRowBrighten" />
                 <PrefCheckbox
                   name="cursorRowBackground"
                   checked={values.cursorRowBackground}
@@ -1963,9 +1852,7 @@ export const PrefModal = ({
                 （pusherClickRange）。與其他子項一樣 disabled={!useMouseBrowsing}
                 —— 總開關關掉時沒有東西要分區（resolveMouseGates.clickRange）。 */}
               <PrefSection legendKey="options_mouseClickRange">
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_mouseClickRange")}
-                </Text>
+                <PrefHint textKey="tooltip_mouseClickRange" />
                 <Select
                   label={i18n("options_mouseListClickStart")}
                   aria-label={i18n("options_mouseListClickStart")}
@@ -2079,9 +1966,7 @@ export const PrefModal = ({
                   mb="xs"
                   {...anchor("mouseWheel")}
                 />
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_mouseWheel")}
-                </Text>
+                <PrefHint textKey="tooltip_mouseWheel" />
                 {/* 平滑捲動只在文章列表好讀模式有作用，且是滾輪的子行為
                   ⇒ 滾輪關掉時一併 disabled（gating 同 resolveMouseGates）。 */}
                 <PrefCheckbox
@@ -2350,9 +2235,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_showMergeCaptionButton")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_showMergeCaptionButton")}
-                </Text>
+                <PrefHint textKey="tooltip_showMergeCaptionButton" />
                 <PrefCheckbox
                   name="showLightsOnButton"
                   checked={values.showLightsOnButton}
@@ -2360,9 +2243,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_showLightsOnButton")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_showLightsOnButton")}
-                </Text>
+                <PrefHint textKey="tooltip_showLightsOnButton" />
                 <PrefCheckbox
                   name="highlightAuthorComments"
                   checked={values.highlightAuthorComments}
@@ -2384,9 +2265,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_markNewComments")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_markNewComments")}
-                </Text>
+                <PrefHint textKey="tooltip_markNewComments" />
                 <PrefCheckbox
                   name="markJustPushed"
                   checked={values.markJustPushed}
@@ -2394,9 +2273,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_markJustPushed")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_markJustPushed")}
-                </Text>
+                <PrefHint textKey="tooltip_markJustPushed" />
                 <PrefCheckbox
                   name="listNewPushCount"
                   checked={values.listNewPushCount}
@@ -2404,9 +2281,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_listNewPushCount")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_listNewPushCount")}
-                </Text>
+                <PrefHint textKey="tooltip_listNewPushCount" />
                 <PrefCheckbox
                   name="enableAutoFixUrl"
                   checked={values.enableAutoFixUrl}
@@ -2466,9 +2341,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableFollowList")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableFollowList")}
-                </Text>
+                <PrefHint textKey="tooltip_enableFollowList" />
                 <Textarea
                   label={i18n("options_followList")}
                   name="followList"
@@ -2501,9 +2374,7 @@ export const PrefModal = ({
                 >
                   {i18n("options_enableFollowOnly")}
                 </PrefCheckbox>
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_enableFollowOnly")}
-                </Text>
+                <PrefHint textKey="tooltip_enableFollowOnly" />
               </PrefSection>
             </Tabs.Panel>
             {/* 快速搜尋分頁：右鍵選單（選取文字後）的搜尋項目清單。內建項目只能停用
@@ -2511,9 +2382,7 @@ export const PrefModal = ({
               pref 只存「被停用的 id」，所以日後新增內建項目舊使用者也拿得到。 */}
             <Tabs.Panel value="quicksearch">
               <PrefSection legendKey="options_quickSearchBuiltin">
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_quickSearch")}
-                </Text>
+                <PrefHint textKey="tooltip_quickSearch" />
                 {BUILTIN_QUICK_SEARCH.map((b) => (
                   <PrefCheckbox
                     key={b.id}
@@ -2626,9 +2495,7 @@ export const PrefModal = ({
               {navActiveKey === "autologin" && (
                 <>
                   <PrefSection legendKey="options_autoLogin">
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_autoLoginSynced")}
-                    </Text>
+                    <PrefHint textKey="tooltip_autoLoginSynced" />
                     <PrefCheckbox
                       name="autoLogin"
                       checked={values.autoLogin}
@@ -2677,9 +2544,7 @@ export const PrefModal = ({
                         {i18n("tooltip_autoLoginLocalCopy")}
                       </Text>
                     )}
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_autoLoginUpdate")}
-                    </Text>
+                    <PrefHint textKey="tooltip_autoLoginUpdate" />
                     <TextInput
                       label={i18n("options_autoLoginUser")}
                       name="autoLoginUser"
@@ -2906,9 +2771,7 @@ export const PrefModal = ({
                 )}
               </PrefSection>
               <PrefSection legendKey="options_savedBackup">
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_savedBackup")}
-                </Text>
+                <PrefHint textKey="tooltip_savedBackup" />
                 <input
                   ref={savedImportInputRef}
                   type="file"
@@ -2964,9 +2827,7 @@ export const PrefModal = ({
                     >
                       {i18n("options_syncReadLater")}
                     </PrefCheckbox>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      {i18n("tooltip_syncReadLater")}
-                    </Text>
+                    <PrefHint textKey="tooltip_syncReadLater" />
                   </div>
                 ) : (
                   <Button
@@ -2993,9 +2854,7 @@ export const PrefModal = ({
             {/* 快捷鍵一覽（js/shortcut_list.js）：只列本站自己加的鍵，跟著目前的設定值走。 */}
             <Tabs.Panel value="shortcuts">
               <PrefSection legendKey="options_shortcuts">
-                <Text size="xs" c="dimmed" mb="xs">
-                  {i18n("tooltip_shortcuts")}
-                </Text>
+                <PrefHint textKey="tooltip_shortcuts" />
                 <table className="PrefModal__shortcuts">
                   <tbody>
                     {shortcutList(values, isMacPlatform()).map((s) => (
