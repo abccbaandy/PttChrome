@@ -2,7 +2,18 @@
 // 形狀跟搬家前一樣（開＝'1'，關＝整個移除）。以及旗標類擁有者不再自己碰 localStorage。
 import fs from 'node:fs';
 import path from 'node:path';
-import { readFlag, writeFlag, readJson, readRaw, writeRaw, writeJson, removeData } from '../../src/js/user_data';
+import {
+  readFlag,
+  writeFlag,
+  readJson,
+  readRaw,
+  writeRaw,
+  writeJson,
+  removeData,
+  isQuotaError,
+  QUOTA_EVICT_ORDER,
+} from '../../src/js/user_data';
+import { setDiagSink } from '../../src/js/diag';
 import { STORAGE_KEYS, USER_DATA } from '../../src/js/user_data_keys';
 
 function memStorage() {
@@ -156,5 +167,91 @@ describe('user_data 旗標', () => {
       );
       expect(code, `${e.owner} 不該再直接 getItem/setItem`).not.toMatch(/\.(getItem|setItem|removeItem)\(/);
     }
+  });
+});
+
+// 容量有上限的假 storage：總字數超過 budget 就丟瀏覽器的 QuotaExceededError（name＋舊 code 22）。
+function quotaStorage(budget) {
+  const st = memStorage();
+  const used = () => [...st.m.entries()].reduce((n, [k, v]) => n + k.length + v.length, 0);
+  st.setItem = (k, v) => {
+    const old = st.m.has(k) ? k.length + st.m.get(k).length : 0;
+    if (used() - old + k.length + String(v).length > budget) {
+      const e = new Error('quota');
+      e.name = 'QuotaExceededError';
+      // @ts-ignore 瀏覽器的 DOMException 帶 code
+      e.code = 22;
+      throw e;
+    }
+    st.m.set(k, String(v));
+  };
+  return st;
+}
+
+describe('user_data 容量滿（A10 第二步）', () => {
+  afterEach(() => setDiagSink(null));
+
+  test('認得三家瀏覽器的容量滿；SecurityError／一般錯誤不算', () => {
+    expect(isQuotaError({ name: 'QuotaExceededError' })).toBe(true);
+    expect(isQuotaError({ name: 'NS_ERROR_DOM_QUOTA_REACHED' })).toBe(true);
+    expect(isQuotaError({ code: 22 })).toBe(true);
+    expect(isQuotaError({ code: 1014 })).toBe(true);
+    expect(isQuotaError({ name: 'SecurityError', code: 18 })).toBe(false);
+    expect(isQuotaError(new Error('x'))).toBe(false);
+    expect(isQuotaError(null)).toBe(false);
+  });
+
+  test('容量滿：先清掉可重抓的快取（我的最愛快取）再寫，紀錄類一筆都不動', () => {
+    const big = 'x'.repeat(400);
+    const st = quotaStorage(1000);
+    st.m.set(STORAGE_KEYS.homeFavorites, big);
+    st.m.set(STORAGE_KEYS.recentArticles, big);
+    const logs = [];
+    setDiagSink((tag, info) => logs.push([tag, info]));
+    expect(writeJson('searchHistory', { q: 'y'.repeat(300) }, st)).toBe(true);
+    expect(st.m.has(STORAGE_KEYS.homeFavorites)).toBe(false);
+    expect(st.m.get(STORAGE_KEYS.recentArticles)).toBe(big);
+    expect(readJson('searchHistory', st)).toEqual({ q: 'y'.repeat(300) });
+    expect(logs).toEqual([['userData.quota', expect.objectContaining({ id: 'searchHistory', evicted: ['homeFavorites'], ok: true })]]);
+  });
+
+  test('清完還是放不下：回 false、記一筆放棄，原有資料不被動到（除了清掉的快取）', () => {
+    const st = quotaStorage(600);
+    st.m.set(STORAGE_KEYS.recentArticles, 'r'.repeat(400));
+    const logs = [];
+    setDiagSink((tag, info) => logs.push([tag, info]));
+    expect(writeRaw('longPushDraft', 'd'.repeat(500), st)).toBe(false);
+    expect(st.m.get(STORAGE_KEYS.recentArticles)).toBe('r'.repeat(400));
+    expect(st.m.has(STORAGE_KEYS.longPushDraft)).toBe(false);
+    expect(logs).toEqual([['userData.quota', expect.objectContaining({ id: 'longPushDraft', evicted: [], ok: false })]]);
+  });
+
+  test('寫的就是快取本身時不清自己；旗標也走同一條', () => {
+    const st = quotaStorage(70);
+    st.m.set(STORAGE_KEYS.homeFavorites, 'f'.repeat(30));
+    expect(writeJson('homeFavorites', 'g'.repeat(60), st)).toBe(false);
+    expect(st.m.get(STORAGE_KEYS.homeFavorites)).toBe('f'.repeat(30));
+    writeFlag('followOnly', true, st);
+    expect(readFlag('followOnly', st)).toBe(true);
+    expect(st.m.has(STORAGE_KEYS.homeFavorites)).toBe(false);
+  });
+
+  test('不是容量滿的錯誤不清任何資料（隱私模式／被封鎖的 storage 照舊安靜放棄）', () => {
+    const st = memStorage();
+    st.m.set(STORAGE_KEYS.homeFavorites, 'keep');
+    st.setItem = () => {
+      const e = new Error('denied');
+      e.name = 'SecurityError';
+      throw e;
+    };
+    expect(writeJson('boardTabs', [1], st)).toBe(false);
+    expect(st.m.get(STORAGE_KEYS.homeFavorites)).toBe('keep');
+  });
+
+  test('可清清單只放可以重抓的快取（斷線回原處快照重抓不回來，不清）', () => {
+    for (const id of QUOTA_EVICT_ORDER) {
+      expect(USER_DATA.find((e) => e.id === id)?.kind, id).toBe('cache');
+    }
+    expect(QUOTA_EVICT_ORDER).not.toContain('rendererResume');
   });
 });

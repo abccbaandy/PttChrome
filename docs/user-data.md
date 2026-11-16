@@ -53,8 +53,11 @@ Mantine 自己的色彩模式鍵、Firebase SDK 自己的登入狀態（IndexedD
 ## 還沒做（A10 後續步驟，一次一步、舊資料不能掉）
 
 1. **共用讀寫搬完**：已完成（總表的 localStorage 鍵都走 `user_data.js`）。
-2. **容量滿的處理**：現在寫入失敗多半靜默忽略。寫入失敗要能分出 QuotaExceeded，先清快取類再重試，
-   仍失敗才放棄並記進 debug 錄製。
+2. **容量滿的處理**：已完成。`user_data.js` 的寫入（`writeFlag`／`writeJson`／`writeRaw`）遇到容量滿
+   （`isQuotaError`：QuotaExceededError、Firefox 的 NS_ERROR_DOM_QUOTA_REACHED、code 22／1014）先清掉
+   `QUOTA_EVICT_ORDER`（只放可以重抓的快取：我的最愛快取；斷線回原處快照重抓不回來，不清）再試一次，
+   仍失敗才放棄；兩種結果都記一筆 `userData.quota` 進 debug 錄製（`diag.js`）。隱私模式／被封鎖的
+   storage（不是容量滿）照舊安靜放棄、不清任何東西。IndexedDB（存到本機）不在這條路上。
 3. **跨分頁同步**：目前沒有任何模組聽 `storage` 事件；只有長推文草稿在寫入前重讀一次（別的分頁清掉時
    不寫回）。紀錄類（最近讀過、看板分頁、新推文標記）在兩個分頁同時開著時後寫的蓋掉先寫的。
    設定頁關閉時只寫回在設定頁裡改過的格子（`pref_merge.js#mergeEditedPrefs`，跟打開時的快照比），
