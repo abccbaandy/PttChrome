@@ -100,6 +100,22 @@ describe("pttchrome/no-storage-key-literal", () => {
   });
 });
 
+describe("pttchrome/no-footer-direct", () => {
+  tester.run("no-footer-direct", plugin.rules["no-footer-direct"], {
+    valid: [
+      "const edge = measureContentEdge(core.view);",
+      "const y = contentBottomOf(edge);",
+      "// view.lastRowDiv 是好讀 footer",
+      "const s = 'lastRowDiv';",
+    ],
+    invalid: [
+      bad("const footer = view.lastRowDiv;"),
+      bad("this._core.view.lastRowDiv.getBoundingClientRect();"),
+      bad("window.getComputedStyle(view['lastRowDiv']);"),
+    ],
+  });
+});
+
 describe(".oxlintrc.json 有開這些規則", () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), ".oxlintrc.json"), "utf8"));
   const RULES = Object.keys(plugin.rules).map((r) => `pttchrome/${r}`);
@@ -128,6 +144,12 @@ describe(".oxlintrc.json 有開這些規則", () => {
       ],
       // 鍵名總表本身。
       "pttchrome/no-storage-key-literal": ["src/js/user_data_keys.js"],
+      // footer 的擁有者：畫它（term_view）、切顯示（App）、量它（bottom_stack）。
+      "pttchrome/no-footer-direct": [
+        "src/js/term_view.js",
+        "src/js/pttchrome.jsx",
+        "src/js/bottom_stack.js",
+      ],
     });
   });
 

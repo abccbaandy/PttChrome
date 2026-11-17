@@ -38,6 +38,7 @@ import { recordFor } from './reading_record';
 import { HINT_ERROR } from './status_hint';
 import { i18n } from './i18n';
 import { commentBarHeight } from './comment_bar';
+import { measureContentEdge, contentBottomOf } from './bottom_stack';
 import { CHUNK_CLASS } from '../render/screen_chunk';
 import { screenOf, SCREEN_KIND } from './screen_model';
 
@@ -620,14 +621,11 @@ NextArticle.prototype = {
     if (!el || el.hidden || typeof window === 'undefined') return;
     const core = this._core;
     const view = core.view || {};
-    const main = view.mainDisplay;
+    const edge = measureContentEdge(view);
     let inset = 0;
-    if (main && typeof main.getBoundingClientRect === 'function') {
-      const bottom = main.getBoundingClientRect().bottom;
-      let clear = Math.min(bottom, window.innerHeight - (view.keyboardInset || 0));
-      const footer = view.lastRowDiv;
-      if (footer && typeof footer.getBoundingClientRect === 'function' && window.getComputedStyle(footer).display !== 'none')
-        clear = Math.min(clear, footer.getBoundingClientRect().top);
+    if (edge) {
+      const bottom = edge.mainRect.bottom;
+      let clear = Math.min(contentBottomOf(edge), window.innerHeight - (view.keyboardInset || 0));
       const bar = core.commentBar;
       if (bar && bar.state && bar.state.visible)
         clear = Math.min(clear, window.innerHeight - (bar.state.bottom || 0) - commentBarHeight(bar.state));

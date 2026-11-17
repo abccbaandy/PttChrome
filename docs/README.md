@@ -41,6 +41,7 @@
 - [`home-dashboard.md`](home-dashboard.md)：首頁儀表板：主功能表指紋／Ctrl+Z f 抓我的最愛的翻頁序列／不是 modal、打字收起／e2e 預設關；動 home_dashboard.js 或 components/HomeDashboard 前先讀
 - [`split-reader.md`](split-reader.md)：寬螢幕雙欄閱讀：左欄＝列表快照／換文走 startNum／搜尋結果不出現／只用終端機左邊的空白；動 split_reader.js 或 components/SplitReader 前先讀
 - [`list-row-filter.md`](list-row-filter.md)：文章列表黑名單的唯一判準：從列表挑文章／列文章的功能一律經 `list_row_filter.js`，各功能對被擋列的處理表＋靜態守護；新增這類功能前先讀
+- [`overlay-layout.md`](overlay-layout.md)：浮層版位（A8）：可見內容下緣只量一處（bottom_stack.js）、各底部浮層怎麼讓位；動推文列／下一篇卡片／導覽軸的位置前先讀
 - [`next-article.md`](next-article.md)：讀完接著讀下一篇：下一篇＝列表快照的下一列／好讀文末的標題卡住在 .main 不寫 #mainContainer／atBottom 要扣卡片高度／手機往上拉；動 next_article.js、pull_next_article.js 前先讀
 - [`new-comments.md`](new-comments.md)：新推文標記：推文數法＝樓層數法／讀完才記、localStorage 不上雲／標註層 newCommentsRow 與 applyNewCommentsMark；動 new_comments.js 前先讀
 - [`article-tools.md`](article-tools.md)：文章工具側欄：資料全取自好讀累積頁、一個 byte 都不送／只在好讀文章／只用終端機右邊的空白；動 article_tools.js 或 components/ArticleTools 前先讀
