@@ -96,10 +96,16 @@ export function BoardTabs(core, opts) {
   this._visited = null;
   this._state = { visible: false, tabs: this._tabs.map((t) => t.name), current: null, left: 0, top: 0, width: 0, rowHeight: 0, mobile: false };
   const self = this;
+  this._onSettle = function() {
+    self.refresh();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self.refresh();
-    });
+    core.buf.addEventListener(
+      'screenSettled',
+      this._onSettle,
+      // 出錯 ⇒ 這次連線收起分頁列（就是原生的按鍵提示列），不再接 settle（event.js 故障隔離）。
+      { feature: 'enableBoardTabs', disable: () => self._set(HIDDEN_PATCH) }
+    );
   if (typeof window !== 'undefined' && window.addEventListener) {
     window.addEventListener('resize', function() {
       self.refresh();
@@ -169,6 +175,12 @@ BoardTabs.prototype = {
 
   refresh: function() {
     const core = this._core;
+    // 出錯被停用（event.js 故障隔離）⇒ resize／別的視窗改分頁這些入口也不准把分頁列叫回來，新連線才恢復。
+    const buf = core.buf;
+    if (buf && typeof buf.isListenerDisabled === 'function' && buf.isListenerDisabled(this._onSettle)) {
+      if (this._state.visible) this._set(HIDDEN_PATCH);
+      return;
+    }
     const rows = this._rowTexts();
     const board = rows ? articleListBoardOf(rows, core.buf.cur_y) : null;
     if (!readEffectivePrefs().enableBoardTabs || !board) {

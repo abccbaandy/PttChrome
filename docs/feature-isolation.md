@@ -17,7 +17,7 @@
 - **停用要擋住所有入口**：功能若還有別的觸發點（resize、推文列…），在那裡用 `buf.isListenerDisabled(fn)` 判斷，否則停用後又被叫回來（導覽軸的 `refresh` 就是這樣擋）。
 - **沒登記的不停用**，每幀照樣再試：不知道怎麼收乾淨的功能（例如好讀、列表 session 這類狀態機）半套停用只會更糟（畫面凍住）。新功能能乾淨收起（浮層收起、回原生）的，註冊時就帶上 `feature`／`disable`。
 - **派發順序有意義的監聽者要帶 `owner`**（App 上的屬性名，例 `{ owner: 'listSession' }`）：`buf.listenerOwners(type)` 讀得到派發順序，`tests/e2e/offline/listener_order.offline.spec.js` 守 App 建構子裡「順序有意義」的那幾組先後（架構 review A6 第一步）。新增一組先後依賴時，在那支 spec 的 `BEFORE` 補一列，兩邊都帶 `owner`。`owner` 只是標籤，不會讓功能出錯時停用。
-- 目前登記的：新功能小卡（`showWhatsNew`，收起小卡）、文章導覽軸（`enableArticleNav`，收起軸、原生捲軸跟著回來）。
+- 目前登記的：新功能小卡（`showWhatsNew`，收起小卡）、文章導覽軸（`enableArticleNav`，收起軸、原生捲軸跟著回來）、看板分頁（`enableBoardTabs`，收起分頁列、露出原生按鍵提示列；resize 與別的視窗改分頁的 `storage` 事件也擋）、手機文章內找字（`mobileFindInArticle`）。
 
 ## 不走事件派發的入口
 
