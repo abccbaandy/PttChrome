@@ -88,6 +88,22 @@ export const PREF_SEARCH_EXEMPT_NAMES = {
     "動態產生，內容取自 quick_search.js#BUILTIN_QUICK_SEARCH，會隨清單變動；由 section:options_quickSearchBuiltin 代表",
 };
 
+// DEFAULT_PREFS 裡**刻意**沒有索引項的設定（架構 review A7「三份清單對得起來」）。
+// 其餘每個預設值都要有索引項：新增設定忘了進索引 ⇒ 設定頁畫不出來、搜尋找不到、
+// 也沒有型別可以檢查。值是理由；守護 tests/unit/pref_schema_lists.test.js。
+export const PREF_DEFAULTS_NOT_INDEXED = {
+  syncReadLater:
+    "只在登入雲端同步後才畫出來，見 PREF_SEARCH_EXEMPT_NAMES；由 section:options_sync 代表",
+  easyReadingListPrefetchCount:
+    "列表／看板列表背景先抓幾列的內部調校值，設定頁沒有這一格",
+  mouseBrowsingHighlightColor:
+    "色票列（一排顏色鈕）沒有 name，由索引的 ui:highlightColor 代表",
+  quickSearchDisabled:
+    "快速搜尋內建列的勾選狀態（存成被關掉的 id 清單），由 section:options_quickSearchBuiltin 代表",
+  quickSearchCustom:
+    "快速搜尋自訂列（動態多列），由 section:options_quickSearchCustom 代表",
+};
+
 // sectionTooltipKey === false ⇒ 這個分區不另外產生 section 項。用在兩種情形：
 //   1) legend 與分頁名同字（「一般 → 一般」是廢結果）；
 //   2) 分區裡就有一個項目的標題與 legend 同字（例如「滾輪」區的 mouseWheel）。

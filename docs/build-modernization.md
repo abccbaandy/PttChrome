@@ -189,6 +189,7 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - **「一般」分區由索引畫出**（A7 第十三步）：`PrefModal.jsx#PrefIndexRows sectionKey="options_general"` 照索引順序、依每項 `type` 畫欄位（check→`PrefCheckRow`、hotkey→`PrefHotkey`、number→`PrefNumber`，下限取索引的 `min`），`sub` 的連續幾格包進 `.PrefModal__SubOptions`，段落第一項前畫小標。長得不一樣的格子（說明放在勾選框裡、帶警告字、另有 onChange 或另有反灰條件）由呼叫端放進 `custom`（key → JSX），位置仍照索引；索引有、畫不出的 type 直接 throw。新增一般分區的設定只要在索引放對位置。改版前後整個設定頁 DOM 逐字相同。第十四步「右鍵選單與輸入」分區（`options_contextMenu`，14 格全是勾選列，沒有 custom）也改用它。守護：`pref_groups.test.jsx`「由索引畫出」（`INDEX_SECTIONS` 逐區比）（畫面順序＝索引順序、sub 縮排、前置鏈關掉熱鍵反灰）；靜態掃描（`pref_search_index`／`pref_field_type_index`）把 `<PrefIndexRows>` 那幾區的項目當成畫面上有。
 - **說明畫在勾選框裡**（A7 第十五步）：舊設定頁有兩種說明寫法（勾選框下另一行灰字 `PrefHint`／Mantine Checkbox 的 `description` 緊貼標題）。後者在索引記 `hintInBox: true`，`PrefCheckRow` 照著畫，一般分區的 `custom` 只剩帶通知權限警告的 `deepLinkHandoffNotify`。安全模式開／關兩種狀態的設定頁 DOM 前後都逐字相同。
 - **自動登入分頁也由索引畫出**（A7 第二十三步）：`tooltip_autoLogin`（帳密交給密碼管理員的警告）改掛在憑證分區上；「重複連線」下拉的 autocomplete=off 記成索引的 `noAutofill`，帳號欄記 `credential`。密碼欄（type=password、長度上限）與 2FA 密鑰（前置風險警告、格式錯誤、失焦正規化）留在 `custom`。有／沒有密碼管理員兩種狀態的分頁 DOM 前後逐字相同。至此每個設定分頁的設定格都照索引排（設定備份、快速搜尋自訂列這類不是設定格的照舊手寫）。守護：`pref_modal_autologin_tab.test.jsx`「由索引畫出」。
+- **四份設定清單對得起來**（A7「設定表單一來源」的前置守護）：預設值 `DEFAULT_PREFS`、設定索引、安全模式名單 `NATIVE_SAFE_MODE_KEYS`、本機專屬名單 `LOCAL_ONLY_PREF_KEYS` 還是分開手寫。`tests/unit/pref_schema_lists.test.js` 守：每個預設值都有索引項（刻意沒有的寫進 `pref_search.js#PREF_DEFAULTS_NOT_INDEXED` 並附理由）、每個索引項都有預設值、安全模式名單每項是索引裡的勾選格且預設是布林、本機專屬名單每項存在且索引標成 `credential` 的都在裡面。新增設定時這支紅了就照訊息補；之後要併成一張表也靠它確認沒漏。
 
 ## Deprecated 瀏覽器 API
 
