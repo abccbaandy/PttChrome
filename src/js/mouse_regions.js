@@ -538,6 +538,16 @@ export function resolveMouseGates(prefs) {
   };
 }
 
+// 列表好讀的 body 視口吃不吃使用者捲動（overflow-y:auto ＝交給瀏覽器捲；否則 hidden）。
+// 桌機：滾輪平滑捲動是滑鼠設定（gates.wheelSmoothScroll），關掉就退回滾輪一次一頁。
+// 手機：捲的是手指不是滾輪 ⇒ 不看滑鼠設定。設定跨裝置同步，電腦版關掉滾輪曾經讓手機列表
+// 整個捲不動（守護 tests/e2e/offline/mobile_list_cards.offline.spec.js）。
+// buffer＝listRenderMode 是 'buffer'（frozen 交易中一律不吃，兩邊都一樣）。
+export function listViewportScrollable({ buffer, mobile, gates }) {
+  if (!buffer) return false;
+  return !!mobile || !!(gates && gates.wheelSmoothScroll);
+}
+
 // CUR_* → 實際的 CSS cursor 值。
 //
 // 歷史坑：舊的 mouseCursorMap（term_buf.js）每一筆都寫成 `url(${x} 0 6,auto`，

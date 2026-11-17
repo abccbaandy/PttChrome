@@ -35,7 +35,7 @@
 | `mouseMiddleClick` | `2` | 0 關閉 / 1 貼上 / 2 左方向鍵 | 預設 2（＝回上一層）：BBS 的「返回」是最高頻操作，中鍵貼上在這個 client 幾乎用不到（2026-09-16 從 `0` 翻） |
 | `mouseWheel` | `1` | 0 關閉 / 1 上下頁 | |
 | `mouseBackNav` | `1` | 0 關閉 / 1 左方向鍵 | 攔截瀏覽器的「返回」→ `←`。**一個 key 涵蓋所有來源**（觸控板左滑手勢／側鍵／`Alt+←`／`⌘[`／工具列），它們是同一條實作（見「手勢與瀏覽器返回」） |
-| `mouseWheelSmoothScroll` | `true` | bool | 開＝列表好讀的 body 視口走 `overflow-y:auto`，**捲動整個交給瀏覽器**（與文章好讀同一套引擎）；關＝視口改 `overflow:hidden`，滾輪退回一次一頁。**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表） |
+| `mouseWheelSmoothScroll` | `true` | bool | 開＝列表好讀的 body 視口走 `overflow-y:auto`，**捲動整個交給瀏覽器**（與文章好讀同一套引擎）；關＝視口改 `overflow:hidden`，滾輪退回一次一頁（手機版面例外：手指捲動一律交給瀏覽器）。**只作用於文章列表好讀模式**（其餘畫面沒有這個選擇，見下方 render 分支表） |
 
 | `mouseServerReport` | `false` | bool | 把點擊與滾輪回報給 PTT server（XTerm SGR）。開啟後我們自己那套滑鼠語意整組讓位，見「PTT server 端的滑鼠回報」。**預設關**：PTT 的 `UF_MOUSE` 預設關，開了等於把滑鼠交給 server |
 
@@ -319,7 +319,7 @@ debug 錄製，`render/merge_buttons.js` 的純 `button`）在點擊優先權表
 | 點擊範圍（可點區＝底色區的起始欄、推文可點區起訖） | `useMouseBrowsing`（`clickRange`）—— **跟著總開關走**，總開關關掉時沒有東西要分區；設定頁那三個下拉因此與其他子項一樣 `disabled` |
 | 中鍵 | `useMouseBrowsing && mouseMiddleClick !== 0` |
 | 滾輪 | `useMouseBrowsing && mouseWheel !== 0` |
-| 滾輪平滑捲動 | `useMouseBrowsing && mouseWheel !== 0 && mouseWheelSmoothScroll`（`resolveMouseGates` 的 `wheelSmoothScroll`；只有列表好讀分支會問這一格） |
+| 滾輪平滑捲動 | `useMouseBrowsing && mouseWheel !== 0 && mouseWheelSmoothScroll`（`resolveMouseGates` 的 `wheelSmoothScroll`；只有列表好讀分支會問這一格，經 `listViewportScrollable`）。**手機版面不看這一格**：捲的是手指，視口一律可捲（設定跨裝置同步，電腦版關掉滾輪不能害手機捲不動） |
 | 瀏覽器返回（含觸控板左滑手勢） | `useMouseBrowsing && mouseBackNav !== 0`（`backNav`）—— **刻意不經過 `mouseWheel`**，見下節 |
 | 回報給 PTT server | `useMouseBrowsing && mouseServerReport && buf.mouseReport.isActive()`（`serverReport`）—— 為真時**強制關掉** `leftClick`／`cursorIcon`／`clickRange`／`wheel`／`wheelSmoothScroll`，見下方「PTT server 端的滑鼠回報」 |
 | 手機換行版面（`reflow`，`term_view.reflow`） | 為真時 `clickRange`／`edgePaging` 關掉，`resolveMouseRegion` 對 pageState 3 早退 NONE（格子座標不對應折行後的字，見 `docs/mobile.md`「Phase 3」） |

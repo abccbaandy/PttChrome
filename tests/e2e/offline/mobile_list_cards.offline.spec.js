@@ -9,6 +9,7 @@ const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { loadCassette, bootOffline, replayListCassette } = require('../helpers/replay');
 const { waitScrollStable, waitRectStable, OVERRIDING_SEL } = require('../helpers/layout');
+const { touchDrag } = require('../helpers/real_input');
 
 const nav = loadCassette('cchat-list-nav');
 
@@ -673,4 +674,23 @@ test.describe('手機 Phase 4：列表卡片（離線重放）', () => {
     await page.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
   });
+
+  // 手指捲列表不是滑鼠滾輪：設定會跨裝置同步，電腦版關掉「滑鼠滾輪」（或整個滑鼠瀏覽、
+  // 平滑捲動）時，手機的列表視口曾經跟著變成 overflow:hidden，手指完全捲不動。
+  for (const off of [{ mouseWheel: 0 }, { mouseWheelSmoothScroll: false }, { useMouseBrowsing: false }]) {
+    test(`電腦版的滾輪設定不影響手指捲動：${JSON.stringify(off)}`, async ({ page }) => {
+      test.setTimeout(90000);
+      await engage(page);
+      await ptt.applyPrefs(page, off);
+      await page.evaluate(() => window.__app.view.redraw(true));
+      const v = page.locator('#mainContainer .listBodyView');
+      await expect.poll(() => v.evaluate((el) => getComputedStyle(el).overflowY)).toBe('auto');
+      const before = (await state(page)).scrollTop;
+      const box = await v.boundingBox();
+      const x = box.x + box.width / 2;
+      await touchDrag(page, { x, y: box.y + 40 }, { x, y: box.y + box.height - 40 });
+      await waitScrollStable(page, '#mainContainer .listBodyView');
+      expect((await state(page)).scrollTop).toBeLessThan(before);
+    });
+  }
 });
