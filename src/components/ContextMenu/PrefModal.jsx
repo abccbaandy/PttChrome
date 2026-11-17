@@ -93,7 +93,9 @@ import {
   prefItem,
   prefRequiresChain,
   prefRequiresOff,
-  prefSectionItems,
+  prefSectionRows,
+  prefShown,
+  PREF_SHOWN_IF,
 } from "../../js/pref_search";
 import { shortcutList, isMacPlatform } from "../../js/shortcut_list";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
@@ -340,6 +342,11 @@ const MOBILE_LAYOUT_OPTIONS = [
   ["on", "options_mobileLayoutOn"],
   ["off", "options_mobileLayoutOff"],
 ];
+// 「外觀」分區由索引畫出時，各下拉選單的選項（PrefIndexRows 的 selectOptions）。
+const APPEARANCE_SELECT_OPTIONS = {
+  termSizeMode: TERM_SIZE_MODE_OPTIONS,
+  mobileLayout: MOBILE_LAYOUT_OPTIONS,
+};
 const MOUSE_LIST_CLICK_START_OPTIONS = [
   ["push", "options_clickFromPush"],
   ["date", "options_clickFromDate"],
@@ -559,10 +566,14 @@ const PrefGroupHeading = ({ id }) => {
 //   - check  → PrefCheckRow（標題／說明／反灰都取自索引）；
 //   - hotkey → PrefHotkey（說明當 placeholder，前置鏈關掉就反灰）；
 //   - number → PrefNumber（說明當 description，下限取索引的 min）；
+//   - text   → PrefText（說明當 description）；
+//   - select → PrefSelect（選項由呼叫端以 selectOptions[key] 給，[value, i18n key] 常數）；
 //   - sub: true 的連續幾格包進同一個 .PrefModal__SubOptions（縮排子選項）；
+//   - shownIf 條件不成立的整格不畫；條件表標 wrap 的，連續幾格包進一個 <div>（第十六步）；
 //   - 段落第一項（pref_groups.js 的 first）前面畫小標。
-// 長得跟上面不一樣的格子（帶警告字、說明放在勾選框裡、另有 onChange）由呼叫端放進 custom
-// （key → 那一格的 JSX），位置仍照索引。索引有、這裡畫不出的 type 直接炸：寫錯比靜默少一格好。
+// 長得跟上面不一樣的格子（帶警告字、另有 onChange、值要轉換）與沒有 name 的可操作項（ui:…）
+// 由呼叫端放進 custom（key → 那一格的 JSX），位置仍照索引。索引有、這裡畫不出的直接炸：
+// 寫錯比靜默少一格好。
 // 守護：tests/unit/pref_groups.test.jsx「由索引畫出」（畫面順序＝索引順序）。
 const GROUP_ID_BY_FIRST = new Map(GENERAL_GROUPS.map((g) => [g.first, g.id]));
 
@@ -570,13 +581,25 @@ const PrefIndexRows = ({
   sectionKey,
   values,
   custom,
+  selectOptions,
   onCheckboxChange,
   onHotkeyCapture,
   onNumberChange,
+  onTextInputChange,
+  onSelectStr,
 }) => {
+  // termSize.cols 這種點號鍵存在巢狀物件裡。
+  const valueOf = (key) =>
+    key.includes(".")
+      ? key.split(".").reduce((o, k) => (o == null ? undefined : o[k]), values)
+      : values[key];
+  const disabledOf = (it) =>
+    it.requires ? prefRequiresOff(it.key, values) : undefined;
   const field = (it) => {
     if (custom && Object.prototype.hasOwnProperty.call(custom, it.key))
       return custom[it.key];
+    if (it.kind === "ui")
+      throw new Error(`PrefIndexRows: ${it.key} 沒有 name，要放進 custom 手寫`);
     switch (it.type) {
       case "check":
         return (
@@ -591,7 +614,7 @@ const PrefIndexRows = ({
           <PrefHotkey
             name={it.key}
             value={values[it.key]}
-            disabled={it.requires ? prefRequiresOff(it.key, values) : undefined}
+            disabled={disabledOf(it)}
             onKeyDown={onHotkeyCapture}
             label={i18n(it.titleKey)}
             placeholder={it.tooltipKey && i18n(it.tooltipKey)}
@@ -601,11 +624,36 @@ const PrefIndexRows = ({
         return (
           <PrefNumber
             name={it.key}
-            value={values[it.key]}
+            value={valueOf(it.key)}
             onChange={onNumberChange}
             label={i18n(it.titleKey)}
             description={it.tooltipKey && i18n(it.tooltipKey)}
             min={it.min}
+          />
+        );
+      case "text":
+        return (
+          <PrefText
+            name={it.key}
+            value={valueOf(it.key)}
+            disabled={disabledOf(it)}
+            onChange={onTextInputChange}
+            label={i18n(it.titleKey)}
+            description={it.tooltipKey && i18n(it.tooltipKey)}
+          />
+        );
+      case "select":
+        if (!selectOptions || !selectOptions[it.key])
+          throw new Error(`PrefIndexRows: ${it.key} 要在 selectOptions 給選項`);
+        return (
+          <PrefSelect
+            name={it.key}
+            value={valueOf(it.key)}
+            disabled={disabledOf(it)}
+            onChange={onSelectStr}
+            label={i18n(it.titleKey)}
+            description={it.tooltipKey && i18n(it.tooltipKey)}
+            options={selectOptions[it.key]}
           />
         );
       default:
@@ -616,9 +664,25 @@ const PrefIndexRows = ({
   };
   const out = [];
   let subRun = null;
-  for (const it of prefSectionItems(sectionKey)) {
+  let wrapRun = null; // { id, list }：shownIf 條件標 wrap 的連續幾格
+  for (const it of prefSectionRows(sectionKey)) {
+    if (!prefShown(it.key, values)) continue;
+    const cond = it.shownIf ? PREF_SHOWN_IF[it.shownIf] : null;
+    let target = out;
+    if (cond && cond.wrap) {
+      if (!wrapRun || wrapRun.id !== it.shownIf) {
+        wrapRun = { id: it.shownIf, list: [] };
+        subRun = null;
+        out.push(<div key={`shown:${it.key}`}>{wrapRun.list}</div>);
+      }
+      target = wrapRun.list;
+    } else if (wrapRun) {
+      wrapRun = null;
+      subRun = null;
+    }
     const group = GROUP_ID_BY_FIRST.get(it.key);
-    if (group) out.push(<PrefGroupHeading key={`group:${group}`} id={group} />);
+    if (group)
+      target.push(<PrefGroupHeading key={`group:${group}`} id={group} />);
     const node = <Fragment key={it.key}>{field(it)}</Fragment>;
     if (it.sub && subRun) {
       subRun.push(node);
@@ -626,7 +690,7 @@ const PrefIndexRows = ({
     }
     if (it.sub) {
       subRun = [node];
-      out.push(
+      target.push(
         <div key={`sub:${it.key}`} className="PrefModal__SubOptions">
           {subRun}
         </div>,
@@ -634,7 +698,7 @@ const PrefIndexRows = ({
       continue;
     }
     subRun = null;
-    out.push(node);
+    target.push(node);
   }
   return out;
 };
@@ -1448,205 +1512,51 @@ export const PrefModal = ({
                 />
               </PrefSection>
               <PrefSection legendKey="options_appearance">
-                <PrefCheckRow
-                  name="autoHideBlinkCursor"
+                <PrefIndexRows
+                  sectionKey="options_appearance"
                   values={values}
-                  onChange={onCheckboxChange}
+                  onCheckboxChange={onCheckboxChange}
+                  onHotkeyCapture={onHotkeyCapture}
+                  onNumberChange={onNumberChange}
+                  onTextInputChange={onTextInputChange}
+                  onSelectStr={onSelectStr}
+                  selectOptions={APPEARANCE_SELECT_OPTIONS}
+                  custom={{
+                    "ui:theme": (
+                      <PrefAnchor anchorKey="ui:theme">
+                        <Text size="sm" fw={500} mb={4}>
+                          {i18n("options_theme")}
+                        </Text>
+                        <SegmentedControl
+                          value={colorScheme}
+                          onChange={setColorScheme}
+                          data={[
+                            {
+                              value: "light",
+                              label: i18n("options_themeLight"),
+                            },
+                            { value: "dark", label: i18n("options_themeDark") },
+                            { value: "auto", label: i18n("options_themeAuto") },
+                          ]}
+                          mb="xs"
+                        />
+                      </PrefAnchor>
+                    ),
+                    // 手機字級：下拉選單而非數字框（手機上不必叫鍵盤，值也只有偶數）。
+                    mobileFontSize: (
+                      <PrefSelect
+                        label={i18n("options_mobileFontSize")}
+                        description={i18n("tooltip_mobileFontSize")}
+                        name="mobileFontSize"
+                        value={String(
+                          normalizeMobileFontPx(values.mobileFontSize),
+                        )}
+                        onChange={onSelectNum}
+                        data={MOBILE_FONT_PX_CHOICES}
+                      />
+                    ),
+                  }}
                 />
-                <PrefCheckRow
-                  name="dimReadArticles"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="boardListUnreadMark"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefAnchor anchorKey="ui:theme">
-                  <Text size="sm" fw={500} mb={4}>
-                    {i18n("options_theme")}
-                  </Text>
-                  <SegmentedControl
-                    value={colorScheme}
-                    onChange={setColorScheme}
-                    data={[
-                      { value: "light", label: i18n("options_themeLight") },
-                      { value: "dark", label: i18n("options_themeDark") },
-                      { value: "auto", label: i18n("options_themeAuto") },
-                    ]}
-                    mb="xs"
-                  />
-                </PrefAnchor>
-                <PrefText
-                  name="fontFace"
-                  value={values.fontFace}
-                  onChange={onTextInputChange}
-                  label={i18n("options_fontFace")}
-                  description={i18n("tooltip_fontFace")}
-                />
-                <PrefNumber
-                  name="bbsMargin"
-                  value={values.bbsMargin}
-                  onChange={onNumberChange}
-                  label={i18n("options_bbsMargin")}
-                />
-                <PrefSelect
-                  name="termSizeMode"
-                  value={values.termSizeMode}
-                  onChange={onSelectStr}
-                  label={i18n("options_termSize")}
-                  description={i18n("tooltip_termSize")}
-                  options={TERM_SIZE_MODE_OPTIONS}
-                />
-                {values.termSizeMode === "fixed-term-size" && (
-                  <div>
-                    <PrefNumber
-                      name="termSize.cols"
-                      value={values.termSize.cols}
-                      onChange={onNumberChange}
-                      label={i18n("options_cols")}
-                    />
-                    <PrefNumber
-                      name="termSize.rows"
-                      value={values.termSize.rows}
-                      onChange={onNumberChange}
-                      label={i18n("options_rows")}
-                    />
-                    <PrefCheckRow
-                      name="fontFitWindowWidth"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                  </div>
-                )}
-                {values.termSizeMode === "fixed-font-size" && (
-                  <PrefNumber
-                    name="fontSize"
-                    value={values.fontSize}
-                    onChange={onNumberChange}
-                    label={i18n("options_fontSize")}
-                  />
-                )}
-                <PrefSelect
-                  name="mobileLayout"
-                  value={values.mobileLayout}
-                  onChange={onSelectStr}
-                  label={i18n("options_mobileLayout")}
-                  description={i18n("tooltip_mobileLayout")}
-                  options={MOBILE_LAYOUT_OPTIONS}
-                />
-                {/* 手機字級：下拉選單而非數字框（手機上不必叫鍵盤，值也只有偶數）。
-                  手機版面關掉時用不到，收起來。 */}
-                {values.mobileLayout !== "off" && (
-                  <PrefSelect
-                    label={i18n("options_mobileFontSize")}
-                    description={i18n("tooltip_mobileFontSize")}
-                    name="mobileFontSize"
-                    value={String(normalizeMobileFontPx(values.mobileFontSize))}
-                    onChange={onSelectNum}
-                    data={MOBILE_FONT_PX_CHOICES}
-                  />
-                )}
-                {values.mobileLayout !== "off" && (
-                  <>
-                    <PrefCheckRow
-                      name="mobileAppBarScrollTop"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileAppBarArticleDetail"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileSelectTextPage"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileFindInArticle"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileCardHideTitleBox"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileBoardCardUnread"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileListEndHint"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileFloatToolsInMore"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileBoardTools"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileMailListTools"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileMenuBannerCollapse"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileEssenceCards"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobilePromptChoices"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobilePromptKeyboard"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileAnyKeyContinue"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobilePostInfoActions"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileModernCommentCards"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileHangIndent"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                    <PrefCheckRow
-                      name="mobileEditorSave"
-                      values={values}
-                      onChange={onCheckboxChange}
-                    />
-                  </>
-                )}
               </PrefSection>
               {/* 游標所在列：滑鼠與鍵盤共用同一條渲染管線與同一組樣式，所以獨立成
                 一區（原本整組塞在「滑鼠瀏覽」裡，鍵盤使用者根本找不到）。滑鼠那條

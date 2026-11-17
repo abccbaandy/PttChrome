@@ -4,8 +4,8 @@
 // 完全無關，勿混用命名。這裡一律 settingsSearch / prefSearch。
 //
 // **索引是設定頁勾選列的文字來源**：PrefModal.jsx 的 <PrefCheckRow name="…"> 直接
-// 用這裡的 titleKey／tooltipKey 畫標題與說明（prefItem）；「一般」分區整區由這裡的
-// 順序與 type 畫出（<PrefIndexRows>，prefSectionItems）。其他分區的其餘欄位（數字、下拉、
+// 用這裡的 titleKey／tooltipKey 畫標題與說明（prefItem）；「一般」「右鍵選單與輸入」「外觀」
+// 分區整區由這裡的順序與 type 畫出（<PrefIndexRows>，prefSectionRows）。其他分區的其餘欄位（數字、下拉、
 // 帶額外內容的勾選）仍是 hardcode JSX，這份 PREF_SEARCH_ITEMS 要手工跟著改。防線是
 // tests/unit/pref_search_index.test.js——它靜態掃 PrefModal.jsx 的每個
 // name="…" 與 <legend>，漏收就紅。新增設定項卻忘了進索引，是這個功能唯一
@@ -450,10 +450,30 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_termSize",
       tooltipKey: "tooltip_termSize",
     },
-    { key: "termSize.cols", type: "number", titleKey: "options_cols" },
-    { key: "termSize.rows", type: "number", titleKey: "options_rows" },
-    { key: "fontFitWindowWidth", type: "check", titleKey: "options_fontFitWindowWidth" },
-    { key: "fontSize", type: "number", titleKey: "options_fontSize" },
+    {
+      key: "termSize.cols",
+      type: "number",
+      shownIf: "fixedTermSize",
+      titleKey: "options_cols",
+    },
+    {
+      key: "termSize.rows",
+      type: "number",
+      shownIf: "fixedTermSize",
+      titleKey: "options_rows",
+    },
+    {
+      key: "fontFitWindowWidth",
+      type: "check",
+      shownIf: "fixedTermSize",
+      titleKey: "options_fontFitWindowWidth",
+    },
+    {
+      key: "fontSize",
+      type: "number",
+      shownIf: "fixedFontSize",
+      titleKey: "options_fontSize",
+    },
     {
       key: "mobileLayout",
       type: "select",
@@ -463,102 +483,119 @@ export const PREF_SEARCH_ITEMS = [
     {
       key: "mobileFontSize",
       type: "select",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileFontSize",
       tooltipKey: "tooltip_mobileFontSize",
     },
     {
       key: "mobileAppBarScrollTop",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileAppBarScrollTop",
       tooltipKey: "tooltip_mobileAppBarScrollTop",
     },
     {
       key: "mobileAppBarArticleDetail",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileAppBarArticleDetail",
       tooltipKey: "tooltip_mobileAppBarArticleDetail",
     },
     {
       key: "mobileSelectTextPage",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileSelectTextPage",
       tooltipKey: "tooltip_mobileSelectTextPage",
     },
     {
       key: "mobileFindInArticle",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileFindInArticle",
       tooltipKey: "tooltip_mobileFindInArticle",
     },
     {
       key: "mobileCardHideTitleBox",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileCardHideTitleBox",
       tooltipKey: "tooltip_mobileCardHideTitleBox",
     },
     {
       key: "mobileBoardCardUnread",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileBoardCardUnread",
       tooltipKey: "tooltip_mobileBoardCardUnread",
     },
     {
       key: "mobileListEndHint",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileListEndHint",
       tooltipKey: "tooltip_mobileListEndHint",
     },
     {
       key: "mobileFloatToolsInMore",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileFloatToolsInMore",
       tooltipKey: "tooltip_mobileFloatToolsInMore",
     },
     {
       key: "mobileBoardTools",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileBoardTools",
       tooltipKey: "tooltip_mobileBoardTools",
     },
     {
       key: "mobileMailListTools",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileMailListTools",
       tooltipKey: "tooltip_mobileMailListTools",
     },
     {
       key: "mobileMenuBannerCollapse",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileMenuBannerCollapse",
       tooltipKey: "tooltip_mobileMenuBannerCollapse",
     },
     {
       key: "mobileEssenceCards",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileEssenceCards",
       tooltipKey: "tooltip_mobileEssenceCards",
     },
     {
       key: "mobilePromptChoices",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobilePromptChoices",
       tooltipKey: "tooltip_mobilePromptChoices",
     },
     {
       key: "mobilePromptKeyboard",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobilePromptKeyboard",
       tooltipKey: "tooltip_mobilePromptKeyboard",
     },
     {
       key: "mobileAnyKeyContinue",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileAnyKeyContinue",
       tooltipKey: "tooltip_mobileAnyKeyContinue",
     },
     {
       key: "mobilePostInfoActions",
       type: "check",
+      shownIf: "mobileLayoutOn",
       requires: "mobileAnyKeyContinue",
       titleKey: "options_mobilePostInfoActions",
       tooltipKey: "tooltip_mobilePostInfoActions",
@@ -566,18 +603,21 @@ export const PREF_SEARCH_ITEMS = [
     {
       key: "mobileModernCommentCards",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileModernCommentCards",
       tooltipKey: "tooltip_mobileModernCommentCards",
     },
     {
       key: "mobileHangIndent",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileHangIndent",
       tooltipKey: "tooltip_mobileHangIndent",
     },
     {
       key: "mobileEditorSave",
       type: "check",
+      shownIf: "mobileLayoutOn",
       titleKey: "options_mobileEditorSave",
       tooltipKey: "tooltip_mobileEditorSave",
     },
@@ -947,7 +987,8 @@ export const PREF_SEARCH_ITEMS = [
  * min：數字欄的下限（由索引畫出的數字欄用；手寫的 PrefNumber 照舊自己帶）。
  * hintInBox：勾選列的說明畫在勾選框裡（Mantine Checkbox 的 description，緊貼標題下方），
  *   不是勾選列下面另一行灰字（PrefHint）。舊版設定頁兩種寫法並存，照原樣記下來，畫面不變。
- * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean }} PrefIndexItem
+ * shownIf：PREF_SHOWN_IF 的 id，條件不成立時設定頁整格不畫。
+ * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean, shownIf?: string }} PrefIndexItem
  */
 
 // key → 索引項（只收 kind:"pref"）。設定頁的 PrefCheckRow 從這裡拿標題與說明的文字鍵
@@ -962,6 +1003,45 @@ const PREF_ITEM_BY_KEY = new Map(
  */
 export function prefItem(key) {
   return PREF_ITEM_BY_KEY.get(key);
+}
+
+// 只在另一格選了某個值時才畫出來的設定（架構 review A7 第十六步）。跟 requires 不同：
+// requires 是「上層關掉就反灰」，shownIf 是「選項不適用就整格不畫」（例如終端機大小選
+// 「固定字型大小」時，行列數欄位根本不出現）。索引項的 shownIf 寫這張表的 id。
+// wrap：連續幾格同一個條件時包進一個 <div>（舊版設定頁的寫法，照原樣保留，畫面不變）。
+/** @type {Record<string, { key: string, eq?: string, ne?: string, wrap?: boolean }>} */
+export const PREF_SHOWN_IF = {
+  fixedTermSize: { key: "termSizeMode", eq: "fixed-term-size", wrap: true },
+  fixedFontSize: { key: "termSizeMode", eq: "fixed-font-size" },
+  mobileLayoutOn: { key: "mobileLayout", ne: "off" },
+};
+
+/**
+ * 這一格現在要不要畫出來（沒有 shownIf 的一律要）。
+ * @param {string} key
+ * @param {Record<string, unknown>} values
+ */
+export function prefShown(key, values) {
+  const it = PREF_SEARCH_ITEMS.find((x) => x.key === key);
+  if (!it || !it.shownIf) return true;
+  const cond = PREF_SHOWN_IF[it.shownIf];
+  if (!cond) throw new Error(`prefShown: ${key} 的 shownIf ${it.shownIf} 不在表裡`);
+  const v = values[cond.key];
+  if ("eq" in cond) return v === cond.eq;
+  return v !== cond.ne;
+}
+
+/**
+ * 某個分區由索引畫出時要畫的每一列：設定項，加上沒有 name 的可操作項（ui:…，
+ * 由呼叫端用 custom 手寫），照設定頁上的順序。
+ * @param {string} sectionKey
+ * @returns {Array<PrefIndexItem & { kind: string }>}
+ */
+export function prefSectionRows(sectionKey) {
+  return PREF_SEARCH_ITEMS.filter(
+    (it) =>
+      (it.kind === "pref" || it.kind === "ui") && it.sectionKey === sectionKey,
+  );
 }
 
 /**
