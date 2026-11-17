@@ -14,6 +14,7 @@ import path from "node:path";
 import { Event, setListenerErrorPolicy, runIsolated } from "../../src/js/event";
 import { WhatsNew } from "../../src/js/whats_new";
 import { ArticleNav } from "../../src/js/article_nav";
+import { BoardTabs, BOARD_TABS_KEY } from "../../src/js/board_tabs";
 
 function makeBus(isolate) {
   function Bus() {}
@@ -259,6 +260,44 @@ describe("接線", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  test("看板分頁出錯停用 ⇒ 收起分頁列，重畫入口（resize／別的視窗改分頁）叫不回來；新連線恢復", () => {
+    prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    const bus = makeBus(true);
+    const ROWS = 24;
+    const screen = new Array(ROWS).fill("");
+    screen[0] = "【板主:someone】 中文描述                看板《C_Chat》";
+    screen[1] = "[←]離開 [→]閱讀";
+    screen[2] = "  編號    日 期 作  者       文  章  標  題";
+    screen[ROWS - 1] = " 文章選讀  (y)回應(X)推文";
+    let boom = false;
+    bus.rows = ROWS;
+    bus.cols = 80;
+    bus.cur_y = 3;
+    bus.getRowText = (r) => {
+      if (boom) throw new Error("boom");
+      return screen[r] || "";
+    };
+    const mem = { [BOARD_TABS_KEY]: JSON.stringify([{ name: "Stock", at: 1 }]) };
+    const storage = { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => (mem[k] = v), removeItem: (k) => delete mem[k] };
+    const core = {
+      mobile: false,
+      buf: bus,
+      view: { chh: 30, mainDisplay: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 720 }) } },
+    };
+    const tabs = new BoardTabs(core, { storage });
+    bus.dispatchEvent({ type: "screenSettled" });
+    expect(tabs.state.visible).toBe(true);
+    boom = true;
+    bus.dispatchEvent({ type: "screenSettled" });
+    expect(tabs.state.visible).toBe(false);
+    boom = false;
+    tabs.refresh(); // resize／storage 事件走的入口
+    expect(tabs.state.visible).toBe(false);
+    bus.enableAllListeners();
+    bus.dispatchEvent({ type: "screenSettled" });
+    expect(tabs.state.visible).toBe(true);
   });
 
   test("導覽軸登記了停用方式（收起軸）", () => {
