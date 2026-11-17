@@ -179,6 +179,17 @@ describe("isKnownFlaky", () => {
     expect(isKnownFlaky("test / test-unit", "waitForCloud timeout: upload")).toBe(false);
   });
 
+  test("android job：sdkmanager 抓到壞檔、模擬器沒開機 → 已知基礎設施問題；跑過測試的紅不算", () => {
+    const sdk =
+      "Warning: An error occurred while preparing SDK package Android Emulator: Error reading Zip content from a SeekableByteChannel.\n" +
+      "error: could not connect to TCP port 5554: Connection refused";
+    expect(isKnownFlaky("test / test-e2e-android-shard (2)", sdk)).toBe(true);
+    expect(isKnownFlaky("test / test-e2e-android-shard (1)", "Error on ZipFile unknown archive")).toBe(true);
+    expect(isKnownFlaky("test / test-e2e-android-shard (2)", sdk + "\n  1 failed\n  12 passed (3.1m)")).toBe(false);
+    expect(isKnownFlaky("test / test-e2e-android-shard (2)", "AssertionError: expected 1 to be 2\n  1 failed")).toBe(false);
+    expect(isKnownFlaky("test / test-unit", sdk)).toBe(false);
+  });
+
   test("integration job 的真錯（斷言失敗）→ 不算 flaky", () => {
     expect(
       isKnownFlaky("test / test-integration", "AssertionError: expected 1 to be 2"),
