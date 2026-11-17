@@ -126,6 +126,30 @@ describe("encodeRows／decodeRows", () => {
     expect(back[0][1].ch).toBe(odd[1].ch);
   });
 
+  // 存檔可能是匯入的檔案（只驗形狀）：連結欄位手改成 javascript: 不可以被畫成可點的連結。
+  test("匯入的連結欄位不是 http／https／ftp／telnet ⇒ 清掉，不畫成 <a href>", () => {
+    const { buf, rows } = articlePage();
+    const enc = JSON.parse(JSON.stringify(encodeRows(rows)));
+    const fu = ATTR_FIELDS.indexOf("fullurl");
+    const hl = ATTR_FIELDS.indexOf("hyperlink");
+    const urlAttrs = enc.attrs.filter((a) => a[fu]);
+    expect(urlAttrs.length).toBeGreaterThan(0); // 前提：素材真的有網址
+    for (const a of urlAttrs) a[fu] = "javascript:alert(1)";
+    // 另一格塞 OSC 8 的 data: 連結。
+    enc.attrs[0][hl] = "data:text/html,x";
+    const back = decodeRows(enc, Object.getPrototypeOf(buf.attr));
+    for (let r = 0; r < back.length; ++r) {
+      expect(html(back[r])).not.toMatch(/javascript:|data:text/);
+      for (const c of back[r]) {
+        expect(c.fullurl).toBe("");
+        expect(c.hyperlink).toBe("");
+      }
+    }
+    // 正常的 https 照留（同一份素材沒改的話）。
+    const ok = decodeRows(JSON.parse(JSON.stringify(encodeRows(rows))), Object.getPrototypeOf(buf.attr));
+    expect(ok[4].some((c) => c.fullurl === "https://example.com/a.png")).toBe(true);
+  });
+
   test.each([
     ["null", null],
     ["沒有 attrs", { rows: [] }],

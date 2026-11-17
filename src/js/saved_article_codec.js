@@ -67,11 +67,34 @@ function validAttr(a) {
   return Array.isArray(a) && a.length === ATTR_FIELDS.length;
 }
 
+// 連結欄位直接變成 <a href>（render/link_segment.js#hyperLink）。存檔可能是使用者匯入的檔案
+// （parseSavedExport 只驗形狀），手改成 `javascript:` 之類就會被畫成可點的連結 ⇒ 還原時只留
+// 線上本來就可能產生的網址種類：fullurl＝term_buf.uriRegEx 的 ftp／http／https／telnet，
+// hyperlink（OSC 8）＝osc_hyperlink.js 的 http／https。其他一律清成 ''（＝不畫成連結）。
+const URL_FIELD_RULES = {
+  fullurl: /^(?:https?|ftp|telnet):\/\/\S/i,
+  hyperlink: /^https?:\/\/\S/i,
+};
+function safeAttr(a) {
+  let out = a;
+  for (const f in URL_FIELD_RULES) {
+    const i = ATTR_FIELDS.indexOf(f);
+    if (i < 0) continue;
+    const v = a[i];
+    if (v === '' || v == null) continue;
+    if (typeof v === 'string' && URL_FIELD_RULES[f].test(v)) continue;
+    if (out === a) out = a.slice();
+    out[i] = '';
+  }
+  return out;
+}
+
 // enc：encodeRows 的輸出；proto：TermChar.prototype（呼叫端用 Object.getPrototypeOf(buf.attr)
 // 拿，這支不 import term_buf）。回傳 TermChar[][]，格子經 internChar 共用（與累積頁同一套）。
 export function decodeRows(enc, proto) {
   if (!enc || !Array.isArray(enc.attrs) || !Array.isArray(enc.rows) || !proto) return null;
   if (!enc.attrs.every(validAttr)) return null;
+  const attrs = enc.attrs.map(safeAttr);
   const out = new Array(enc.rows.length);
   for (let r = 0; r < enc.rows.length; ++r) {
     const row = enc.rows[r];
@@ -84,7 +107,7 @@ export function decodeRows(enc, proto) {
     for (let i = 0; i + 1 < row.a.length; i += 2) {
       const ai = row.a[i];
       const n = row.a[i + 1];
-      const attr = enc.attrs[ai];
+      const attr = attrs[ai];
       if (!attr || !Number.isInteger(n) || n <= 0) return null;
       for (let k = 0; k < n; ++k, ++col) {
         const ch = chars[col];
