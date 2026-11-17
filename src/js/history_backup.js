@@ -78,7 +78,15 @@ function cleanNewComments(v) {
     // 鍵＝new_comments.articleKey：「看板小寫/AID」。值＝[推文數, 時間, …列表用的欄位]。
     if (!/^[0-9a-z][0-9a-z_.-]{0,31}\/[0-9A-Za-z_-]{8}$/.test(k)) continue;
     if (!Array.isArray(e) || typeof e[0] !== 'number' || typeof e[1] !== 'number') continue;
-    out[k] = e;
+    // 後面幾欄（列表「+N」用：分數、作者、標題、日期，new_comments.saveSeen）形狀不對就只留前兩欄，
+    // 不然列表比對標題時（long_push_anchor.subjectMatches）會拿到非字串。
+    const tail =
+      e.length >= 5 &&
+      typeof e[2] === 'number' &&
+      typeof e[3] === 'string' &&
+      typeof e[4] === 'string' &&
+      (e.length === 5 || (e.length === 6 && typeof e[5] === 'string'));
+    out[k] = tail ? e.slice() : [e[0], e[1]];
   }
   return out;
 }
@@ -242,7 +250,8 @@ export function parseHistoryExport(text) {
     !isObj(obj) ||
     obj.app !== 'pttchrome' ||
     obj.kind !== HISTORY_BACKUP_KIND ||
-    typeof obj.schemaVersion !== 'number' ||
+    !Number.isInteger(obj.schemaVersion) ||
+    obj.schemaVersion < 1 ||
     obj.schemaVersion > HISTORY_BACKUP_VERSION ||
     !isObj(obj.data)
   )

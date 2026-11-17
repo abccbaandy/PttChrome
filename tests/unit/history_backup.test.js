@@ -174,6 +174,8 @@ describe('匯入檔不可信', () => {
     ['不是 JSON', '{', 'badJson'],
     ['不是這種匯出檔（設定備份）', JSON.stringify({ app: 'pttchrome', kind: 'prefs', schemaVersion: 1, prefs: {} }), 'badFormat'],
     ['版本比這版新', JSON.stringify({ app: 'pttchrome', kind: 'history', schemaVersion: 99, data: {} }), 'badFormat'],
+    ['版本 0', JSON.stringify({ app: 'pttchrome', kind: 'history', schemaVersion: 0, data: {} }), 'badFormat'],
+    ['版本不是整數', JSON.stringify({ app: 'pttchrome', kind: 'history', schemaVersion: 1.5, data: {} }), 'badFormat'],
     ['沒有 data', JSON.stringify({ app: 'pttchrome', kind: 'history', schemaVersion: 1 }), 'badFormat'],
   ])('%s ⇒ 整份拒絕、不動本機', (_, text, reason) => {
     const s = memStorage({ homeRecentBoards: ['Test'] });
@@ -192,17 +194,28 @@ describe('匯入檔不可信', () => {
           { url: 'javascript:alert(1)', at: 1 },
           { url: 'https://i.example/ok.png', at: 2, deleteUrl: 'javascript:x', previewUrl: 'https://i.example/p.png' },
         ],
-        newComments: { 'test/AAAAAAAA': ['x', 1], 'nope': [1, 1], 'test/BBBBBBBB': [3, 4] },
+        newComments: {
+          'test/AAAAAAAA': ['x', 1],
+          'nope': [1, 1],
+          'test/BBBBBBBB': [3, 4],
+          // 列表用的欄位形狀不對（標題是數字）⇒ 只留推文數與時間。
+          'test/CCCCCCCC': [5, 6, 1, 'someone', 42],
+          'test/DDDDDDDD': [7, 8, 2, 'someone', '標題', '9/01'],
+        },
         prefs: { autoLoginUser: 'x' },
         longPushDraft: 'hi',
       },
     });
     const s = memStorage();
     const res = importHistory(text, s, NOW);
-    expect(res).toMatchObject({ ok: true, imported: 3 });
+    expect(res).toMatchObject({ ok: true, imported: 5 });
     expect(read(s, 'homeRecentBoards')).toEqual(['Test']);
     expect(read(s, 'uploadHistory')).toEqual([{ url: 'https://i.example/ok.png', at: 2, previewUrl: 'https://i.example/p.png' }]);
-    expect(read(s, 'newComments')).toEqual({ 'test/BBBBBBBB': [3, 4] });
+    expect(read(s, 'newComments')).toEqual({
+      'test/BBBBBBBB': [3, 4],
+      'test/CCCCCCCC': [5, 6],
+      'test/DDDDDDDD': [7, 8, 2, 'someone', '標題', '9/01'],
+    });
     expect(s.getItem(STORAGE_KEYS.prefs)).toBeNull();
     expect(s.getItem(STORAGE_KEYS.longPushDraft)).toBeNull();
   });
