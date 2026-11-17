@@ -24,6 +24,7 @@ import {
 } from "../../src/js/split_reader";
 import { RESTORE_TABLE } from "../../src/js/reading_record";
 import { HINT_ERROR } from "../../src/js/status_hint";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 import { wireFakeSessions } from "./helpers/session_wire";
 
 const ROWS = 24;
@@ -213,7 +214,7 @@ test("閱讀紀錄：split-open 不還原（目的地就是結果；失敗停在
 });
 
 // ── 控制器：假 App ─────────────────────────────────────────────────────────
-function makeCore({ side = 600, mobile = false } = {}) {
+function makeCore({ side = 600, mobile = false, isolate = false } = {}) {
   let frame = PAGE();
   const listeners = {};
   const hints = [];
@@ -250,7 +251,10 @@ function makeCore({ side = 600, mobile = false } = {}) {
       },
     },
   };
+  // isolate：換成真的 TermBuf 派發（event.js 的故障隔離），測停用。
+  if (isolate) Event.mixin(core.buf, { isolate: true });
   const split = new SplitReader(core);
+  const settle = isolate ? () => core.buf.dispatchEvent({ type: "screenSettled" }) : () => listeners.screenSettled();
   const show = (f) => {
     frame = f;
     if (f.pageState !== 3) {
@@ -258,7 +262,7 @@ function makeCore({ side = 600, mobile = false } = {}) {
       core.view._articleAuthor = null;
       core.view._articleTitle = null;
     }
-    listeners.screenSettled();
+    settle();
   };
   const read = (board, author, title) => {
     core.view._articleBoard = board;
@@ -495,6 +499,44 @@ describe("SplitReader：點一篇換過去", () => {
       expect(split.state.pendingNum).toBeNull();
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+// 故障停用（docs/feature-isolation.md；架構 review A6）：沒登記時 settle 出錯，左欄停在上一篇的
+// 狀態（換了文章還標著舊的那篇），resize 每次再叫一次。
+describe("SplitReader：故障停用", () => {
+  test("settle 出錯 ⇒ 左欄收起、resize 叫不回來、點左欄不開文；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    let resize = null;
+    vi.stubGlobal("window", { addEventListener: (name, fn) => name === "resize" && (resize = fn) });
+    try {
+      const t = makeCore({ isolate: true });
+      t.show(PAGE());
+      t.read("C_Chat", "carol", "[閒聊] 第三篇");
+      expect(t.split.state.visible).toBe(true);
+
+      const rect = t.core.view.mainDisplay.getBoundingClientRect;
+      t.core.view.mainDisplay.getBoundingClientRect = () => {
+        throw new Error("boom");
+      };
+      t.read("C_Chat", "carol", "[閒聊] 第三篇");
+      expect(t.split.state.visible).toBe(false);
+      expect(t.core.buf.isListenerDisabled(t.split._onSettle)).toBe(true);
+
+      t.core.view.mainDisplay.getBoundingClientRect = rect;
+      resize();
+      t.read("C_Chat", "carol", "[閒聊] 第三篇");
+      expect(t.split.state.visible).toBe(false);
+      expect(t.split.openNum(104)).toBe(false);
+      expect(t.starts).toEqual([]);
+
+      t.core.buf.enableAllListeners();
+      t.read("C_Chat", "carol", "[閒聊] 第三篇");
+      expect(t.split.state.visible).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      setListenerErrorPolicy(prev);
     }
   });
 });
