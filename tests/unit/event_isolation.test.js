@@ -16,6 +16,8 @@ import { WhatsNew } from "../../src/js/whats_new";
 import { ArticleNav } from "../../src/js/article_nav";
 import { BoardTabs, BOARD_TABS_KEY } from "../../src/js/board_tabs";
 import { SearchStatus } from "../../src/js/search_status";
+import { ListFastScroll } from "../../src/js/list_fast_scroll";
+import { OWNER_ARTICLE_LIST } from "../../src/js/list_render_owner";
 
 function makeBus(isolate) {
   function Bus() {}
@@ -346,6 +348,48 @@ describe("接線", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  test("列表快速捲動把手出錯停用 ⇒ 收起、拖到一半放開也不送；捲動入口叫不回來；新連線恢復", () => {
+    prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    const bus = makeBus(true);
+    bus.listRenderMode = "buffer";
+    bus.listRenderOwner = OWNER_ARTICLE_LIST;
+    let boom = false;
+    const jumps = [];
+    const core = {
+      buf: bus,
+      readingRecord: { begin: () => ({ bm: 1 }), end: () => {} },
+      listSession: {
+        fastScrollInfo: () => {
+          if (boom) throw new Error("boom");
+          return { board: "C_Chat", lo: 9000, hi: 9300, topNum: 9100, edgeDown: true };
+        },
+        jumpToNumber: (num) => (jumps.push(num), true),
+      },
+      view: {
+        mainDisplay: {
+          querySelector: () => ({ getBoundingClientRect: () => ({ top: 100, height: 400, right: 900, width: 800 }) }),
+        },
+      },
+    };
+    const fs = new ListFastScroll(core, { document: null });
+    fs.noteScroll();
+    expect(fs.state.visible).toBe(true);
+    expect(fs.dragStart(300)).toBe(true);
+    fs.dragMove(200);
+    boom = true;
+    bus.dispatchEvent({ type: "screenSettled" });
+    expect(fs.state.visible).toBe(false);
+    boom = false;
+    expect(fs.dragEnd(true)).toBe(false); // 拖到一半被停用：放開不送跳號
+    fs.noteScroll(); // 使用者再捲一次
+    expect(fs.state.visible).toBe(false);
+    expect(fs.dragStart(300)).toBe(false);
+    expect(jumps).toEqual([]);
+    bus.enableAllListeners();
+    fs.noteScroll();
+    expect(fs.state.visible).toBe(true);
   });
 
   test("導覽軸登記了停用方式（收起軸）", () => {
