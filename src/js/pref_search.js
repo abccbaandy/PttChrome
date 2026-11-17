@@ -5,7 +5,7 @@
 //
 // **索引是設定頁勾選列的文字來源**：PrefModal.jsx 的 <PrefCheckRow name="…"> 直接
 // 用這裡的 titleKey／tooltipKey 畫標題與說明（prefItem）；「一般」分頁的四個分區（一般、右鍵選單與輸入、外觀、
-// 游標所在列）與「增強功能」分頁整區由這裡的順序與 type 畫出（<PrefIndexRows>，prefSectionRows）。其他分區的其餘欄位（數字、下拉、
+// 游標所在列）、「連線」分頁的編碼／圖片代理／開文快取三區與「增強功能」分頁整區由這裡的順序與 type 畫出（<PrefIndexRows>，prefSectionRows）。其他分區的其餘欄位（數字、下拉、
 // 帶額外內容的勾選）仍是 hardcode JSX，這份 PREF_SEARCH_ITEMS 要手工跟著改。防線是
 // tests/unit/pref_search_index.test.js——它靜態掃 PrefModal.jsx 的每個
 // name="…" 與 <legend>，漏收就紅。新增設定項卻忘了進索引，是這個功能唯一
@@ -788,6 +788,7 @@ export const PREF_SEARCH_ITEMS = [
       type: "check",
       titleKey: "options_enableOpenCache",
       tooltipKey: "tooltip_enableOpenCache",
+      hintInBox: true,
     },
   ]),
 
