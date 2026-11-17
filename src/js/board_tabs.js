@@ -13,6 +13,9 @@
 //      （別板的搜尋結果／文摘，也不回 getkeep 記的位置）。看不出是不是子列表也不顯示。
 //   3. 分頁清單只存本機（localStorage `pttchrome.boardTabs.v1`），不同步。順序照第一次去的
 //      先後（像瀏覽器分頁，不跟著 MRU 跳動）；滿了丟掉最久沒去的那個（不丟現在這個）。
+//   4. **同一台的視窗共用同一組分頁**（L 11/17）：每次記之前從 storage 重讀（不拿開機那份整份寫回、
+//      蓋掉別的視窗剛開／關的分頁），別的視窗寫了就聽 `storage` 事件重畫。只在「到了一個板」時
+//      寫（不是每一幀），兩個視窗停在各自的板上不會互相觸發寫入。讀不到（壞掉／存不了）就沿用記憶體那份。
 import { STORAGE_KEYS } from './user_data_keys';
 import { defaultStorage, readJson, writeJson } from './user_data';
 import { readEffectivePrefs } from './pref_storage';
@@ -71,9 +74,10 @@ export function tabsToShow(names, current) {
   return (names || []).filter((n) => n.toLowerCase() !== cur);
 }
 
+// 沒有、壞掉、拿不到 ⇒ null（呼叫端沿用記憶體那份）。
 function readTabs(storage) {
   const v = readJson('boardTabs', storage || null);
-  return Array.isArray(v) ? v.filter((t) => t && typeof t.name === 'string' && t.name) : [];
+  return Array.isArray(v) ? v.filter((t) => t && typeof t.name === 'string' && t.name) : null;
 }
 
 // 存不了（隱私模式、配額）：這一頁照常用，下次開站從空的開始。
@@ -87,17 +91,24 @@ export function BoardTabs(core, opts) {
   this._core = core;
   this._storage = opts && 'storage' in opts ? opts.storage : defaultStorage();
   this._listeners = new Set();
-  this._tabs = readTabs(this._storage);
+  this._tabs = readTabs(this._storage) || [];
+  // 上一次記下「到了」的板：同一個板停著（每一幀都 settle）不重複寫；離開文章列表就清掉。
+  this._visited = null;
   this._state = { visible: false, tabs: this._tabs.map((t) => t.name), current: null, left: 0, top: 0, width: 0, rowHeight: 0, mobile: false };
   const self = this;
   if (core.buf && core.buf.addEventListener)
     core.buf.addEventListener('screenSettled', function() {
       self.refresh();
     });
-  if (typeof window !== 'undefined' && window.addEventListener)
+  if (typeof window !== 'undefined' && window.addEventListener) {
     window.addEventListener('resize', function() {
       self.refresh();
     });
+    // 別的視窗開／關了分頁（storage 事件只發給別的視窗，自己寫的不會回來）。
+    window.addEventListener('storage', function(e) {
+      if (e && e.key === BOARD_TABS_KEY) self.refresh();
+    });
+  }
 }
 
 BoardTabs.prototype = {
@@ -136,6 +147,13 @@ BoardTabs.prototype = {
     writeTabs(this._storage, tabs);
   },
 
+  // 寫之前、畫之前都從 storage 重讀（別的視窗可能剛開／關過分頁）。
+  _reload: function() {
+    const stored = readTabs(this._storage);
+    if (stored) this._tabs = stored;
+    return this._tabs;
+  },
+
   // 桌機：疊在終端機第 1 列（文章列表的按鍵提示列）上，與終端機同寬。
   _geometry: function() {
     const core = this._core;
@@ -154,11 +172,18 @@ BoardTabs.prototype = {
     const rows = this._rowTexts();
     const board = rows ? articleListBoardOf(rows, core.buf.cur_y) : null;
     if (!readEffectivePrefs().enableBoardTabs || !board) {
+      this._visited = null;
       if (this._state.visible) this._set(HIDDEN_PATCH);
       return;
     }
-    const tabs = visitBoard(this._tabs, board, Date.now());
-    this._commit(tabs);
+    let tabs = this._reload();
+    const lower = board.toLowerCase();
+    // 剛到這個板，或別的視窗把它擠掉／關掉了 ⇒ 記一次；同一個板停著不重寫。
+    if (this._visited !== lower || !tabs.some((t) => t.name.toLowerCase() === lower)) {
+      tabs = visitBoard(tabs, board, Date.now());
+      this._commit(tabs);
+      this._visited = lower;
+    }
     const names = tabs.map((t) => t.name);
     const g = this._geometry();
     if (!g || names.length < 2 || searchListMode(rows) !== 'plain') {
@@ -199,7 +224,7 @@ BoardTabs.prototype = {
   // 長按／右鍵：關掉這個分頁。現在這個板不關（下一幀就會再記回來）。
   close: function(name) {
     if (!name || (this._state.current && name.toLowerCase() === this._state.current.toLowerCase())) return false;
-    this._commit(closeBoardTab(this._tabs, name));
+    this._commit(closeBoardTab(this._reload(), name));
     const names = this._tabs.map((t) => t.name);
     this._set({ tabs: names, visible: this._state.visible && names.length >= 2 });
     return true;

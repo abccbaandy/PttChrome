@@ -231,6 +231,62 @@ describe("BoardTabs 控制器", () => {
     }
   });
 
+  // 同一台的兩個視窗共用一組分頁（L 11/17）：舊版各自拿開機那份整份寫回，後寫的蓋掉先寫的。
+  test("兩個視窗：各自去過的板合在同一組；一邊關掉的分頁另一邊不會再寫回來", () => {
+    const storage = memoryStorage();
+    const a = makeCore(storage);
+    const b = makeCore(storage);
+    a.show(listScreen("C_Chat"));
+    b.show(listScreen("Stock"));
+    a.show(listScreen("Gossiping"));
+    expect(JSON.parse(storage.map.get(BOARD_TABS_KEY)).map((x) => x.name)).toEqual(["C_Chat", "Stock", "Gossiping"]);
+    // B 還停在 Stock（每一幀都 settle）：畫面跟著 A 新開的分頁，也不把它蓋掉。
+    b.show(listScreen("Stock"));
+    expect(b.tabs.state.tabs).toEqual(["C_Chat", "Stock", "Gossiping"]);
+    // B 關掉 C_Chat；A 停在 Gossiping 的下一幀不會把 C_Chat 寫回來。
+    expect(b.tabs.close("C_Chat")).toBe(true);
+    a.show(listScreen("Gossiping"));
+    expect(JSON.parse(storage.map.get(BOARD_TABS_KEY)).map((x) => x.name)).toEqual(["Stock", "Gossiping"]);
+    expect(a.tabs.state.tabs).toEqual(["Stock", "Gossiping"]);
+    // 別的視窗把現在這個板關掉了 ⇒ 下一幀再記回來（現在這個板一定在）。
+    a.tabs.close("Stock");
+    b.show(listScreen("Stock"));
+    expect(b.tabs.state.tabs).toEqual(["Gossiping", "Stock"]);
+  });
+
+  test("停在同一個板不重複寫（兩個視窗不會每一幀互相觸發）；離開再回來才算又到了一次", () => {
+    const storage = memoryStorage();
+    let writes = 0;
+    const set = storage.setItem;
+    storage.setItem = (k, v) => (writes++, set(k, v));
+    const { show } = makeCore(storage);
+    show(listScreen("C_Chat"));
+    show(listScreen("C_Chat"));
+    show(listScreen("C_Chat"));
+    expect(writes).toBe(1);
+    show(listScreen("C_Chat", " 看板列表  (c)新文章"));
+    show(listScreen("C_Chat"));
+    expect(writes).toBe(2);
+  });
+
+  test("別的視窗寫了（storage 事件）⇒ 不等下一幀就重畫", () => {
+    const handlers = {};
+    vi.stubGlobal("window", { addEventListener: (name, fn) => (handlers[name] = fn) });
+    try {
+      const storage = memoryStorage([{ name: "Stock", at: 1 }]);
+      const { tabs, show } = makeCore(storage);
+      show(listScreen("C_Chat"));
+      expect(tabs.state.tabs).toEqual(["Stock", "C_Chat"]);
+      storage.map.set(BOARD_TABS_KEY, JSON.stringify([{ name: "Stock", at: 1 }, { name: "C_Chat", at: 2 }, { name: "Test", at: 3 }]));
+      handlers.storage({ key: "something.else" });
+      expect(tabs.state.tabs).toEqual(["Stock", "C_Chat"]);
+      handlers.storage({ key: BOARD_TABS_KEY });
+      expect(tabs.state.tabs).toEqual(["Stock", "C_Chat", "Test"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("localStorage 壞掉／丟例外 ⇒ 照常用，從空的開始", () => {
     const broken = { getItem: () => "{oops", setItem: () => { throw new Error("quota"); } };
     const { tabs, show } = makeCore(broken);
