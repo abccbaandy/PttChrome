@@ -161,6 +161,7 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     "options_general",
     "options_contextMenu",
     "options_appearance",
+    "options_cursorHighlight",
   ];
   test("由索引畫出：分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
     openModal();
@@ -176,7 +177,7 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
       const items = prefSectionRows(sectionKey).filter((it) =>
         prefShown(it.key, DEFAULT_PREFS),
       );
-      expect(items.length, sectionKey).toBeGreaterThan(5);
+      expect(items.length, sectionKey).toBeGreaterThan(2);
       expect(shown, sectionKey).toEqual(items.map((it) => it.key));
       for (const it of items) {
         const el = section.querySelector(`[data-pref-anchor="${it.key}"]`);

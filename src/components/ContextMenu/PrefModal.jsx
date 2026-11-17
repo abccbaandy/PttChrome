@@ -1564,79 +1564,77 @@ export const PrefModal = ({
                 上兩個 checkbox ＝**樣式層**（畫什麼，可同時開），
                 keyboardCursorHighlight ＝**來源層**（哪一列）。 */}
               <PrefSection legendKey="options_cursorHighlight">
-                <PrefCheckRow
-                  name="cursorRowBrighten"
+                <PrefIndexRows
+                  sectionKey="options_cursorHighlight"
                   values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="cursorRowBackground"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="keyboardCursorHighlight"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefAnchor anchorKey="ui:highlightColor">
-                  <Text
-                    size="sm"
-                    fw={500}
-                    mb={4}
-                    c={values.cursorRowBackground ? undefined : "dimmed"}
-                  >
-                    {i18n("options_highlightColor")}
-                  </Text>
-                  {/* 一排可點色塊（b1..b15 = color.css 的底色 class），選中者描邊。
+                  onCheckboxChange={onCheckboxChange}
+                  onHotkeyCapture={onHotkeyCapture}
+                  onNumberChange={onNumberChange}
+                  custom={{
+                    "ui:highlightColor": (
+                      <PrefAnchor anchorKey="ui:highlightColor">
+                        <Text
+                          size="sm"
+                          fw={500}
+                          mb={4}
+                          c={values.cursorRowBackground ? undefined : "dimmed"}
+                        >
+                          {i18n("options_highlightColor")}
+                        </Text>
+                        {/* 一排可點色塊（b1..b15 = color.css 的底色 class），選中者描邊。
                   比下拉好：直接顯示對應顏色，而非 index 數字。
                   顏色**只對「整列上底色」這個樣式有意義** ⇒ 底色關掉時整排變灰
                   且不接受點擊（aria-disabled 讓測試與輔助技術讀得到）。 */}
-                  <div
-                    className="PrefModal__HighlightColors"
-                    aria-disabled={!values.cursorRowBackground}
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 4,
-                      marginBottom: 12,
-                      opacity: values.cursorRowBackground ? 1 : 0.4,
-                      pointerEvents: values.cursorRowBackground
-                        ? undefined
-                        : "none",
-                    }}
-                  >
-                    {Array.from({ length: 15 }, (_, i) => i + 1).map((i) => (
-                      <div
-                        key={i}
-                        className={`b${i}`}
-                        title={String(i)}
-                        onClick={() =>
-                          setValues((v) =>
-                            changeNestedValue(
-                              v,
-                              "mouseBrowsingHighlightColor",
-                              i,
+                        <div
+                          className="PrefModal__HighlightColors"
+                          aria-disabled={!values.cursorRowBackground}
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 4,
+                            marginBottom: 12,
+                            opacity: values.cursorRowBackground ? 1 : 0.4,
+                            pointerEvents: values.cursorRowBackground
+                              ? undefined
+                              : "none",
+                          }}
+                        >
+                          {Array.from({ length: 15 }, (_, i) => i + 1).map(
+                            (i) => (
+                              <div
+                                key={i}
+                                className={`b${i}`}
+                                title={String(i)}
+                                onClick={() =>
+                                  setValues((v) =>
+                                    changeNestedValue(
+                                      v,
+                                      "mouseBrowsingHighlightColor",
+                                      i,
+                                    ),
+                                  )
+                                }
+                                style={{
+                                  width: 22,
+                                  height: 22,
+                                  cursor: "pointer",
+                                  boxSizing: "border-box",
+                                  border:
+                                    values.mouseBrowsingHighlightColor === i
+                                      ? "2px solid var(--mantine-color-bright)"
+                                      : "1px solid var(--mantine-color-default-border)",
+                                }}
+                              />
                             ),
-                          )
-                        }
-                        style={{
-                          width: 22,
-                          height: 22,
-                          cursor: "pointer",
-                          boxSizing: "border-box",
-                          border:
-                            values.mouseBrowsingHighlightColor === i
-                              ? "2px solid var(--mantine-color-bright)"
-                              : "1px solid var(--mantine-color-default-border)",
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <Text size="xs" c="dimmed">
-                    {i18n("tooltip_highlightColorShared")}
-                  </Text>
-                </PrefAnchor>
+                          )}
+                        </div>
+                        <Text size="xs" c="dimmed">
+                          {i18n("tooltip_highlightColorShared")}
+                        </Text>
+                      </PrefAnchor>
+                    ),
+                  }}
+                />
               </PrefSection>
             </Tabs.Panel>
             {/* 滑鼠：總開關 + 四個子功能。子項一律 disabled={!useMouseBrowsing}，
