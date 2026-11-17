@@ -25,8 +25,18 @@
 | 底部推文列（`comment_bar.commentBarGeometry`） | 貼在地板上（距視窗底 `innerHeight − 地板`）。列表推文模式另對齊終端機最後一列 |
 | 下一篇卡片（`next_article._layout`） | `min(地板, 推文列實際上緣)` |
 | 文章導覽軸（`article_nav.articleNavGeometry`） | 地板，推文列顯示中再扣推文列高 |
-| 底部提示、上傳浮層、讀取中 | CSS `--term-bottom-inset`（`App._onVisualViewport` 寫） |
+| 底部提示、讀取中、跳到未讀進度卡、回到上次的地方、上傳卡片 | `bottom_stack.aboveStackCss(px)`：`--term-bottom-inset`（`App._onVisualViewport` 寫）＋px 與推文列上緣（`--bottom-stack-clear`，推文列寫）＋8 取較高者 |
 
 導覽軸原本只看內容下緣：手機 `.main` 因列高取整伸進導覽列後面約 4 px，軸跟著伸進去，推文列顯示中
 還壓到推文列 4 px（offline-mobile 量到軸下緣 306、推文列上緣 302）；改用地板之後對齊。守護
 `article_nav.test.js`「手機：…」、`bottom_stack.test.js`。新的底部浮層一律從 `stackFloorOf` 往上排。
+
+## 第三步：貼視窗底的提示讓開推文列
+
+底部提示這類浮層以前只讓開 `--term-bottom-inset`（手機底部導覽＋軟鍵盤），多留的 48px 剛好是手機推文列
+（40px）＋8px。桌機推文列貼在好讀 footer 上緣，離視窗底 54px 以上 ⇒ 提示整個疊在輸入框上（offline 1920×900
+量到重疊 34px）。現在推文列每次狀態變了就把「上緣離視窗底多遠」寫進 `<html>` 的 `--bottom-stack-clear`
+（沒畫＝0，`bottom_stack.stackClearOf`／`publishStackClear`），提示的 `bottom` 取
+`max(--term-bottom-inset + px, --bottom-stack-clear + max(8, px − 40))`：沒有推文列、或手機（推文列上緣＝導覽上緣＋40）
+都跟以前同一個位置；疊在一般提示上面那層（88）照舊比提示高 40。CSS 檔裡寫死的同一條式子由 `bottom_stack.test.js`
+對照；e2e `bottom_overlay`／`mobile_bottom_overlay`「底部提示不疊在推文列上」。

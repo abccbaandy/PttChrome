@@ -10,6 +10,7 @@
 // 「指令處理中，請稍候…」這類吞鍵提示屬一般：鍵被擋是設計，不是失敗。
 
 import { DISMISS_ANY_KEY, resolveDismiss } from './screen_dismiss';
+import { aboveStackCss } from './bottom_stack';
 
 export const HINT_ERROR = 'error';
 
@@ -27,12 +28,12 @@ export function shouldShowHint(level, showStatusHints, underDialog) {
 
 // 底部浮動提示的 CSS bottom 值。平常讓開終端機的底部 inset（手機的底部工具列＋safe-area
 // ＋軟鍵盤，App._onVisualViewport 寫 --term-bottom-inset），工具列的 z-index 比提示高，
-// 不讓開就整個被蓋住。對話框蓋滿畫面時工具列被藏在它後面，再讓位就是停在畫面中間
+// 不讓開就整個被蓋住；推文列畫著時也讓開它（bottom_stack.aboveStackCss，桌機推文列離視窗底比 48px 高）。對話框蓋滿畫面時工具列被藏在它後面，再讓位就是停在畫面中間
 // 壓住對話框的字 ⇒ 貼到畫面最底（只讓 safe-area）。
 export function hintBottomCss(px, underDialog) {
   return underDialog
     ? 'calc(var(--safe-bottom, 0px) + 16px)'
-    : 'calc(var(--term-bottom-inset, 0px) + ' + px + 'px)';
+    : aboveStackCss(px);
 }
 
 // PTT 正在問問題（本幀 buf.isPromptPending：輸入欄、推文型別選單）時，提問就畫在畫面最底下

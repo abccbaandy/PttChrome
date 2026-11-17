@@ -54,8 +54,10 @@ describe("shouldShowHint", () => {
     expect(shouldShowHint(HINT_ERROR, true, true)).toBe(true);
     expect(shouldShowHint(HINT_ERROR, false, true)).toBe(true);
   });
-  test("離底距離：平常讓開工具列，對話框蓋著時只讓 safe-area", () => {
-    expect(hintBottomCss(48, false)).toBe("calc(var(--term-bottom-inset, 0px) + 48px)");
+  test("離底距離：平常讓開工具列與推文列，對話框蓋著時只讓 safe-area", () => {
+    expect(hintBottomCss(48, false)).toBe(
+      "max(calc(var(--term-bottom-inset, 0px) + 48px), calc(var(--bottom-stack-clear, 0px) + 8px))"
+    );
     expect(hintBottomCss(48, true)).toBe("calc(var(--safe-bottom, 0px) + 16px)");
   });
   test("預設開啟", () => {

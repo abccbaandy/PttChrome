@@ -15,7 +15,7 @@ import { stripNonBig5, splitPushSegments, big5ByteLength, pushMaxBytes } from '.
 import { detectIpLogged, detectAlignedComments } from './push_screen';
 import { screenOf, SCREEN_KIND } from './screen_model';
 import { listPushTarget, listPushFactsOf, sameListPushTarget } from './list_push';
-import { measureContentEdge, stackFloorOf } from './bottom_stack';
+import { measureContentEdge, stackFloorOf, stackClearOf, publishStackClear } from './bottom_stack';
 
 export const COMMENT_BAR_ID = 'commentBar';
 // 列高（CSS px）。終端機累積頁尾端要多留這麼高的空白，最後一列才捲得出列的下面
@@ -222,6 +222,12 @@ CommentBar.prototype = {
     const next = Object.assign({}, this._state, patch);
     if (Object.keys(patch).every((k) => next[k] === this._state[k])) return;
     this._state = next;
+    // 貼視窗底的提示讀這個值讓開推文列（bottom_stack.aboveStackCss）。
+    const clear = stackClearOf(next, commentBarHeight(next));
+    if (clear !== this._stackClear) {
+      this._stackClear = clear;
+      publishStackClear(clear);
+    }
     this._listeners.forEach(function(fn) {
       fn(next);
     });

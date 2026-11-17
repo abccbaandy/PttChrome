@@ -104,3 +104,23 @@ test.describe('手機：浮層不蓋住文末', () => {
     }
   }
 });
+
+// 貼視窗底的提示（flashListHint：已切至原生操作、推文已送出…）要讓開推文列（bottom_stack.aboveStackCss）。
+// 手機：推文列在底部導覽上方，提示一直都在它上面 8px；改成從推文列算之後不能變。
+test.describe('底部提示不疊在推文列上', () => {
+  test("手機", async ({ page }) => {
+    await bootOffline(page, ptt, { commentBar: true });
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
+    await openArticle(page, { full: false });
+    await expect(page.locator('#commentBar')).toBeVisible();
+    await page.evaluate(() => window.__app.view.flashListHint('提示', 60000));
+    await expect(page.locator('.ListHint')).toBeVisible();
+    const gap = () =>
+      page.evaluate(() => {
+        const hint = document.querySelector('.ListHint').getBoundingClientRect();
+        const bar = document.querySelector('#commentBar').getBoundingClientRect();
+        return Math.round(bar.top - hint.bottom);
+      });
+    await expect.poll(gap).toBeGreaterThanOrEqual(0);
+  });
+});

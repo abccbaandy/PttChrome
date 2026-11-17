@@ -55,3 +55,51 @@ export function stackFloorOf({ mainRect, footerTop, innerHeight, keyboardInset }
   if (innerHeight == null) return bottom;
   return Math.min(bottom, innerHeight - (keyboardInset || 0));
 }
+
+// ── 貼視窗底的提示讓開推文列（A8 第三步）────────────────────────────────────
+// 底部提示、讀取中、跳到未讀進度卡、上傳卡片、回到上次的地方這些「貼視窗底」的浮層原本只讓開
+// `--term-bottom-inset`（手機底部導覽＋軟鍵盤），多留的 48px 剛好是手機推文列（40px）＋間距。
+// 桌機推文列貼在好讀 footer 上緣（地板），上緣離視窗底遠超過 48px ⇒ 提示疊在推文列的輸入框上。
+// 推文列畫著時把「它的上緣離視窗底多遠」寫進 STACK_CLEAR_VAR，提示取兩者較高者：
+// 沒有推文列（0）⇒ 跟以前一樣；手機推文列上緣＝導覽上緣＋40 ⇒ 也跟以前一樣。
+export const STACK_CLEAR_VAR = '--bottom-stack-clear';
+// 提示與推文列上緣的間距。
+export const STACK_GAP = 8;
+// 舊的離底距離裡替推文列預留的那一格：px ≥ 48 的提示都含它，換算成「離推文列上緣多遠」時扣掉。
+const BAR_SLOT = 40;
+
+/**
+ * 貼視窗底的浮層的 CSS `bottom`：讓開手機底部導覽＋軟鍵盤再 px，也讓開推文列（上緣再往上至少 STACK_GAP）。
+ * px＝以前寫在 `--term-bottom-inset` 之上的距離；疊在一般提示上面的那層（88）照舊比提示高 40。
+ * CSS 檔裡的同一條式子（#resumeLastPlace、.ImageUploadCard）由 bottom_stack.test.js 對照。
+ * @param {number} px
+ * @returns {string}
+ */
+export function aboveStackCss(px) {
+  return (
+    'max(calc(var(--term-bottom-inset, 0px) + ' + px + 'px), calc(var(' + STACK_CLEAR_VAR + ', 0px) + ' +
+    Math.max(STACK_GAP, px - BAR_SLOT) + 'px))'
+  );
+}
+
+/**
+ * 推文列佔掉的底部高度（上緣離視窗底的距離，px）：沒畫＝0。
+ * @param {{ visible?: boolean, bottom?: number } | null | undefined} state
+ * @param {number} height 推文列實際高度（comment_bar.commentBarHeight）
+ * @returns {number}
+ */
+export function stackClearOf(state, height) {
+  if (!state || !state.visible || !(height > 0)) return 0;
+  return Math.max(0, Math.round((state.bottom || 0) + height));
+}
+
+/**
+ * 把推文列佔掉的底部高度寫到 `<html>` 的 STACK_CLEAR_VAR（提示的 CSS 讀它）。
+ * @param {number} px
+ * @param {Document | null} [doc]
+ */
+export function publishStackClear(px, doc = typeof document !== 'undefined' ? document : null) {
+  const root = doc && doc.documentElement;
+  if (!root || !root.style) return;
+  root.style.setProperty(STACK_CLEAR_VAR, px + 'px');
+}
