@@ -974,8 +974,9 @@ export const PREF_SEARCH_ITEMS = [
   ]),
 
   // ── AI ──────────────────────────────────────────────────────────
-  ...inSection("ai", "options_ai", false, [
-    { key: "enableAi", type: "check", titleKey: "options_enableAi", tooltipKey: "tooltip_ai" },
+  // tooltip_ai 是整個分區的說明（裝置端推論、Chrome 148+），不是總開關這一格的 ⇒ 掛在分區上。
+  ...inSection("ai", "options_ai", "tooltip_ai", [
+    { key: "enableAi", type: "check", titleKey: "options_enableAi" },
   ]),
   ...inSection("ai", "options_ai_features", null, [
     { key: "enableCaptionAi", type: "check", titleKey: "options_enableCaptionAi" },
@@ -988,16 +989,18 @@ export const PREF_SEARCH_ITEMS = [
   ]),
 
   // ── 本機設定 ────────────────────────────────────────────────────
-  ...inSection("local", "options_local", false, [
+  // tooltip_local（只存這台、不上雲）講的是整個分頁 ⇒ 掛在分區上，不掛在上班模式那一格。
+  ...inSection("local", "options_local", "tooltip_local", [
     {
       key: "enableWorkMode",
       type: "check",
       titleKey: "options_enableWorkMode",
-      tooltipKey: "tooltip_local",
     },
     {
       key: "imageUploadToken",
       type: "text",
+      // 憑證：由索引畫出時關掉瀏覽器自動填入（PrefModal.jsx#PrefIndexRows）。
+      credential: true,
       titleKey: "options_imageUploadToken",
       tooltipKey: "tooltip_imageUploadToken",
     },
