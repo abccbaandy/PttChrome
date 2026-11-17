@@ -10,8 +10,15 @@ import {
   prefShown,
   PREF_SHOWN_IF,
   searchPrefSettings,
+  MOBILE_TEXT_KEYS,
+  mobileTextKey,
 } from "../../src/js/pref_search";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
+import { zh_TW } from "../../src/js/zh_TW_messages";
+import { en_US } from "../../src/js/en_US_messages";
+
+const msgOf = (lang, key) =>
+  ((lang === "en_us" ? en_US : zh_TW)[key] || {}).message;
 
 const COMPONENT_TYPE = {
   PrefCheckRow: "check",
@@ -142,6 +149,54 @@ describe("設定索引的欄位型別", () => {
       }).map((h) => h.key);
     expect(keys({})).toContain("termSizeMode");
     expect(keys({ mobile: true })).not.toContain("termSizeMode");
+  });
+
+  test("P96：手機版面的設定搜尋用手機用語、不列滑鼠滾輪那類手機沒有的操作", () => {
+    const hits = (q, opts) =>
+      searchPrefSettings(q, { lang: "zh_tw", limit: 50, ...opts });
+    const keys = (q, opts) => hits(q, opts).map((h) => h.key);
+    // 手機叫「系統返回鍵／返回手勢」，結果標題與分頁名都是手機的字。
+    const back = hits("系統返回鍵", { mobile: true });
+    expect(back.map((h) => h.key)).toContain("mouseBackNav");
+    const hit = back.find((h) => h.key === "mouseBackNav");
+    expect(hit.title).toBe("系統返回鍵／返回手勢");
+    expect(hit.tabLabel).toBe("點擊與返回");
+    expect(keys("系統返回鍵", {})).not.toContain("mouseBackNav");
+    // 分頁名換了：手機搜「點擊與返回」找得到整個分頁的項目，電腦版沒有這個字。
+    expect(keys("點擊與返回", { mobile: true })).toContain("useMouseBrowsing");
+    expect(keys("點擊與返回", {})).toEqual([]);
+    // 手機沒有滾輪、中鍵、滑鼠停留：不列（分區項也不列，跳過去會撲空）。
+    for (const q of ["滑鼠滾輪", "滑鼠中鍵", "滑鼠移動", "平滑捲動"]) {
+      const mobileKeys = keys(q, { mobile: true });
+      for (const k of [
+        "mouseWheel",
+        "mouseWheelSmoothScroll",
+        "mouseMiddleClick",
+        "mouseBrowsingHighlight",
+        "section:options_mouseMove",
+      ])
+        expect(mobileKeys, q).not.toContain(k);
+    }
+    expect(keys("滑鼠滾輪", {})).toContain("mouseWheel");
+    // 「交給 PTT」手機也有作用（serverReport 讓點擊讓位）⇒ 留著，換手機用語。
+    expect(keys("把點擊交給 PTT", { mobile: true })).toContain(
+      "mouseServerReport",
+    );
+  });
+
+  test("P96：手機版文字對照表的 key 兩語系都有、跟電腦版不同字", () => {
+    for (const [desk, mob] of Object.entries(MOBILE_TEXT_KEYS)) {
+      for (const lang of ["zh_tw", "en_us"]) {
+        const d = msgOf(lang, desk);
+        const m = msgOf(lang, mob);
+        expect(d, `${lang} ${desk}`).toBeTruthy();
+        expect(m, `${lang} ${mob}`).toBeTruthy();
+        expect(m, `${lang} ${mob}`).not.toBe(d);
+      }
+    }
+    expect(mobileTextKey("options_mouse", true)).toBe("options_mouse_mobile");
+    expect(mobileTextKey("options_mouse", false)).toBe("options_mouse");
+    expect(mobileTextKey("options_general", true)).toBe("options_general");
   });
 
   test("rows（名單欄最少列數）只用在 textarea，而且每個 textarea 都有", () => {

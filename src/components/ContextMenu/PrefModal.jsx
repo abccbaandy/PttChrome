@@ -96,6 +96,7 @@ import {
   prefSectionRows,
   prefShown,
   PREF_SHOWN_IF,
+  mobileTextKey,
 } from "../../js/pref_search";
 import { shortcutList, isMacPlatform } from "../../js/shortcut_list";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
@@ -412,11 +413,15 @@ const AUTO_LOGIN_DUP_CONN_OPTIONS = [
 // 設定項下方的灰字說明。跟 PrefCheckbox 一樣包 memo：設定頁每改一個值整份
 // PrefModal 重畫，props 沒變的列直接跳過（改一格的重畫時間約減半，量測見
 // docs/build-modernization.md「設定頁重畫」）。
-const PrefHint = memo(({ textKey }) => (
-  <Text size="xs" c="dimmed" mb="xs">
-    {i18n(textKey)}
-  </Text>
-));
+const PrefHint = memo(({ textKey }) => {
+  // 手機版面換手機用語（MOBILE_TEXT_KEYS 有對照的才換，P96）。
+  const mk = useMobileKey();
+  return (
+    <Text size="xs" c="dimmed" mb="xs">
+      {i18n(mk(textKey))}
+    </Text>
+  );
+});
 
 // 勾選列＝勾選框＋（有的話）灰字說明，標題與說明的文字鍵取自設定搜尋索引
 // （pref_search.js#prefItem）⇒ 設定頁上的字與搜尋結果同一份來源。只給「標題＋說明」
@@ -432,11 +437,20 @@ const PrefHint = memo(({ textKey }) => (
 // memo 只比這一格與它前置鏈的值 ⇒ 改別格時這一列不重畫（tests/unit/pref_modal_rerender.test.jsx）。
 const SAFE_MODE_KEYS = new Set(NATIVE_SAFE_MODE_KEYS);
 const SafeModeContext = createContext(false);
+// 手機版面（App.mobile，且設定頁裡「手機版面」還沒改成關）：desktopOnly 的格子不畫、
+// 換成手機用語（pref_search.js#MOBILE_TEXT_KEYS，P96）。勾選列、分區 legend、索引列都從這裡讀。
+const MobileUiContext = createContext(false);
+const useMobileKey = () => {
+  const mobileUi = useContext(MobileUiContext);
+  return (key) => mobileTextKey(key, mobileUi);
+};
 // Modal 外面包一層 Provider（context 穿得過 portal）。寫成元件而不是在 JSX 裡多包一層，
 // 是為了不讓整段設定頁多縮排一層。
-const SafeModeModal = ({ safeMode, ...props }) => (
+const SafeModeModal = ({ safeMode, mobileUi, ...props }) => (
   <SafeModeContext.Provider value={safeMode}>
-    <Modal {...props} />
+    <MobileUiContext.Provider value={mobileUi}>
+      <Modal {...props} />
+    </MobileUiContext.Provider>
   </SafeModeContext.Provider>
 );
 const samePrefCheckRow = (a, b) =>
@@ -454,6 +468,7 @@ const PrefCheckRow = memo(({ name, values, disabled, onChange }) => {
     useContext(SafeModeContext) &&
     (SAFE_MODE_KEYS.has(name) || chain.some((k) => SAFE_MODE_KEYS.has(k)));
   const parentOff = chain.some((k) => !values[k]);
+  const mk = useMobileKey();
   return (
     <>
       <PrefCheckbox
@@ -462,12 +477,14 @@ const PrefCheckRow = memo(({ name, values, disabled, onChange }) => {
         disabled={safeMode || parentOff || disabled}
         onChange={onChange}
         description={
-          it.hintInBox && it.tooltipKey ? i18n(it.tooltipKey) : undefined
+          it.hintInBox && it.tooltipKey ? i18n(mk(it.tooltipKey)) : undefined
         }
       >
-        {i18n(it.titleKey)}
+        {i18n(mk(it.titleKey))}
       </PrefCheckbox>
-      {it.tooltipKey && !it.hintInBox && <PrefHint textKey={it.tooltipKey} />}
+      {it.tooltipKey && !it.hintInBox && (
+        <PrefHint textKey={mk(it.tooltipKey)} />
+      )}
     </>
   );
 }, samePrefCheckRow);
@@ -482,7 +499,12 @@ const CATEGORY_LABEL_KEYS = new Set(PREF_CATEGORIES.map((c) => c.labelKey));
 const PrefSection = ({ legendKey, children, ...rest }) => {
   const flashKey = useFlashKey();
   const narrow = useNarrow();
+  const mobileUi = useContext(MobileUiContext);
   const key = `section:${legendKey}`;
+  if (mobileUi) {
+    const rows = prefSectionRows(legendKey);
+    if (rows.length > 0 && rows.every((it) => it.desktopOnly)) return null;
+  }
   return (
     <fieldset
       className={
@@ -499,7 +521,7 @@ const PrefSection = ({ legendKey, children, ...rest }) => {
             : undefined
         }
       >
-        {i18n(legendKey)}
+        {i18n(mobileTextKey(legendKey, mobileUi))}
       </legend>
       {children}
     </fieldset>
@@ -604,7 +626,6 @@ const GROUP_ID_BY_FIRST = new Map(GENERAL_GROUPS.map((g) => [g.first, g.id]));
 const PrefIndexRows = ({
   sectionKey,
   values,
-  mobile,
   custom,
   selectOptions,
   placeholders,
@@ -622,6 +643,8 @@ const PrefIndexRows = ({
       : values[key];
   const disabledOf = (it) =>
     it.requires ? prefRequiresOff(it.key, values) : undefined;
+  const hideDesktopOnly = useContext(MobileUiContext);
+  const mk = (key) => mobileTextKey(key, hideDesktopOnly);
   const field = (it) => {
     if (custom && Object.prototype.hasOwnProperty.call(custom, it.key))
       return custom[it.key];
@@ -643,8 +666,8 @@ const PrefIndexRows = ({
             value={values[it.key]}
             disabled={disabledOf(it)}
             onKeyDown={onHotkeyCapture}
-            label={i18n(it.titleKey)}
-            placeholder={it.tooltipKey && i18n(it.tooltipKey)}
+            label={i18n(mk(it.titleKey))}
+            placeholder={it.tooltipKey && i18n(mk(it.tooltipKey))}
           />
         );
       case "number":
@@ -653,8 +676,8 @@ const PrefIndexRows = ({
             name={it.key}
             value={valueOf(it.key)}
             onChange={onNumberChange}
-            label={i18n(it.titleKey)}
-            description={it.tooltipKey && i18n(it.tooltipKey)}
+            label={i18n(mk(it.titleKey))}
+            description={it.tooltipKey && i18n(mk(it.tooltipKey))}
             min={it.min}
           />
         );
@@ -665,8 +688,8 @@ const PrefIndexRows = ({
             value={valueOf(it.key)}
             disabled={disabledOf(it)}
             onChange={onTextInputChange}
-            label={i18n(it.titleKey)}
-            description={it.tooltipKey && i18n(it.tooltipKey)}
+            label={i18n(mk(it.titleKey))}
+            description={it.tooltipKey && i18n(mk(it.tooltipKey))}
             placeholder={placeholders && placeholders[it.key]}
           />
         );
@@ -687,12 +710,12 @@ const PrefIndexRows = ({
             disabled={disabledOf(it)}
             onChange={numeric ? onSelectNum : onSelectStr}
             label={
-              it.titleKey === it.sectionKey ? undefined : i18n(it.titleKey)
+              it.titleKey === it.sectionKey ? undefined : i18n(mk(it.titleKey))
             }
             ariaLabel={
-              it.titleKey === it.sectionKey ? i18n(it.titleKey) : undefined
+              it.titleKey === it.sectionKey ? i18n(mk(it.titleKey)) : undefined
             }
-            description={it.tooltipKey && i18n(it.tooltipKey)}
+            description={it.tooltipKey && i18n(mk(it.tooltipKey))}
             options={selectOptions[it.key]}
           />
         );
@@ -704,8 +727,8 @@ const PrefIndexRows = ({
             value={valueOf(it.key)}
             disabled={disabledOf(it)}
             onChange={onTextInputChange}
-            label={i18n(it.titleKey)}
-            placeholder={it.tooltipKey && i18n(it.tooltipKey)}
+            label={i18n(mk(it.titleKey))}
+            placeholder={it.tooltipKey && i18n(mk(it.tooltipKey))}
             minRows={it.rows}
           />
         );
@@ -719,19 +742,17 @@ const PrefIndexRows = ({
   let subRun = null;
   let wrapRun = null; // { id, list }：shownIf 條件標 wrap 的連續幾格
   let desktopNoted = false;
-  // 手機版面才收：設定頁裡把「手機版面」改成關（還沒存檔）時，說明指向的「手機字級」
-  // 已經不畫了 ⇒ 五格照常畫回來。
-  const hideDesktopOnly = mobile && values.mobileLayout !== "off";
   for (const it of prefSectionRows(sectionKey)) {
     if (hideDesktopOnly && it.desktopOnly) {
-      // 手機版面不看的那幾格：整組換成一行說明，指向手機自己的那一格。
-      if (!desktopNoted) {
+      // 手機版面不看的那幾格：帶 mobileNoteKey 的整組換成一行說明，指向手機自己的那一格；
+      // 沒帶的（滑鼠滾輪那類手機根本沒有的操作）靜靜收起。
+      if (!desktopNoted && it.mobileNoteKey) {
         desktopNoted = true;
         wrapRun = null;
         subRun = null;
         out.push(
           <PrefAnchor key={`desktopOnly:${it.key}`} anchorKey={it.key}>
-            <PrefHint textKey="options_desktopOnlyOnMobile" />
+            <PrefHint textKey={it.mobileNoteKey} />
           </PrefAnchor>,
         );
       }
@@ -985,6 +1006,10 @@ export const PrefModal = ({
   const [categoryList, setCategoryList] = useState(true);
   const rightColRef = useRef(null);
   const [values, setValues] = useState(readValuesWithDefault);
+  // 手機版面：設定頁裡把「手機版面」改成關（還沒存檔）時，手機用語與收起的格子照電腦版畫回來
+  //（P100 的說明指向的「手機字級」那時也不畫了）。
+  const mobileUi = !!mobile && values.mobileLayout !== "off";
+  const mk = (key) => mobileTextKey(key, mobileUi);
   // What localStorage held when the dialog opened. `values` follows the user's
   // typing, so only this can answer "is there still a plaintext copy here?".
   const [storedSnapshot, setStoredSnapshot] = useState(readValuesWithDefault);
@@ -1442,6 +1467,7 @@ export const PrefModal = ({
   return (
     <SafeModeModal
       safeMode={!!values.nativeSafeMode}
+      mobileUi={mobileUi}
       opened={show}
       onClose={onCloseClick}
       // marker 放在 content（可見的對話框本體）而非 mantine-Modal-root（外層 0 尺寸
@@ -1478,13 +1504,13 @@ export const PrefModal = ({
             <PrefSearchBox
               onJump={onSearchJump}
               resetToken={show}
-              mobile={mobile}
+              mobile={mobileUi}
             />
             {!narrow && (
               <Tabs.List>
                 {PREF_CATEGORIES.map((c) => (
                   <Tabs.Tab key={c.value} value={c.value}>
-                    {i18n(c.labelKey)}
+                    {i18n(mk(c.labelKey))}
                   </Tabs.Tab>
                 ))}
               </Tabs.List>
@@ -1504,10 +1530,10 @@ export const PrefModal = ({
                   >
                     <span className="PrefModal__Category__Text">
                       <span className="PrefModal__Category__Title">
-                        {i18n(c.labelKey)}
+                        {i18n(mk(c.labelKey))}
                       </span>
                       <span className="PrefModal__Category__Desc">
-                        {i18n(c.descKey)}
+                        {i18n(mk(c.descKey))}
                       </span>
                     </span>
                     <IconChevronRight
@@ -1530,10 +1556,12 @@ export const PrefModal = ({
                 <IconChevronLeft size={20} aria-hidden />
                 <span>
                   {i18n(
-                    (
-                      PREF_CATEGORIES.find((c) => c.value === navActiveKey) ||
-                      PREF_CATEGORIES[0]
-                    ).labelKey,
+                    mk(
+                      (
+                        PREF_CATEGORIES.find((c) => c.value === navActiveKey) ||
+                        PREF_CATEGORIES[0]
+                      ).labelKey,
+                    ),
                   )}
                 </span>
               </button>
@@ -1591,7 +1619,6 @@ export const PrefModal = ({
                 <PrefIndexRows
                   sectionKey="options_appearance"
                   values={values}
-                  mobile={mobile}
                   onCheckboxChange={onCheckboxChange}
                   onHotkeyCapture={onHotkeyCapture}
                   onNumberChange={onNumberChange}
@@ -1706,7 +1733,7 @@ export const PrefModal = ({
                           )}
                         </div>
                         <Text size="xs" c="dimmed">
-                          {i18n("tooltip_highlightColorShared")}
+                          {i18n(mk("tooltip_highlightColorShared"))}
                         </Text>
                       </PrefAnchor>
                     ),
