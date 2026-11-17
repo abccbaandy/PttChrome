@@ -229,3 +229,120 @@ describe("SearchStatus 控制器", () => {
     expect(sent).toEqual(["ArrowLeft", "/"]);
   });
 });
+
+// P97：手機列表卡片把標題列右段（文摘《板》）與底列（文摘列表）都收掉，切進文摘後跟完整列表
+// 長得一樣 ⇒ 只在手機列表卡片上顯示「☆ 文摘」＋「完整列表」（替使用者按 Tab）。
+describe("文摘標示（P97，手機列表卡片）", () => {
+  const cards = (h) => {
+    h.core.mobile = true;
+    h.core.view.listCards = true;
+    return h;
+  };
+  test("預設開；只替使用者按鍵 ⇒ 不在安全模式名單", () => {
+    expect(DEFAULT_PREFS.mobileDigestStatus).toBe(true);
+    expect(NATIVE_SAFE_MODE_KEYS).not.toContain("mobileDigestStatus");
+  });
+
+  test("手機列表卡片停在文摘 ⇒ 顯示文摘標示（不帶搜尋條件）；回完整列表收起", () => {
+    const { ctl, show } = cards(makeCore(screen()));
+    show(screen(DIGEST));
+    expect(ctl.state).toMatchObject({ visible: true, kind: "digest", conds: null, mobile: true });
+    show(screen());
+    expect(ctl.state.visible).toBe(false);
+    // 舊版 caption「文章選讀」：靠標題列右段「文摘《板》」。
+    show(screen({ title: DIGEST.title, footer: " 文章選讀  (y)回應(X)推文" }));
+    expect(ctl.state.kind).toBe("digest");
+    // 搜尋結果照舊是搜尋狀態列。
+    show(screen(SELECT));
+    expect(ctl.state.kind).toBe("select");
+  });
+
+  test("電腦版、手機但不是列表卡片（原生畫面本來就寫著）⇒ 不顯示", () => {
+    const desk = makeCore(screen());
+    desk.show(screen(DIGEST));
+    expect(desk.ctl.state.visible).toBe(false);
+    const grid = makeCore(screen());
+    grid.core.mobile = true;
+    grid.core.view.listCards = false;
+    grid.show(screen(DIGEST));
+    expect(grid.ctl.state.visible).toBe(false);
+  });
+
+  test("認不出（右段被省略的舊版 caption）、列表上開著 prompt、文章裡、開關關 ⇒ 不顯示", () => {
+    const { ctl, core, show } = cards(makeCore(screen()));
+    show(screen({ title: "【板主:test】", footer: " 文章選讀  (y)回應(X)推文" }));
+    expect(ctl.state.visible).toBe(false);
+    const ask = screen(DIGEST);
+    ask[1] = "轉錄本文章於看板：";
+    ask[2] = "請注意";
+    show(ask, 1);
+    expect(ctl.state.visible).toBe(false);
+    core.buf.pageState = 3;
+    show(screen(DIGEST), 3);
+    expect(ctl.state.visible).toBe(false);
+    core.buf.pageState = 2;
+    prefOverride.mobileDigestStatus = false;
+    try {
+      show(screen(DIGEST), 3);
+      expect(ctl.state.visible).toBe(false);
+    } finally {
+      delete prefOverride.mobileDigestStatus;
+    }
+    show(screen(DIGEST), 3);
+    expect(ctl.state.visible).toBe(true);
+  });
+
+  test("搜尋狀態列的開關關掉不影響文摘標示（各自的開關）", () => {
+    const { ctl, show } = cards(makeCore(screen()));
+    prefOverride.enableSearchStatus = false;
+    try {
+      show(screen(DIGEST));
+      expect(ctl.state.kind).toBe("digest");
+      show(screen(SELECT));
+      expect(ctl.state.visible).toBe(false);
+    } finally {
+      delete prefOverride.enableSearchStatus;
+    }
+  });
+
+  test("完整列表＝替使用者按 Tab", () => {
+    const { ctl, sent } = cards(makeCore(screen(DIGEST)));
+    ctl.leaveDigest();
+    expect(sent).toEqual(["Tab"]);
+  });
+
+  // 鍵盤那條分派不看 prompt：底列不動、畫在列表中段的 prompt（或游標在輸入欄）時，Tab 會打進輸入框。
+  test("prompt 開著（底列不動）⇒ 不顯示；按下去當下不在文摘或 prompt 開著就不送", () => {
+    const h = cards(makeCore(screen()));
+    h.show(screen(DIGEST), 3);
+    expect(h.ctl.state.kind).toBe("digest");
+    h.core.buf.isPromptPending = () => true;
+    h.ctl.leaveDigest();
+    expect(h.sent).toEqual([]);
+    expect(h.ctl.state.visible).toBe(false);
+    h.core.buf.isPromptPending = () => false;
+    h.core.buf.isCursorOnInputField = () => true;
+    h.show(screen(DIGEST), 3);
+    expect(h.ctl.state.visible).toBe(false);
+    h.core.buf.isCursorOnInputField = () => false;
+    h.show(screen(DIGEST), 3);
+    expect(h.ctl.state.visible).toBe(true);
+    h.ctl.leaveDigest();
+    expect(h.sent).toEqual(["Tab"]);
+  });
+
+  // term_view 換卡片版面時在 render 途中重判（refresh(true)）：只重算顯示，不拿過渡幀推進搜尋條件記憶。
+  test("refresh(true) 不推進搜尋條件記憶", () => {
+    const { ctl, core, show } = makeCore(screen());
+    show(screen());
+    ctl.beginSearch("title", "Re")();
+    core.buf.getRowText = () => "";
+    ctl.refresh(true);
+    // 搜尋前那張完整列表還在畫面上（結果還沒畫完）：剛記下的條件不能因為上面那一幀被當成已離開。
+    core.buf.getRowText = (r) => screen()[r] || "";
+    ctl.refresh();
+    core.buf.getRowText = (r) => screen(SELECT)[r] || "";
+    ctl.refresh();
+    expect(ctl.state.conds).toEqual([{ kind: "title", text: "Re" }]);
+  });
+});

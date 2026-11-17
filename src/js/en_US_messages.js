@@ -2039,6 +2039,21 @@ export const en_US = {
   "mobileListEndHint_text": {
     "message": "— No more —"
   },
+  "options_mobileDigestStatus": {
+    "message": "Mark the digest list on mobile"
+  },
+  "tooltip_mobileDigestStatus": {
+    "message": "When a board is switched to its digest (only posts the moderators collected), a \"Digest\" badge appears at the top; tap \"Full list\" next to it to switch back to all posts (same as Tab). Not shown when the digest can't be recognized."
+  },
+  "digestStatus_label": {
+    "message": "Digest: moderator-collected posts only"
+  },
+  "digestStatus_leave": {
+    "message": "Full list"
+  },
+  "digestStatus_leaveTip": {
+    "message": "Switch back to the full post list (Tab)"
+  },
   "options_mobileBoardCardUnread": {
     "message": "Highlight boards with new posts on mobile board cards"
   },

@@ -2038,6 +2038,21 @@
   "mobileListEndHint_text": {
     "message": "— 沒有更多了 —"
   },
+  "options_mobileDigestStatus": {
+    "message": "手機列表停在文摘時標出來"
+  },
+  "tooltip_mobileDigestStatus": {
+    "message": "看板裡切到文摘（只列板主收錄的文章）時，畫面上方多一顆「文摘」標示，旁邊的「完整列表」點一下就切回所有文章（等於按 Tab）。認不出是不是文摘時不顯示。"
+  },
+  "digestStatus_label": {
+    "message": "文摘：只列板主收錄的文章"
+  },
+  "digestStatus_leave": {
+    "message": "完整列表"
+  },
+  "digestStatus_leaveTip": {
+    "message": "切回完整的文章列表（Tab）"
+  },
   "options_mobileBoardCardUnread": {
     "message": "手機看板卡片標出有新文章的看板"
   },

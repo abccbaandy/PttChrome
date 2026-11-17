@@ -7,7 +7,10 @@
 //      兩者都走鍵盤同一條分派（view.sendKeyAsUser）。
 //   2. **認不出 ⇒ 不顯示**：只認底列 caption「系列文章」（新版 read.c#i_read_caption），
 //      舊版 caption「文章選讀」分不出子模式，靠標題列右段「系列《板》」（只能證明「是」）。
-//      文摘（MODE_DIGEST）不是搜尋，不顯示。
+//      文摘（MODE_DIGEST）不是搜尋，不顯示搜尋條件；但手機列表卡片把標題列右段與底列都收掉了，
+//      切進文摘後畫面跟完整列表一模一樣 ⇒ 只在手機列表卡片上改顯示「☆ 文摘」＋「完整列表」
+//      （P97，pref mobileDigestStatus；完整列表＝替使用者按 Tab，read.c 在文摘裡 Tab 切回完整列表）。
+//      電腦版原生畫面本來就寫著「文摘《板》」，不顯示。
 //   3. **關鍵字只在確定時顯示**：PTT 畫面上沒有搜尋條件，只有經搜尋彈窗送出的才知道。
 //      看到完整列表就忘掉；有人在原生 prompt 下了條件（彈窗沒經手）⇒ 只顯示「搜尋結果」。
 //      從搜尋結果 `s` 換板仍在搜尋模式、條件照舊（read_ctx 帶著走），所以不比對板名。
@@ -82,11 +85,19 @@ export function rememberSubmitted(memory, fromMode, kind, text) {
   return memory || null;
 }
 
-function enabled() {
-  return !!readEffectivePrefs().enableSearchStatus;
+// 這一幀要不要浮東西、浮哪一種（純函式）：'select' 搜尋狀態列、'digest' 文摘標示、null 不顯示。
+//   reading：好讀文章（pageState READING）；listCards：手機列表卡片畫著（view.listCards）；
+//   chromeIntact：listChromeIntact（列表上沒有開著的 prompt）；promptOpen：游標在輸入欄或 PTT
+//   正在問東西（底列不動、畫在列表中段的 prompt 也算）——鈕替使用者按的鍵會打進輸入框 ⇒ 不顯示。
+export function statusKind({ mode, reading, chromeIntact, promptOpen, listCards, prefs }) {
+  const p = prefs || {};
+  if (reading || !chromeIntact || promptOpen) return null;
+  if (mode === 'select') return p.enableSearchStatus ? 'select' : null;
+  if (mode === 'digest') return listCards && p.mobileDigestStatus ? 'digest' : null;
+  return null;
 }
 
-const HIDDEN = { visible: false, board: null, conds: null, right: 0, top: 0, mobile: false };
+const HIDDEN = { visible: false, kind: null, board: null, conds: null, right: 0, top: 0, mobile: false };
 
 export function SearchStatus(core) {
   this._core = core;
@@ -152,7 +163,9 @@ SearchStatus.prototype = {
     return { right: Math.max(0, Math.round(window.innerWidth - r.right)), top: Math.max(0, Math.round(r.top)) };
   },
 
-  refresh: function() {
+  // keepMemory：只重算顯示、不推進條件記憶（term_view 換卡片版面時在 render 途中呼叫，那一幀
+  // 可能還是過渡幀，拿它推進記憶會把剛記下的條件當成「已經看過別的畫面」）。
+  refresh: function(keepMemory) {
     const core = this._core;
     const facts = this._facts();
     if (!facts) return this._set({ visible: false });
@@ -160,21 +173,24 @@ SearchStatus.prototype = {
     const nativePrompt =
       !core.searchInFlight &&
       (isSearchPromptFrame('title', facts) || isSearchPromptFrame('author', facts) || isSearchPromptFrame('push', facts));
-    this._memory = nextSearchMemory(this._memory, { mode: mode, nativePrompt: nativePrompt });
+    if (!keepMemory) this._memory = nextSearchMemory(this._memory, { mode: mode, nativePrompt: nativePrompt });
     const buf = core.buf;
-    if (
-      !enabled() ||
-      mode !== 'select' ||
-      (buf && buf.pageState === PAGE_STATE.READING) ||
-      !listChromeIntact(facts.rowTexts, facts.curY)
-    )
-      return this._set({ visible: false });
+    const kind = statusKind({
+      mode: mode,
+      reading: !!(buf && buf.pageState === PAGE_STATE.READING),
+      chromeIntact: listChromeIntact(facts.rowTexts, facts.curY),
+      promptOpen: !!facts.inputField || !!(buf && typeof buf.isPromptPending === 'function' && buf.isPromptPending()),
+      listCards: !!(core.mobile && core.view && core.view.listCards),
+      prefs: readEffectivePrefs(),
+    });
+    if (!kind) return this._set({ visible: false });
     const g = this._geometry();
     if (!g) return this._set({ visible: false });
     const m = this._memory;
-    const conds = m && m.known && m.conds.length ? m.conds : null;
+    const conds = kind === 'select' && m && m.known && m.conds.length ? m.conds : null;
     this._set({
       visible: true,
+      kind: kind,
       board: boardNameFromKey(parseBoardKey(facts.rowTexts[0] || '')),
       conds: conds,
       right: g.right,
@@ -187,6 +203,16 @@ SearchStatus.prototype = {
   leave: function() {
     const view = this._core.view;
     if (view && typeof view.sendKeyAsUser === 'function') view.sendKeyAsUser('ArrowLeft');
+  },
+
+  // 文摘的「完整列表」：替使用者按 Tab（bbs.c#board_digest：文摘裡 Tab＝切回完整列表）。走鍵盤
+  // 同一條分派（序列操作在途由 serializedOpHint 擋）；鍵盤那條不看 prompt ⇒ 按下去當下再確認
+  // 一次這一幀還是文摘標示（prompt 開著、已經不在文摘就不送）。
+  leaveDigest: function() {
+    this.refresh(true);
+    if (this._state.kind !== 'digest' || !this._state.visible) return;
+    const view = this._core.view;
+    if (view && typeof view.sendKeyAsUser === 'function') view.sendKeyAsUser('Tab');
   },
 
   // ＋條件：替使用者按 `/`。搜尋鍵攔截開著就是搜尋彈窗（在搜尋結果裡送出＝增加條件），
