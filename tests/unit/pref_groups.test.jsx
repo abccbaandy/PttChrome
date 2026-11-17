@@ -260,6 +260,12 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
       "termSize.rows",
       "fontFitWindowWidth",
       "fontSize",
+      // P96：滑鼠分頁手機沒有的操作（靜靜收起，不畫說明）。
+      "section:options_mouseMove",
+      "mouseBrowsingHighlight",
+      "mouseMiddleClick",
+      "mouseWheel",
+      "mouseWheelSmoothScroll",
     ]);
     const anchor = (key) =>
       document.querySelector(`[data-pref-anchor="${key}"]`);
@@ -282,6 +288,63 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
       document.querySelector('input[name="termSize.cols"]'),
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain(hint);
+  });
+
+  // P96：手機版面上「滑鼠」分頁叫「點擊與返回」、改用觸控用語，收起手機沒有的停留標示／中鍵／
+  // 滾輪／平滑捲動（整區不畫、不留說明）；「交給 PTT」手機也有作用，留著。電腦版照舊。
+  test("P96 手機版面：滑鼠分頁改叫點擊與返回、收起手機沒有的操作；電腦版照舊", async () => {
+    const section = (key) =>
+      document.querySelector(`[data-pref-anchor="section:${key}"]`);
+    const input = (name) => document.querySelector(`[name="${name}"]`);
+    const gone = [
+      "mouseBrowsingHighlight",
+      "mouseMiddleClick",
+      "mouseWheel",
+      "mouseWheelSmoothScroll",
+    ];
+    const r = openModal({ mobile: true });
+    await mounted();
+    for (const name of gone) expect(input(name), name).toBeNull();
+    for (const key of [
+      "options_mouseMove",
+      "options_mouseMiddleClick",
+      "options_mouseWheel",
+    ])
+      expect(section(key), key).toBeNull();
+    for (const name of [
+      "useMouseBrowsing",
+      "mouseLeftClick",
+      "mouseEdgePaging",
+      "mouseFunctionKeys",
+      "mouseBackNav",
+      "mouseServerReport",
+    ])
+      expect(input(name), name).not.toBeNull();
+    const text = document.body.textContent;
+    for (const k of [
+      "options_mouse_mobile",
+      "options_useMouseBrowsing_mobile",
+      "options_enableMouseLeftClick_mobile",
+      "options_mouseServerReport_mobile",
+    ])
+      expect(text, k).toContain(i18n(k));
+    expect(section("options_mouseBackNav").querySelector("legend").textContent).toBe(
+      i18n("options_mouseBackNav_mobile"),
+    );
+    expect(text).not.toContain(i18n("options_useMouseBrowsing"));
+    // 只有終端機大小那組帶說明；滑鼠收起的不畫「只在電腦版有用」那句。
+    expect(
+      text.split(i18n("options_desktopOnlyOnMobile")).length - 1,
+    ).toBe(1);
+    r.unmount();
+
+    openModal();
+    await mounted();
+    for (const name of gone) expect(input(name), name).not.toBeNull();
+    const desk = document.body.textContent;
+    expect(desk).toContain(i18n("options_useMouseBrowsing"));
+    expect(desk).not.toContain(i18n("options_mouse_mobile"));
+    expect(desk).not.toContain(i18n("options_mouseBackNav_mobile"));
   });
 
   test("手機版面但設定裡手機版面選「關」（還沒存檔）：五格照常畫，不指向不見的手機字級", async () => {

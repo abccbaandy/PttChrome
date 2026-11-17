@@ -2467,6 +2467,45 @@
   "tooltip_mouseServerReport": {
     "message": "把滑鼠的點擊與滾輪直接回報給 PTT 主機（終端機標準的 XTerm SGR 協定），由 PTT 自己決定點下去要做什麼。開啟後本站自己的滑鼠行為（點標題開文、左側退出、滾輪翻頁、畫面上的功能鍵按鈕）會一併讓位；選取文字、點連結、右鍵選單不受影響。需要先在 PTT 的「個人設定區→設定使用者資料」把 MOUSE（啟用滑鼠支援）打開，主機才會要求回報。預設關閉：PTT 目前還沒有功能真的在使用滑鼠事件，現在開啟等於白白失去本站的滑鼠瀏覽。"
   },
+  "options_mouse_mobile": {
+    "message": "點擊與返回"
+  },
+  "optionsDesc_mouse_mobile": {
+    "message": "點一下開文章、點擊範圍、邊緣翻頁與返回鍵"
+  },
+  "options_mouseBrowsing_mobile": {
+    "message": "點擊操作"
+  },
+  "options_useMouseBrowsing_mobile": {
+    "message": "啟用點擊操作"
+  },
+  "tooltip_useMouseBrowsing_mobile": {
+    "message": "關掉之後，底下所有點擊功能（點一下開文章、邊緣翻頁、功能鍵按鈕、返回鍵）一律失效。文章裡的連結與圖片不受影響，照樣可以點。"
+  },
+  "options_mouseLeftClick_mobile": {
+    "message": "點一下"
+  },
+  "options_enableMouseLeftClick_mobile": {
+    "message": "點一下開文章／進看板"
+  },
+  "tooltip_mouseLeftClick_mobile": {
+    "message": "列表：點一下開文章／進看板（從哪一欄起可點，由下面的「點擊範圍」決定）。文章：點畫面最左側離開文章。文章裡的連結與圖片一律優先，不會誤退。"
+  },
+  "tooltip_mouseEdgePaging_mobile": {
+    "message": "列表與看板列表：點最上面一列＝第一頁，最下面一列＝最後一頁，右側邊緣上半＝上一頁、下半＝下一頁。文章：上半＝上一頁、下半＝下一頁，最下面一列＝跳到文末（左側仍是離開）。主功能表不適用。"
+  },
+  "options_mouseBackNav_mobile": {
+    "message": "系統返回鍵／返回手勢"
+  },
+  "tooltip_mouseBackNav_mobile": {
+    "message": "把手機的返回鍵與返回手勢改成 PTT 的左方向鍵＝退出文章／回上一層。"
+  },
+  "options_mouseServerReport_mobile": {
+    "message": "把點擊交給 PTT"
+  },
+  "tooltip_mouseServerReport_mobile": {
+    "message": "把點擊直接回報給 PTT 主機（終端機標準的 XTerm SGR 協定），由 PTT 自己決定點下去要做什麼。開啟後本站自己的點擊行為（點一下開文、左側退出、邊緣翻頁、功能鍵按鈕）會一併讓位；選取文字、點連結不受影響。需要先在 PTT 的「個人設定區→設定使用者資料」把 MOUSE（啟用滑鼠支援）打開，主機才會要求回報。預設關閉：PTT 目前還沒有功能真的在使用滑鼠事件。"
+  },
   "options_mouseBrowsing": {
     "message": "滑鼠瀏覽"
   },

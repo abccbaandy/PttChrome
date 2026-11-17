@@ -43,6 +43,35 @@ export const PREF_SEARCH_TABS = {
   about: "options_about",
 };
 
+// 手機版面上換字（P96：「滑鼠」分頁在手機叫「點擊與返回」、改用觸控用語）。
+// 電腦版 key → 手機版 key；只換字，設定值與電腦版共用。設定頁的分頁名／分區 legend／
+// 每格標題與說明、設定搜尋（含指令面板）都經 mobileTextKey 取字，所以手機搜「返回手勢」找得到。
+// 兩語系都要有手機版 key（i18n_parity 守）；守護 tests/unit/pref_groups.test.jsx「P96」。
+export const MOBILE_TEXT_KEYS = {
+  options_mouse: "options_mouse_mobile",
+  optionsDesc_mouse: "optionsDesc_mouse_mobile",
+  options_mouseBrowsing: "options_mouseBrowsing_mobile",
+  options_useMouseBrowsing: "options_useMouseBrowsing_mobile",
+  tooltip_useMouseBrowsing: "tooltip_useMouseBrowsing_mobile",
+  options_mouseLeftClick: "options_mouseLeftClick_mobile",
+  options_enableMouseLeftClick: "options_enableMouseLeftClick_mobile",
+  tooltip_mouseLeftClick: "tooltip_mouseLeftClick_mobile",
+  tooltip_mouseEdgePaging: "tooltip_mouseEdgePaging_mobile",
+  options_mouseBackNav: "options_mouseBackNav_mobile",
+  tooltip_mouseBackNav: "tooltip_mouseBackNav_mobile",
+  options_mouseServerReport: "options_mouseServerReport_mobile",
+  tooltip_mouseServerReport: "tooltip_mouseServerReport_mobile",
+};
+
+/**
+ * 手機版面時換成手機版的 i18n key（沒有對照就原樣）。
+ * @param {string | undefined} key
+ * @param {boolean | undefined} mobile
+ * @returns {string | undefined}
+ */
+export const mobileTextKey = (key, mobile) =>
+  (mobile && key && MOBILE_TEXT_KEYS[key]) || key;
+
 // PrefModal.jsx 裡有 name= 但**刻意**不進索引者。值是理由，守護測試會驗這些
 // 名字確實還在原始碼裡（防止名單腐爛）。
 export const PREF_SEARCH_EXEMPT_NAMES = {
@@ -70,6 +99,9 @@ const inSection = (tab, sectionKey, sectionTooltipKey, items) => [
           sectionKey,
           titleKey: sectionKey,
           tooltipKey: sectionTooltipKey || undefined,
+          ...(items.length > 0 && items.every((it) => it.desktopOnly)
+            ? { desktopOnly: true }
+            : {}),
         },
       ]),
   ...items.map((it) => ({ kind: "pref", ...it, tab, sectionKey })),
@@ -448,6 +480,7 @@ export const PREF_SEARCH_ITEMS = [
       key: "termSizeMode",
       type: "select",
       desktopOnly: true,
+      mobileNoteKey: "options_desktopOnlyOnMobile",
       titleKey: "options_termSize",
       tooltipKey: "tooltip_termSize",
     },
@@ -660,6 +693,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("mouse", "options_mouseMove", null, [
     {
       key: "mouseBrowsingHighlight",
+      desktopOnly: true,
       type: "check",
       requires: "useMouseBrowsing",
       titleKey: "options_mouseBrowsingHighlight",
@@ -699,12 +733,15 @@ export const PREF_SEARCH_ITEMS = [
     },
   ]),
   // 以下四區的 legend 與區內項目標題同字 ⇒ 不另外產生 section 項。
+  // 停留標示、中鍵、滾輪、平滑捲動在手機沒有對應的操作 ⇒ desktopOnly（手機整區不畫，P96）。
+  // 「交給 PTT」手機也有作用（serverReport 會讓點擊整組讓位，mouse_regions.resolveMouseGates），留著。
   ...inSection("mouse", "options_mouseMiddleClick", false, [
-    { key: "mouseMiddleClick", type: "select", requires: "useMouseBrowsing", titleKey: "options_mouseMiddleClick" },
+    { key: "mouseMiddleClick", type: "select", desktopOnly: true, requires: "useMouseBrowsing", titleKey: "options_mouseMiddleClick" },
   ]),
   ...inSection("mouse", "options_mouseWheel", false, [
     {
       key: "mouseWheel",
+      desktopOnly: true,
       type: "select",
       requires: "useMouseBrowsing",
       titleKey: "options_mouseWheel",
@@ -712,6 +749,7 @@ export const PREF_SEARCH_ITEMS = [
     },
     {
       key: "mouseWheelSmoothScroll",
+      desktopOnly: true,
       type: "check",
       requires: "mouseWheel",
       titleKey: "options_mouseWheelSmoothScroll",
@@ -1001,7 +1039,9 @@ export const PREF_SEARCH_ITEMS = [
  * rows：名單欄（textarea）最少幾列高。
  * desktopOnly：手機版面不看這格（P100：終端機大小一組，手機一律照螢幕寬排 80 欄）⇒ 手機版面時
  *   設定頁不畫、設定搜尋也不列；設定值照留（跨裝置同步，桌機照舊用）。
- * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean, shownIf?: string, rows?: number, desktopOnly?: boolean }} PrefIndexItem
+ * mobileNoteKey：desktopOnly 的格子收起來時，在原位畫的一行說明（同一分區只畫第一個）；
+ *   沒帶就靜靜收起（P96 滑鼠滾輪那類手機根本沒有的操作，不需要解釋）。
+ * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean, shownIf?: string, rows?: number, desktopOnly?: boolean, mobileNoteKey?: string }} PrefIndexItem
  */
 
 // key → 索引項（只收 kind:"pref"）。設定頁的 PrefCheckRow 從這裡拿標題與說明的文字鍵
@@ -1150,7 +1190,7 @@ const otherLang = (lang) => (lang === "en_us" ? "zh_tw" : "en_us");
 
 // 回傳 { score, matchedVia, ranges } 或 null。ranges 只在命中「當前語系標題」時
 // 才有值——靠英文 key 或另一語系命中時硬畫一段高亮是假的，寧可不畫。
-const scoreItem = (item, q, lang) => {
+const scoreItem = (item, q, lang, tabKey = PREF_SEARCH_TABS[item.tab]) => {
   const alt = otherLang(lang);
   const title = msg(lang, item.titleKey);
   const t = norm(title);
@@ -1176,7 +1216,7 @@ const scoreItem = (item, q, lang) => {
   }
 
   const sectionText = norm(msg(lang, item.sectionKey));
-  const tabText = norm(msg(lang, PREF_SEARCH_TABS[item.tab]));
+  const tabText = norm(msg(lang, tabKey));
   if ((sectionText && sectionText.includes(q)) || (tabText && tabText.includes(q))) {
     return { score: SCORE.section, matchedVia: "section", ranges: [] };
   }
@@ -1194,7 +1234,7 @@ const scoreItem = (item, q, lang) => {
     " " +
     norm(msg(alt, item.sectionKey)) +
     " " +
-    norm(msg(alt, PREF_SEARCH_TABS[item.tab]));
+    norm(msg(alt, tabKey));
   if (altOther.includes(q)) {
     return { score: SCORE.altOther, matchedVia: "altLang", ranges: [] };
   }
@@ -1220,10 +1260,19 @@ export function searchPrefSettings(query, opts = {}) {
   const hits = [];
   PREF_SEARCH_ITEMS.forEach((item, index) => {
     if (opts.mobile && item.desktopOnly) return;
-    const m = scoreItem(item, q, lang);
+    const tabKey = mobileTextKey(PREF_SEARCH_TABS[item.tab], opts.mobile);
+    if (opts.mobile) {
+      item = {
+        ...item,
+        titleKey: mobileTextKey(item.titleKey, true),
+        tooltipKey: mobileTextKey(item.tooltipKey, true),
+        sectionKey: mobileTextKey(item.sectionKey, true),
+      };
+    }
+    const m = scoreItem(item, q, lang, tabKey);
     if (!m) return;
     const title = msg(lang, item.titleKey);
-    const tabLabel = msg(lang, PREF_SEARCH_TABS[item.tab]);
+    const tabLabel = msg(lang, tabKey);
     // 分區項不重複自己的名字；分區名與分頁名同字時也只留分頁名（否則副標會印成
     // 「增強功能 · 增強功能」——設定頁上有五個分區刻意與分頁同名）。
     // 「一般」分區跟分頁同名，改寫它在哪一段（「一般 · 首頁與收藏」）。
