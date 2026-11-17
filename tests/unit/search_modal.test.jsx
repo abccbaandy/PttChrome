@@ -9,6 +9,7 @@ import SearchModal from "../../src/components/ContextMenu/SearchModal";
 // 標籤一律經 i18n 取：CI 是英文語系，寫死中文字面在那裡找不到。
 import { setupI18n, i18n } from "../../src/js/i18n";
 import { rememberSearch, readSearchHistory } from "../../src/js/search_history";
+import { readValuesWithDefault, writeValues } from "../../src/js/pref_storage";
 import { zh_TW as zh } from "../../src/js/zh_TW_messages";
 import { en_US as en } from "../../src/js/en_US_messages";
 
@@ -106,6 +107,37 @@ test("推文數不是非零整數 ⇒ 不送出", () => {
   fireEvent.change(input, { target: { value: "abc" } });
   fireEvent.submit(input.closest("form"));
   expect(onConfirm).not.toHaveBeenCalled();
+});
+
+// P103：推文數的常用門檻（爆＝100、噓＝負數；手機數字鍵盤可能打不出「-」）。
+test("推文數頁有常用門檻：點一下就用那個數字送出（爆＝100、噓 10↑＝-10）", () => {
+  const { onConfirm } = renderModal({ kind: "push" });
+  const presets = document.querySelector("[data-search-push-presets]");
+  expect(presets).not.toBeNull();
+  expect(
+    [...presets.querySelectorAll("[data-search-push-preset]")].map((b) => b.getAttribute("data-search-push-preset")),
+  ).toEqual(["10", "30", "50", "100", "-10"]);
+  fireEvent.click(document.querySelector('[data-search-push-preset="-10"]'));
+  expect(onConfirm).toHaveBeenLastCalledWith({ kind: "push", text: "-10" });
+  fireEvent.click(document.querySelector('[data-search-push-preset="100"]'));
+  expect(onConfirm).toHaveBeenLastCalledWith({ kind: "push", text: "100" });
+  expect(document.querySelector('[data-search-push-preset="100"]').textContent).toBe(i18n("searchModal_pushPresetBao"));
+  expect(document.querySelector('[data-search-push-preset="-10"]').textContent).toBe(
+    i18n("searchModal_pushPresetBoo").replace("{0}", "10"),
+  );
+});
+
+test("常用門檻只在推文數頁；切到推文數才出現", () => {
+  renderModal({ kind: "title" });
+  expect(document.querySelector("[data-search-push-presets]")).toBeNull();
+  fireEvent.click(screen.getByText(i18n("searchModal_kindPush")));
+  expect(document.querySelector("[data-search-push-presets]")).not.toBeNull();
+});
+
+test("設定關掉常用門檻 ⇒ 推文數頁不畫", () => {
+  writeValues({ ...readValuesWithDefault(), searchPushPresets: false });
+  renderModal({ kind: "push" });
+  expect(document.querySelector("[data-search-push-presets]")).toBeNull();
 });
 
 test("切換種類：送出的是切換後的種類", () => {

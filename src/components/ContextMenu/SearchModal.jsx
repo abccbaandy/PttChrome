@@ -21,6 +21,7 @@ import {
   forgetSearch,
   forgetSearchKind,
 } from "../../js/search_history";
+import { readValuesWithDefault } from "../../js/pref_storage";
 import "./SearchModal.css";
 
 // 搜尋彈窗（docs/article-search.md）。取代 PTT 原生的 / ? a Z s prompt：
@@ -52,6 +53,16 @@ export function searchKindTextKey(map, kind, mobile) {
 }
 // 直接列出來可點的筆數（其餘仍可用 ↑ 叫回）。
 export const SEARCH_RECENT_SHOWN = 6;
+// 推文數的常用門檻（P103，pref searchPushPresets）：點一下＝用那個數字搜尋（同打字按搜尋）。
+// 門檻語意照 pttbbs common/bbs/search.c：正數＝推文分數 ≥ 門檻、負數＝≤ 門檻；爆＝100。
+// 也解決手機數字鍵盤可能打不出「-」的問題（噓文門檻直接點）。
+export const PUSH_PRESETS = [
+  { value: 10, labelKey: "searchModal_pushPresetUp" },
+  { value: 30, labelKey: "searchModal_pushPresetUp" },
+  { value: 50, labelKey: "searchModal_pushPresetUp" },
+  { value: 100, labelKey: "searchModal_pushPresetBao" },
+  { value: -10, labelKey: "searchModal_pushPresetBoo" },
+];
 
 // mobile：手機版面改用 bottom sheet 外殼（components/MobileSheet，系統返回＝收起），
 // 內容（表單、記憶、送出）完全相同。
@@ -72,6 +83,9 @@ export const SearchModal = ({
   const [currentKind, setCurrentKind] = useState(kind || "title");
   const [value, setValue] = useState("");
   const [history, setHistory] = useState(() => readSearchHistory());
+  const [pushPresets, setPushPresets] = useState(
+    () => !!readValuesWithDefault().searchPushPresets,
+  );
   // -1 ＝ 正在編輯自己的字；0.. ＝ 正顯示記憶的第幾筆。
   const indexRef = useRef(-1);
   const draftRef = useRef("");
@@ -88,6 +102,7 @@ export const SearchModal = ({
     setCurrentKind(kind || "title");
     setValue("");
     setHistory(readSearchHistory());
+    setPushPresets(!!readValuesWithDefault().searchPushPresets);
     indexRef.current = -1;
     draftRef.current = "";
   }, [show, kind]);
@@ -298,6 +313,24 @@ export const SearchModal = ({
           mobile={mobile}
           onPick={submit}
         />
+      )}
+      {currentKind === "push" && pushPresets && (
+        <Group gap={6} mt="sm" data-search-push-presets>
+          <Text size="xs" c="dimmed">
+            {i18n("searchModal_pushPresets")}
+          </Text>
+          {PUSH_PRESETS.map((p) => (
+            <Button
+              key={p.value}
+              size="compact-xs"
+              variant="light"
+              data-search-push-preset={p.value}
+              onClick={() => submit(String(p.value))}
+            >
+              {i18n(p.labelKey).replace("{0}", String(Math.abs(p.value)))}
+            </Button>
+          ))}
+        </Group>
       )}
       {list.length > 0 && (
         <Group gap={6} mt="sm" data-search-recent>

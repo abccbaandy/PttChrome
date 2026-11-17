@@ -462,6 +462,12 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_searchKeyOpensModal",
     },
     {
+      key: "searchPushPresets",
+      type: "check",
+      titleKey: "options_searchPushPresets",
+      tooltipKey: "tooltip_searchPushPresets",
+    },
+    {
       key: "enableSearchStatus",
       type: "check",
       titleKey: "options_enableSearchStatus",

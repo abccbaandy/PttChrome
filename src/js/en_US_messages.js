@@ -571,6 +571,24 @@ export const en_US = {
   "searchModal_forgetAll": {
     "message": "Clear all"
   },
+  "searchModal_pushPresets": {
+    "message": "Common"
+  },
+  "searchModal_pushPresetUp": {
+    "message": "Score {0}+"
+  },
+  "searchModal_pushPresetBao": {
+    "message": "Hot (爆)"
+  },
+  "searchModal_pushPresetBoo": {
+    "message": "Boos {0}+"
+  },
+  "options_searchPushPresets": {
+    "message": "Common threshold buttons when searching by score"
+  },
+  "tooltip_searchPushPresets": {
+    "message": "In the search dialog's score tab, a row of buttons (10+, 30+, 50+, Hot, 10+ boos) appears under the input; tap one to search with that threshold (same as typing the number and pressing Search)."
+  },
   "searchModal_cancel": {
     "message": "Cancel"
   },

@@ -75,6 +75,7 @@ export const FEATURE_SETTING = {
   編輯器輸入框: "enableEditorInput",
   拖曳貼圖上傳: "enableImageUpload",
   搜尋彈窗: "searchKeyOpensModal",
+  推文數常用門檻: "searchPushPresets",
   搜尋狀態列: "enableSearchStatus",
   水球收件匣: "enableMessageInbox",
   快速搜尋: "section:options_quickSearchCustom",
