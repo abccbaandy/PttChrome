@@ -20,6 +20,20 @@ describe("i18n 兩語系", () => {
   // message 通常是字串；about_new_content 是條列陣列（「重大技術升級」清單）。
   const isFilled = (m) => (Array.isArray(m) ? m.length > 0 : typeof m === "string" && !!m);
 
+  // 設定頁等處把 message 當純文字畫，不解析 Markdown ⇒ 寫了 **粗體** 會原樣顯示兩個星號
+  // （滑鼠分頁「功能鍵可點」的說明曾經這樣）。
+  test("message 不含 Markdown 粗體記號", () => {
+    [
+      ["zh_TW", zh],
+      ["en_US", en],
+    ].forEach(([name, table]) => {
+      const bad = Object.keys(table).filter((k) =>
+        [].concat(table[k].message).some((m) => /\*\*/.test(String(m))),
+      );
+      expect(`${name}: ${bad.join(", ")}`).toBe(`${name}: `);
+    });
+  });
+
   test("每個 key 都有非空的 message", () => {
     [
       ["zh_TW", zh],
