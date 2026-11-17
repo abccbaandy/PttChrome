@@ -163,6 +163,7 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     "options_appearance",
     "options_cursorHighlight",
     "options_enhance",
+    "options_imgurProxy",
   ];
   test("由索引畫出：分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
     openModal();

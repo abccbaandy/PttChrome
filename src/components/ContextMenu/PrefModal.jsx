@@ -384,6 +384,13 @@ const CONNECTION_ENCODING_OPTIONS = [
   ["big5", "options_encodingBig5"],
   ["utf8", "options_encodingUtf8"],
 ];
+// 「連線」分頁由索引畫出的幾區：下拉選項與文字欄的 placeholder（留空時實際生效的預設值）。
+const CONNECTION_SELECT_OPTIONS = {
+  connectionEncoding: CONNECTION_ENCODING_OPTIONS,
+};
+const CONNECTION_PLACEHOLDERS = {
+  imgurProxyUrl: DEFAULT_IMGUR_PROXY_BASE,
+};
 const AUTO_LOGIN_DUP_CONN_OPTIONS = [
   ["N", "options_autoLoginDupConnNo"],
   ["Y", "options_autoLoginDupConnYes"],
@@ -566,8 +573,10 @@ const PrefGroupHeading = ({ id }) => {
 //   - check  → PrefCheckRow（標題／說明／反灰都取自索引）；
 //   - hotkey → PrefHotkey（說明當 placeholder，前置鏈關掉就反灰）；
 //   - number → PrefNumber（說明當 description，下限取索引的 min）；
-//   - text   → PrefText（說明當 description）；
-//   - select → PrefSelect（選項由呼叫端以 selectOptions[key] 給，[value, i18n key] 常數）；
+//   - text   → PrefText（說明當 description；placeholder 由呼叫端以 placeholders[key] 給，
+//              放的是「留空時實際生效的預設值」）；
+//   - select → PrefSelect（選項由呼叫端以 selectOptions[key] 給，[value, i18n key] 常數；說明當
+//              description；標題跟分區 legend 同字時不另畫 label，只掛 aria-label）；
 //   - textarea → PrefTextarea（說明當 placeholder，最少列數取索引的 rows）；
 //   - sub: true 的連續幾格包進同一個 .PrefModal__SubOptions（縮排子選項）；
 //   - shownIf 條件不成立的整格不畫；條件表標 wrap 的，連續幾格包進一個 <div>（第十六步）；
@@ -583,6 +592,7 @@ const PrefIndexRows = ({
   values,
   custom,
   selectOptions,
+  placeholders,
   onCheckboxChange,
   onHotkeyCapture,
   onNumberChange,
@@ -641,6 +651,7 @@ const PrefIndexRows = ({
             onChange={onTextInputChange}
             label={i18n(it.titleKey)}
             description={it.tooltipKey && i18n(it.tooltipKey)}
+            placeholder={placeholders && placeholders[it.key]}
           />
         );
       case "select":
@@ -652,7 +663,12 @@ const PrefIndexRows = ({
             value={valueOf(it.key)}
             disabled={disabledOf(it)}
             onChange={onSelectStr}
-            label={i18n(it.titleKey)}
+            label={
+              it.titleKey === it.sectionKey ? undefined : i18n(it.titleKey)
+            }
+            ariaLabel={
+              it.titleKey === it.sectionKey ? i18n(it.titleKey) : undefined
+            }
             description={it.tooltipKey && i18n(it.tooltipKey)}
             options={selectOptions[it.key]}
           />
@@ -1901,13 +1917,14 @@ export const PrefModal = ({
               {/* 線路編碼在 telnet 層轉（js/wire_charset.js、js/unicode_cells.js），APK 的 WebView 也走同一層，
                 所以不放進上面的 isAndroidApp 分支。 */}
               <PrefSection legendKey="options_connectionEncoding">
-                <PrefSelect
-                  ariaLabel={i18n("options_connectionEncoding")}
-                  description={i18n("tooltip_connectionEncoding")}
-                  name="connectionEncoding"
-                  value={values.connectionEncoding}
-                  onChange={onSelectStr}
-                  options={CONNECTION_ENCODING_OPTIONS}
+                <PrefIndexRows
+                  sectionKey="options_connectionEncoding"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onHotkeyCapture={onHotkeyCapture}
+                  onNumberChange={onNumberChange}
+                  onSelectStr={onSelectStr}
+                  selectOptions={CONNECTION_SELECT_OPTIONS}
                 />
               </PrefSection>
               <PrefSection legendKey="options_imgurProxy">
@@ -1916,56 +1933,27 @@ export const PrefModal = ({
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_imgurProxy")}
                 </Text>
-                <PrefCheckRow
-                  name="useImgurProxy"
+                {/* 各站開關（清單＝image_proxy.js#IMAGE_PROXY_SITES，索引照它展開成縮排子選項）。
+                  總開關關閉時反灰但值保留，重開即恢復原本的逐站選擇。
+                  代理位址的 placeholder 放實際生效的預設位址（留空就是用它）。 */}
+                <PrefIndexRows
+                  sectionKey="options_imgurProxy"
                   values={values}
-                  onChange={onCheckboxChange}
-                />
-                {/* 各站開關（清單＝image_proxy.js#IMAGE_PROXY_SITES）。刻意逐項寫死而非
-                  map：設定搜尋的靜態守護（pref_search_index.test.js）只認得字面
-                  name="…"；註冊表 ↔ 畫面的一致性由 pref_modal_connection_tab.test.jsx 守。
-                  總開關關閉時反灰但值保留，重開即恢復原本的逐站選擇。 */}
-                <div className="PrefModal__SubOptions">
-                  <PrefCheckRow
-                    name="imageProxyImgur"
-                    values={values}
-                    onChange={onCheckboxChange}
-                  />
-                  <PrefCheckRow
-                    name="imageProxyTwimg"
-                    values={values}
-                    onChange={onCheckboxChange}
-                  />
-                  <PrefCheckRow
-                    name="imageProxyCatbox"
-                    values={values}
-                    onChange={onCheckboxChange}
-                  />
-                  <PrefCheckRow
-                    name="imageProxyTenor"
-                    values={values}
-                    onChange={onCheckboxChange}
-                  />
-                </div>
-                <PrefText
-                  name="imgurProxyUrl"
-                  value={values.imgurProxyUrl}
-                  disabled={prefRequiresOff("imgurProxyUrl", values)}
-                  onChange={onTextInputChange}
-                  label={i18n("options_imgurProxyUrl")}
-                  description={i18n("tooltip_imgurProxyUrl")}
-                  placeholder={DEFAULT_IMGUR_PROXY_BASE}
+                  onCheckboxChange={onCheckboxChange}
+                  onHotkeyCapture={onHotkeyCapture}
+                  onNumberChange={onNumberChange}
+                  onTextInputChange={onTextInputChange}
+                  placeholders={CONNECTION_PLACEHOLDERS}
                 />
               </PrefSection>
               <PrefSection legendKey="options_openCache">
-                <PrefCheckbox
-                  name="enableOpenCache"
-                  checked={values.enableOpenCache}
-                  onChange={onCheckboxChange}
-                  description={i18n("tooltip_enableOpenCache")}
-                >
-                  {i18n("options_enableOpenCache")}
-                </PrefCheckbox>
+                <PrefIndexRows
+                  sectionKey="options_openCache"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onHotkeyCapture={onHotkeyCapture}
+                  onNumberChange={onNumberChange}
+                />
               </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="enhance">
