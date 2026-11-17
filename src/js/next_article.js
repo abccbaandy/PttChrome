@@ -220,10 +220,18 @@ export function NextArticle(core) {
   this._state = { visible: false, entry: null, end: null, pending: false, pull: null, progress: null, threadNext: null, threadPrev: null };
   this._row = null; // 同主題那一列的 DOM（第一次要顯示時才建）
   const self = this;
+  this._onSettle = function() {
+    self._onSettled();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self._onSettled();
-    });
+    core.buf.addEventListener(
+      'screenSettled',
+      this._onSettle,
+      // 出錯 ⇒ 這次連線收起卡片與遮罩（event.js 故障隔離，docs/feature-isolation.md）。換文途中
+      // 被停用：鍵是 aid_navigation 在送，它照常跑完並叫 done（閱讀紀錄照常收尾），這裡只是不再
+      // 蓋著原生畫面、也不再等好讀接手才拿遮罩。
+      { feature: 'enableNextArticleCard', disable: () => self._shutDown() }
+    );
 }
 
 NextArticle.prototype = {
@@ -247,10 +255,25 @@ NextArticle.prototype = {
     if (this._state.visible) this._set({ visible: false, pull: null, progress: null });
   },
 
+  _disabled: function() {
+    const buf = this._core.buf;
+    return !!(buf && typeof buf.isListenerDisabled === 'function' && buf.isListenerDisabled(this._onSettle));
+  },
+
+  // 故障停用：卡片、同主題列、遮罩全收起；排著的版面量測取消。換文中的 _nav 留著給 done 收尾。
+  _shutDown: function() {
+    if (this._layoutRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._layoutRaf);
+    this._layoutRaf = 0;
+    // 遮罩先拿：收卡片的 _render 萬一又丟例外（event.js 吞掉），原生畫面至少不被蓋著。
+    this._dropVeil(true);
+    this._set({ visible: false, pending: false, pull: null, progress: null });
+  },
+
   // 往下拉的進度（pull_next_article.js）：卡片的字改成「再往上拉」／「放開開啟」／「繼續往下
   // 捲」，progress（0..1）畫成卡片底下的進度條。終點卡（沒有下一篇）不接。
   setPull: function(pull, progress) {
     const p = pull === 'pull' || pull === 'armed' || pull === 'wheel' ? pull : null;
+    if (p && this._disabled()) return;
     if (p && (!this._state.visible || !this._state.entry)) return;
     const n = p && typeof progress === 'number' ? Math.round(Math.max(0, Math.min(1, progress)) * 100) / 100 : null;
     this._set({ pull: p, progress: n });
@@ -378,6 +401,8 @@ NextArticle.prototype = {
     const st = this._state;
     const entry = target || st.entry;
     if (target && target !== st.threadNext && target !== st.threadPrev && target !== st.entry) return false;
+    // 出錯被停用：卡片已收起，任何入口（點擊、往下拉、滾輪）都不准再開換文。
+    if (this._disabled()) return false;
     const sub = this._pickMode === 'select';
     const snap = sub ? this._subSnapshot : this._snapshot;
     if (!st.visible || !entry || this._nav || !snap) return false;
@@ -399,6 +424,11 @@ NextArticle.prototype = {
       const ok = !!(result && result.ok);
       rr.end(bm, ok ? 'done' : 'fail');
       self._set({ pending: false });
+      // 換文途中被故障停用：沒有人會再叫 _maybeReleaseVeil，遮罩（_shutDown 已拿掉）不再蓋回去。
+      if (self._disabled()) {
+        self._dropVeil(true);
+        return;
+      }
       // 失敗：馬上拿掉遮罩，人看得到 PTT 給的原生畫面與錯誤提示（認不出 ⇒ 原生）。
       // 成功：等好讀把新文章畫出來才拿（_maybeReleaseVeil）。
       if (!ok) {
