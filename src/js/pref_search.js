@@ -642,6 +642,13 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileEssenceCards",
     },
     {
+      key: "mobileClassRootCards",
+      type: "check",
+      shownIf: "mobileLayoutOn",
+      titleKey: "options_mobileClassRootCards",
+      tooltipKey: "tooltip_mobileClassRootCards",
+    },
+    {
       key: "mobilePromptChoices",
       type: "check",
       shownIf: "mobileLayoutOn",

@@ -2224,6 +2224,12 @@
   "tooltip_mobileEssenceCards": {
     "message": "精華區的每一項畫成一張卡片（目錄有資料夾圖示和 ›），最上面一列寫目前在哪一層；點卡片＝移到那一項再按 Enter。認不出精華區畫面就照舊格線。"
   },
+  "options_mobileClassRootCards": {
+    "message": "手機分類看板第一層排成大按鈕"
+  },
+  "tooltip_mobileClassRootCards": {
+    "message": "從主功能表進「分類看板」的第一層（市民廣場、臺灣大學…）時，每個群組畫成一顆大按鈕（左邊名稱、右邊說明），上面的 ANSI 圖收起來；點按鈕＝移到那一項再按 Enter。認不出畫面就照舊格線。"
+  },
   "essence_dir": {
     "message": "目錄"
   },

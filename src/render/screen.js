@@ -25,6 +25,7 @@ import { buildMenuCard, buildMenuBlankRow, buildMenuBannerBar, isBlankRow } from
 import { bannerSummaryText, isMenuBannerRow, isUsongAlertRow } from "../js/menu_banner";
 import { buildMailCard } from "./mail_card";
 import { buildEssenceCard, buildEssenceCrumb } from "./essence_card";
+import { buildClassRootCard } from "./class_root_card";
 import { ESSENCE_HEADER_RE } from "../js/essence_list";
 import { MAIL_HEADER_RE, isMailKeyHintRow } from "../js/mail_list";
 import { buildCollapsedRow } from "./collapsed_row";
@@ -1319,6 +1320,17 @@ export class ScreenController {
         });
         if (card) return card.node;
         if (isBlankRow(lines[row])) return buildMenuBlankRow(row);
+      } else if (enhance.menuCards === "classroot") {
+        // 分類看板根目錄（P99）：群組列畫成大按鈕，其餘（上方寫死的 ANSI 圖、空白列）收起。
+        // 只看該列自己。
+        const card = buildClassRootCard({
+          chars: lines[row],
+          row,
+          highlightClass:
+            this.highlight.row === row ? this.highlight.cls : undefined,
+        });
+        if (card) return card.node;
+        return buildCollapsedRow(row, "menuChromeRow");
       } else {
         const card = buildMenuCard({
           chars: lines[row],

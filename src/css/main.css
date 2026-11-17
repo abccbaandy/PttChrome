@@ -680,6 +680,20 @@ body.mobile-layout:not(.mobileSelectMode) #mainContainer {
   font-size: 13px;
   color: #8a8f9c;
 }
+/* 分類看板根目錄大按鈕（P99，render/class_root_card.js）：同主功能表大按鈕，右邊多一個 ›
+   表示「進去還有一層」。說明可能比英文名稱長 ⇒ 允許縮、超出用刪節號。 */
+.menuCard.classRootCard .classRootCardDesc {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menuCard .classRootCardChevron {
+  flex: none;
+  margin-left: 8px;
+  font-size: 18px;
+  color: #8a8f9c;
+}
 /* 信件列表卡片（P31，render/mail_card.js）：同一套大按鈕版面，兩行（標題／寄件人・日期）。
    高度＝MAIL_CARD_PX（守護 tests/unit/mail_card.test.js）。 */
 .main.mobileMenu #mainContainer > span.menuCard.mailCard {

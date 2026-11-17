@@ -159,6 +159,7 @@ import { isGoodbyeConfirm, isAnyKeyPause, logoutEscapeKey } from "../../src/js/l
 import replyPromptFx from "./fixtures/ptt_src_screens/reply_prompt.json";
 import postFlowFx from "./fixtures/ptt_src_screens/post_flow.json";
 import classListFx from "./fixtures/ptt_src_screens/class_list.json";
+import { parseClassRootRow, classRootCursorRowOk } from "../../src/js/class_root";
 import { editorInputAvailable } from "../../src/js/editor_input";
 import { openPromptText, openPromptHint } from "../../src/js/open_prompt";
 import liveRepeatPromptFx from "./fixtures/ptt_src_screens/live_repeat_prompt.json";
@@ -1397,6 +1398,18 @@ describe("upstream pttbbs 產的分類看板（主功能表 C，board.c#Class）
     });
     expect(boardListContextKind(facts)).toBe("brdlist");
     expect(parseBoardListName(rowTexts[3])).toBe("Child");
+  });
+
+  // P99：手機分類根大按鈕的指紋只認分類根，主功能表與群組裡都不是。
+  test("分類根大按鈕（P99）：只認分類根；群組列解得出名稱、游標在上面", () => {
+    const root = at("root");
+    expect(root.buf.isClassRootScreen()).toBe(true);
+    const row = parseClassRootRow(root.rowTexts[root.buf.cur_y]);
+    expect(row).toMatchObject({ num: 1, name: "◎測試群組", cursor: true });
+    expect(classRootCursorRowOk(root.rowTexts[root.buf.cur_y])).toBe(true);
+    expect(at("group").buf.isClassRootScreen()).toBe(false);
+    expect(at("menu").buf.isClassRootScreen()).toBe(false);
+    for (let y = 1; y < 7; ++y) expect(parseClassRootRow(root.rowTexts[y])).toBeNull();
   });
 });
 
