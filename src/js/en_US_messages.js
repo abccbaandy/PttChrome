@@ -1976,6 +1976,9 @@ export const en_US = {
   "tooltip_termSize": {
     "message": "Fixed term size: you pick the columns and rows; the font scales to fill the window. Fixed font size: the font stays put and the row count is derived from the window height (columns stay at 80 — PTT only ever draws 80). A taller window then shows more rows per page. Note: PTT does not repaint on resize, so the extra rows only fill in on the next page change (paging or re-entering a board)."
   },
+  "options_desktopOnlyOnMobile": {
+    "message": "Terminal size, columns, rows, fit-to-window-width and font size only apply on desktop: on a phone the screen always fits 80 columns to its width; use \"Mobile font size\" below to change the text size."
+  },
   "options_cols": {
     "message": "Columns"
   },

@@ -135,6 +135,15 @@ describe("buildPaletteItems", () => {
     expect(settings.length).toBeLessThanOrEqual(PALETTE_SETTING_LIMIT);
     expect(settings[0]).toMatchObject({ settingKey: expect.any(String), tab: expect.any(String) });
   });
+
+  test("手機版面：設定搜尋不列只在電腦版畫的格子（P100 desktopOnly）", () => {
+    const keys = (ctx) =>
+      buildPaletteItems("終端機大小", { lang: "zh_tw", ...ctx })
+        .filter((it) => it.kind === "setting")
+        .map((it) => it.settingKey);
+    expect(keys({})).toContain("termSizeMode");
+    expect(keys({ mobile: true })).not.toContain("termSizeMode");
+  });
 });
 
 describe("最近去過／我的最愛的看板", () => {

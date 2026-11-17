@@ -46,11 +46,12 @@ afterAll(() => style.remove());
 beforeEach(() => window.localStorage.clear());
 afterEach(() => page.viewport(1024, 768));
 
-const openModal = () =>
+const openModal = ({ mobile = false } = {}) =>
   render(
     <MantineProvider>
       <PrefModal
         show
+        mobile={mobile}
         onSave={() => {}}
         onReset={() => {}}
         debugMode={false}
@@ -222,6 +223,63 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     // 外觀分區照樣畫得出主題切換（ui:…，custom 手寫）與字型。
     expect(anchor("ui:theme")).not.toBeNull();
     expect(anchor("fontFace")).not.toBeNull();
+  });
+
+  // P100：手機版面不看終端機大小那一組（手機一律照螢幕寬排 80 欄），設定頁不畫、
+  // 原位置一行說明；電腦版照舊。設定值不動（跨裝置同步）。
+  test("手機版面：終端機大小那幾格不畫，改一行說明；電腦版照舊", async () => {
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({ values: { termSizeMode: "fixed-term-size" } }),
+    );
+    const desktopOnly = PREF_SEARCH_ITEMS.filter((it) => it.desktopOnly).map(
+      (it) => it.key,
+    );
+    expect(desktopOnly).toEqual([
+      "termSizeMode",
+      "termSize.cols",
+      "termSize.rows",
+      "fontFitWindowWidth",
+      "fontSize",
+    ]);
+    const anchor = (key) =>
+      document.querySelector(`[data-pref-anchor="${key}"]`);
+    const hint = i18n("options_desktopOnlyOnMobile");
+    const r = openModal({ mobile: true });
+    await mounted();
+    expect(document.querySelector('input[name="termSize.cols"]')).toBeNull();
+    expect(
+      document.querySelector('input[name="fontFitWindowWidth"]'),
+    ).toBeNull();
+    // 說明掛在第一格的錨點上（設定搜尋在手機上不列這幾格，錨點留給舊連結）。
+    expect(anchor("termSizeMode").textContent).toBe(hint);
+    expect(anchor("mobileLayout")).not.toBeNull();
+    expect(anchor("bbsMargin")).not.toBeNull();
+    r.unmount();
+
+    openModal();
+    await mounted();
+    expect(
+      document.querySelector('input[name="termSize.cols"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).not.toContain(hint);
+  });
+
+  test("手機版面但設定裡手機版面選「關」（還沒存檔）：五格照常畫，不指向不見的手機字級", async () => {
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({
+        values: { termSizeMode: "fixed-term-size", mobileLayout: "off" },
+      }),
+    );
+    openModal({ mobile: true });
+    await mounted();
+    expect(
+      document.querySelector('input[name="termSize.cols"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).not.toContain(
+      i18n("options_desktopOnlyOnMobile"),
+    );
   });
 
   test("安全模式開著：要蓋掉的每一項在設定頁都反灰；關掉就恢復", async () => {

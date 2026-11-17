@@ -1247,6 +1247,8 @@ export const ContextMenu = ({ pttchrome }) => {
           : null,
         savedArticles: savedOn ? saved.state || null : null,
         saveArticle: !!saved?.canSave?.(),
+        // 手機版面：設定搜尋不列只在電腦版畫的格子（P100，pref_search desktopOnly）。
+        mobile: !!pttchrome.mobile,
       },
     });
     // 本機收藏的清單在 IndexedDB（非同步）：開面板時重讀，讀到了而面板還開著就補上。
@@ -1874,6 +1876,7 @@ export const ContextMenu = ({ pttchrome }) => {
           onDebugModeChange={onDebugModeChange}
           jumpTarget={showsSettings ? prefJump : null}
           registerBack={registerSettingsBack}
+          mobile={mobile}
         />
       </Suspense>
       <Suspense fallback={null}>

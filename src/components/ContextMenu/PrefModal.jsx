@@ -580,6 +580,7 @@ const PrefGroupHeading = ({ id }) => {
 //   - textarea → PrefTextarea（說明當 placeholder，最少列數取索引的 rows）；
 //   - sub: true 的連續幾格包進同一個 .PrefModal__SubOptions（縮排子選項）；
 //   - shownIf 條件不成立的整格不畫；條件表標 wrap 的，連續幾格包進一個 <div>（第十六步）；
+//   - desktopOnly 的格子在手機版面（mobile）不畫，第一格的位置改畫一行說明（P100）；
 //   - 段落第一項（pref_groups.js 的 first）前面畫小標。
 // 長得跟上面不一樣的格子（帶警告字、另有 onChange、值要轉換）與沒有 name 的可操作項（ui:…）
 // 由呼叫端放進 custom（key → 那一格的 JSX），位置仍照索引。索引有、這裡畫不出的直接炸：
@@ -590,6 +591,7 @@ const GROUP_ID_BY_FIRST = new Map(GENERAL_GROUPS.map((g) => [g.first, g.id]));
 const PrefIndexRows = ({
   sectionKey,
   values,
+  mobile,
   custom,
   selectOptions,
   placeholders,
@@ -694,7 +696,25 @@ const PrefIndexRows = ({
   const out = [];
   let subRun = null;
   let wrapRun = null; // { id, list }：shownIf 條件標 wrap 的連續幾格
+  let desktopNoted = false;
+  // 手機版面才收：設定頁裡把「手機版面」改成關（還沒存檔）時，說明指向的「手機字級」
+  // 已經不畫了 ⇒ 五格照常畫回來。
+  const hideDesktopOnly = mobile && values.mobileLayout !== "off";
   for (const it of prefSectionRows(sectionKey)) {
+    if (hideDesktopOnly && it.desktopOnly) {
+      // 手機版面不看的那幾格：整組換成一行說明，指向手機自己的那一格。
+      if (!desktopNoted) {
+        desktopNoted = true;
+        wrapRun = null;
+        subRun = null;
+        out.push(
+          <PrefAnchor key={`desktopOnly:${it.key}`} anchorKey={it.key}>
+            <PrefHint textKey="options_desktopOnlyOnMobile" />
+          </PrefAnchor>,
+        );
+      }
+      continue;
+    }
     if (!prefShown(it.key, values)) continue;
     const cond = it.shownIf ? PREF_SHOWN_IF[it.shownIf] : null;
     let target = out;
@@ -935,6 +955,7 @@ export const PrefModal = ({
   onDebugModeChange,
   jumpTarget,
   registerBack,
+  mobile,
 }) => {
   const [navActiveKey, setNavActiveKey] = useState("general");
   const narrow = useNarrow();
@@ -1432,7 +1453,11 @@ export const PrefModal = ({
         <div className="PrefModal__Grid">
           <div className="PrefModal__Grid__Col--left">
             {!narrow && <Title order={3}>{i18n("menu_settings")}</Title>}
-            <PrefSearchBox onJump={onSearchJump} resetToken={show} />
+            <PrefSearchBox
+              onJump={onSearchJump}
+              resetToken={show}
+              mobile={mobile}
+            />
             {!narrow && (
               <Tabs.List>
                 {PREF_CATEGORIES.map((c) => (
@@ -1544,6 +1569,7 @@ export const PrefModal = ({
                 <PrefIndexRows
                   sectionKey="options_appearance"
                   values={values}
+                  mobile={mobile}
                   onCheckboxChange={onCheckboxChange}
                   onHotkeyCapture={onHotkeyCapture}
                   onNumberChange={onNumberChange}

@@ -9,6 +9,7 @@ import {
   prefSectionItems,
   prefShown,
   PREF_SHOWN_IF,
+  searchPrefSettings,
 } from "../../src/js/pref_search";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 
@@ -125,6 +126,22 @@ describe("設定索引的欄位型別", () => {
     expect(prefShown("mobileHangIndent", { mobileLayout: "auto" })).toBe(true);
     expect(prefShown("mobileHangIndent", { mobileLayout: "off" })).toBe(false);
     expect(prefShown("fontFace", {})).toBe(true);
+  });
+
+  test("desktopOnly（P100）：手機版面一律不畫、不進設定搜尋；電腦版照 shownIf", () => {
+    const v = { termSizeMode: "fixed-term-size" };
+    expect(prefShown("termSize.cols", v, { mobile: true })).toBe(false);
+    expect(prefShown("termSizeMode", v, { mobile: true })).toBe(false);
+    expect(prefShown("termSize.cols", v, { mobile: false })).toBe(true);
+    expect(prefShown("fontFace", v, { mobile: true })).toBe(true);
+    const keys = (opts) =>
+      searchPrefSettings("終端機大小", {
+        lang: "zh_tw",
+        limit: 50,
+        ...opts,
+      }).map((h) => h.key);
+    expect(keys({})).toContain("termSizeMode");
+    expect(keys({ mobile: true })).not.toContain("termSizeMode");
   });
 
   test("rows（名單欄最少列數）只用在 textarea，而且每個 textarea 都有", () => {
