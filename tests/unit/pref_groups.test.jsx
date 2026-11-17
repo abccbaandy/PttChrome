@@ -166,9 +166,9 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     "options_enhance",
     "options_imgurProxy",
   ];
-  // 第二十步：滑鼠分頁整頁由索引畫出，每個分區各一份（分區多半只有一兩格，
+  // 只有一兩格的小分區（第二十步起：滑鼠分頁整頁由索引畫出，每個分區各一份；
   // 「至少三格」那條只套用上面的大分區）。
-  const MOUSE_SECTIONS = [
+  const SMALL_SECTIONS = [
     "options_mouseBrowsing",
     "options_mouseMove",
     "options_mouseLeftClick",
@@ -179,11 +179,14 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     "options_mouseWheel",
     "options_mouseBackNav",
     "options_mouseServerReport",
+    // 第二十一步：連線分頁的 BBS 連線位址與連線協議（APK 不畫前者、不支援 SSH 不畫後者）。
+    "options_connection_bbs",
+    "options_connectionProtocol",
   ];
   test("由索引畫出：分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
     openModal();
     await mounted();
-    for (const sectionKey of [...INDEX_SECTIONS, ...MOUSE_SECTIONS]) {
+    for (const sectionKey of [...INDEX_SECTIONS, ...SMALL_SECTIONS]) {
       const section = document.querySelector(
         `[data-pref-anchor="section:${sectionKey}"]`,
       );

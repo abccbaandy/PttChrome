@@ -396,9 +396,13 @@ const CONNECTION_ENCODING_OPTIONS = [
 // 「連線」分頁由索引畫出的幾區：下拉選項與文字欄的 placeholder（留空時實際生效的預設值）。
 const CONNECTION_SELECT_OPTIONS = {
   connectionEncoding: CONNECTION_ENCODING_OPTIONS,
+  connectionProtocol: CONNECTION_PROTOCOL_OPTIONS,
 };
+// 位址欄的 placeholder 放**實際生效的預設位址**（不是說明文字）：欄位留空就是用它，
+// 使用者把自訂位址刪光也回得到預設。說明文字是 description（索引的 tooltipKey）。
 const CONNECTION_PLACEHOLDERS = {
   imgurProxyUrl: DEFAULT_IMGUR_PROXY_BASE,
+  proxyUrl: DEFAULT_PROXY_HOST,
 };
 const AUTO_LOGIN_DUP_CONN_OPTIONS = [
   ["N", "options_autoLoginDupConnNo"],
@@ -1853,22 +1857,12 @@ export const PrefModal = ({
                 </PrefSection>
               ) : (
                 <PrefSection legendKey="options_connection_bbs">
-                  <PrefCheckRow
-                    name="useProxy"
+                  <PrefIndexRows
+                    sectionKey="options_connection_bbs"
                     values={values}
-                    onChange={onCheckboxChange}
-                  />
-                  {/* placeholder 放的是**實際生效的預設位址**（不是說明文字）：欄位
-                  留空就是用它，使用者把自訂位址刪光也回得到預設。說明文字改掛
-                  description。imgur 那組同理。 */}
-                  <PrefText
-                    name="proxyUrl"
-                    value={values.proxyUrl}
-                    disabled={prefRequiresOff("proxyUrl", values)}
-                    onChange={onTextInputChange}
-                    label={i18n("options_proxyUrl")}
-                    description={i18n("tooltip_proxyUrl")}
-                    placeholder={DEFAULT_PROXY_HOST}
+                    onCheckboxChange={onCheckboxChange}
+                    onTextInputChange={onTextInputChange}
+                    placeholders={CONNECTION_PLACEHOLDERS}
                   />
                 </PrefSection>
               )}
@@ -1877,22 +1871,26 @@ export const PrefModal = ({
                 兩個欄位都是本機專屬（LOCAL_ONLY_PREF_KEYS），不同步、不進備份。 */}
               {!isAndroidApp() && sshSupported() && (
                 <PrefSection legendKey="options_connectionProtocol">
-                  <PrefSelect
-                    ariaLabel={i18n("options_connectionProtocol")}
-                    description={i18n("tooltip_connectionProtocol")}
-                    name="connectionProtocol"
-                    value={values.connectionProtocol}
-                    onChange={onSelectStr}
-                    options={CONNECTION_PROTOCOL_OPTIONS}
-                  />
-                  <PrefText
-                    name="sshRelayUrl"
-                    value={values.sshRelayUrl}
-                    disabled={values.connectionProtocol !== "ssh"}
-                    onChange={onTextInputChange}
-                    label={i18n("options_sshRelayUrl")}
-                    description={i18n("tooltip_sshRelayUrl")}
-                    placeholder={DEFAULT_SSH_RELAY_HOST}
+                  {/* 轉送位址只在選了 SSH 時有作用：反灰條件看的是下拉的值（不是勾選框），
+                    索引的 requires 表達不了 ⇒ 這一格放 custom。 */}
+                  <PrefIndexRows
+                    sectionKey="options_connectionProtocol"
+                    values={values}
+                    onSelectStr={onSelectStr}
+                    selectOptions={CONNECTION_SELECT_OPTIONS}
+                    custom={{
+                      sshRelayUrl: (
+                        <PrefText
+                          name="sshRelayUrl"
+                          value={values.sshRelayUrl}
+                          disabled={values.connectionProtocol !== "ssh"}
+                          onChange={onTextInputChange}
+                          label={i18n("options_sshRelayUrl")}
+                          description={i18n("tooltip_sshRelayUrl")}
+                          placeholder={DEFAULT_SSH_RELAY_HOST}
+                        />
+                      ),
+                    }}
                   />
                   <Text size="xs" c="dimmed">
                     {i18n("tooltip_sshLocalOnly")}{" "}
