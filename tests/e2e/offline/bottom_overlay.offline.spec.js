@@ -122,3 +122,24 @@ test.describe('浮層不蓋住文末', () => {
     }
   }
 });
+
+// 貼視窗底的提示（flashListHint：已切至原生操作、推文已送出…）要讓開推文列（bottom_stack.aboveStackCss）。
+// 1920×900：推文列貼在好讀 footer 上，離視窗底 54px，以前提示只讓 48px ⇒ 疊在輸入框上（實測重疊 34px）。
+test.describe('底部提示不疊在推文列上', () => {
+  test("1920×900", async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await bootOffline(page, ptt, { commentBar: true });
+    await ptt.applyPrefs(page, { enableEasyReadingList: false });
+    await openArticle(page, { full: false });
+    await expect(page.locator('#commentBar')).toBeVisible();
+    await page.evaluate(() => window.__app.view.flashListHint('提示', 60000));
+    await expect(page.locator('.ListHint')).toBeVisible();
+    const gap = () =>
+      page.evaluate(() => {
+        const hint = document.querySelector('.ListHint').getBoundingClientRect();
+        const bar = document.querySelector('#commentBar').getBoundingClientRect();
+        return Math.round(bar.top - hint.bottom);
+      });
+    await expect.poll(gap).toBeGreaterThanOrEqual(0);
+  });
+});

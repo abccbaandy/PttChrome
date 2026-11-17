@@ -235,6 +235,21 @@ describe("CommentBar：何時出現、畫在哪", () => {
       coverExtra: 0,
     });
   });
+  // 貼視窗底的提示（底部提示、讀取中、上傳卡片…）讀 --bottom-stack-clear 讓開推文列
+  // （bottom_stack.aboveStackCss）。桌機推文列離視窗底 140px，以前提示只讓 48px ⇒ 疊在輸入框上。
+  test("畫著時把上緣離視窗底多遠寫給提示（--bottom-stack-clear），收起歸零；長高跟著變", () => {
+    const vars = {};
+    vi.stubGlobal("document", { documentElement: { style: { setProperty: (k, v) => (vars[k] = v) } } });
+    const { bar, settle, setPageState } = makeCore();
+    settle();
+    expect(vars["--bottom-stack-clear"]).toBe(140 + COMMENT_BAR_HEIGHT + "px");
+    bar.setHeight(64);
+    expect(vars["--bottom-stack-clear"]).toBe(140 + 64 + "px");
+    setPageState(0);
+    settle();
+    expect(bar.state.visible).toBe(false);
+    expect(vars["--bottom-stack-clear"]).toBe("0px");
+  });
   test("手機收合關掉 ⇒ 手機也常駐（底部導覽上方）", () => {
     prefOverride.mobileCommentBarFold = false;
     try {

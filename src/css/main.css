@@ -1619,11 +1619,12 @@ span {
 }
 
 /* 開站回到上次的地方的倒數提示（js/reconnect_resume.js）：底部置中，跟狀態提示同一個
-   深灰底；「取消」是真按鈕。手機要讓開終端機的底部 inset（--term-bottom-inset，同 term_view#aboveBottomInset）。 */
+   深灰底；「取消」是真按鈕。手機要讓開終端機的底部 inset（--term-bottom-inset），推文列畫著時也讓開它
+   （--bottom-stack-clear；式子同 bottom_stack.aboveStackCss(48)，bottom_stack.test.js 對照）。 */
 #resumeLastPlace {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--term-bottom-inset, 0px) + 48px);
+  bottom: max(calc(var(--term-bottom-inset, 0px) + 48px), calc(var(--bottom-stack-clear, 0px) + 8px));
   transform: translateX(-50%);
   z-index: 2000;
   display: flex;
