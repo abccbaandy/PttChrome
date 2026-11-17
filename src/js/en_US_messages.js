@@ -2481,7 +2481,7 @@ export const en_US = {
     "message": "Enable tap actions"
   },
   "tooltip_useMouseBrowsing_mobile": {
-    "message": "Turning this off disables every tap feature below (tap to open, edge paging, function-key buttons, the Back button). Links and images inside a post are unaffected and stay tappable."
+    "message": "Turning this off disables every tap feature below (tap to open, edge paging, function-key buttons), and the Back button goes back to the system's own behaviour. Links and images inside a post are unaffected and stay tappable."
   },
   "options_mouseLeftClick_mobile": {
     "message": "Tap"
@@ -2490,22 +2490,28 @@ export const en_US = {
     "message": "Tap to open a post / board"
   },
   "tooltip_mouseLeftClick_mobile": {
-    "message": "List: a tap opens the post / board (which column the tappable part starts at is set by \"Click areas\" below). Post: tap the far left edge to leave. Links and images always win, so you never leave by accident."
+    "message": "List: a tap opens the post / board. Without easy reading, tapping the far left edge of a post also leaves it. Links and images always win, so you never leave by accident."
   },
   "tooltip_mouseEdgePaging_mobile": {
-    "message": "Lists and the board list: tapping the top row goes to the first page, the bottom row to the last page, and the right edge pages up (upper half) or down (lower half). In a post: upper half pages up, lower half pages down, and the bottom row jumps to the end (the left edge still leaves the post). Not applied to the main menu."
+    "message": "Only works on screens without easy reading (easy-reading cards and posts use scrolling and the key panel). Lists: tapping the top row goes to the first page, the bottom row to the last page, and the right edge pages up (upper half) or down (lower half). In a post: upper half pages up, lower half pages down, and the bottom row jumps to the end. Not applied to the main menu."
   },
   "options_mouseBackNav_mobile": {
     "message": "System Back button / back gesture"
   },
   "tooltip_mouseBackNav_mobile": {
-    "message": "Turns the phone's Back button and back gesture into PTT's LEFT key: leave the post / go up one level."
+    "message": "Turns the phone's Back button and back gesture into PTT's LEFT key: leave the post / go up one level. With this off, Back follows the system's own behaviour and sends the app to the background."
   },
   "options_mouseServerReport_mobile": {
     "message": "Hand taps to PTT"
   },
   "tooltip_mouseServerReport_mobile": {
     "message": "Report taps straight to the PTT server using the standard terminal XTerm SGR protocol, letting PTT itself decide what a tap does. Turning this on makes this site's own tap behaviour stand down (tap to open, left-edge exit, edge paging, function-key buttons); selecting text and tapping links are unaffected. You must first enable MOUSE in PTT's own settings (個人設定區 → 設定使用者資料) before the server asks for reports. Off by default: nothing on PTT actually consumes mouse events yet."
+  },
+  "tooltip_highlightColorShared_mobile": {
+    "message": "The background colour used to mark the cursor row."
+  },
+  "tooltip_mouseClickRange_mobile": {
+    "message": "Sets which part of a post-list row and of a push comment is tappable when easy reading is off (an easy-reading card opens on a tap anywhere). The thin strip at the far left always goes up one level. By default only the comment text is tappable (it highlights the same commenter)."
   },
   "options_mouseBrowsing": {
     "message": "Mouse browsing"

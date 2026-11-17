@@ -413,11 +413,15 @@ const AUTO_LOGIN_DUP_CONN_OPTIONS = [
 // 設定項下方的灰字說明。跟 PrefCheckbox 一樣包 memo：設定頁每改一個值整份
 // PrefModal 重畫，props 沒變的列直接跳過（改一格的重畫時間約減半，量測見
 // docs/build-modernization.md「設定頁重畫」）。
-const PrefHint = memo(({ textKey }) => (
-  <Text size="xs" c="dimmed" mb="xs">
-    {i18n(textKey)}
-  </Text>
-));
+const PrefHint = memo(({ textKey }) => {
+  // 手機版面換手機用語（MOBILE_TEXT_KEYS 有對照的才換，P96）。
+  const mk = useMobileKey();
+  return (
+    <Text size="xs" c="dimmed" mb="xs">
+      {i18n(mk(textKey))}
+    </Text>
+  );
+});
 
 // 勾選列＝勾選框＋（有的話）灰字說明，標題與說明的文字鍵取自設定搜尋索引
 // （pref_search.js#prefItem）⇒ 設定頁上的字與搜尋結果同一份來源。只給「標題＋說明」
@@ -1500,7 +1504,7 @@ export const PrefModal = ({
             <PrefSearchBox
               onJump={onSearchJump}
               resetToken={show}
-              mobile={mobile}
+              mobile={mobileUi}
             />
             {!narrow && (
               <Tabs.List>
@@ -1729,7 +1733,7 @@ export const PrefModal = ({
                           )}
                         </div>
                         <Text size="xs" c="dimmed">
-                          {i18n("tooltip_highlightColorShared")}
+                          {i18n(mk("tooltip_highlightColorShared"))}
                         </Text>
                       </PrefAnchor>
                     ),

@@ -57,6 +57,9 @@ export const MOBILE_TEXT_KEYS = {
   options_enableMouseLeftClick: "options_enableMouseLeftClick_mobile",
   tooltip_mouseLeftClick: "tooltip_mouseLeftClick_mobile",
   tooltip_mouseEdgePaging: "tooltip_mouseEdgePaging_mobile",
+  tooltip_mouseClickRange: "tooltip_mouseClickRange_mobile",
+  // 外觀分頁的游標底色說明指向「滑鼠」分頁的停留標示（手機收起了）。
+  tooltip_highlightColorShared: "tooltip_highlightColorShared_mobile",
   options_mouseBackNav: "options_mouseBackNav_mobile",
   tooltip_mouseBackNav: "tooltip_mouseBackNav_mobile",
   options_mouseServerReport: "options_mouseServerReport_mobile",

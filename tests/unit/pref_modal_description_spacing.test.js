@@ -26,6 +26,9 @@ test("說明文字後面接著下一個設定 ⇒ 有 mb 間距", () => {
   // 剩下的手寫說明越來越少；門檻只用來確認掃描本身沒壞。
   const hints = (src.match(/<PrefHint textKey=/g) || []).length;
   expect(total + hints).toBeGreaterThan(10);
-  expect(src).toMatch(/const PrefHint = memo\(\(\{ textKey \}\) => \(\n\s*<Text size="xs" c="dimmed" mb="xs">/);
+  // PrefHint 本體：可以先取手機用語的 key（P96），但畫出來的一定是帶 mb 的 <Text>。
+  expect(src).toMatch(
+    /const PrefHint = memo\(\(\{ textKey \}\) => [^]{0,200}?<Text size="xs" c="dimmed" mb="xs">/,
+  );
   expect(tight).toEqual([]);
 });

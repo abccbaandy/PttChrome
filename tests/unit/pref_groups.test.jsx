@@ -332,6 +332,10 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
       i18n("options_mouseBackNav_mobile"),
     );
     expect(text).not.toContain(i18n("options_useMouseBrowsing"));
+    // 外觀的游標底色說明不指向手機收起的「滑鼠停留標示」；點擊範圍說明講好讀卡片的例外。
+    expect(text).toContain(i18n("tooltip_highlightColorShared_mobile"));
+    expect(text).not.toContain(i18n("tooltip_highlightColorShared"));
+    expect(text).toContain(i18n("tooltip_mouseClickRange_mobile"));
     // 只有終端機大小那組帶說明；滑鼠收起的不畫「只在電腦版有用」那句。
     expect(
       text.split(i18n("options_desktopOnlyOnMobile")).length - 1,
