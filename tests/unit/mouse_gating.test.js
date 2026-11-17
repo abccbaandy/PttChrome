@@ -1,7 +1,7 @@
 // 總開關必須真的管得住全部。改版前 middleMouse_down 與 mouse_scroll 完全不看
 // useMouseBrowsing —— 「關掉滑鼠瀏覽」只關得掉移動與左鍵，中鍵貼上與滾輪翻頁
 // 照樣生效。這支就是那個漏洞的回歸鎖。
-import { resolveMouseGates } from "../../src/js/mouse_regions";
+import { resolveMouseGates, listViewportScrollable } from "../../src/js/mouse_regions";
 
 const ALL_ON = {
   useMouseBrowsing: true,
@@ -251,5 +251,23 @@ describe("reflow：手機好讀文章換行版面", () => {
     expect(g.leftClick).toBe(base.leftClick);
     expect(g.wheel).toBe(base.wheel);
     expect(g.backNav).toBe(base.backNav);
+  });
+});
+
+// real-input: tests/e2e/offline/mobile_list_cards.offline.spec.js
+describe("listViewportScrollable：列表視口吃不吃捲動", () => {
+  const gates = (p) => resolveMouseGates({ useMouseBrowsing: true, mouseWheel: 1, mouseWheelSmoothScroll: true, ...p });
+  test("桌機跟著滾輪平滑捲動走", () => {
+    expect(listViewportScrollable({ buffer: true, mobile: false, gates: gates({}) })).toBe(true);
+    expect(listViewportScrollable({ buffer: true, mobile: false, gates: gates({ mouseWheel: 0 }) })).toBe(false);
+    expect(listViewportScrollable({ buffer: true, mobile: false, gates: gates({ mouseWheelSmoothScroll: false }) })).toBe(false);
+  });
+  test("手機用手指捲，不看滑鼠設定（設定會從電腦版同步過來）", () => {
+    for (const p of [{ mouseWheel: 0 }, { mouseWheelSmoothScroll: false }, { useMouseBrowsing: false }])
+      expect(listViewportScrollable({ buffer: true, mobile: true, gates: gates(p) }), JSON.stringify(p)).toBe(true);
+  });
+  test("frozen（交易中）兩邊都不吃", () => {
+    expect(listViewportScrollable({ buffer: false, mobile: true, gates: gates({}) })).toBe(false);
+    expect(listViewportScrollable({ buffer: false, mobile: false, gates: gates({}) })).toBe(false);
   });
 });

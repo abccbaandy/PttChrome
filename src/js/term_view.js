@@ -4,7 +4,7 @@ import { TermKeyboard, isAltRemapEvent } from './term_keyboard';
 import * as wire from './wire_send';
 import { cursorColorForBg } from './cursor_color';
 import { DEFAULT_HIGHLIGHT_BG, cursorHighlightClasses, highlightColStart, resolveHighlightRow, withListOpening } from './cursor_highlight';
-import { clickableColStart, DEFAULT_LIST_CLICK_START, DEFAULT_PUSH_CLICK_START, DEFAULT_PUSH_CLICK_END, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion, visibleHintBand } from './mouse_regions';
+import { clickableColStart, DEFAULT_LIST_CLICK_START, DEFAULT_PUSH_CLICK_START, DEFAULT_PUSH_CLICK_END, cursorCss, CUR_BACK, CUR_POINTER, CUR_AUTO, EXIT_COL_END, resolveMouseGates, resolveMouseRegion, visibleHintBand, listViewportScrollable } from './mouse_regions';
 import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { edgeBandRect, exitBandRect } from './mouse_geometry';
 import { calcTermSize, termLayoutOffsets, listViewportCut } from './term_size';
@@ -971,8 +971,11 @@ TermView.prototype = {
               viewportRows: lsBodyRows,
               // 手機卡片的版型（render/list_card.js）：兩種列表的欄位完全不同。
               kind: isBrdList ? 'board' : 'article',
-              scrollable:
-                this.buf.listRenderMode === 'buffer' && this._listWheelGates().wheelSmoothScroll
+              scrollable: listViewportScrollable({
+                buffer: this.buf.listRenderMode === 'buffer',
+                mobile: !!(this.bbscore && this.bbscore.mobile),
+                gates: this._listWheelGates()
+              })
             }
           }, isBrdList
             ? { pageState: 1, inListContext: false }
