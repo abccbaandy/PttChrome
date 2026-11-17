@@ -399,6 +399,20 @@ test.describe('滑鼠（離線重放）', () => {
     });
     await replayCassette(page, article, { easyReading: true });
 
+    // 插槽只在好讀的文章頁畫（term_view：pageState 3 才帶 inlinePreview）。重放的
+    // done 只代表 bytes 餵完，機器忙時好讀那一幀還沒畫出來，waitPreviewsSettled
+    // 看到的是「沒有圖、版面也不動」就放行 ⇒ 先等插槽真的出現（auto-wait），
+    // 等不到才是真的壞，訊息附 pageState 好分辨卡在哪一層。
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => ({
+            slot: !!document.querySelector('#mainContainer .inlinePreviewSlot'),
+            pageState: window.__app.buf.pageState,
+          })),
+        { timeout: 15000, message: '好讀長頁沒有任何內嵌預覽插槽' }
+      )
+      .toMatchObject({ slot: true });
     // 圖是延遲載入的：先把佔位盒捲進視窗、等它載完，再找畫出來的那張圖。
     await waitPreviewsSettled(page);
     const slot = await page.evaluate(() => {
