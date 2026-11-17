@@ -265,6 +265,23 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     expect(document.body.textContent).not.toContain(hint);
   });
 
+  test("手機版面但設定裡手機版面選「關」（還沒存檔）：五格照常畫，不指向不見的手機字級", async () => {
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({
+        values: { termSizeMode: "fixed-term-size", mobileLayout: "off" },
+      }),
+    );
+    openModal({ mobile: true });
+    await mounted();
+    expect(
+      document.querySelector('input[name="termSize.cols"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).not.toContain(
+      i18n("options_desktopOnlyOnMobile"),
+    );
+  });
+
   test("安全模式開著：要蓋掉的每一項在設定頁都反灰；關掉就恢復", async () => {
     window.localStorage.setItem(
       "pttchrome.pref.v1",

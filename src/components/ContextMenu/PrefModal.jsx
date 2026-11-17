@@ -697,8 +697,11 @@ const PrefIndexRows = ({
   let subRun = null;
   let wrapRun = null; // { id, list }：shownIf 條件標 wrap 的連續幾格
   let desktopNoted = false;
+  // 手機版面才收：設定頁裡把「手機版面」改成關（還沒存檔）時，說明指向的「手機字級」
+  // 已經不畫了 ⇒ 五格照常畫回來。
+  const hideDesktopOnly = mobile && values.mobileLayout !== "off";
   for (const it of prefSectionRows(sectionKey)) {
-    if (mobile && it.desktopOnly) {
+    if (hideDesktopOnly && it.desktopOnly) {
       // 手機版面不看的那幾格：整組換成一行說明，指向手機自己的那一格。
       if (!desktopNoted) {
         desktopNoted = true;

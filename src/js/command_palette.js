@@ -141,6 +141,7 @@ function actionMatch(action, q, title) {
  *   recentArticles: { recent, later }（recent_articles 的 state）| null（可省）
  *   savedArticles: savedArticles.state（本機收藏清單）| null（可省）
  *   saveArticle: boolean（savedArticles.canSave）
+ *   mobile: boolean（手機版面：設定搜尋不列 desktopOnly 的格子，同設定頁搜尋框）
  * @returns {Array<{id, kind, ...}>} 依顯示順序。kind ∈ article｜board｜search｜action｜setting
  */
 export function buildPaletteItems(query, ctx) {
@@ -216,6 +217,7 @@ export function buildPaletteItems(query, ctx) {
     const hits = searchPrefSettings(raw, {
       lang: c.lang,
       limit: PALETTE_SETTING_LIMIT,
+      mobile: !!c.mobile,
     });
     for (const h of hits)
       out.push({
