@@ -22,8 +22,10 @@ test("說明文字後面接著下一個設定 ⇒ 有 mb 間距", () => {
   }
   // 大部分說明已收進 <PrefHint textKey=…/>（元件本身固定帶 mb="xs"）；這裡掃的是還
   // 手寫 <Text> 的那些，總數要把 PrefHint 算進來，掃描才不會因為搬家而默默失效。
+  // 由索引畫出的分頁（PrefIndexRows，勾選列走 PrefCheckRow）連手寫的 PrefHint 也沒有了，
+  // 剩下的手寫說明越來越少；門檻只用來確認掃描本身沒壞。
   const hints = (src.match(/<PrefHint textKey=/g) || []).length;
-  expect(total + hints).toBeGreaterThan(20);
+  expect(total + hints).toBeGreaterThan(10);
   expect(src).toMatch(/const PrefHint = memo\(\(\{ textKey \}\) => \(\n\s*<Text size="xs" c="dimmed" mb="xs">/);
   expect(tight).toEqual([]);
 });

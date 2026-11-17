@@ -2439,7 +2439,7 @@ export const en_US = {
     "message": "Turn on-screen key hints into buttons"
   },
   "tooltip_mouseFunctionKeys": {
-    "message": "Turns the key hints at the top and bottom of the screen — [←]Leave, [Ctrl-P]Post, (y)Reply, (X)Comment — into buttons; clicking one sends that key. Only hints naming a **single** key are clickable; groups such as (v/V) or (=[]<>) stay plain text so the wrong key is never sent."
+    "message": "Turns the key hints at the top and bottom of the screen — [←]Leave, [Ctrl-P]Post, (y)Reply, (X)Comment — into buttons; clicking one sends that key. Only hints naming a single key are clickable; groups such as (v/V) or (=[]<>) stay plain text so the wrong key is never sent."
   },
   "options_mouseMiddleClick": {
     "message": "Mouse middle button"

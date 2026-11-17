@@ -166,10 +166,24 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     "options_enhance",
     "options_imgurProxy",
   ];
+  // 第二十步：滑鼠分頁整頁由索引畫出，每個分區各一份（分區多半只有一兩格，
+  // 「至少三格」那條只套用上面的大分區）。
+  const MOUSE_SECTIONS = [
+    "options_mouseBrowsing",
+    "options_mouseMove",
+    "options_mouseLeftClick",
+    "options_mouseClickRange",
+    "options_mouseEdgePaging",
+    "options_mouseFunctionKeys",
+    "options_mouseMiddleClick",
+    "options_mouseWheel",
+    "options_mouseBackNav",
+    "options_mouseServerReport",
+  ];
   test("由索引畫出：分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
     openModal();
     await mounted();
-    for (const sectionKey of INDEX_SECTIONS) {
+    for (const sectionKey of [...INDEX_SECTIONS, ...MOUSE_SECTIONS]) {
       const section = document.querySelector(
         `[data-pref-anchor="section:${sectionKey}"]`,
       );
@@ -180,7 +194,9 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
       const items = prefSectionRows(sectionKey).filter((it) =>
         prefShown(it.key, DEFAULT_PREFS),
       );
-      expect(items.length, sectionKey).toBeGreaterThan(2);
+      if (INDEX_SECTIONS.includes(sectionKey))
+        expect(items.length, sectionKey).toBeGreaterThan(2);
+      else expect(items.length, sectionKey).toBeGreaterThan(0);
       expect(shown, sectionKey).toEqual(items.map((it) => it.key));
       for (const it of items) {
         const el = section.querySelector(`[data-pref-anchor="${it.key}"]`);

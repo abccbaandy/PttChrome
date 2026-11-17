@@ -75,9 +75,13 @@ const optionsOf = (input) => {
 const selectsIn = (panel) =>
   [...panel.querySelectorAll("input[aria-haspopup='listbox']")];
 
-// 位置會隨欄位增減而變 ⇒ 一律用 aria-label 指名要驗哪一個 Select。
+// 位置會隨欄位增減而變 ⇒ 一律用無障礙名稱指名要驗哪一個 Select：標題跟分區同字的
+// 只掛 aria-label，其他的是 <label for>（由索引畫出，PrefModal.jsx#PrefIndexRows）。
+const accessibleLabel = (el) =>
+  el.getAttribute("aria-label") ||
+  (el.labels && el.labels[0] ? el.labels[0].textContent : null);
 const selectByLabel = (panel, key) =>
-  selectsIn(panel).find((el) => el.getAttribute("aria-label") === i18n(key));
+  selectsIn(panel).find((el) => accessibleLabel(el) === i18n(key));
 
 beforeAll(() => setupI18n());
 beforeEach(() => window.localStorage.clear());

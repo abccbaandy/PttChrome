@@ -376,6 +376,15 @@ const MOUSE_BACK_NAV_OPTIONS = [
   ["0", "options_none"],
   ["1", "options_leftKey"],
 ];
+// 「滑鼠」分頁由索引畫出時的下拉選項（架構 review A7 第二十步）。
+const MOUSE_SELECT_OPTIONS = {
+  mouseListClickStart: MOUSE_LIST_CLICK_START_OPTIONS,
+  mousePushClickStart: MOUSE_PUSH_CLICK_START_OPTIONS,
+  mousePushClickEnd: MOUSE_PUSH_CLICK_END_OPTIONS,
+  mouseMiddleClick: MOUSE_MIDDLE_CLICK_OPTIONS,
+  mouseWheel: MOUSE_WHEEL_OPTIONS,
+  mouseBackNav: MOUSE_BACK_NAV_OPTIONS,
+};
 const CONNECTION_PROTOCOL_OPTIONS = [
   ["websocket", "options_protocolWebsocket"],
   ["ssh", "options_protocolSsh"],
@@ -600,6 +609,7 @@ const PrefIndexRows = ({
   onNumberChange,
   onTextInputChange,
   onSelectStr,
+  onSelectNum,
 }) => {
   // termSize.cols 這種點號鍵存在巢狀物件裡。
   const valueOf = (key) =>
@@ -656,15 +666,22 @@ const PrefIndexRows = ({
             placeholder={placeholders && placeholders[it.key]}
           />
         );
-      case "select":
+      case "select": {
         if (!selectOptions || !selectOptions[it.key])
           throw new Error(`PrefIndexRows: ${it.key} 要在 selectOptions 給選項`);
+        // 存成數字的設定（預設值是數字，例如滑鼠中鍵／滾輪／返回）：選項值是數字字串，
+        // 選了經 onSelectNum 存回數字。
+        const numeric = typeof DEFAULT_PREFS[it.key] === "number";
+        if (numeric && !onSelectNum)
+          throw new Error(
+            `PrefIndexRows: ${it.key} 存成數字，要給 onSelectNum`,
+          );
         return (
           <PrefSelect
             name={it.key}
-            value={valueOf(it.key)}
+            value={numeric ? String(valueOf(it.key)) : valueOf(it.key)}
             disabled={disabledOf(it)}
-            onChange={onSelectStr}
+            onChange={numeric ? onSelectNum : onSelectStr}
             label={
               it.titleKey === it.sectionKey ? undefined : i18n(it.titleKey)
             }
@@ -675,6 +692,7 @@ const PrefIndexRows = ({
             options={selectOptions[it.key]}
           />
         );
+      }
       case "textarea":
         return (
           <PrefTextarea
@@ -1695,177 +1713,126 @@ export const PrefModal = ({
             {/* 滑鼠：總開關 + 四個子功能。子項一律 disabled={!useMouseBrowsing}，
               因為總開關現在真的管得住全部（含中鍵與滾輪）——改版前那兩個根本
               不看它。決策層是 js/mouse_regions.js，合約見 docs/mouse.md。 */}
+            {/* 滑鼠分頁整頁由索引畫出（架構 review A7 第二十步，L 同意統一說明畫法）：
+              勾選列的說明一律畫在勾選框下面、下拉的說明一律當 description（標題下面）。 */}
             <Tabs.Panel value="mouse">
               <PrefSection legendKey="options_mouseBrowsing">
-                <PrefCheckbox
-                  name="useMouseBrowsing"
-                  checked={values.useMouseBrowsing}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_useMouseBrowsing")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_useMouseBrowsing")}
-                </Text>
+                <PrefIndexRows
+                  sectionKey="options_mouseBrowsing"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
+                />
               </PrefSection>
               <PrefSection legendKey="options_mouseMove">
-                <PrefCheckbox
-                  name="mouseBrowsingHighlight"
-                  checked={values.mouseBrowsingHighlight}
-                  disabled={prefRequiresOff("mouseBrowsingHighlight", values)}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_mouseBrowsingHighlight")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseBrowsingHighlight")}
-                </Text>
+                <PrefIndexRows
+                  sectionKey="options_mouseMove"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
+                />
               </PrefSection>
               <PrefSection legendKey="options_mouseLeftClick">
-                <PrefCheckbox
-                  name="mouseLeftClick"
-                  checked={values.mouseLeftClick}
-                  disabled={prefRequiresOff("mouseLeftClick", values)}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableMouseLeftClick")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseLeftClick")}
-                </Text>
+                <PrefIndexRows
+                  sectionKey="options_mouseLeftClick"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
+                />
               </PrefSection>
               {/* 點擊範圍（取代舊的防誤觸開關，issue #56）：列表可點起始欄＝底色
                 起始欄（js/mouse_regions.clickableColStart）、推文列可點區起訖
-                （pusherClickRange）。與其他子項一樣 disabled={!useMouseBrowsing}
-                —— 總開關關掉時沒有東西要分區（resolveMouseGates.clickRange）。 */}
+                （pusherClickRange）。總開關關掉時沒有東西要分區（resolveMouseGates.clickRange）。 */}
               <PrefSection legendKey="options_mouseClickRange">
                 <PrefHint textKey="tooltip_mouseClickRange" />
-                <PrefSelect
-                  name="mouseListClickStart"
-                  value={values.mouseListClickStart}
-                  onChange={onSelectStr}
-                  label={i18n("options_mouseListClickStart")}
-                  ariaLabel={i18n("options_mouseListClickStart")}
-                  disabled={prefRequiresOff("mouseListClickStart", values)}
-                  options={MOUSE_LIST_CLICK_START_OPTIONS}
-                />
-                <PrefSelect
-                  name="mousePushClickStart"
-                  value={values.mousePushClickStart}
-                  onChange={onSelectStr}
-                  label={i18n("options_mousePushClickStart")}
-                  ariaLabel={i18n("options_mousePushClickStart")}
-                  disabled={prefRequiresOff("mousePushClickStart", values)}
-                  options={MOUSE_PUSH_CLICK_START_OPTIONS}
-                />
-                <PrefSelect
-                  name="mousePushClickEnd"
-                  value={values.mousePushClickEnd}
-                  onChange={onSelectStr}
-                  label={i18n("options_mousePushClickEnd")}
-                  ariaLabel={i18n("options_mousePushClickEnd")}
-                  disabled={prefRequiresOff("mousePushClickEnd", values)}
-                  options={MOUSE_PUSH_CLICK_END_OPTIONS}
+                <PrefIndexRows
+                  sectionKey="options_mouseClickRange"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
                 />
               </PrefSection>
               {/* 邊緣點擊翻頁（2026-09 從 term.ptt.cc 原版找回）：頂列 Home／底列
                 End／右緣與文章上下半翻頁。送鍵走鍵盤那條分派鏈，所以兩種好讀
                 模式自動是捲動語意。主功能表不適用（PTT 端語意相反）。 */}
               <PrefSection legendKey="options_mouseEdgePaging">
-                <PrefCheckbox
-                  name="mouseEdgePaging"
-                  checked={values.mouseEdgePaging}
-                  disabled={prefRequiresOff("mouseEdgePaging", values)}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableMouseEdgePaging")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseEdgePaging")}
-                </Text>
+                <PrefIndexRows
+                  sectionKey="options_mouseEdgePaging"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
+                />
               </PrefSection>
               {/* 功能鍵可點：解析在 js/footer_keys.js，只認單一按鍵的括號組。
-                一樣 disabled={!useMouseBrowsing}（term_view 也一併 gate，
-                總開關關掉時一個節點都不產生）。 */}
+                總開關關掉時 term_view 也一併 gate，一個節點都不產生。 */}
               <PrefSection legendKey="options_mouseFunctionKeys">
-                <PrefCheckbox
-                  name="mouseFunctionKeys"
-                  checked={values.mouseFunctionKeys}
-                  disabled={prefRequiresOff("mouseFunctionKeys", values)}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableMouseFunctionKeys")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseFunctionKeys")}
-                </Text>
+                <PrefIndexRows
+                  sectionKey="options_mouseFunctionKeys"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
+                />
               </PrefSection>
               <PrefSection legendKey="options_mouseMiddleClick">
-                <PrefSelect
-                  ariaLabel={i18n("options_mouseMiddleClick")}
-                  name="mouseMiddleClick"
-                  value={String(values.mouseMiddleClick)}
-                  disabled={prefRequiresOff("mouseMiddleClick", values)}
-                  onChange={onSelectNum}
-                  options={MOUSE_MIDDLE_CLICK_OPTIONS}
+                <PrefIndexRows
+                  sectionKey="options_mouseMiddleClick"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
                 />
               </PrefSection>
+              {/* 平滑捲動只在文章列表好讀模式有作用，且是滾輪的子行為
+                ⇒ 滾輪關掉時一併反灰（索引 requires，gating 同 resolveMouseGates）。 */}
               <PrefSection legendKey="options_mouseWheel">
-                <PrefSelect
-                  ariaLabel={i18n("options_mouseWheel")}
-                  name="mouseWheel"
-                  value={String(values.mouseWheel)}
-                  disabled={prefRequiresOff("mouseWheel", values)}
-                  onChange={onSelectNum}
-                  options={MOUSE_WHEEL_OPTIONS}
+                <PrefIndexRows
+                  sectionKey="options_mouseWheel"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
                 />
-                <PrefHint textKey="tooltip_mouseWheel" />
-                {/* 平滑捲動只在文章列表好讀模式有作用，且是滾輪的子行為
-                  ⇒ 滾輪關掉時一併 disabled（gating 同 resolveMouseGates）。 */}
-                <PrefCheckbox
-                  name="mouseWheelSmoothScroll"
-                  checked={values.mouseWheelSmoothScroll}
-                  disabled={prefRequiresOff("mouseWheelSmoothScroll", values)}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_mouseWheelSmoothScroll")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseWheelSmoothScroll")}
-                </Text>
               </PrefSection>
               {/* 瀏覽器的「返回」（觸控板左滑手勢／滑鼠側鍵／Alt+←／工具列）
                 → 左方向鍵。**一個 pref、一條實作**（history sentinel），刻意不
                 掛在滾輪底下 —— 見 mouse_regions.resolveMouseGates。 */}
               <PrefSection legendKey="options_mouseBackNav">
-                <PrefSelect
-                  ariaLabel={i18n("options_mouseBackNav")}
-                  name="mouseBackNav"
-                  value={String(values.mouseBackNav)}
-                  disabled={prefRequiresOff("mouseBackNav", values)}
-                  onChange={onSelectNum}
-                  options={MOUSE_BACK_NAV_OPTIONS}
+                <PrefIndexRows
+                  sectionKey="options_mouseBackNav"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
                 />
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseBackNav")}
-                </Text>
               </PrefSection>
               {/* 把滑鼠交給 PTT server（XTerm SGR 回報）。開啟後上面所有「我們自己
                 的」滑鼠行為整組讓位 ⇒ 放在最後、獨立一個 fieldset。
                 預設關的兩個理由見 pref_storage.js（PTT 的 UF_MOUSE 預設關，且
                 pttbbs 目前沒有任何東西消費 KEY_MOUSE）。 */}
               <PrefSection legendKey="options_mouseServerReport">
-                <PrefCheckbox
-                  name="mouseServerReport"
-                  checked={values.mouseServerReport}
-                  disabled={prefRequiresOff("mouseServerReport", values)}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_mouseServerReport")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_mouseServerReport")}
-                </Text>
+                <PrefIndexRows
+                  sectionKey="options_mouseServerReport"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onSelectStr={onSelectStr}
+                  onSelectNum={onSelectNum}
+                  selectOptions={MOUSE_SELECT_OPTIONS}
+                />
               </PrefSection>
             </Tabs.Panel>
             <Tabs.Panel value="connection">
