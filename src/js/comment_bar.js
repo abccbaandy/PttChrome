@@ -15,7 +15,7 @@ import { stripNonBig5, splitPushSegments, big5ByteLength, pushMaxBytes } from '.
 import { detectIpLogged, detectAlignedComments } from './push_screen';
 import { screenOf, SCREEN_KIND } from './screen_model';
 import { listPushTarget, listPushFactsOf, sameListPushTarget } from './list_push';
-import { measureContentEdge, contentBottomOf } from './bottom_stack';
+import { measureContentEdge, stackFloorOf } from './bottom_stack';
 
 export const COMMENT_BAR_ID = 'commentBar';
 // 列高（CSS px）。終端機累積頁尾端要多留這麼高的空白，最後一列才捲得出列的下面
@@ -122,11 +122,11 @@ const COUNTER_SCAN_ROWS = 200;
 // （`.main` 比格線高 10px，main.css #easyReadingLastRow），所以量它的上緣，不用 `.main` 下緣扣高度。
 export function commentBarGeometry({ mainRect, footerTop, innerHeight, bottomInset }) {
   if (!mainRect || !mainRect.width) return null;
-  const contentBottom = contentBottomOf({ mainRect, footerTop });
+  const floor = stackFloorOf({ mainRect, footerTop, innerHeight, keyboardInset: bottomInset });
   return {
     left: Math.round(mainRect.left),
     width: Math.round(mainRect.width),
-    bottom: Math.max(0, Math.round(innerHeight - contentBottom), Math.round(bottomInset || 0)),
+    bottom: Math.max(0, Math.round(innerHeight - floor)),
   };
 }
 
