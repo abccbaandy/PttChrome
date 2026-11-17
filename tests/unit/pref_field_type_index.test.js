@@ -7,6 +7,8 @@ import {
   PREF_SEARCH_ITEMS,
   prefItem,
   prefSectionItems,
+  prefShown,
+  PREF_SHOWN_IF,
 } from "../../src/js/pref_search";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 
@@ -92,6 +94,37 @@ describe("設定索引的欄位型別", () => {
       expect(it.type, it.key).toBe("check");
       expect(it.tooltipKey, it.key).toBeTruthy();
     }
+  });
+
+  test("shownIf 指到條件表裡的 id，條件看的那一格是同分區、排在前面的下拉選單", () => {
+    const withShownIf = prefs.filter((it) => it.shownIf);
+    expect(withShownIf.length).toBeGreaterThan(0);
+    for (const it of withShownIf) {
+      const cond = PREF_SHOWN_IF[it.shownIf];
+      expect(cond, it.key).toBeTruthy();
+      const ctl = prefItem(cond.key);
+      expect(ctl && ctl.type, `${it.key} ← ${cond.key}`).toBe("select");
+      expect(ctl.sectionKey, it.key).toBe(it.sectionKey);
+      expect(
+        PREF_SEARCH_ITEMS.indexOf(ctl) < PREF_SEARCH_ITEMS.indexOf(it),
+        it.key,
+      ).toBe(true);
+    }
+  });
+
+  test("prefShown：eq／ne 兩種條件，沒有 shownIf 的一律畫", () => {
+    expect(
+      prefShown("termSize.cols", { termSizeMode: "fixed-term-size" }),
+    ).toBe(true);
+    expect(
+      prefShown("termSize.cols", { termSizeMode: "fixed-font-size" }),
+    ).toBe(false);
+    expect(prefShown("fontSize", { termSizeMode: "fixed-font-size" })).toBe(
+      true,
+    );
+    expect(prefShown("mobileHangIndent", { mobileLayout: "auto" })).toBe(true);
+    expect(prefShown("mobileHangIndent", { mobileLayout: "off" })).toBe(false);
+    expect(prefShown("fontFace", {})).toBe(true);
   });
 
   test("type 跟預設值的型別對得上", () => {

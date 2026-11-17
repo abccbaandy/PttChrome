@@ -12,10 +12,15 @@ import { GENERAL_GROUPS, groupTitleByKey } from "../../src/js/pref_groups";
 import {
   PREF_SEARCH_ITEMS,
   prefSectionItems,
+  prefSectionRows,
+  prefShown,
   searchPrefSettings,
 } from "../../src/js/pref_search";
 import { setupI18n, i18n } from "../../src/js/i18n";
-import { NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
+import {
+  DEFAULT_PREFS,
+  NATIVE_SAFE_MODE_KEYS,
+} from "../../src/js/pref_storage";
 
 vi.mock("../../src/js/pref_sync", () => ({
   savePrefs: vi.fn(),
@@ -152,7 +157,11 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
   // 架構 review A7 第十三步起：「一般」等分區由索引畫出（PrefModal.jsx#PrefIndexRows）。
   // 索引的順序就是畫面順序；sub 的格子在縮排區裡；前置鏈關掉的熱鍵反灰。
   // 新的分區改用 PrefIndexRows 時加進 INDEX_SECTIONS（靜態掃描那邊自己會讀 JSX）。
-  const INDEX_SECTIONS = ["options_general", "options_contextMenu"];
+  const INDEX_SECTIONS = [
+    "options_general",
+    "options_contextMenu",
+    "options_appearance",
+  ];
   test("由索引畫出：分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
     openModal();
     await mounted();
@@ -163,7 +172,10 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
       const shown = [...section.querySelectorAll("[data-pref-anchor]")].map(
         (el) => el.dataset.prefAnchor,
       );
-      const items = prefSectionItems(sectionKey);
+      // 畫面上的＝索引這一區的每一列（含 ui:…），扣掉 shownIf 條件不成立的。
+      const items = prefSectionRows(sectionKey).filter((it) =>
+        prefShown(it.key, DEFAULT_PREFS),
+      );
       expect(items.length, sectionKey).toBeGreaterThan(5);
       expect(shown, sectionKey).toEqual(items.map((it) => it.key));
       for (const it of items) {
@@ -181,6 +193,32 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
       expect(input("commandPaletteKey").disabled).toBe(true),
     );
     expect(input("aidNavBackKey").disabled).toBe(false);
+  });
+
+  // 第十六步：shownIf＝選項不適用就整格不畫（不是反灰）。外觀分區的終端機大小與手機版面。
+  test("由索引畫出：shownIf 條件不成立的格子不畫，換選項就出現／消失", async () => {
+    window.localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({
+        values: { termSizeMode: "fixed-font-size", mobileLayout: "off" },
+      }),
+    );
+    openModal();
+    await mounted();
+    const anchor = (key) =>
+      document.querySelector(`[data-pref-anchor="${key}"]`);
+    // 固定字型大小：只有字級，沒有行列數；手機版面關：手機那 20 格都不畫。
+    expect(anchor("fontSize")).not.toBeNull();
+    expect(anchor("termSize.cols")).toBeNull();
+    expect(anchor("fontFitWindowWidth")).toBeNull();
+    const mobileKeys = prefSectionItems("options_appearance")
+      .filter((it) => it.shownIf === "mobileLayoutOn")
+      .map((it) => it.key);
+    expect(mobileKeys.length).toBeGreaterThan(10);
+    for (const k of mobileKeys) expect(anchor(k), k).toBeNull();
+    // 外觀分區照樣畫得出主題切換（ui:…，custom 手寫）與字型。
+    expect(anchor("ui:theme")).not.toBeNull();
+    expect(anchor("fontFace")).not.toBeNull();
   });
 
   test("安全模式開著：要蓋掉的每一項在設定頁都反灰；關掉就恢復", async () => {
