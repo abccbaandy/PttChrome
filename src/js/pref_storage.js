@@ -369,6 +369,9 @@ export const DEFAULT_PREFS = {
   // 手機精華區排成卡片（P88，js/essence_list.js、render/essence_card.js）。點卡片＝使用者自己按的
   // 「移游標＋⏎」（同主功能表／信件卡片）、認不出就照舊格線 ⇒ 不在安全模式清單。
   mobileEssenceCards: true,
+  // 手機「分類看板」根目錄排成大按鈕（P99，js/class_root.js、render/class_root_card.js）。點按鈕＝
+  // 使用者自己按的「移游標＋⏎」（同主功能表／精華區卡片）、認不出就照舊格線 ⇒ 不在安全模式清單。
+  mobileClassRootCards: true,
   // 手機文章列表「更多」的「這個看板」（P66，mobile_toolbar.boardTools）：進板畫面 b／精華區 z／文摘 Tab／
   // 看板資訊 i，每顆是使用者自己按的單一原生鍵 ⇒ 不在安全模式清單（同 mobileMailListTools）。
   mobileBoardTools: true,

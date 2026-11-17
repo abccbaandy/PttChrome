@@ -96,6 +96,7 @@ import { ListFastScroll, isListFastScrollTarget } from './list_fast_scroll';
 import { EditorInput, isEditorInputTarget } from './editor_input';
 import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { essenceCursorRowOk } from './essence_list';
+import { classRootCursorRowOk, parseClassRootRow } from './class_root';
 import { readMenuBannerExpanded, writeMenuBannerExpanded } from './menu_banner';
 import { EMPTY_TOOLBAR_CONTEXT, mobileToolbarContext, sameToolbarContext } from './mobile_toolbar';
 import { sameAppBar } from './mobile_app_bar';
@@ -2822,6 +2823,13 @@ App.prototype.mouse_click = function(e) {
         if (this.view._essenceCardsNow() &&
             !essenceCursorRowOk(this.buf.getRowText(this.buf.cur_y, 0, this.buf.cols)))
           return;
+        // 分類看板根目錄（P99）：同上，游標要停在群組列上；點到的也要是群組列（收起的 ANSI 圖不算）。
+        if (this.view._classRootCardsNow()) {
+          var crTarget = menuCardTargetRow(e.target);
+          if (!classRootCursorRowOk(this.buf.getRowText(this.buf.cur_y, 0, this.buf.cols)) ||
+              !(crTarget >= 0) || !parseClassRootRow(this.buf.getRowText(crTarget, 0, this.buf.cols)))
+            return;
+        }
         this.noteUserAction();
         this._sendRowEnter(menuCardTargetRow(e.target));
         this.setInputAreaFocus();

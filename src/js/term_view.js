@@ -1541,7 +1541,8 @@ TermView.prototype = {
           // 信件列表時是 'mail'（render/mail_card.js，P31），主功能表／子選單是 true。
           menuCards: this.menuCards ?
             (this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen() ? 'mail' :
-              this._essenceCardsNow() ? 'essence' : true) :
+              this._essenceCardsNow() ? 'essence' :
+              this._classRootCardsNow() ? 'classroot' : true) :
             undefined,
           // P59（pref mobileMailListTools）：手機信件列表卡片收起「[→]讀信 [z]信件夾…」按鍵說明列
           // （render/screen.js 的 mail 分支，mail_list.isMailKeyHintRow 只看該列自己）。進 annotationsKey。
@@ -1554,7 +1555,7 @@ TermView.prototype = {
           // 切換入口 onMenuBannerToggle 由 App 指派一次，引用穩定、不進 key。
           menuBanner: menuBannerMode({
             menuCards: this.menuCards && !(this.buf && this.buf.isMailListScreen && this.buf.isMailListScreen()) &&
-              !this._essenceCardsNow(),
+              !this._essenceCardsNow() && !this._classRootCardsNow(),
             prefOn: !!readEffectivePrefs().mobileMenuBannerCollapse,
             expanded: readMenuBannerExpanded(),
             promptPending: !!(this.buf && this.buf.isPromptPending && this.buf.isPromptPending()),
@@ -2213,7 +2214,20 @@ TermView.prototype = {
     // 精華區列表（P88）：同上，列改畫成精華區卡片（enhance.menuCards === 'essence'）。
     if (this._essenceCardsNow())
       return 'menu';
+    // 分類看板根目錄（P99）：同上，群組列畫成大按鈕（enhance.menuCards === 'classroot'）。
+    if (this._classRootCardsNow())
+      return 'menu';
     return 'grid';
+  },
+
+  // 這一幀分類看板根目錄要不要排成大按鈕（P99，pref mobileClassRootCards）：指紋三件都認得
+  // （buf.isClassRootScreen）、而且 PTT 沒在問東西（同精華區：輸入欄不能藏在按鈕後面）。
+  _classRootCardsNow: function() {
+    var buf = this.buf;
+    if (!buf || typeof buf.isClassRootScreen !== 'function') return false;
+    if (!readEffectivePrefs().mobileClassRootCards) return false;
+    if (buf.isPromptPending && buf.isPromptPending()) return false;
+    return buf.isClassRootScreen();
   },
 
   // 這一幀精華區要不要排成卡片（P88，pref mobileEssenceCards）：三件指紋都認得

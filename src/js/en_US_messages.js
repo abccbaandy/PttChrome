@@ -2225,6 +2225,12 @@ export const en_US = {
   "tooltip_mobileEssenceCards": {
     "message": "Each digest item is drawn as a card (folders get a folder icon and ›), with a line on top showing where you are; tapping a card moves to it and presses Enter. Falls back to the plain grid when the screen isn't recognized."
   },
+  "options_mobileClassRootCards": {
+    "message": "Show the mobile board categories (分類看板) as big buttons"
+  },
+  "tooltip_mobileClassRootCards": {
+    "message": "On the top level of the board categories (opened from the main menu), each group is drawn as a big button (name on the left, description on the right) and the ANSI art above is hidden; tapping a button moves to it and presses Enter. Falls back to the plain grid when the screen isn't recognized."
+  },
   "essence_dir": {
     "message": "Folder"
   },

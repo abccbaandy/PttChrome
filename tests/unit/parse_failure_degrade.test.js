@@ -50,6 +50,8 @@ import { parseContentDenied } from "../../src/js/push_screen";
 import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
 import { isEssenceListRows, parseEssenceRow } from "../../src/js/essence_list";
 import { ESSENCE_ROWS, ESSENCE_HEADER_ROW_INDEX, ESSENCE_ITEM_ROWS } from "./fixtures/essence_rows";
+import { isClassRootRows, parseClassRootRow } from "../../src/js/class_root";
+import { CLASS_ROOT_ROWS, CLASS_ROOT_ITEM_ROWS } from "./fixtures/class_root_rows";
 import { listPushTarget, listPushFactsOf } from "../../src/js/list_push";
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
@@ -657,6 +659,38 @@ describe("手機精華區卡片（P88）：認不出 ⇒ 照舊格線（不畫�
     ["編號欄不是數字", "      -.  ◇ [爆卦] 收進精華區的文章                    judy         [09/27/26]"],
   ])("項目列：%s → 這一列不畫卡片", (_n, row) => {
     expect(parseEssenceRow(row)).toBeNull();
+  });
+});
+
+describe("手機分類看板根目錄大按鈕（P99）：認不出 ⇒ 照舊格線（不畫按鈕、點擊照原生）", () => {
+  const mutate = (i, text) => CLASS_ROOT_ROWS.map((r, j) => (j === i ? text : r));
+  const last = CLASS_ROOT_ROWS.length - 1;
+  const blankItems = CLASS_ROOT_ROWS.map((r, j) => (CLASS_ROOT_ITEM_ROWS.includes(j) ? " ".repeat(80) : r));
+
+  test("對照組：分類根認得出、群組列解得出；舊版底列「選擇看板」也認得", () => {
+    expect(isClassRootRows(CLASS_ROOT_ROWS)).toBe(true);
+    expect(isClassRootRows(mutate(last, "  選擇看板    (c)新文章模式  (v/V)標記已讀/未讀  (y)篩選  (m)切換最愛"))).toBe(true);
+    for (const y of CLASS_ROOT_ITEM_ROWS) expect(parseClassRootRow(CLASS_ROOT_ROWS[y])).not.toBeNull();
+  });
+
+  test.each([
+    ["標題列不是【分類看板】", mutate(0, "【看板列表】                       新批踢踢                                     ")],
+    ["標題列的【分類看板】不在 col 0", mutate(0, "  【分類看板】                     新批踢踢                                     ")],
+    ["底列 caption 改版", mutate(last, " 分類群組  (m)加入最愛 (v)已讀/未讀 (t)標記 (y)只列最愛     (←)回上層 (h)說明  ")],
+    ["底列是看板列表的 caption", mutate(last, " 看板列表  (m)加入最愛 (v)已讀/未讀 (t)標記 (y)只列最愛     (←)回上層 (h)說明  ")],
+    ["半繪（底列還沒畫）", mutate(last, "")],
+    ["一列群組都沒有", blankItems],
+  ])("畫面指紋：%s → 不是分類根", (_n, rows) => {
+    expect(isClassRootRows(rows)).toBe(false);
+  });
+
+  test.each([
+    ["前導空白不足 10 格（群組裡的看板列表版型）", ">     1   Child        測試 ◎子看板                          sysop"],
+    ["編號區有非數字", "          >   1a   ◎市民廣場                                 報告站長"],
+    ["名稱沒從第 20 欄開始", "          >     1     ◎市民廣場                               報告站長"],
+    ["編號區空白、名稱是選單項 (X)", "                    (C)lass        【 分組討論區 】"],
+  ])("群組列：%s → 這一列不畫按鈕", (_n, row) => {
+    expect(parseClassRootRow(row)).toBeNull();
   });
 });
 

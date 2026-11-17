@@ -251,7 +251,7 @@ function makeApp({ cur_y = MAIN_MENU_CURSOR_ROW, leftClick = true } = {}) {
     mouseAction: "none",
     mouseActionRow: -1,
   };
-  app.view = { _send: vi.fn(), menuCards: true, flashListHint: vi.fn(), _essenceCardsNow: () => false };
+  app.view = { _send: vi.fn(), menuCards: true, flashListHint: vi.fn(), _essenceCardsNow: () => false, _classRootCardsNow: () => false };
   app.conn = { isConnected: true };
   app.mouseButtons = {
     onMouseDown: vi.fn(),

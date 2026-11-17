@@ -23,6 +23,7 @@ import { classifyPushScreen } from './push_screen';
 import { parseMenuItemRow, isMenuScreen } from './menu_items';
 import { isMailListFooter, isMailListRows, mailHeaderRow, MAIL_HEADER_SCAN_ROWS } from './mail_list';
 import { isEssenceListFooter, isEssenceListRows, ESSENCE_HEADER_SCAN_ROWS } from './essence_list';
+import { isClassRootFooter, isClassRootRows } from './class_root';
 import { footerCaption, isEditorFooter } from './screen_captions';
 import {
   ARCHIVE_LIST,
@@ -1723,6 +1724,16 @@ TermBuf.prototype = {
       texts.push(y < ESSENCE_HEADER_SCAN_ROWS ? this.getRowText(y, 0, this.cols) : '');
     texts.push(last);
     return isEssenceListRows(texts);
+  },
+
+  // 分類看板根目錄（P99，mbbsd/board.c 的 IN_CLASSROOT，判定見 class_root.js）：標題、底列、
+  // 至少一列群組。只靠畫面指紋。
+  isClassRootScreen: function() {
+    var last = this.getRowText(this.rows - 1, 0, this.cols);
+    if (!isClassRootFooter(last)) return false;
+    var texts = [];
+    for (var y = 0; y < this.rows; ++y) texts.push(y === this.rows - 1 ? last : this.getRowText(y, 0, this.cols));
+    return isClassRootRows(texts);
   },
 
   // 信件列表（mbbsd/mail.c，判定見 mail_list.js）。**只靠畫面指紋，不看 pageState**；
