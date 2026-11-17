@@ -571,6 +571,24 @@
   "searchModal_forgetAll": {
     "message": "全部清除"
   },
+  "searchModal_pushPresets": {
+    "message": "常用"
+  },
+  "searchModal_pushPresetUp": {
+    "message": "推 {0}↑"
+  },
+  "searchModal_pushPresetBao": {
+    "message": "爆"
+  },
+  "searchModal_pushPresetBoo": {
+    "message": "噓 {0}↑"
+  },
+  "options_searchPushPresets": {
+    "message": "搜尋推文數時給常用門檻按鈕"
+  },
+  "tooltip_searchPushPresets": {
+    "message": "搜尋彈窗切到推文數時，輸入框下面多一排「推 10↑／30↑／50↑／爆／噓 10↑」，點一下就用那個門檻搜尋（跟自己打數字按搜尋一樣）。"
+  },
   "searchModal_cancel": {
     "message": "取消"
   },
