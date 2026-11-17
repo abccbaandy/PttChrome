@@ -41,3 +41,17 @@ export function measureContentEdge(view, win = typeof window !== 'undefined' ? w
 export function contentBottomOf({ mainRect, footerTop }) {
   return footerTop != null ? Math.min(mainRect.bottom, footerTop) : mainRect.bottom;
 }
+
+/**
+ * 底部堆疊的地板（px，視窗座標）：可見內容下緣，再讓開疊在視窗底的手機導覽列＋軟鍵盤＋safe-area
+ * （`view.keyboardInset`）。手機的 `.main` 因列高取整會延伸到導覽列後面幾 px，只看內容下緣會壓到
+ * 導覽列。推文列貼在地板上，下一篇卡片與導覽軸再讓開推文列——三者同一條規則。
+ * 沒給 innerHeight（純幾何測試）⇒ 只看內容下緣。
+ * @param {{ mainRect: { bottom: number }, footerTop?: number | null, innerHeight?: number, keyboardInset?: number }} facts
+ * @returns {number}
+ */
+export function stackFloorOf({ mainRect, footerTop, innerHeight, keyboardInset }) {
+  const bottom = contentBottomOf({ mainRect, footerTop });
+  if (innerHeight == null) return bottom;
+  return Math.min(bottom, innerHeight - (keyboardInset || 0));
+}

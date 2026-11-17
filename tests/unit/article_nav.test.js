@@ -50,6 +50,27 @@ describe("articleNavGeometry", () => {
       690 - 130
     );
   });
+  // 手機：`.main` 因列高取整延伸到底部導覽列後面幾 px（offline-mobile 量到 .main 下緣 346.7、
+  // 導覽列上緣 342）。軸照 .main 下緣算 ⇒ 下緣伸進導覽列；推文列顯示中更會壓到推文列 4 px
+  // （推文列自己會讓開導覽列，軸卻只從 .main 下緣扣列高）。跟推文列、下一篇卡片同一條規則：
+  // 先讓開視窗底的導覽列＋鍵盤，再讓推文列。
+  const mobileMain = { left: 0, right: 412, top: 53.28, bottom: 346.7, width: 412 };
+  test("手機：下緣不伸進底部導覽列", () => {
+    const g = articleNavGeometry({ mainRect: mobileMain, footerTop: null, innerHeight: 390, keyboardInset: 48 });
+    expect(g.top + g.height).toBeLessThanOrEqual(342);
+  });
+  test("手機：推文列顯示中 ⇒ 下緣對齊推文列上緣、不壓到它", () => {
+    const g = articleNavGeometry({
+      mainRect: mobileMain,
+      footerTop: null,
+      innerHeight: 390,
+      keyboardInset: 48,
+      commentBarShown: true,
+      commentBarHeight: 40,
+    });
+    expect(g.top + g.height).toBeLessThanOrEqual(302);
+    expect(g.top + g.height).toBeGreaterThanOrEqual(301);
+  });
   test("量不到終端機或太矮 ⇒ null", () => {
     expect(articleNavGeometry({ mainRect: { width: 0 } })).toBeNull();
     expect(articleNavGeometry({ mainRect: { ...mainRect, bottom: 100 } })).toBeNull();

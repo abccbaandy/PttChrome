@@ -17,7 +17,7 @@ import { getImageProxyConfig } from './image_proxy';
 import { readEffectivePrefs } from './pref_storage';
 import { COMMENT_BAR_HEIGHT, commentBarHeight } from './comment_bar';
 import { offsetTopWithin } from './scroll_anchor';
-import { measureContentEdge, contentBottomOf } from './bottom_stack';
+import { measureContentEdge, stackFloorOf } from './bottom_stack';
 import { isScreenChunk, isChunkRendered } from '../render/screen_chunk';
 import { PAGE_STATE } from './screen_model';
 
@@ -57,11 +57,12 @@ export function navMarks(analysis, total, newRow) {
   return { commentRow, marks };
 }
 
-// 軸的位置：終端機右緣、從 .main 頂到可見內容下緣（好讀 footer 上緣；推文列顯示中再扣列高，
-// 打字中列會長高 ⇒ 給 commentBarHeight 量到的高度，沒給就當單行高）。
-export function articleNavGeometry({ mainRect, footerTop, commentBarShown, commentBarHeight: barH }) {
+// 軸的位置：終端機右緣、從 .main 頂到底部堆疊的地板（bottom_stack.stackFloorOf：好讀 footer 上緣、
+// 手機底部導覽列＋鍵盤）；推文列顯示中再扣列高（推文列就貼在地板上），打字中列會長高 ⇒ 給
+// commentBarHeight 量到的高度，沒給就當單行高。
+export function articleNavGeometry({ mainRect, footerTop, innerHeight, keyboardInset, commentBarShown, commentBarHeight: barH }) {
   if (!mainRect || !mainRect.width) return null;
-  let bottom = contentBottomOf({ mainRect, footerTop });
+  let bottom = stackFloorOf({ mainRect, footerTop, innerHeight, keyboardInset });
   if (commentBarShown) bottom -= barH || COMMENT_BAR_HEIGHT;
   const top = Math.max(0, mainRect.top);
   const height = Math.round(bottom - top);
@@ -211,6 +212,8 @@ ArticleNav.prototype = {
     return articleNavGeometry({
       mainRect: edge.mainRect,
       footerTop: edge.footerTop,
+      innerHeight: window.innerHeight,
+      keyboardInset: (core.view && core.view.keyboardInset) || 0,
       commentBarShown: !!(bar && bar.visible),
       commentBarHeight: commentBarHeight(bar),
     });
