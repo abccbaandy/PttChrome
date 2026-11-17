@@ -17,6 +17,7 @@ import {
   readValuesWithDefault,
 } from "../../src/js/pref_storage";
 import { packCredential } from "../../src/js/credential_pack";
+import { prefItem, prefSectionRows } from "../../src/js/pref_search";
 import { hideCredentialApi, setNavigatorCredentials } from "./helpers/credential_api";
 
 vi.mock("../../src/js/pref_sync", () => ({
@@ -106,6 +107,25 @@ describe("自動登入分頁：欄位集中", () => {
 
   // Mantine Tabs 預設 keepMounted，未選中的分頁仍在 DOM，所以「搬走了」只能用
   // 「落在哪個 tabpanel」來鎖（可見性那層守在 offline e2e）。
+  // A7 第二十三步：兩個分區由索引畫出。畫面順序＝索引順序；tooltip_autoLogin 是憑證
+  // 分區的說明（帳密交給密碼管理員），只畫在那一區一次，不再算成開關那一格的說明。
+  test("由索引畫出：順序＝索引，憑證說明只畫在憑證分區一次", () => {
+    openTab();
+    const section = (key) =>
+      document.querySelector(`[data-pref-anchor="section:${key}"]`);
+    for (const key of ["options_autoLogin", "options_autoLoginCredentials"]) {
+      const shown = [
+        ...section(key).querySelectorAll("[data-pref-anchor]"),
+      ].map((el) => el.dataset.prefAnchor);
+      expect(shown, key).toEqual(prefSectionRows(key).map((it) => it.key));
+    }
+    const count = (el, text) => el.textContent.split(text).length - 1;
+    const warn = i18n("tooltip_autoLogin");
+    expect(count(section("options_autoLoginCredentials"), warn)).toBe(1);
+    expect(count(section("options_autoLogin"), warn)).toBe(0);
+    expect(prefItem("autoLogin").tooltipKey).toBeUndefined();
+  });
+
   test("已從增強功能／本機設定分頁搬走", () => {
     openTab();
     const panelOf = (name) => field(name).closest('[role="tabpanel"]');
@@ -216,6 +236,18 @@ describe("不被瀏覽器密碼管理員誤判成登入表單", () => {
       "autocomplete",
       "new-password",
     );
+  });
+
+  // 帳號欄與「重複連線」下拉由索引畫出（A7 第二十三步），autocomplete=off 來自索引的
+  // credential／noAutofill：下拉的內層 input 曾被 Chrome 當成帳號欄，跳出假的儲存提示。
+  test("帳號欄與重複連線下拉都關掉自動填入", () => {
+    openTab();
+    expect(field("autoLoginUser")).toHaveAttribute("autocomplete", "off");
+    expect(
+      document.querySelector(
+        '[data-pref-anchor="autoLoginDupConn"] input[autocomplete="off"]',
+      ),
+    ).not.toBeNull();
   });
 
   test("沒切到這一頁時整組欄位不在 DOM（免得使用者沒在看也被自動填）", () => {

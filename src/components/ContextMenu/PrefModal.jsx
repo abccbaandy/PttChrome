@@ -405,10 +405,13 @@ const CONNECTION_PLACEHOLDERS = {
   imgurProxyUrl: DEFAULT_IMGUR_PROXY_BASE,
   proxyUrl: DEFAULT_PROXY_HOST,
 };
-const AUTO_LOGIN_DUP_CONN_OPTIONS = [
-  ["N", "options_autoLoginDupConnNo"],
-  ["Y", "options_autoLoginDupConnYes"],
-];
+// 「自動登入」分區由索引畫出時的下拉選項（PrefIndexRows 的 selectOptions）。
+const AUTO_LOGIN_SELECT_OPTIONS = {
+  autoLoginDupConn: [
+    ["N", "options_autoLoginDupConnNo"],
+    ["Y", "options_autoLoginDupConnYes"],
+  ],
+};
 
 // 設定項下方的灰字說明。跟 PrefCheckbox 一樣包 memo：設定頁每改一個值整份
 // PrefModal 重畫，props 沒變的列直接跳過（改一格的重畫時間約減半，量測見
@@ -611,7 +614,8 @@ const PrefGroupHeading = ({ id }) => {
 //   - text   → PrefText（說明當 description；placeholder 由呼叫端以 placeholders[key] 給，
 //              放的是「留空時實際生效的預設值」；索引標 credential 的關掉自動填入）；
 //   - select → PrefSelect（選項由呼叫端以 selectOptions[key] 給，[value, i18n key] 常數；說明當
-//              description；標題跟分區 legend 同字時不另畫 label，只掛 aria-label）；
+//              description；標題跟分區 legend 同字時不另畫 label，只掛 aria-label；索引標
+//              noAutofill 的關掉自動填入）；
 //   - textarea → PrefTextarea（說明當 placeholder，最少列數取索引的 rows）；
 //   - sub: true 的連續幾格包進同一個 .PrefModal__SubOptions（縮排子選項）；
 //   - shownIf 條件不成立的整格不畫；條件表標 wrap 的，連續幾格包進一個 <div>（第十六步）；
@@ -721,6 +725,7 @@ const PrefIndexRows = ({
             }
             description={it.tooltipKey && i18n(mk(it.tooltipKey))}
             options={selectOptions[it.key]}
+            autoComplete={it.noAutofill ? "off" : undefined}
           />
         );
       }
@@ -2041,30 +2046,16 @@ export const PrefModal = ({
                 <>
                   <PrefSection legendKey="options_autoLogin">
                     <PrefHint textKey="tooltip_autoLoginSynced" />
-                    <PrefCheckbox
-                      name="autoLogin"
-                      checked={values.autoLogin}
-                      onChange={onCheckboxChange}
-                    >
-                      {i18n("options_autoLoginEnable")}
-                    </PrefCheckbox>
-                    <PrefSelect
-                      label={i18n("options_autoLoginDupConn")}
-                      name="autoLoginDupConn"
-                      /* Chrome 曾把這顆 Select 的內層 input 當成「帳號欄」配對到下面的
-                   密鑰欄，跳出「使用者名稱：刪除其他連線 (Y)」的假儲存提示。 */
-                      autoComplete="off"
-                      value={values.autoLoginDupConn}
-                      onChange={onSelectStr}
-                      options={AUTO_LOGIN_DUP_CONN_OPTIONS}
-                    />
-                    <PrefCheckRow
-                      name="autoLoginSkipWelcome"
+                    <PrefIndexRows
+                      sectionKey="options_autoLogin"
                       values={values}
-                      onChange={onCheckboxChange}
+                      selectOptions={AUTO_LOGIN_SELECT_OPTIONS}
+                      onCheckboxChange={onCheckboxChange}
+                      onSelectStr={onSelectStr}
                     />
                   </PrefSection>
                   <PrefSection legendKey="options_autoLoginCredentials">
+                    {/* 分區說明（索引的 tooltip_autoLogin）沒有密碼管理員時換成明文版。 */}
                     <Text className="PrefModal__warning">
                       {credentialApi
                         ? i18n("tooltip_autoLogin")
@@ -2076,61 +2067,71 @@ export const PrefModal = ({
                       </Text>
                     )}
                     <PrefHint textKey="tooltip_autoLoginUpdate" />
-                    <PrefText
-                      label={i18n("options_autoLoginUser")}
-                      name="autoLoginUser"
-                      autoComplete="off"
-                      placeholder={
+                    {/* 帳號照索引畫；密碼（type=password、PTT 長度上限）與 2FA 密鑰（前面的
+                      風險警告、格式錯誤提示、離開欄位時正規化）長得不一樣，放 custom。 */}
+                    <PrefIndexRows
+                      sectionKey="options_autoLoginCredentials"
+                      values={values}
+                      placeholders={
                         credentialApi
-                          ? i18n("placeholder_autoLoginUser")
+                          ? {
+                              autoLoginUser: i18n("placeholder_autoLoginUser"),
+                            }
                           : undefined
                       }
-                      value={values.autoLoginUser}
-                      onChange={onTextInputChange}
-                    />
-                    <PrefText
-                      label={i18n("options_autoLoginPassword")}
-                      type="password"
-                      name="autoLoginPassword"
-                      autoComplete="new-password"
-                      maxLength={72} /* PTT PW_PLAIN_LEN */
-                      placeholder={
-                        credentialApi
-                          ? i18n("placeholder_autoLoginPassword")
-                          : undefined
-                      }
-                      value={values.autoLoginPassword}
-                      onChange={onTextInputChange}
-                    />
-                    {/* 2FA 密鑰是長期憑證，且與密碼存在同一個保險庫 → 風險必須寫在
-                  欄位前面，並附上兩條降級做法（留空手動輸入／PTT 端改用僅新 IP
-                  才驗證）。留空是刻意支援的用法，不是設定不完整。 */}
-                    <Text className="PrefModal__warning">
-                      {i18n("tooltip_autoLoginOtpSecretRisk")}
-                    </Text>
-                    {/* **不可改成 type="password"**：第二個密碼欄會讓 Chrome 把整頁判成
-                  登入表單，抓最近的文字輸入當帳號、把密鑰當密碼跳出假的儲存提示，
-                  並開始自動填入（那會讓「欄位空白＝已交給密碼管理員」的說明失真）。
-                  密鑰本來就是 PTT 在終端機上以明文印出來給使用者抄的東西。 */}
-                    <PrefText
-                      label={i18n("options_autoLoginOtpSecret")}
-                      name="autoLoginOtpSecret"
-                      autoComplete="off"
-                      description={i18n("tooltip_autoLoginOtpSecret")}
-                      placeholder={
-                        credentialApi
-                          ? i18n("placeholder_autoLoginOtpSecret")
-                          : undefined
-                      }
-                      error={
-                        values.autoLoginOtpSecret &&
-                        !isValidOtpSecret(values.autoLoginOtpSecret)
-                          ? i18n("tooltip_autoLoginOtpSecretInvalid")
-                          : null
-                      }
-                      value={values.autoLoginOtpSecret}
-                      onChange={onTextInputChange}
-                      onBlur={onOtpSecretBlur}
+                      onTextInputChange={onTextInputChange}
+                      custom={{
+                        autoLoginPassword: (
+                          <PrefText
+                            label={i18n("options_autoLoginPassword")}
+                            type="password"
+                            name="autoLoginPassword"
+                            autoComplete="new-password"
+                            maxLength={72} /* PTT PW_PLAIN_LEN */
+                            placeholder={
+                              credentialApi
+                                ? i18n("placeholder_autoLoginPassword")
+                                : undefined
+                            }
+                            value={values.autoLoginPassword}
+                            onChange={onTextInputChange}
+                          />
+                        ),
+                        autoLoginOtpSecret: (
+                          <>
+                            {/* 2FA 密鑰是長期憑證，且與密碼存在同一個保險庫 → 風險必須寫在
+                              欄位前面，並附上兩條降級做法（留空手動輸入／PTT 端改用僅新 IP
+                              才驗證）。留空是刻意支援的用法，不是設定不完整。 */}
+                            <Text className="PrefModal__warning">
+                              {i18n("tooltip_autoLoginOtpSecretRisk")}
+                            </Text>
+                            {/* **不可改成 type="password"**：第二個密碼欄會讓 Chrome 把整頁判成
+                              登入表單，抓最近的文字輸入當帳號、把密鑰當密碼跳出假的儲存提示，
+                              並開始自動填入（那會讓「欄位空白＝已交給密碼管理員」的說明失真）。
+                              密鑰本來就是 PTT 在終端機上以明文印出來給使用者抄的東西。 */}
+                            <PrefText
+                              label={i18n("options_autoLoginOtpSecret")}
+                              name="autoLoginOtpSecret"
+                              autoComplete="off"
+                              description={i18n("tooltip_autoLoginOtpSecret")}
+                              placeholder={
+                                credentialApi
+                                  ? i18n("placeholder_autoLoginOtpSecret")
+                                  : undefined
+                              }
+                              error={
+                                values.autoLoginOtpSecret &&
+                                !isValidOtpSecret(values.autoLoginOtpSecret)
+                                  ? i18n("tooltip_autoLoginOtpSecretInvalid")
+                                  : null
+                              }
+                              value={values.autoLoginOtpSecret}
+                              onChange={onTextInputChange}
+                              onBlur={onOtpSecretBlur}
+                            />
+                          </>
+                        ),
+                      }}
                     />
                     <Text size="xs" c="dimmed" mb="xs">
                       {i18n("options_autoLoginLocalStatus_" + credentialStatus)}
