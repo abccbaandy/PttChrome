@@ -3084,6 +3084,33 @@ export const en_US = {
   },
   "options_savedErrorBadFormat": {
     "message": "Import failed: this is not a pttchrome offline-articles export."
+  },
+  "options_historyBackup": {
+    "message": "Reading history"
+  },
+  "tooltip_historyBackup": {
+    "message": "Export recently read, read later, new-push marks, board tabs, recent boards, search and upload history to a file, and import it on another device. Importing merges with this device instead of replacing it; no account or password is included."
+  },
+  "options_historyExportBtn": {
+    "message": "Export reading history"
+  },
+  "options_historyImportBtn": {
+    "message": "Import reading history"
+  },
+  "options_historyExportEmpty": {
+    "message": "There is no reading history to export yet."
+  },
+  "options_historyExported": {
+    "message": "Exported {total} records."
+  },
+  "options_historyImported": {
+    "message": "Merged {imported} records."
+  },
+  "options_historyImportFailed": {
+    "message": "{failed} kinds of records could not be saved (browser storage full or blocked)."
+  },
+  "options_historyErrorBadFormat": {
+    "message": "Import failed: this is not a pttchrome reading-history export."
   }
 
 };

@@ -446,6 +446,9 @@ HomeDashboard.prototype = {
     if (!this._atHome) {
       this._atHome = true;
       this._dismissed = false;
+      // 回到首頁時重讀一次最近看板：設定備份匯入的、別的分頁記的，開機時那份都看不到。
+      const stored = readJson('homeRecentBoards');
+      if (Array.isArray(stored) && stored.join('\n') !== this._state.recents.join('\n')) this._set({ recents: stored });
     }
     this._set({ visible: !this._dismissed, newMail: hasNewMail(facts.rowTexts[0]) });
     if (this._state.visible) this._scheduleAutoFetch();

@@ -55,21 +55,21 @@ export const INDEXED_DB_NAMES = Object.freeze({
 
 /**
  * 每種資料一列：誰擁有（讀寫都在那個檔）、性質、會不會上雲、設定備份有沒有涵蓋、上限。
- * 這是現況的盤點，不是目標：backup 只有設定是 true、沒有任何一列處理跨分頁同步，
- * 都是 A10 之後的步驟（docs/user-data.md「還沒做」）。
+ * 這是現況的盤點：backup＝設定 → 設定備份有涵蓋（設定 pref_backup.js、閱讀紀錄 history_backup.js、
+ * 離線文章 saved_articles.js）。
  * @type {ReadonlyArray<UserDataEntry>}
  */
 export const USER_DATA = Object.freeze([
   { id: 'prefs', store: 'localStorage', owner: 'src/js/pref_storage.js', kind: 'prefs', cloud: 'prefSync', backup: true, limit: '固定欄位' },
   { id: 'prefSyncEnabled', store: 'localStorage', owner: 'src/js/pref_sync.js', kind: 'ui', cloud: 'none', backup: false, limit: '一個旗標' },
-  { id: 'recentArticles', store: 'localStorage', owner: 'src/js/recent_articles.js', kind: 'history', cloud: 'none', backup: false, limit: 'RECENT_ARTICLES_LIMIT 篇' },
-  { id: 'readLater', store: 'localStorage', owner: 'src/js/recent_articles.js', kind: 'history', cloud: 'readLaterSync', backup: false, limit: 'READ_LATER_LIMIT 篇' },
-  { id: 'newComments', store: 'localStorage', owner: 'src/js/new_comments.js', kind: 'history', cloud: 'none', backup: false, limit: 'NEW_COMMENTS_LIMIT 篇' },
-  { id: 'boardTabs', store: 'localStorage', owner: 'src/js/board_tabs.js', kind: 'history', cloud: 'none', backup: false, limit: 'BOARD_TABS_MAX 個' },
+  { id: 'recentArticles', store: 'localStorage', owner: 'src/js/recent_articles.js', kind: 'history', cloud: 'none', backup: true, limit: 'RECENT_ARTICLES_LIMIT 篇' },
+  { id: 'readLater', store: 'localStorage', owner: 'src/js/recent_articles.js', kind: 'history', cloud: 'readLaterSync', backup: true, limit: 'READ_LATER_LIMIT 篇' },
+  { id: 'newComments', store: 'localStorage', owner: 'src/js/new_comments.js', kind: 'history', cloud: 'none', backup: true, limit: 'NEW_COMMENTS_LIMIT 篇' },
+  { id: 'boardTabs', store: 'localStorage', owner: 'src/js/board_tabs.js', kind: 'history', cloud: 'none', backup: true, limit: 'BOARD_TABS_MAX 個' },
   { id: 'homeFavorites', store: 'localStorage', owner: 'src/js/home_dashboard.js', kind: 'cache', cloud: 'none', backup: false, limit: 'FAV_MAX_PAGES 頁' },
-  { id: 'homeRecentBoards', store: 'localStorage', owner: 'src/js/home_dashboard.js', kind: 'history', cloud: 'none', backup: false, limit: 'RECENT_LIMIT 個看板' },
-  { id: 'searchHistory', store: 'localStorage', owner: 'src/js/search_history.js', kind: 'history', cloud: 'none', backup: false, limit: '每種 MAX_SEARCH_HISTORY 筆' },
-  { id: 'uploadHistory', store: 'localStorage', owner: 'src/js/upload_history.js', kind: 'history', cloud: 'none', backup: false, limit: 'MAX_HISTORY 筆' },
+  { id: 'homeRecentBoards', store: 'localStorage', owner: 'src/js/home_dashboard.js', kind: 'history', cloud: 'none', backup: true, limit: 'RECENT_LIMIT 個看板' },
+  { id: 'searchHistory', store: 'localStorage', owner: 'src/js/search_history.js', kind: 'history', cloud: 'none', backup: true, limit: '每種 MAX_SEARCH_HISTORY 筆' },
+  { id: 'uploadHistory', store: 'localStorage', owner: 'src/js/upload_history.js', kind: 'history', cloud: 'none', backup: true, limit: 'MAX_HISTORY 筆' },
   { id: 'longPushDraft', store: 'localStorage', owner: 'src/js/long_push_draft.js', kind: 'draft', cloud: 'none', backup: false, limit: '一份' },
   { id: 'whatsNewSeen', store: 'localStorage', owner: 'src/js/whats_new.js', kind: 'ui', cloud: 'none', backup: false, limit: '功能名稱清單' },
   { id: 'rendererResume', store: 'localStorage', owner: 'src/js/reconnect_resume.js', kind: 'cache', cloud: 'none', backup: false, limit: '一份、開機讀完就刪' },
@@ -78,5 +78,5 @@ export const USER_DATA = Object.freeze([
   { id: 'articleToolsCollapsed', store: 'localStorage', owner: 'src/js/article_tools.js', kind: 'ui', cloud: 'none', backup: false, limit: '一個旗標' },
   { id: 'splitReaderCollapsed', store: 'localStorage', owner: 'src/js/split_reader.js', kind: 'ui', cloud: 'none', backup: false, limit: '一個旗標' },
   { id: 'floatToolsPos', store: 'localStorage', owner: 'src/js/mobile_layout.js', kind: 'ui', cloud: 'none', backup: false, limit: '一組座標' },
-  { id: 'savedArticles', store: 'indexedDB', owner: 'src/js/saved_articles_store.js', kind: 'history', cloud: 'none', backup: false, limit: 'SAVED_ARTICLES_LIMIT 篇' },
+  { id: 'savedArticles', store: 'indexedDB', owner: 'src/js/saved_articles_store.js', kind: 'history', cloud: 'none', backup: true, limit: 'SAVED_ARTICLES_LIMIT 篇' },
 ]);

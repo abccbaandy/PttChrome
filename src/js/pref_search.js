@@ -82,6 +82,8 @@ export const PREF_SEARCH_EXEMPT_NAMES = {
     "隱藏的 <input type=file>，不是設定項；入口是它前面那顆匯入按鈕（已由 section:options_backupImport 代表）",
   savedImportFile:
     "隱藏的 <input type=file>，不是設定項；入口是離線文章的匯入按鈕（已由 section:options_savedBackup 代表）",
+  historyImportFile:
+    "隱藏的 <input type=file>，不是設定項；入口是閱讀紀錄的匯入按鈕（已由 section:options_historyBackup 代表）",
   syncReadLater:
     "只在登入雲端同步後才畫出來（沒登入就沒東西可同步），搜尋跳不到；由 section:options_sync 代表",
   "quickSearchBuiltin-":
@@ -1054,6 +1056,7 @@ export const PREF_SEARCH_ITEMS = [
   ...inSection("backup", "options_backupExport", "tooltip_backupExport", []),
   ...inSection("backup", "options_backupImport", "tooltip_backupImport", []),
   ...inSection("backup", "options_savedBackup", "tooltip_savedBackup", []),
+  ...inSection("backup", "options_historyBackup", "tooltip_historyBackup", []),
   ...inSection("backup", "options_sync", "tooltip_sync", []),
 
   // ── 關於（沒有 fieldset，錨點掛在各區的 <div> 上）────────────────

@@ -431,6 +431,34 @@ describe("HomeDashboard：何時出現", () => {
     }
   });
 
+  // P98：設定備份匯入的最近看板直接寫進 storage，開機時讀的那份看不到 ⇒ 回到首頁時重讀一次。
+  test("storage 裡的最近看板被別人改了（設定備份匯入）⇒ 回到首頁就看得到", () => {
+    const KEY = "pttchrome.homeRecentBoards.v1";
+    const store = new Map();
+    const fake = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    vi.stubGlobal("window", { localStorage: fake });
+    try {
+      const { home, show } = makeCore();
+      show(mainMenu());
+      show(ARTICLE_LIST());
+      expect(home.state.recents).toEqual(["C_Chat"]);
+      // 停在列表時匯入（設定頁直接寫 storage）。
+      fake.setItem(KEY, JSON.stringify(["C_Chat", "Stock", "Test"]));
+      show(mainMenu());
+      expect(home.state.recents).toEqual(["C_Chat", "Stock", "Test"]);
+      // 停在首頁時別人再改：等下一次回到首頁才重讀（每幀 settle 不讀 storage）。
+      fake.setItem(KEY, JSON.stringify(["Gossiping"]));
+      show(mainMenu());
+      expect(home.state.recents).toEqual(["C_Chat", "Stock", "Test"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("進了我的最愛裡的看板、最新一篇讀過了 ⇒ 該板不再標有新文章；一個 byte 都不送", () => {
     const { home, show, enqueued } = makeCore();
     home._set({ boards: [{ name: "C_Chat", desc: "", unread: true }, { name: "Stock", desc: "", unread: true }] });

@@ -370,3 +370,52 @@ describe("本機收藏匯出／匯入", () => {
     expect(onReset).not.toHaveBeenCalled();
   });
 });
+
+// 閱讀紀錄（P98）：合併邏輯在 tests/unit/history_backup.test.js，這裡守 UI 這條路接上了。
+describe("閱讀紀錄匯出／匯入", () => {
+  const RECENT_KEY = "pttchrome.homeRecentBoards.v1";
+  test("沒有紀錄 ⇒ 不下載、說沒有可匯出的；有紀錄 ⇒ 下載並說出筆數", () => {
+    openBackupTab();
+    fireEvent.click(document.querySelector("[data-history-export]"));
+    expect(screen.getByText(i18n("options_historyExportEmpty"))).toBeTruthy();
+    expect(downloadAsFile).not.toHaveBeenCalled();
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(["Test", "Stock"]));
+    fireEvent.click(document.querySelector("[data-history-export]"));
+    expect(downloadAsFile).toHaveBeenCalledTimes(1);
+    const [name, text] = downloadAsFile.mock.calls[0];
+    expect(name).toMatch(/^pttchrome-history-\d{8}\.json$/);
+    expect(JSON.parse(text).data.homeRecentBoards).toEqual(["Test", "Stock"]);
+    expect(screen.getByText(i18n("options_historyExported").replace("{total}", "2"))).toBeTruthy();
+  });
+
+  const importHistoryFile = async (json, message) => {
+    const input = document.querySelector('input[name="historyImportFile"]');
+    fireEvent.change(input, { target: { files: [new File([json], "h.json", { type: "application/json" })] } });
+    await waitFor(() => expect(screen.getByText(message)).toBeTruthy(), { timeout: 4000 });
+  };
+
+  test("匯入 ⇒ 跟這台合併、說出筆數；設定不動", async () => {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(["Stock"]));
+    openBackupTab();
+    const before = storedValues();
+    const file = JSON.stringify({
+      app: "pttchrome",
+      kind: "history",
+      schemaVersion: 1,
+      data: { homeRecentBoards: ["Test", "stock"] },
+    });
+    await importHistoryFile(file, i18n("options_historyImported").replace("{imported}", "2"));
+    expect(JSON.parse(window.localStorage.getItem(RECENT_KEY))).toEqual(["Stock", "Test"]);
+    expect(storedValues()).toEqual(before);
+    expect(onReset).not.toHaveBeenCalled();
+  });
+
+  test("匯入設定備份檔 ⇒ 格式錯誤，什麼都不寫", async () => {
+    openBackupTab();
+    await importHistoryFile(
+      JSON.stringify({ app: "pttchrome", kind: "prefs", schemaVersion: 1, prefs: {} }),
+      i18n("options_historyErrorBadFormat"),
+    );
+    expect(window.localStorage.getItem(RECENT_KEY)).toBeNull();
+  });
+});

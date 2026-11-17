@@ -56,6 +56,11 @@ import {
   mergeImportedPrefs,
   backupFileName,
 } from "../../js/pref_backup";
+import {
+  buildHistoryExport,
+  historyFileName,
+  importHistory,
+} from "../../js/history_backup";
 import { isValidOtpSecret } from "../../js/totp";
 import {
   normalizeAutoLoginValues,
@@ -1041,6 +1046,9 @@ export const PrefModal = ({
   // 本機收藏匯出／匯入的最後一次結果（已組好的字串）；null＝還沒做過。
   const [savedBackupMsg, setSavedBackupMsg] = useState(null);
   const savedImportInputRef = useRef(null);
+  // 閱讀紀錄（P98，js/history_backup.js）匯出／匯入的最後一次結果（已組好的字串）。
+  const [historyBackupMsg, setHistoryBackupMsg] = useState(null);
+  const historyImportInputRef = useRef(null);
   // 設定搜尋跳轉：pendingJump 是「要跳去哪」的指令，flashKey 是「現在哪一項在
   // 閃」。分成兩個 state 是因為跳轉要等一個 frame（見下面的 effect），而高亮的
   // 生命週期比跳轉長。
@@ -1361,6 +1369,53 @@ export const PrefModal = ({
       res.count
         ? fillMsg("options_savedExported", res)
         : i18n("options_savedExportEmpty"),
+    );
+  }, []);
+  // 閱讀紀錄：匯出＝這台的七種紀錄；匯入＝跟這台合併（不蓋掉），寫回 localStorage。
+  // 各功能下次讀的時候就看得到（最近讀過／新推文標記每次比對原文、看板分頁每幀重讀、
+  // 首頁回到主選單時重讀最近看板）。
+  const onHistoryExportClick = useCallback(() => {
+    const { payload, total } = buildHistoryExport();
+    if (!total) {
+      setHistoryBackupMsg(i18n("options_historyExportEmpty"));
+      return;
+    }
+    downloadAsFile(
+      historyFileName(),
+      JSON.stringify(payload, null, 2),
+      "application/json",
+    );
+    setHistoryBackupMsg(fillMsg("options_historyExported", { total }));
+  }, []);
+  const onHistoryImportFile = useCallback(async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    let text = "";
+    try {
+      text = await file.text();
+    } catch (err) {
+      setHistoryBackupMsg(i18n("options_backupErrorBadJson"));
+      return;
+    }
+    const res = importHistory(text);
+    if (!res.ok) {
+      setHistoryBackupMsg(
+        i18n(
+          res.reason === "badJson"
+            ? "options_backupErrorBadJson"
+            : "options_historyErrorBadFormat",
+        ),
+      );
+      return;
+    }
+    setHistoryBackupMsg(
+      [
+        fillMsg("options_historyImported", res),
+        res.failed ? fillMsg("options_historyImportFailed", res) : "",
+      ]
+        .filter(Boolean)
+        .join(""),
     );
   }, []);
   const onSavedImportFile = useCallback(async (e) => {
@@ -2312,6 +2367,41 @@ export const PrefModal = ({
                 {savedBackupMsg && (
                   <Text size="sm" mt={6} data-saved-backup-result>
                     {savedBackupMsg}
+                  </Text>
+                )}
+              </PrefSection>
+              <PrefSection legendKey="options_historyBackup">
+                <PrefHint textKey="tooltip_historyBackup" />
+                <input
+                  ref={historyImportInputRef}
+                  type="file"
+                  name="historyImportFile"
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={onHistoryImportFile}
+                />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <Button
+                    variant="default"
+                    data-history-export
+                    onClick={onHistoryExportClick}
+                  >
+                    {i18n("options_historyExportBtn")}
+                  </Button>
+                  <Button
+                    variant="default"
+                    data-history-import
+                    onClick={() =>
+                      historyImportInputRef.current &&
+                      historyImportInputRef.current.click()
+                    }
+                  >
+                    {i18n("options_historyImportBtn")}
+                  </Button>
+                </div>
+                {historyBackupMsg && (
+                  <Text size="sm" mt={6} data-history-backup-result>
+                    {historyBackupMsg}
                   </Text>
                 )}
               </PrefSection>
