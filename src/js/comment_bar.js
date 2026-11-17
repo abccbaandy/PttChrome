@@ -184,14 +184,20 @@ export function CommentBar(core) {
   this._state = Object.assign({}, HIDDEN);
   this._listSuppressed = false;
   const self = this;
+  // 故障停用（docs/feature-isolation.md）：settle 出錯 ⇒ 列收起、這次連線不再派發。列表上蓋著的
+  // 推文類型選單露出來給使用者原生回答（_hide 會解除擋鍵、交還系統返回）。其他入口（resize、
+  // 手機工具列問要不要接手選單）也擋：停用中一律當作沒有推文列。新連線 enableAllListeners 恢復。
+  // 文章模式輸入框打到一半的字留在元件裡（列收起只 return null），恢復後還在；列表模式的字
+  // 跟著目標清掉（_hide 把 mode 改回 article，元件換目標就清字，免得推到別篇）。
+  this._onSettle = function() {
+    self.refresh();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener(
-      'screenSettled',
-      function() {
-        self.refresh();
-      },
-      { owner: 'commentBar' }
-    );
+    core.buf.addEventListener('screenSettled', this._onSettle, {
+      owner: 'commentBar',
+      feature: 'enableCommentBar',
+      disable: () => self._hide(),
+    });
   if (typeof window !== 'undefined' && window.addEventListener)
     window.addEventListener('resize', function() {
       self.refresh();
@@ -437,7 +443,7 @@ CommentBar.prototype = {
   // 自己的提問選項／「開鍵盤輸入」面板（兩個疊在一起，點到面板會繞過推文列直接送鍵）。
   // 跟 _listMenuTarget 同一套條件，但不改任何狀態（工具列跟推文列誰先收到這一幀不一定）。
   takesOverListPrompt: function() {
-    if (!listPushEnabled(readEffectivePrefs())) return false;
+    if (this._disabled() || !listPushEnabled(readEffectivePrefs())) return false;
     const session = this._core.longPush;
     if ((session && session.busy) || this._listSuppressed) return false;
     if (!listPushTarget(listPushFactsOf(this._core.buf))) return false;
@@ -480,8 +486,14 @@ CommentBar.prototype = {
     return !!(session && session.dismissListMenu && session.dismissListMenu());
   },
 
+  _disabled: function() {
+    const buf = this._core.buf;
+    return !!(buf && buf.isListenerDisabled && buf.isListenerDisabled(this._onSettle));
+  },
+
   refresh: function() {
     const core = this._core;
+    if (this._disabled()) return this._hide();
     const prefs = readEffectivePrefs();
     const target = this._listMenuTarget(prefs);
     if (target) return this._refreshList(prefs, target);
