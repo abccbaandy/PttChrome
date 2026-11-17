@@ -461,11 +461,15 @@ HomeDashboard.prototype = {
     };
   },
 
+  // 每次從 storage 重讀再推（架構 review A10 ③）：兩個分頁同時開著時，開機時讀到的清單會過期，
+  // 拿它寫回會把另一個分頁剛記的看板蓋掉。storage 讀不到（無痕、被封鎖）才用記憶體裡的。
   _noteRecent: function(name) {
-    if (this._state.recents[0] === name) return;
-    const next = pushRecentBoard(this._state.recents, name);
-    writeJson('homeRecentBoards', next);
-    this._set({ recents: next });
+    const stored = readJson('homeRecentBoards');
+    const cur = Array.isArray(stored) ? stored : this._state.recents;
+    const next = cur[0] === name ? cur : pushRecentBoard(cur, name);
+    if (next !== cur) writeJson('homeRecentBoards', next);
+    // 內容沒變就不換 state：每次 settle 都會跑到這裡，換了面板就得重畫。
+    if (next.join('\n') !== this._state.recents.join('\n')) this._set({ recents: next });
   },
 
   // 進了看板：看得到最新一篇的已讀標記就更新那個板的「有新文章」（newestArticleUnread）。

@@ -401,6 +401,36 @@ describe("HomeDashboard：何時出現", () => {
     expect(home.state.recents).toEqual(["C_Chat"]);
   });
 
+  // 架構 review A10 ③：兩個分頁同時開著時，各自開機時讀到的清單會過期。記一筆前要從
+  // storage 重讀，不然這邊寫回的舊清單會把另一個分頁剛記的看板蓋掉。
+  test("另一個分頁剛記進最近看板 ⇒ 這邊再記一筆時不會把它蓋掉", () => {
+    const KEY = "pttchrome.homeRecentBoards.v1";
+    const store = new Map();
+    const fake = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    vi.stubGlobal("window", { localStorage: fake });
+    try {
+      const { home, show } = makeCore();
+      expect(home.state.recents).toEqual([]);
+      // 另一個分頁在這段時間進了 Stock。
+      fake.setItem(KEY, JSON.stringify(["Stock"]));
+      show(ARTICLE_LIST());
+      expect(JSON.parse(fake.getItem(KEY))).toEqual(["C_Chat", "Stock"]);
+      expect(home.state.recents).toEqual(["C_Chat", "Stock"]);
+      // 同一板再 settle 一次：不重寫、不換掉 state（面板不必重畫）。
+      const before = home.state.recents;
+      const setSpy = vi.spyOn(fake, "setItem");
+      show(ARTICLE_LIST());
+      expect(setSpy).not.toHaveBeenCalled();
+      expect(home.state.recents).toBe(before);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("進了我的最愛裡的看板、最新一篇讀過了 ⇒ 該板不再標有新文章；一個 byte 都不送", () => {
     const { home, show, enqueued } = makeCore();
     home._set({ boards: [{ name: "C_Chat", desc: "", unread: true }, { name: "Stock", desc: "", unread: true }] });
