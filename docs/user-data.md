@@ -28,14 +28,14 @@
 |---|---|---|---|---|---|
 | `pttchrome.pref.v1` | `pref_storage.js` | 設定 | 設定同步（帳密等本機專用欄位除外） | 有 | 固定欄位 |
 | `pttchrome.prefsync.enabled` | `pref_sync.js` | 介面 | 否 | 否 | 一個旗標 |
-| `pttchrome.recentArticles.v1` | `recent_articles.js` | 紀錄 | 否 | 否 | `RECENT_ARTICLES_LIMIT` 篇 |
-| `pttchrome.readLater.v2` | `recent_articles.js` | 紀錄 | 稍後閱讀同步（`read_later_sync.js`） | 否 | `READ_LATER_LIMIT` 篇 |
-| `pttchrome.newComments.v1` | `new_comments.js` | 紀錄 | 否 | 否 | `NEW_COMMENTS_LIMIT` 篇 |
-| `pttchrome.boardTabs.v1` | `board_tabs.js` | 紀錄 | 否 | 否 | `BOARD_TABS_MAX` 個 |
+| `pttchrome.recentArticles.v1` | `recent_articles.js` | 紀錄 | 否 | 有（閱讀紀錄一區） | `RECENT_ARTICLES_LIMIT` 篇 |
+| `pttchrome.readLater.v2` | `recent_articles.js` | 紀錄 | 稍後閱讀同步（`read_later_sync.js`） | 有（閱讀紀錄一區） | `READ_LATER_LIMIT` 篇 |
+| `pttchrome.newComments.v1` | `new_comments.js` | 紀錄 | 否 | 有（閱讀紀錄一區） | `NEW_COMMENTS_LIMIT` 篇 |
+| `pttchrome.boardTabs.v1` | `board_tabs.js` | 紀錄 | 否 | 有（閱讀紀錄一區） | `BOARD_TABS_MAX` 個 |
 | `pttchrome.homeFavorites.v1` | `home_dashboard.js` | 快取 | 否 | 否 | `FAV_MAX_PAGES` 頁 |
-| `pttchrome.homeRecentBoards.v1` | `home_dashboard.js` | 紀錄 | 否 | 否 | `RECENT_LIMIT` 個看板 |
-| `pttchrome.searchHistory.v1` | `search_history.js` | 紀錄 | 否 | 否 | 每種 `MAX_SEARCH_HISTORY` 筆 |
-| `pttchrome.upload.v1` | `upload_history.js` | 紀錄 | 否 | 否 | `MAX_HISTORY` 筆 |
+| `pttchrome.homeRecentBoards.v1` | `home_dashboard.js` | 紀錄 | 否 | 有（閱讀紀錄一區） | `RECENT_LIMIT` 個看板 |
+| `pttchrome.searchHistory.v1` | `search_history.js` | 紀錄 | 否 | 有（閱讀紀錄一區） | 每種 `MAX_SEARCH_HISTORY` 筆 |
+| `pttchrome.upload.v1` | `upload_history.js` | 紀錄 | 否 | 有（閱讀紀錄一區） | `MAX_HISTORY` 筆 |
 | `pttchrome.longPush.draft.v1` | `long_push_draft.js` | 草稿 | 否 | 否 | 一份 |
 | `pttchrome.whatsNew.seen.v1` | `whats_new.js` | 介面 | 否 | 否 | 功能名稱清單 |
 | `pttchrome.rendererResume.v1` | `reconnect_resume.js` | 快取 | 否 | 否 | 一份，開機讀完就刪 |
@@ -44,7 +44,7 @@
 | `pttchrome.articleTools.collapsed.v1` | `article_tools.js` | 介面 | 否 | 否 | 一個旗標 |
 | `pttchrome.splitReader.collapsed.v1` | `split_reader.js` | 介面 | 否 | 否 | 一個旗標 |
 | `pttchrome.floatToolsPos` | `mobile_layout.js` | 介面 | 否 | 否 | 一組座標 |
-| `pttchrome-saved-articles`（IndexedDB） | `saved_articles_store.js` | 紀錄 | 否 | 否 | `SAVED_ARTICLES_LIMIT` 篇 |
+| `pttchrome-saved-articles`（IndexedDB） | `saved_articles_store.js` | 紀錄 | 否 | 有（離線文章一區） | `SAVED_ARTICLES_LIMIT` 篇 |
 
 不算使用者資料、不在總表的：開站快取的 Service Worker cache（`open_cache.js` 的 `OPEN_CACHE_PREFIX`，
 可以整個丟掉重抓）、deep link 的 BroadcastChannel 名（`deep_link_channel.js`，不落地）、
@@ -67,4 +67,9 @@ Mantine 自己的色彩模式鍵、Firebase SDK 自己的登入狀態（IndexedD
    - 拿記憶體那份寫回：沒有了。
    設定頁關閉時只寫回在設定頁裡改過的格子（`pref_merge.js#mergeEditedPrefs`，跟打開時的快照比），
    開著的期間別的分頁／雲端同步／右鍵加黑名單寫進去的設定不會被蓋掉；其餘寫設定的路徑都是「當下讀→改一格→寫」。
-4. **設定備份涵蓋全部**：備份現在只有設定。紀錄類要不要一起匯出，先問 L。
+4. **設定備份涵蓋全部**：已完成（P98，L 11/17 同意）。設定 → 設定備份分三區：設定（`pref_backup.js`）、離線文章
+   （`saved_articles.js`，IndexedDB）、閱讀紀錄（`history_backup.js`：`USER_DATA` 裡 `backup: true` 的 localStorage 紀錄，
+   守護 `tests/unit/history_backup.test.js`）。閱讀紀錄匯入＝**跟這台合併**：有時間欄的同一筆取新的（最近讀過 `at`、
+   稍後閱讀照同步規則 `mt`、新推文標記、看板分頁），沒有時間欄的（最近看板、搜尋紀錄、上傳紀錄同網址）這台的優先，
+   各自照擁有者的上限截；每筆照擁有者的形狀檢查，網址欄位只收 http(s)。草稿、介面狀態、快取不備份。
+   新增一種紀錄要不要進備份：`USER_DATA` 標 `backup: true` 並在 `history_backup.js#HISTORY_BACKUP_IDS` 補 clean／merge。

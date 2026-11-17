@@ -3083,6 +3083,33 @@
   },
   "options_savedErrorBadFormat": {
     "message": "匯入失敗：這不是 pttchrome 的離線文章匯出檔。"
+  },
+  "options_historyBackup": {
+    "message": "閱讀紀錄"
+  },
+  "tooltip_historyBackup": {
+    "message": "把最近讀過、稍後閱讀、新推文標記、看板分頁、最近看板、搜尋與上傳紀錄匯出成一個檔案，換裝置或重灌時再匯入。匯入會跟這台的紀錄合併，不會蓋掉；不含帳號密碼。"
+  },
+  "options_historyExportBtn": {
+    "message": "匯出閱讀紀錄"
+  },
+  "options_historyImportBtn": {
+    "message": "匯入閱讀紀錄"
+  },
+  "options_historyExportEmpty": {
+    "message": "這台還沒有閱讀紀錄可以匯出。"
+  },
+  "options_historyExported": {
+    "message": "已匯出 {total} 筆紀錄。"
+  },
+  "options_historyImported": {
+    "message": "已合併 {imported} 筆紀錄。"
+  },
+  "options_historyImportFailed": {
+    "message": "有 {failed} 種紀錄存不進去（瀏覽器空間不足或被封鎖）。"
+  },
+  "options_historyErrorBadFormat": {
+    "message": "匯入失敗：這不是 pttchrome 的閱讀紀錄匯出檔。"
   }
 
 };
