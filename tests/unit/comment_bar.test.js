@@ -21,6 +21,7 @@ import {
   QUICK_PUSH_MAX_SEGMENTS,
 } from "../../src/js/comment_bar";
 import { pushMaxBytes } from "../../src/js/long_push";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 beforeAll(() => loadBig5Tables());
@@ -177,11 +178,13 @@ function makeCore(opts = {}) {
       lastRowDiv: { getBoundingClientRect: () => ({ top: 460, height: 20 }) },
     },
   };
+  // isolate：換成真的 TermBuf 派發（event.js 的故障隔離），測停用。
+  if (opts.isolate) Event.mixin(core.buf, { isolate: true });
   const bar = new CommentBar(core);
   return {
     bar,
     core,
-    settle: () => listeners.screenSettled(),
+    settle: opts.isolate ? () => core.buf.dispatchEvent({ type: "screenSettled" }) : () => listeners.screenSettled(),
     setPageState: (s) => (pageState = s),
     setFunctionMode: (v) => (core.easyReading._functionMode = v),
     sheets,
@@ -299,6 +302,38 @@ describe("CommentBar：何時出現、畫在哪", () => {
     t.settle();
     t.settle();
     expect(seen).toEqual([false, true]);
+  });
+});
+
+describe("CommentBar：故障停用", () => {
+  test("好讀文章 settle 出錯 ⇒ 列收起、resize／展開叫不回來；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const { bar, core, settle } = makeCore({ isolate: true });
+      settle();
+      expect(bar.state).toMatchObject({ visible: true, available: true });
+
+      const geo = core.view.mainDisplay.getBoundingClientRect;
+      core.view.mainDisplay.getBoundingClientRect = () => {
+        throw new Error("boom");
+      };
+      settle();
+      expect(bar.state).toMatchObject({ visible: false, available: false });
+      expect(core.buf.isListenerDisabled(bar._onSettle)).toBe(true);
+
+      core.view.mainDisplay.getBoundingClientRect = geo;
+      bar.refresh(); // resize 入口
+      settle();
+      expect(bar.state.visible).toBe(false);
+      expect(bar.expand()).toBe(false);
+      expect(bar.prefill({ type: "push", text: "x" })).toBe(false);
+
+      core.buf.enableAllListeners();
+      settle();
+      expect(bar.state).toMatchObject({ visible: true, available: true });
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
   });
 });
 
@@ -491,8 +526,10 @@ describe("CommentBar 列表模式（P90）", () => {
         lastRowDiv: { getBoundingClientRect: () => ({ top: 460, height: 20 }) },
       },
     };
+    if (opts.isolate) Event.mixin(core.buf, { isolate: true });
     const bar = new CommentBar(core);
-    return { bar, core, session, sheets, paint, settle: () => listeners.screenSettled() };
+    const settle = opts.isolate ? () => core.buf.dispatchEvent({ type: "screenSettled" }) : () => listeners.screenSettled();
+    return { bar, core, session, sheets, paint, settle };
   }
   afterEach(() => {
     for (const k of Object.keys(prefOverride)) delete prefOverride[k];
@@ -709,6 +746,45 @@ describe("CommentBar 列表模式（P90）", () => {
     h.settle();
     h.session.startFromList.mockReturnValue(false);
     expect(h.bar.submitList({ text: "推推", type: "push" })).toMatchObject({ ok: false, reason: "gone" });
+  });
+
+  // 故障停用（docs/feature-isolation.md；架構 review A6）：列表上出錯 ⇒ 列收起、PTT 的類型選單露出來
+  // 給使用者原生回答：擋鍵解除、系統返回不再被列攔、手機工具列不再讓位（不然選單上兩邊都沒有按鈕）。
+  test("故障停用：類型選單上出錯 ⇒ 收起、交還鍵盤與系統返回、工具列不讓位；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const h = makeListCore({ isolate: true });
+      const modals = new Set();
+      h.core.setModalOpen = (src, on) => (on ? modals.add(src) : modals.delete(src));
+      h.settle();
+      expect(h.bar.state).toMatchObject({ visible: true, mode: "list" });
+      expect(modals.has("commentBarPending")).toBe(true);
+      expect(h.sheets).toHaveLength(1);
+
+      const geo = h.core.view.mainDisplay.getBoundingClientRect;
+      h.core.view.mainDisplay.getBoundingClientRect = () => {
+        throw new Error("boom");
+      };
+      h.settle();
+      expect(h.bar.state.visible).toBe(false);
+      expect(modals.has("commentBarPending")).toBe(false);
+      expect(h.sheets).toHaveLength(0);
+      expect(h.session.dismissListMenu).not.toHaveBeenCalled(); // 不替使用者取消，選單留給原生
+
+      // 原因消失了也不回來；工具列照出自己的選項。
+      h.core.view.mainDisplay.getBoundingClientRect = geo;
+      h.settle();
+      h.bar.refresh();
+      expect(h.bar.state.visible).toBe(false);
+      expect(h.bar.takesOverListPrompt()).toBe(false);
+
+      h.core.buf.enableAllListeners();
+      h.settle();
+      expect(h.bar.state).toMatchObject({ visible: true, mode: "list" });
+      expect(h.bar.takesOverListPrompt()).toBe(true);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
   });
 
   test("系統返回／✕ ⇒ 替使用者取消（dismissListMenu），列收起", () => {
