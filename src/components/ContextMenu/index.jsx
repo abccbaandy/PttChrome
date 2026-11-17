@@ -1874,6 +1874,7 @@ export const ContextMenu = ({ pttchrome }) => {
           onDebugModeChange={onDebugModeChange}
           jumpTarget={showsSettings ? prefJump : null}
           registerBack={registerSettingsBack}
+          mobile={mobile}
         />
       </Suspense>
       <Suspense fallback={null}>

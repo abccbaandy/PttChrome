@@ -447,6 +447,7 @@ export const PREF_SEARCH_ITEMS = [
     {
       key: "termSizeMode",
       type: "select",
+      desktopOnly: true,
       titleKey: "options_termSize",
       tooltipKey: "tooltip_termSize",
     },
@@ -454,24 +455,28 @@ export const PREF_SEARCH_ITEMS = [
       key: "termSize.cols",
       type: "number",
       shownIf: "fixedTermSize",
+      desktopOnly: true,
       titleKey: "options_cols",
     },
     {
       key: "termSize.rows",
       type: "number",
       shownIf: "fixedTermSize",
+      desktopOnly: true,
       titleKey: "options_rows",
     },
     {
       key: "fontFitWindowWidth",
       type: "check",
       shownIf: "fixedTermSize",
+      desktopOnly: true,
       titleKey: "options_fontFitWindowWidth",
     },
     {
       key: "fontSize",
       type: "number",
       shownIf: "fixedFontSize",
+      desktopOnly: true,
       titleKey: "options_fontSize",
     },
     {
@@ -994,7 +999,9 @@ export const PREF_SEARCH_ITEMS = [
  *   不是勾選列下面另一行灰字（PrefHint）。舊版設定頁兩種寫法並存，照原樣記下來，畫面不變。
  * shownIf：PREF_SHOWN_IF 的 id，條件不成立時設定頁整格不畫。
  * rows：名單欄（textarea）最少幾列高。
- * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean, shownIf?: string, rows?: number }} PrefIndexItem
+ * desktopOnly：手機版面不看這格（P100：終端機大小一組，手機一律照螢幕寬排 80 欄）⇒ 手機版面時
+ *   設定頁不畫、設定搜尋也不列；設定值照留（跨裝置同步，桌機照舊用）。
+ * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean, shownIf?: string, rows?: number, desktopOnly?: boolean }} PrefIndexItem
  */
 
 // key → 索引項（只收 kind:"pref"）。設定頁的 PrefCheckRow 從這裡拿標題與說明的文字鍵
@@ -1023,13 +1030,16 @@ export const PREF_SHOWN_IF = {
 };
 
 /**
- * 這一格現在要不要畫出來（沒有 shownIf 的一律要）。
+ * 這一格現在要不要畫出來（沒有 shownIf、也不是 desktopOnly 的一律要）。
  * @param {string} key
  * @param {Record<string, unknown>} values
+ * @param {{ mobile?: boolean }} [env] mobile＝目前是手機版面（App.mobile）
  */
-export function prefShown(key, values) {
+export function prefShown(key, values, env = {}) {
   const it = PREF_SEARCH_ITEMS.find((x) => x.key === key);
-  if (!it || !it.shownIf) return true;
+  if (!it) return true;
+  if (it.desktopOnly && env.mobile) return false;
+  if (!it.shownIf) return true;
   const cond = PREF_SHOWN_IF[it.shownIf];
   if (!cond) throw new Error(`prefShown: ${key} 的 shownIf ${it.shownIf} 不在表裡`);
   const v = values[cond.key];
@@ -1195,7 +1205,8 @@ const scoreItem = (item, q, lang) => {
  * 設定頁搜尋。純函式，無 DOM、無副作用。
  *
  * @param {string} query 使用者輸入
- * @param {{lang?: string, limit?: number}} [opts] lang 預設取 i18n.getLang()
+ * @param {{lang?: string, limit?: number, mobile?: boolean}} [opts] lang 預設取 i18n.getLang()；
+ *   mobile＝手機版面，desktopOnly 的項目不列（設定頁上根本沒畫，跳過去會撲空）
  * @returns {Array<{key, tab, tabLabel, sectionLabel, title, ranges, matchedVia, score}>}
  *   已排序、已截斷到 limit（預設 MAX_RESULTS）。ranges 是針對 title 的高亮區間，
  *   **UI 端直接照切，不得自己再比對一次**——比對規則只能有一份。
@@ -1208,6 +1219,7 @@ export function searchPrefSettings(query, opts = {}) {
 
   const hits = [];
   PREF_SEARCH_ITEMS.forEach((item, index) => {
+    if (opts.mobile && item.desktopOnly) return;
     const m = scoreItem(item, q, lang);
     if (!m) return;
     const title = msg(lang, item.titleKey);
