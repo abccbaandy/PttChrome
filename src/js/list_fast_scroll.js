@@ -87,11 +87,23 @@ export function ListFastScroll(core, opts) {
   this._idleTimer = null;
   this._drag = null;
   const self = this;
+  this._onSettle = function() {
+    self._noteInfo();
+    if (self._shown || self._drag) self.refresh();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self._noteInfo();
-      if (self._shown || self._drag) self.refresh();
-    });
+    core.buf.addEventListener(
+      'screenSettled',
+      this._onSettle,
+      // 出錯 ⇒ 這次連線收起把手（拖到一半的放開也不送跳號），列表照常用手指／滾輪捲（event.js 故障隔離）。
+      {
+        feature: 'enableListFastScroll',
+        disable: () => {
+          self._drag = null;
+          self._hide();
+        }
+      }
+    );
   // 捲動列表好讀的視口（`.listBodyView`，scroll 不冒泡 ⇒ capture）。
   if (this._doc && this._doc.addEventListener)
     this._doc.addEventListener(
@@ -176,7 +188,17 @@ ListFastScroll.prototype = {
     }, FAST_SCROLL_IDLE_MS);
   },
 
+  _disabled: function() {
+    const buf = this._core.buf;
+    return !!(buf && typeof buf.isListenerDisabled === 'function' && buf.isListenerDisabled(this._onSettle));
+  },
+
   refresh: function() {
+    // 出錯被停用：捲動／拖動這些入口也不准叫回來，新連線才恢復。
+    if (this._disabled()) {
+      this._drag = null;
+      return this._hide();
+    }
     if (!this._shown && !this._drag) return this._hide();
     const info = this._noteInfo();
     const hiSeen = this._hiSeen;
