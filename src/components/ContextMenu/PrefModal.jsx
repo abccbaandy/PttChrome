@@ -609,14 +609,15 @@ const PrefGroupHeading = ({ id }) => {
 //   - hotkey → PrefHotkey（說明當 placeholder，前置鏈關掉就反灰）；
 //   - number → PrefNumber（說明當 description，下限取索引的 min）；
 //   - text   → PrefText（說明當 description；placeholder 由呼叫端以 placeholders[key] 給，
-//              放的是「留空時實際生效的預設值」）；
+//              放的是「留空時實際生效的預設值」；索引標 credential 的關掉自動填入）；
 //   - select → PrefSelect（選項由呼叫端以 selectOptions[key] 給，[value, i18n key] 常數；說明當
 //              description；標題跟分區 legend 同字時不另畫 label，只掛 aria-label）；
 //   - textarea → PrefTextarea（說明當 placeholder，最少列數取索引的 rows）；
 //   - sub: true 的連續幾格包進同一個 .PrefModal__SubOptions（縮排子選項）；
 //   - shownIf 條件不成立的整格不畫；條件表標 wrap 的，連續幾格包進一個 <div>（第十六步）；
 //   - desktopOnly 的格子在手機版面（mobile）不畫，第一格的位置改畫一行說明（P100）；
-//   - 段落第一項（pref_groups.js 的 first）前面畫小標。
+//   - 段落第一項（pref_groups.js 的 first）前面畫小標；
+//   - disabled：整區勾選列跟著反灰（AI 細部設定看總閘門＋機器能不能用，不是設定值能表達的）。
 // 長得跟上面不一樣的格子（帶警告字、另有 onChange、值要轉換）與沒有 name 的可操作項（ui:…）
 // 由呼叫端放進 custom（key → 那一格的 JSX），位置仍照索引。索引有、這裡畫不出的直接炸：
 // 寫錯比靜默少一格好。
@@ -626,6 +627,7 @@ const GROUP_ID_BY_FIRST = new Map(GENERAL_GROUPS.map((g) => [g.first, g.id]));
 const PrefIndexRows = ({
   sectionKey,
   values,
+  disabled,
   custom,
   selectOptions,
   placeholders,
@@ -656,6 +658,7 @@ const PrefIndexRows = ({
           <PrefCheckRow
             name={it.key}
             values={values}
+            disabled={disabled}
             onChange={onCheckboxChange}
           />
         );
@@ -691,6 +694,7 @@ const PrefIndexRows = ({
             label={i18n(mk(it.titleKey))}
             description={it.tooltipKey && i18n(mk(it.tooltipKey))}
             placeholder={placeholders && placeholders[it.key]}
+            autoComplete={it.credential ? "off" : undefined}
           />
         );
       case "select": {
@@ -1463,6 +1467,10 @@ export const PrefModal = ({
   const aiUnusable = aiState === "unsupported" || aiState === "unavailable";
   // 子選項＝總閘門關閉或機器用不了就反灰（值保留，重開即回復先前組合）。
   const aiSubDisabled = !values.enableAi || aiUnusable;
+  // 網址類複核管的兩個增強功能「任一個開」才有事做：索引的 requires 是「全部都開」，
+  // 表達不了「任一個」，所以在這裡算。
+  const urlAiDisabled =
+    aiSubDisabled || !(values.enableBareDomainLink || values.enableAutoFixUrl);
 
   return (
     <SafeModeModal
@@ -2154,14 +2162,14 @@ export const PrefModal = ({
             <Tabs.Panel value="ai">
               <PrefSection legendKey="options_ai">
                 <Text className="PrefModal__warning">{i18n("tooltip_ai")}</Text>
-                <PrefCheckbox
+                {/* 總開關另有 onChange（勾選那一下要觸發模型下載）與反灰（機器用不了、
+                  下載中），只換成索引取字；下面的狀態列與補救鈕都是手寫。 */}
+                <PrefCheckRow
                   name="enableAi"
-                  checked={values.enableAi}
+                  values={values}
                   disabled={aiUnusable || aiState === "downloading"}
                   onChange={onAiMasterChange}
-                >
-                  {i18n("options_enableAi")}
-                </PrefCheckbox>
+                />
                 {aiState && (
                   <Text size="xs" c="dimmed" mb="xs">
                     {i18n("options_aiStatus_" + aiState)}
@@ -2184,29 +2192,26 @@ export const PrefModal = ({
                 )}
               </PrefSection>
               <PrefSection legendKey="options_ai_features">
-                <PrefCheckRow
-                  name="enableCaptionAi"
+                {/* 子選項整區看總閘門（disabled）。網址類複核另外管兩個增強功能：裸網域
+                  自動連結（AI 只能撤掉誤連）與自動修復斷掉的連結（AI 才能放行規則不敢認的
+                  候選），兩者都關掉時它無事可做 ⇒ 「任一個開」索引的 requires 表達不了，
+                  留 custom。 */}
+                <PrefIndexRows
+                  sectionKey="options_ai_features"
                   values={values}
                   disabled={aiSubDisabled}
-                  onChange={onCheckboxChange}
+                  onCheckboxChange={onCheckboxChange}
+                  custom={{
+                    enableUrlAi: (
+                      <PrefCheckRow
+                        name="enableUrlAi"
+                        values={values}
+                        disabled={urlAiDisabled}
+                        onChange={onCheckboxChange}
+                      />
+                    ),
+                  }}
                 />
-                {/* 網址類複核，管兩個增強功能：裸網域自動連結（AI 只能撤掉誤連）
-                  與自動修復斷掉的連結（AI 才能放行規則不敢認的候選）。兩者都
-                  關掉時它無事可做。 */}
-                <PrefCheckbox
-                  name="enableUrlAi"
-                  checked={values.enableUrlAi}
-                  disabled={
-                    aiSubDisabled ||
-                    !(values.enableBareDomainLink || values.enableAutoFixUrl)
-                  }
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableUrlAi")}
-                </PrefCheckbox>
-                <Text size="xs" c="dimmed">
-                  {i18n("tooltip_enableUrlAi")}
-                </Text>
               </PrefSection>
             </Tabs.Panel>
             {/* local-only 分頁：這裡的設定僅存本機、絕不上雲（LOCAL_ONLY_PREF_KEYS
@@ -2218,26 +2223,16 @@ export const PrefModal = ({
                 <Text className="PrefModal__warning">
                   {i18n("tooltip_local")}
                 </Text>
-                <PrefCheckbox
-                  name="enableWorkMode"
-                  checked={values.enableWorkMode}
-                  onChange={onCheckboxChange}
-                >
-                  {i18n("options_enableWorkMode")}
-                </PrefCheckbox>
-                {/* urusai 圖床的存取憑證：是憑證就不上雲（LOCAL_ONLY_PREF_KEYS），
-                  所以放這個分頁；留空＝匿名上傳，功能照常。
-                  **刻意不是 type=password**（同 autoLoginOtpSecret 的理由）：整頁
+                {/* 上班模式＋urusai 圖床的存取憑證（是憑證就不上雲，LOCAL_ONLY_PREF_KEYS，
+                  所以放這個分頁；留空＝匿名上傳，功能照常）。
+                  憑證欄**刻意不是 type=password**（同 autoLoginOtpSecret 的理由）：整頁
                   多一個密碼欄，Chrome 就會把設定頁判成登入表單 → 跳假的「儲存密碼」
                   提示並開始自動填入。守護在 pref_modal_autologin_tab.test.jsx。 */}
-                <PrefText
-                  label={i18n("options_imageUploadToken")}
-                  name="imageUploadToken"
-                  autoComplete="off"
-                  value={values.imageUploadToken}
-                  placeholder={i18n("tooltip_imageUploadToken")}
-                  onChange={onTextInputChange}
-                  mt="xs"
+                <PrefIndexRows
+                  sectionKey="options_local"
+                  values={values}
+                  onCheckboxChange={onCheckboxChange}
+                  onTextInputChange={onTextInputChange}
                 />
               </PrefSection>
             </Tabs.Panel>

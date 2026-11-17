@@ -182,6 +182,10 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
     // 第二十一步：連線分頁的 BBS 連線位址與連線協議（APK 不畫前者、不支援 SSH 不畫後者）。
     "options_connection_bbs",
     "options_connectionProtocol",
+    // 第二十二步：AI（總開關＋細部設定）與本機設定分頁。
+    "options_ai",
+    "options_ai_features",
+    "options_local",
   ];
   test("由索引畫出：分區畫面上的設定項順序＝索引順序，sub 縮排", async () => {
     openModal();
@@ -216,6 +220,33 @@ describe("設定頁：一般分區的小標與跳轉列", () => {
       expect(input("commandPaletteKey").disabled).toBe(true),
     );
     expect(input("aidNavBackKey").disabled).toBe(false);
+  });
+
+  // 第二十二步：AI 與本機設定分頁的說明是「整個分區」的（裝置端推論／只存這台），
+  // 掛在索引的分區上、畫在分區頂端一次，不能又當成第一格的說明再畫一次。
+  test("由索引畫出：分區說明只畫一次，格子說明畫在格子下；憑證欄關掉自動填入", async () => {
+    openModal();
+    await mounted();
+    const section = (key) =>
+      document.querySelector(`[data-pref-anchor="section:${key}"]`);
+    const count = (el, text) => el.textContent.split(text).length - 1;
+    expect(count(section("options_ai"), i18n("tooltip_ai"))).toBe(1);
+    expect(count(section("options_local"), i18n("tooltip_local"))).toBe(1);
+    expect(
+      count(section("options_ai_features"), i18n("tooltip_enableUrlAi")),
+    ).toBe(1);
+    const token = document.querySelector('input[name="imageUploadToken"]');
+    expect(token.type).toBe("text");
+    expect(token.getAttribute("autocomplete")).toBe("off");
+    expect(
+      count(section("options_local"), i18n("tooltip_imageUploadToken")),
+    ).toBe(1);
+    // 搜尋「雲端同步」這類只在分區說明裡的字：找到的是分區，不是上班模式那一格。
+    const hits = searchPrefSettings(i18n("tooltip_local").slice(0, 10)).map(
+      (r) => r.key,
+    );
+    expect(hits).toContain("section:options_local");
+    expect(hits).not.toContain("enableWorkMode");
   });
 
   // 第十六步：shownIf＝選項不適用就整格不畫（不是反灰）。外觀分區的終端機大小與手機版面。
