@@ -285,7 +285,6 @@ export function SplitReader(core) {
   };
   if (core.buf && core.buf.addEventListener)
     core.buf.addEventListener('screenSettled', this._onSettle, {
-      owner: 'splitReader',
       feature: 'enableSplitReading',
       disable: () => self._hide()
     });

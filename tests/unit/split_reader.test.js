@@ -22,7 +22,7 @@ import {
   SPLIT_GAP_PX,
   SPLIT_SNAPSHOT_LIMIT,
 } from "../../src/js/split_reader";
-import { RESTORE_TABLE } from "../../src/js/reading_record";
+import { RESTORE_TABLE, recordFor } from "../../src/js/reading_record";
 import { HINT_ERROR } from "../../src/js/status_hint";
 import { Event, setListenerErrorPolicy } from "../../src/js/event";
 import { wireFakeSessions } from "./helpers/session_wire";
@@ -524,6 +524,8 @@ describe("SplitReader：故障停用", () => {
       expect(t.split.state.visible).toBe(false);
       expect(t.core.buf.isListenerDisabled(t.split._onSettle)).toBe(true);
 
+      // 原因消失了也不回來：這次連線不再派發。resize 入口另外擋（左欄收著時 _relayout 本來就不動，
+      // 這一步只是確認叫了不會出事）。
       t.core.view.mainDisplay.getBoundingClientRect = rect;
       resize();
       t.read("C_Chat", "carol", "[閒聊] 第三篇");
@@ -536,6 +538,34 @@ describe("SplitReader：故障停用", () => {
       expect(t.split.state.visible).toBe(true);
     } finally {
       vi.unstubAllGlobals();
+      setListenerErrorPolicy(prev);
+    }
+  });
+
+  test("換文途中被停用 ⇒ 鍵照送完、done 照常收尾（閱讀紀錄 end、pendingNum 清掉），左欄不回來", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const t = makeCore({ isolate: true });
+      t.show(PAGE());
+      t.read("C_Chat", "carol", "[閒聊] 第三篇");
+      const rr = recordFor(t.core);
+      const end = vi.spyOn(rr, "end");
+      expect(t.split.openNum(101)).toBe(true);
+      expect(t.split.state.pendingNum).toBe(101);
+
+      t.core.view.mainDisplay.getBoundingClientRect = () => {
+        throw new Error("boom");
+      };
+      t.read("C_Chat", "alice", "[閒聊] 第一篇");
+      expect(t.core.buf.isListenerDisabled(t.split._onSettle)).toBe(true);
+      expect(t.split.state.visible).toBe(false);
+
+      t.starts[0].onEnd({ ok: true });
+      expect(end).toHaveBeenCalledTimes(1);
+      expect(end.mock.calls[0][1]).toBe("done");
+      expect(t.split.state.pendingNum).toBe(null);
+      expect(t.split.state.visible).toBe(false);
+    } finally {
       setListenerErrorPolicy(prev);
     }
   });
