@@ -341,6 +341,9 @@ export const DEFAULT_PREFS = {
   // 手機文章內找字（P75，article_find.js）：好讀文章「更多」的「找字」。只讀畫面、標亮用瀏覽器的
   // Highlight API、不送鍵 ⇒ 不在安全模式清單。
   mobileFindInArticle: true,
+  // 手機好讀文章「更多」的「文章資訊」（P102，article_tools.mobileInfo）：推噓統計、推文最多的人、
+  // 本篇圖片。只讀累積頁、不送鍵 ⇒ 不在安全模式清單。
+  mobileArticleInfo: true,
   // 手機文章卡片拿掉原文標題前的「□」（P55，render/list_card.js#isTitleBoxMark）。只改畫法、不送鍵
   // ⇒ 不在安全模式清單；R:／轉 照留。
   mobileCardHideTitleBox: true,

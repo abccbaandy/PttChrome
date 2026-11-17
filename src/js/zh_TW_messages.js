@@ -3039,6 +3039,36 @@
   "articleFind_close": {
     "message": "關閉找字"
   },
+  "options_mobileArticleInfo": {
+    "message": "手機文章資訊"
+  },
+  "tooltip_mobileArticleInfo": {
+    "message": "手機好讀文章的「更多」多一項「文章資訊」：推／噓／→ 各幾則、推文最多的人（點一下只看他的推文）、本篇圖片縮圖（點一下捲到那裡）。只讀已經載入的內容，不會送任何按鍵。"
+  },
+  "articleInfo_title": {
+    "message": "文章資訊"
+  },
+  "articleInfo_back": {
+    "message": "返回「更多」"
+  },
+  "articleInfo_comments": {
+    "message": "推文 {n} 則"
+  },
+  "articleInfo_noComments": {
+    "message": "這篇還沒有推文"
+  },
+  "articleInfo_users": {
+    "message": "推文最多（點一下只看他的推文）"
+  },
+  "articleInfo_images": {
+    "message": "本篇圖片 {n} 張（點一下捲到那裡）"
+  },
+  "articleInfo_tapToLoad": {
+    "message": "圖"
+  },
+  "mobileMoreShort_articleInfo": {
+    "message": "資訊"
+  },
   "mobileMoreShort_findText": {
     "message": "找字"
   },

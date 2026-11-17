@@ -119,6 +119,7 @@ export const FEATURE_SETTING = {
   手機選取文字: "mobileSelectTextPage",
   手機折行保留縮排: "mobileHangIndent",
   手機文章內找字: "mobileFindInArticle",
+  手機文章資訊: "mobileArticleInfo",
   手機文章工具收進更多: "mobileFloatToolsInMore",
   手機編輯器存檔: "mobileEditorSave",
   "Android App": "enableNotifications",

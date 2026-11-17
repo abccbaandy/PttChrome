@@ -33,6 +33,7 @@ import {
   IconBookmark,
   IconInfoCircle,
   IconTextWrap,
+  IconChartBar,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import {
@@ -48,6 +49,7 @@ import {
 import { readSelectionText } from "../../render/screen_chunk";
 import MobileSheet from "../MobileSheet";
 import LinkRows from "../MobileSheet/LinkRows";
+import ArticleInfoSheet from "../ArticleInfoSheet";
 import { copyTextFor } from "../../js/context_menu_items";
 import LogoutConfirm from "../LogoutConfirm";
 import { androidCanQuit } from "../../js/android_bridge";
@@ -395,6 +397,20 @@ export const MobileToolbar = ({
   // 系統返回的關閉函式。
   const closeMore = useCallback(() => {
     setPanel((cur) => (cur === "more" ? null : cur));
+  }, []);
+
+  // 「文章資訊」（P102）：點的那一刻向 articleTools 要一次資料（只讀累積頁），換成它自己的 sheet；
+  // 「‹ 文章資訊」回到「更多」。算不出來（這一刻已經不在好讀文章）就只收起「更多」。
+  const [articleInfo, setArticleInfo] = useState(null);
+  const onArticleInfo = useCallback(() => {
+    const tools = pttchrome.articleTools;
+    const info =
+      tools && typeof tools.mobileInfo === "function" ? tools.mobileInfo() : null;
+    setArticleInfo(info);
+    setPanel(info ? "articleInfo" : null);
+  }, [pttchrome]);
+  const closeArticleInfo = useCallback(() => {
+    setPanel((cur) => (cur === "articleInfo" ? null : cur));
   }, []);
 
   const onKeyboard = useCallback(() => {
@@ -900,6 +916,12 @@ export const MobileToolbar = ({
       Icon: IconSearch,
       onClick: onFindText,
     },
+    // 手機文章資訊（P102，js/article_tools.js#mobileInfo）：開「更多」那一刻算能不能開。
+    __articleInfo: !!pttchrome.articleTools?.mobileInfoAvailable?.() && {
+      label: i18n("articleInfo_title"),
+      Icon: IconChartBar,
+      onClick: onArticleInfo,
+    },
     __select: {
       label: i18n("mobileKeypad_select"),
       Icon: IconCursorText,
@@ -1168,6 +1190,13 @@ export const MobileToolbar = ({
     >
       {panelEl}
       {moreSheet}
+      <ArticleInfoSheet
+        pttchrome={pttchrome}
+        opened={panel === "articleInfo"}
+        info={articleInfo}
+        onBack={() => togglePanel("more")}
+        onClose={closeArticleInfo}
+      />
       {confirmLogout ? (
         <LogoutConfirm
           pttchrome={pttchrome}
