@@ -8,6 +8,7 @@ vi.mock("../../src/js/pref_storage", async (importOriginal) => {
   return { ...real, readEffectivePrefs: () => ({ ...real.readEffectivePrefs(), ...prefOverride }) };
 });
 import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 import {
   analyzeArticle,
   articleUrl,
@@ -163,7 +164,7 @@ test("articleUrl：AID → ptt.cc 檔名", () => {
 });
 
 // ── 控制器：假 App ─────────────────────────────────────────────────────────
-function makeCore({ side = 600, mobile = false, easy = true, functionMode = false, lines = ARTICLE } = {}) {
+function makeCore({ side = 600, mobile = false, easy = true, functionMode = false, lines = ARTICLE, isolate = false } = {}) {
   const listeners = {};
   const hints = [];
   const scrolls = [];
@@ -200,8 +201,10 @@ function makeCore({ side = 600, mobile = false, easy = true, functionMode = fals
     },
     aidNavigation: { findLocalPostAid: () => ({ board: "Test", aid: "1gU3wwNZ" }) },
   };
+  // isolate：換成真的 TermBuf 派發（event.js 的故障隔離），測停用。
+  if (isolate) Event.mixin(core.buf, { isolate: true });
   const tools = new ArticleTools(core);
-  const settle = () => listeners.screenSettled();
+  const settle = isolate ? () => core.buf.dispatchEvent({ type: "screenSettled" }) : () => listeners.screenSettled();
   return {
     core,
     tools,
@@ -228,6 +231,43 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+// 故障停用（docs/feature-isolation.md；架構 review A6）：沒登記時 settle 出錯，側欄停在上一幀的
+// 統計（換了文章還是舊的），resize 每次再叫一次再丟。
+describe("ArticleTools：故障停用", () => {
+  test("settle 出錯 ⇒ 側欄收起、resize 叫不回來；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      let resize = null;
+      window.addEventListener = (name, fn) => {
+        if (name === "resize") resize = fn;
+      };
+      const { core, tools, settle } = makeCore({ isolate: true });
+      settle();
+      expect(tools.state.visible).toBe(true);
+
+      const rect = core.view.mainDisplay.getBoundingClientRect;
+      core.view.mainDisplay.getBoundingClientRect = () => {
+        throw new Error("boom");
+      };
+      settle();
+      expect(tools.state.visible).toBe(false);
+      expect(core.buf.isListenerDisabled(tools._onSettle)).toBe(true);
+
+      // 原因消失了也不回來：這次連線停用，resize 這個入口也擋。
+      core.view.mainDisplay.getBoundingClientRect = rect;
+      resize();
+      settle();
+      expect(tools.state.visible).toBe(false);
+
+      core.buf.enableAllListeners();
+      settle();
+      expect(tools.state.visible).toBe(true);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
+  });
 });
 
 describe("ArticleTools：何時出現", () => {
