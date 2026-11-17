@@ -163,11 +163,31 @@ const noStorageKeyLiteral = {
   },
 };
 
+// ---- 好讀 footer（view.lastRowDiv）只由擁有者碰（架構 review A8，docs/overlay-layout.md）----
+// 浮層要知道「終端機可見內容的下緣」一律問 bottom_stack.measureContentEdge／contentBottomOf：
+// 以前三個浮層各抄一份「量 .main、看 footer 的 display、取上緣」，抄的那份漏一個條件就疊在一起。
+// 擁有者（term_view 畫它、App 切它的顯示、bottom_stack 量它）由 .oxlintrc.json 放行。
+
+const FOOTER_MSG =
+  "終端機可見內容的下緣用 bottom_stack.js 的 measureContentEdge／contentBottomOf，不要自己讀 view.lastRowDiv";
+
+const noFooterDirect = {
+  meta: { type: "problem", docs: { description: FOOTER_MSG }, schema: [] },
+  create(context) {
+    return {
+      MemberExpression(node) {
+        if (propName(node) === "lastRowDiv") context.report({ node, message: FOOTER_MSG });
+      },
+    };
+  },
+};
+
 export const rules = {
   "no-magic-page-state": noMagicPageState,
   "no-direct-conn-send": noDirectConnSend,
   "no-modal-shown-assign": noModalShownAssign,
   "no-storage-key-literal": noStorageKeyLiteral,
+  "no-footer-direct": noFooterDirect,
 };
 
 export default {

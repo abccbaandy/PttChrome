@@ -17,6 +17,7 @@ import { getImageProxyConfig } from './image_proxy';
 import { readEffectivePrefs } from './pref_storage';
 import { COMMENT_BAR_HEIGHT, commentBarHeight } from './comment_bar';
 import { offsetTopWithin } from './scroll_anchor';
+import { measureContentEdge, contentBottomOf } from './bottom_stack';
 import { isScreenChunk, isChunkRendered } from '../render/screen_chunk';
 import { PAGE_STATE } from './screen_model';
 
@@ -60,7 +61,7 @@ export function navMarks(analysis, total, newRow) {
 // 打字中列會長高 ⇒ 給 commentBarHeight 量到的高度，沒給就當單行高）。
 export function articleNavGeometry({ mainRect, footerTop, commentBarShown, commentBarHeight: barH }) {
   if (!mainRect || !mainRect.width) return null;
-  let bottom = footerTop != null ? Math.min(mainRect.bottom, footerTop) : mainRect.bottom;
+  let bottom = contentBottomOf({ mainRect, footerTop });
   if (commentBarShown) bottom -= barH || COMMENT_BAR_HEIGHT;
   const top = Math.max(0, mainRect.top);
   const height = Math.round(bottom - top);
@@ -204,17 +205,12 @@ ArticleNav.prototype = {
 
   _geometry: function() {
     const core = this._core;
-    const view = core.view;
-    const main = view && view.mainDisplay;
-    if (!main || typeof main.getBoundingClientRect !== 'function' || typeof window === 'undefined') return null;
-    const footer = view.lastRowDiv;
-    let footerTop = null;
-    if (footer && typeof footer.getBoundingClientRect === 'function' && window.getComputedStyle(footer).display !== 'none')
-      footerTop = footer.getBoundingClientRect().top;
+    const edge = measureContentEdge(core.view);
+    if (!edge) return null;
     const bar = core.commentBar && core.commentBar.state;
     return articleNavGeometry({
-      mainRect: main.getBoundingClientRect(),
-      footerTop: footerTop,
+      mainRect: edge.mainRect,
+      footerTop: edge.footerTop,
       commentBarShown: !!(bar && bar.visible),
       commentBarHeight: commentBarHeight(bar),
     });
