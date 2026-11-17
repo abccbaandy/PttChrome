@@ -174,12 +174,19 @@ export function ArticleTools(core) {
     selectedComments: []
   };
   const self = this;
+  // 故障停用（docs/feature-isolation.md）：settle 出錯 ⇒ 側欄收起、這次連線不再派發；
+  // resize 是另一個入口，同一條監聽者被停用就不叫回來。新連線 enableAllListeners 恢復。
+  this._onSettle = function() {
+    self._onSettled();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self._onSettled();
+    core.buf.addEventListener('screenSettled', this._onSettle, {
+      feature: 'enableArticleTools',
+      disable: () => self._hide()
     });
   if (typeof window !== 'undefined' && window.addEventListener)
     window.addEventListener('resize', function() {
+      if (self._disabled()) return;
       self._onSettled();
     });
 }
@@ -223,6 +230,11 @@ ArticleTools.prototype = {
 
   _hide: function() {
     if (this._state.visible) this._set({ visible: false });
+  },
+
+  _disabled: function() {
+    const buf = this._core.buf;
+    return !!(buf && buf.isListenerDisabled && buf.isListenerDisabled(this._onSettle));
   },
 
   _inEasyArticle: function() {
