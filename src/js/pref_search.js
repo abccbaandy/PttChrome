@@ -960,17 +960,25 @@ export const PREF_SEARCH_ITEMS = [
 
   // ── 自動登入 ────────────────────────────────────────────────────
   ...inSection("autologin", "options_autoLogin", "tooltip_autoLoginSynced", [
+    { key: "autoLogin", type: "check", titleKey: "options_autoLoginEnable" },
+    // noAutofill：Chrome 曾把這顆 Select 的內層 input 當成「帳號欄」配對到下面的密鑰欄，
+    // 跳出「使用者名稱：刪除其他連線 (Y)」的假儲存提示 ⇒ 關掉自動填入。
     {
-      key: "autoLogin",
-      type: "check",
-      titleKey: "options_autoLoginEnable",
-      tooltipKey: "tooltip_autoLogin",
+      key: "autoLoginDupConn",
+      type: "select",
+      titleKey: "options_autoLoginDupConn",
+      noAutofill: true,
     },
-    { key: "autoLoginDupConn", type: "select", titleKey: "options_autoLoginDupConn" },
     { key: "autoLoginSkipWelcome", type: "check", titleKey: "options_autoLoginSkipWelcome" },
   ]),
-  ...inSection("autologin", "options_autoLoginCredentials", null, [
-    { key: "autoLoginUser", type: "text", titleKey: "options_autoLoginUser" },
+  // tooltip_autoLogin（帳密交給密碼管理員的警告）是整組憑證的說明，不是開關那一格的 ⇒ 掛在分區上。
+  ...inSection("autologin", "options_autoLoginCredentials", "tooltip_autoLogin", [
+    {
+      key: "autoLoginUser",
+      type: "text",
+      titleKey: "options_autoLoginUser",
+      credential: true,
+    },
     { key: "autoLoginPassword", type: "text", titleKey: "options_autoLoginPassword" },
     {
       key: "autoLoginOtpSecret",
