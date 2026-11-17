@@ -1,0 +1,145 @@
+/* 手機「文章資訊」sheet（P102）。外殼是 MobileSheet（恆暗色）；顏色跟桌機文章工具側欄同一套
+   （推＝黃、噓＝紅、→＝灰，ArticleTools.css .toolsStats）。 */
+.articleInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 4px 8px;
+  color: #e4e4e8;
+}
+
+.articleInfoBack {
+  align-self: flex-start;
+  min-height: 40px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #e4e4e8;
+  font: inherit;
+  font-weight: 600;
+}
+
+.articleInfoSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.articleInfoHeading {
+  font-size: 0.85em;
+  color: #9a9aa2;
+}
+
+.articleInfoCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-weight: 600;
+}
+
+.articleInfoCounts [data-kind="push"],
+.articleInfoBar [data-kind="push"] {
+  color: #e6c84a;
+}
+
+.articleInfoCounts [data-kind="boo"] {
+  color: #ff5f5f;
+}
+
+.articleInfoCounts [data-kind="arrow"],
+.articleInfoCounts [data-kind="modern"] {
+  color: #aaa;
+}
+
+.articleInfoBar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #333;
+}
+
+.articleInfoBar span {
+  display: block;
+  height: 100%;
+}
+
+.articleInfoBar [data-kind="push"] {
+  background: #e6c84a;
+}
+
+.articleInfoBar [data-kind="boo"] {
+  background: #ff5f5f;
+}
+
+.articleInfoBar [data-kind="arrow"] {
+  background: #77777f;
+}
+
+.articleInfoUsers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.articleInfoUser {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid #44444c;
+  border-radius: 18px;
+  background: #26262c;
+  color: #e4e4e8;
+  font: inherit;
+}
+
+.articleInfoUserName {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.articleInfoOp {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #3a5a8a;
+  color: #fff;
+  font-size: 0.75em;
+}
+
+.articleInfoCount {
+  color: #9a9aa2;
+  font-variant-numeric: tabular-nums;
+}
+
+.articleInfoThumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+}
+
+.articleInfoThumb {
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #44444c;
+  border-radius: 8px;
+  background: #1c1c20;
+  color: #9a9aa2;
+  font: inherit;
+}
+
+.articleInfoThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.articleInfoThumbStub {
+  font-size: 0.8em;
+}

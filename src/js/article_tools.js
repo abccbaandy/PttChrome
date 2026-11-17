@@ -328,6 +328,30 @@ ArticleTools.prototype = {
     });
   },
 
+  // 手機「文章資訊」（P102，pref mobileArticleInfo，預設開；components/ArticleInfoSheet）：手機沒有
+  // 側欄，「更多」多一項，點開才算。規則同側欄：只讀累積頁、不送鍵、原生 pmore（好讀關著／功能鍵
+  // 模式）不出現。不跟側欄共用 _lines 快取（側欄的「有沒有變」判斷靠它），每次從頭讀——開面板是
+  // 使用者點的，一次而已。不在手機好讀文章 ⇒ null。
+  mobileInfoAvailable: function() {
+    const core = this._core;
+    return !!(core && core.mobile && readEffectivePrefs().mobileArticleInfo && !this._disabled() && this._inEasyArticle());
+  },
+
+  mobileInfo: function() {
+    if (!this.mobileInfoAvailable()) return null;
+    const buf = this._core.buf;
+    const acc = buf.pageLines || [];
+    const lines = [];
+    for (let r = 0; r < acc.length; ++r) lines.push(buf.getRowText(r, 0, buf.cols, acc));
+    const a = analyzeArticle(lines, getImageProxyConfig(), null);
+    return {
+      stats: a.stats,
+      comments: a.comments.length,
+      users: a.users.slice(0, TOP_USERS),
+      images: a.images,
+    };
+  },
+
   // 跳到累積頁的第 row 列（好讀的視口，不送鍵）。
   jumpTo: function(row) {
     const er = this._core.easyReading;

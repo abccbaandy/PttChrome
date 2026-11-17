@@ -16,6 +16,10 @@
 - **不是 modal**：焦點留在 `#t`，鍵盤照常操作文章。滑鼠：側欄在 `#BBSWindow` 外，`_onUploadLayer` 認 `#articleTools` 放過（滾輪捲側欄，不變成文章翻頁）；按鈕 mousedown `preventDefault`＋stopPropagation。
 - e2e：`installReplay` 預設把 `enableArticleTools` 關掉（寬視窗的好讀文章右邊多一欄浮層，會擋掉落在那裡的滑鼠），live 的自動登入 prefs 也關掉；只有 `article_tools.offline.spec.js` 以 `bootOffline(page, ptt, { articleTools: true })` 打開。
 
+## 手機：「更多」→「文章資訊」（P102）
+
+手機不畫側欄，改在好讀文章「更多」多一項「文章資訊」（pref `mobileArticleInfo`，預設開；`components/ArticleInfoSheet`）：推／噓／→ 數字＋比例條（新格式推文算在灰色段）、推文最多的 `TOP_USERS` 人（點＝`view.setCommentFilter(user, false)`，跟長按選單的「只看他」同一個入口）、本篇圖片縮圖（點＝`jumpTo(row)`；行動網路省流量閘門開著時不載縮圖，只畫一格「圖」）。資料是點下去那一刻 `articleTools.mobileInfo()` 從頭讀累積頁算的（不跟側欄共用 `_lines` 快取：側欄的「有沒有變」判斷靠它）；出現條件 `mobileInfoAvailable()`＝手機＋pref＋上面「只在好讀文章裡」那組條件＋沒被故障停用。規則同側欄：一個 byte 都不送、不在安全模式名單。unit：`article_tools.test.js`「手機文章資訊」、`mobile_toolbar.test.jsx`「文章資訊」；offline e2e：`mobile_article_info.offline.spec.js`。
+
 ## 測試
 
 unit：`article_tools.test.js`（網址與縮圖候選、推文統計與排行、新格式推文、圖片上限、AID → 網址、何時出現、累積頁長大與換文章、選人、跳列、複製與失敗、收起記憶）、`article_tools_ui.test.jsx`（外殼照 state 畫、按鈕接到控制器、縮圖候選依序試、不搶焦點、滑鼠不外洩）。offline e2e：`article_tools.offline.spec.js`（stock-huang：1920×960 放得下且不蓋終端機、推文數等於素材的 golden、點一則推文捲到那一列且不送鍵、滾輪捲側欄不捲文章、收起與展開、窄視窗／原生 pmore／pref 關不出現）。

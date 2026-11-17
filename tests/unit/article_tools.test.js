@@ -439,3 +439,53 @@ describe("ArticleTools：操作（一個 byte 都不送）", () => {
     expect(store.has(ARTICLE_TOOLS_COLLAPSED_KEY)).toBe(false);
   });
 });
+
+// 手機「文章資訊」（P102）：手機沒有側欄，「更多」→「文章資訊」點開那一刻向控制器要資料。
+// 規則同側欄：只讀累積頁、不送鍵、原生 pmore／功能鍵模式不出現；pref mobileArticleInfo 可關。
+describe("ArticleTools：手機文章資訊（P102）", () => {
+  test("手機好讀文章 ⇒ 推噓統計、推文則數、推文最多的人、本篇圖片（同 analyzeArticle）", () => {
+    const { tools, scrolls } = makeCore({ mobile: true });
+    expect(tools.mobileInfoAvailable()).toBe(true);
+    const a = analyzeArticle(ARTICLE, {});
+    const info = tools.mobileInfo();
+    expect(info.stats).toEqual(a.stats);
+    expect(info.comments).toBe(a.comments.length);
+    expect(info.users).toEqual(a.users.slice(0, TOP_USERS));
+    expect(info.images.map((i) => [i.url, i.row])).toEqual(a.images.map((i) => [i.url, i.row]));
+    // 側欄的狀態不受影響（手機不畫側欄）。
+    expect(tools.state.visible).toBe(false);
+    expect(scrolls).toEqual([]);
+  });
+  test("沒 settle 過也算得出來（開面板時現讀累積頁）；累積頁長了就跟著變", () => {
+    const t = makeCore({ mobile: true, lines: HEADER.concat(["內文", push("推", "bob", "一")]) });
+    expect(t.tools.mobileInfo().comments).toBe(1);
+    t.setLines(HEADER.concat(["內文", push("推", "bob", "一"), push("噓", "carol", "二")]));
+    expect(t.tools.mobileInfo().stats).toEqual({ push: 1, boo: 1, arrow: 0, modern: 0 });
+  });
+  test.each([
+    ["桌機（有側欄）", { mobile: false }],
+    ["原生 pmore（好讀關）", { mobile: true, easy: false }],
+    ["好讀的功能鍵模式（交給原生）", { mobile: true, functionMode: true }],
+    ["累積頁是空的", { mobile: true, lines: [] }],
+  ])("%s ⇒ 沒有這一項", (_l, opts) => {
+    const { tools } = makeCore(opts);
+    expect(tools.mobileInfoAvailable()).toBe(false);
+    expect(tools.mobileInfo()).toBe(null);
+  });
+  test("不在文章（列表）⇒ 沒有這一項", () => {
+    const t = makeCore({ mobile: true });
+    t.setPageState(2);
+    expect(t.tools.mobileInfo()).toBe(null);
+  });
+  test("pref 關 ⇒ 沒有這一項；預設開、不在安全模式清單（不送鍵）", () => {
+    expect(DEFAULT_PREFS.mobileArticleInfo).toBe(true);
+    expect(NATIVE_SAFE_MODE_KEYS).not.toContain("mobileArticleInfo");
+    const { tools } = makeCore({ mobile: true });
+    prefOverride.mobileArticleInfo = false;
+    try {
+      expect(tools.mobileInfo()).toBe(null);
+    } finally {
+      delete prefOverride.mobileArticleInfo;
+    }
+  });
+});

@@ -3040,6 +3040,36 @@ export const en_US = {
   "articleFind_close": {
     "message": "Close find"
   },
+  "options_mobileArticleInfo": {
+    "message": "Article info on mobile"
+  },
+  "tooltip_mobileArticleInfo": {
+    "message": "Adds \"Article info\" to the \"More\" sheet of easy-reading articles on mobile: push / boo / → counts, top commenters (tap to show only theirs) and image thumbnails (tap to scroll there). Reads only what is already loaded; never sends any key."
+  },
+  "articleInfo_title": {
+    "message": "Article info"
+  },
+  "articleInfo_back": {
+    "message": "Back to \"More\""
+  },
+  "articleInfo_comments": {
+    "message": "{n} comments"
+  },
+  "articleInfo_noComments": {
+    "message": "No comments yet"
+  },
+  "articleInfo_users": {
+    "message": "Top commenters (tap to show only theirs)"
+  },
+  "articleInfo_images": {
+    "message": "{n} images (tap to scroll there)"
+  },
+  "articleInfo_tapToLoad": {
+    "message": "IMG"
+  },
+  "mobileMoreShort_articleInfo": {
+    "message": "Info"
+  },
   "mobileMoreShort_findText": {
     "message": "Find"
   },
