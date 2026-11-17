@@ -15,6 +15,7 @@ import { Event, setListenerErrorPolicy, runIsolated } from "../../src/js/event";
 import { WhatsNew } from "../../src/js/whats_new";
 import { ArticleNav } from "../../src/js/article_nav";
 import { BoardTabs, BOARD_TABS_KEY } from "../../src/js/board_tabs";
+import { SearchStatus } from "../../src/js/search_status";
 
 function makeBus(isolate) {
   function Bus() {}
@@ -298,6 +299,53 @@ describe("接線", () => {
     bus.enableAllListeners();
     bus.dispatchEvent({ type: "screenSettled" });
     expect(tabs.state.visible).toBe(true);
+  });
+
+  test("搜尋狀態列出錯停用 ⇒ 收起，resize／送出搜尋這些入口叫不回來；新連線恢復", () => {
+    prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    const bus = makeBus(true);
+    const ROWS = 24;
+    const screen = new Array(ROWS).fill("");
+    screen[0] = "【板主:test】                系列《Test》";
+    screen[1] = "[←]離開 [→]閱讀 [^P]發表文章";
+    screen[2] = "  編號    日 期 作  者       文  章  標  題";
+    screen[3] = "     1 + 9/01 someone      □ [閒聊] 測試";
+    screen[ROWS - 1] = " 系列文章  (y)回應(X)推文";
+    let boom = false;
+    bus.rows = ROWS;
+    bus.cols = 80;
+    bus.cur_x = 0;
+    bus.cur_y = 3;
+    bus.pageState = 2;
+    bus.isCursorOnInputField = () => false;
+    bus.getRowText = (r) => {
+      if (boom) throw new Error("boom");
+      return screen[r] || "";
+    };
+    const core = {
+      mobile: false,
+      searchInFlight: false,
+      buf: bus,
+      view: { mainDisplay: { getBoundingClientRect: () => ({ left: 100, right: 900, top: 0, width: 800 }) } },
+    };
+    vi.stubGlobal("window", { innerWidth: 1000, addEventListener: () => {} });
+    try {
+      const st = new SearchStatus(core);
+      bus.dispatchEvent({ type: "screenSettled" });
+      expect(st.state.visible).toBe(true);
+      boom = true;
+      bus.dispatchEvent({ type: "screenSettled" });
+      expect(st.state.visible).toBe(false);
+      boom = false;
+      st.refresh(); // resize／term_view 換卡片版面走的入口
+      st.beginSearch("title", "Re")(); // 搜尋彈窗送出、PTT 收下
+      expect(st.state.visible).toBe(false);
+      bus.enableAllListeners();
+      bus.dispatchEvent({ type: "screenSettled" });
+      expect(st.state.visible).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test("導覽軸登記了停用方式（收起軸）", () => {

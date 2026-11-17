@@ -105,10 +105,16 @@ export function SearchStatus(core) {
   this._memory = null;
   this._state = Object.assign({}, HIDDEN);
   const self = this;
+  this._onSettle = function() {
+    self.refresh();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self.refresh();
-    });
+    core.buf.addEventListener(
+      'screenSettled',
+      this._onSettle,
+      // 出錯 ⇒ 這次連線收起狀態列（原生標題列的「系列《板》」照樣在），不再接 settle（event.js 故障隔離）。
+      { feature: 'enableSearchStatus', disable: () => self._set({ visible: false }) }
+    );
   if (typeof window !== 'undefined' && window.addEventListener)
     window.addEventListener('resize', function() {
       self.refresh();
@@ -167,6 +173,10 @@ SearchStatus.prototype = {
   // 可能還是過渡幀，拿它推進記憶會把剛記下的條件當成「已經看過別的畫面」）。
   refresh: function(keepMemory) {
     const core = this._core;
+    // 出錯被停用（event.js 故障隔離）⇒ resize／換卡片版面／送出搜尋這些入口也不准叫回來，新連線才恢復。
+    const b = core.buf;
+    if (b && typeof b.isListenerDisabled === 'function' && b.isListenerDisabled(this._onSettle))
+      return this._set({ visible: false });
     const facts = this._facts();
     if (!facts) return this._set({ visible: false });
     const mode = searchListMode(facts.rowTexts);
