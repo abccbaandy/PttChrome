@@ -578,6 +578,13 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileListEndHint",
     },
     {
+      key: "mobileDigestStatus",
+      type: "check",
+      shownIf: "mobileLayoutOn",
+      titleKey: "options_mobileDigestStatus",
+      tooltipKey: "tooltip_mobileDigestStatus",
+    },
+    {
       key: "mobileFloatToolsInMore",
       type: "check",
       shownIf: "mobileLayoutOn",

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { IconSearch, IconPlus, IconX } from "@tabler/icons-react";
+import { IconSearch, IconPlus, IconX, IconStar } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import { SEARCH_STATUS_ID } from "../../js/search_status";
 import "./SearchStatus.css";
@@ -29,6 +29,40 @@ export function searchStatusLabel(conds) {
   return i18n("searchStatus_searching") + parts.join("・");
 }
 
+// 文摘標示（P97）：只在手機列表卡片出現（判斷在 search_status.statusKind），同一個位置與事件規則。
+// 「完整列表」＝替使用者按 Tab。
+const DigestStatus = ({ ctl, mobile }) => (
+  <div
+    id={SEARCH_STATUS_ID}
+    className={
+      "nomouse_command searchStatus searchStatus--digest" +
+      (mobile ? " searchStatus--mobile" : "")
+    }
+    data-search-status-kind="digest"
+    role="status"
+    onMouseDown={keepFocus}
+    onMouseUp={swallow}
+    onClick={swallow}
+    onContextMenu={swallow}
+  >
+    <IconStar size={15} stroke={2} aria-hidden="true" />
+    <span className="searchStatusLabel">{i18n("digestStatus_label")}</span>
+    <button
+      type="button"
+      className="searchStatusBtn"
+      data-search-status="leaveDigest"
+      title={i18n("digestStatus_leaveTip")}
+      onMouseDown={keepFocus}
+      onClick={(e) => {
+        e.stopPropagation();
+        ctl.leaveDigest();
+      }}
+    >
+      <span>{i18n("digestStatus_leave")}</span>
+    </button>
+  </div>
+);
+
 export const SearchStatus = ({ pttchrome }) => {
   const ctl = pttchrome && pttchrome.searchStatus;
   const [state, setState] = useState(() => (ctl ? ctl.state : null));
@@ -39,6 +73,8 @@ export const SearchStatus = ({ pttchrome }) => {
   }, [ctl]);
 
   if (!state || !state.visible) return null;
+  if (state.kind === "digest")
+    return <DigestStatus ctl={ctl} mobile={state.mobile} />;
   const label = searchStatusLabel(state.conds);
   return (
     <div

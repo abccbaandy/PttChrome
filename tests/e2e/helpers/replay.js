@@ -128,8 +128,12 @@ async function installReplay(page, opts = {}) {
   // opts.boardTabs 打開。
   if (!opts.boardTabs) off.enableBoardTabs = false;
   // 搜尋狀態列（pref enableSearchStatus）浮在搜尋結果的右上角、擋掉落在那裡的滑鼠 ⇒
-  // 預設關，只有 search_status.offline.spec.js 以 opts.searchStatus 打開。
-  if (!opts.searchStatus) off.enableSearchStatus = false;
+  // 預設關，只有 search_status.offline.spec.js 以 opts.searchStatus 打開。手機列表卡片的文摘標示
+  // （pref mobileDigestStatus，P97）是同一個浮層（#searchStatus），跟著同一個 opt。
+  if (!opts.searchStatus) {
+    off.enableSearchStatus = false;
+    off.mobileDigestStatus = false;
+  }
   // 開站回到上次的地方（pref resumeLastPlace）：同一個 context 裡重整／重開時會自己送鍵
   // 回上次的地方 ⇒ 預設關（行為由 unit reconnect_resume_open.test.js 守）。
   if (!opts.resumeLastPlace) off.resumeLastPlace = false;

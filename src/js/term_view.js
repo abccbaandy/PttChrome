@@ -2173,6 +2173,7 @@ TermView.prototype = {
     var s = surface === 'article' || surface === 'list' || surface === 'menu' ?
       surface : 'grid';
     var wasReflow = this.reflow;
+    var wasListCards = this.listCards;
     this.mobileSurface = s;
     this.reflow = s === 'article';
     this.listCards = s === 'list';
@@ -2190,6 +2191,10 @@ TermView.prototype = {
       this.mainDisplay.classList.toggle('mobileListCards', this.listCards);
       this.mainDisplay.classList.toggle('mobileMenu', this.menuCards);
     }
+    // 文摘標示（P97，search_status.statusKind）只在手機列表卡片上出現：列表好讀在原生操作做完後
+    // 才重新接手（不一定伴隨新的一幀 screenSettled）⇒ 卡片版面一換就重判一次。
+    if (wasListCards !== this.listCards && this.bbscore && this.bbscore.searchStatus)
+      this.bbscore.searchStatus.refresh(true);
   },
 
   // 這一幀要畫的畫面類型（不看是不是手機）：好讀長頁（!_gridRender）＝ article、

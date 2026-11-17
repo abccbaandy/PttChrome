@@ -350,6 +350,9 @@ export const DEFAULT_PREFS = {
   // 手機列表這頁不滿時，空白卡片不畫分隔線、第一張寫「沒有更多了」（P85，list_card.isBlankListRow）。
   // 只改畫法、不送鍵 ⇒ 不在安全模式清單。
   mobileListEndHint: true,
+  // 手機列表卡片停在文摘時浮一顆「☆ 文摘」膠囊＋「完整列表」鈕（P97，search_status.js）。
+  // 鈕＝使用者自己按的 Tab（走鍵盤同一條分派），認不出文摘就不出現 ⇒ 不在安全模式清單（同搜尋狀態列）。
+  mobileDigestStatus: true,
   // 手機好讀文章右下的「⋯」浮動工具收進「更多」面板的「這篇文章」區（P76，screen.sheetTools）。
   // 只改入口位置、工具本身照舊 ⇒ 不在安全模式清單。
   mobileFloatToolsInMore: true,
