@@ -47,7 +47,7 @@
 | 桌機：右鍵選單「存成離線文章」 | 同上，跟其他一般項目一樣只在 `normalEnabled` 時出現 |
 | 指令面板（F4） | 開面板時 `refresh()` 重讀清單，讀到了補進面板；列最近存的 5 篇（打字比對標題／看板／作者），Enter＝`open(key)`。好讀文章裡（`canSave`）多一個「存成離線文章」動作＝`saveCurrent()`（`command_palette.savedArticleItems`） |
 | 首頁儀表板「離線文章」 | `onChange`／`refresh()` 讀清單；點了 `open(key)` 在同一頁疊唯讀頁，✕ `remove(key)` |
-| 設定 → 設定備份「離線文章」 | 匯出＝`exportSavedArticles`：整篇紀錄原樣放進 `{ app, kind: 'savedArticles', schemaVersion, articles }`（`saved_article_codec.buildSavedExport`），0 篇不下載；匯入＝`importSavedArticles`：不是 JSON／不是這種匯出檔整份拒絕，個別對不上（身分、內文形狀、列數）跳過，同一篇覆蓋，放不下（200 篇）算 full、不刪舊的。設定頁拿不到 App ⇒ 直接開同一個 IndexedDB，首頁清單下次出現時重讀 |
+| 設定 → 設定備份「離線文章」 | 匯出＝`exportSavedArticles`：整篇紀錄原樣放進 `{ app, kind: 'savedArticles', schemaVersion, articles }`（`saved_article_codec.buildSavedExport`），0 篇不下載；匯入＝`importSavedArticles`：不是 JSON／不是這種匯出檔整份拒絕，個別對不上（身分、內文形狀、列數）跳過，同一篇覆蓋，放不下（200 篇）算 full、不刪舊的。設定頁拿不到 App ⇒ 直接開同一個 IndexedDB，首頁清單下次出現時重讀。匯入檔不可信：打開時 `decodeRows` 把連結欄位不是線上可能產生的網址種類（`fullurl` 限 ftp／http／https／telnet、`hyperlink` 限 http／https）清掉，不畫成 `<a href>` |
 | pref `enableSavedArticles`（預設開） | 關掉＝上面四個入口都不出現；已存的不刪，唯讀頁照常打開 |
 
 ## 測試
