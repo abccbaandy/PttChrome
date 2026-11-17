@@ -568,6 +568,7 @@ const PrefGroupHeading = ({ id }) => {
 //   - number → PrefNumber（說明當 description，下限取索引的 min）；
 //   - text   → PrefText（說明當 description）；
 //   - select → PrefSelect（選項由呼叫端以 selectOptions[key] 給，[value, i18n key] 常數）；
+//   - textarea → PrefTextarea（說明當 placeholder，最少列數取索引的 rows）；
 //   - sub: true 的連續幾格包進同一個 .PrefModal__SubOptions（縮排子選項）；
 //   - shownIf 條件不成立的整格不畫；條件表標 wrap 的，連續幾格包進一個 <div>（第十六步）；
 //   - 段落第一項（pref_groups.js 的 first）前面畫小標。
@@ -654,6 +655,18 @@ const PrefIndexRows = ({
             label={i18n(it.titleKey)}
             description={it.tooltipKey && i18n(it.tooltipKey)}
             options={selectOptions[it.key]}
+          />
+        );
+      case "textarea":
+        return (
+          <PrefTextarea
+            name={it.key}
+            value={valueOf(it.key)}
+            disabled={disabledOf(it)}
+            onChange={onTextInputChange}
+            label={i18n(it.titleKey)}
+            placeholder={it.tooltipKey && i18n(it.tooltipKey)}
+            minRows={it.rows}
           />
         );
       default:
@@ -1957,129 +1970,15 @@ export const PrefModal = ({
             </Tabs.Panel>
             <Tabs.Panel value="enhance">
               <PrefSection legendKey="options_enhance">
-                <PrefCheckRow
-                  name="showFloorNumbers"
+                {/* 圖片上傳的總開關 enableImageUpload 在這裡；憑證（token）在「本機設定」
+                  分頁 —— 它不上雲，與這個可同步的開關刻意分開放。 */}
+                <PrefIndexRows
+                  sectionKey="options_enhance"
                   values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="mergeSameAuthorComments"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckbox
-                  name="mergedCommentEachTime"
-                  checked={values.mergedCommentEachTime}
-                  onChange={onCheckboxChange}
-                  disabled={prefRequiresOff("mergedCommentEachTime", values)}
-                >
-                  {i18n("options_mergedCommentEachTime")}
-                </PrefCheckbox>
-                <PrefCheckRow
-                  name="commentBlockSpacing"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="showMergeCaptionButton"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="showLightsOnButton"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="highlightAuthorComments"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="highlightSelfComments"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="markNewComments"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="markJustPushed"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="listNewPushCount"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableAutoFixUrl"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableXMentionLink"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefCheckRow
-                  name="enableBareDomainLink"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                {/* 圖片上傳的總開關。憑證（token）在「本機設定」分頁 —— 它不上雲，
-                  與這個可同步的開關刻意分開放。 */}
-                <PrefCheckRow
-                  name="enableImageUpload"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefTextarea
-                  name="blacklist"
-                  value={values.blacklist}
-                  onChange={onTextInputChange}
-                  label={i18n("options_blacklist")}
-                  placeholder={i18n("tooltip_blacklist")}
-                  minRows={6}
-                />
-                <PrefTextarea
-                  name="titleBlacklist"
-                  value={values.titleBlacklist}
-                  onChange={onTextInputChange}
-                  label={i18n("options_title_blacklist")}
-                  placeholder={i18n("tooltip_title_blacklist")}
-                  minRows={6}
-                />
-                <PrefCheckRow
-                  name="enableFollowList"
-                  values={values}
-                  onChange={onCheckboxChange}
-                />
-                <PrefTextarea
-                  name="followList"
-                  value={values.followList}
-                  disabled={prefRequiresOff("followList", values)}
-                  onChange={onTextInputChange}
-                  label={i18n("options_followList")}
-                  placeholder={i18n("tooltip_followList")}
-                  minRows={3}
-                />
-                <PrefTextarea
-                  name="followTitleList"
-                  value={values.followTitleList}
-                  disabled={prefRequiresOff("followTitleList", values)}
-                  onChange={onTextInputChange}
-                  label={i18n("options_followTitleList")}
-                  placeholder={i18n("tooltip_followTitleList")}
-                  minRows={3}
-                />
-                <PrefCheckRow
-                  name="enableFollowOnly"
-                  values={values}
-                  onChange={onCheckboxChange}
+                  onCheckboxChange={onCheckboxChange}
+                  onHotkeyCapture={onHotkeyCapture}
+                  onNumberChange={onNumberChange}
+                  onTextInputChange={onTextInputChange}
                 />
               </PrefSection>
             </Tabs.Panel>

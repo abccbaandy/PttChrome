@@ -127,6 +127,13 @@ describe("設定索引的欄位型別", () => {
     expect(prefShown("fontFace", {})).toBe(true);
   });
 
+  test("rows（名單欄最少列數）只用在 textarea，而且每個 textarea 都有", () => {
+    for (const it of prefs) {
+      if (it.type === "textarea") expect(it.rows, it.key).toBeGreaterThan(0);
+      else expect(it.rows, it.key).toBeUndefined();
+    }
+  });
+
   test("type 跟預設值的型別對得上", () => {
     const expected = {
       check: ["boolean"],
