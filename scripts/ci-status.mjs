@@ -80,9 +80,19 @@ export function pickFailures(jobs) {
 // 測試還沒開始跑；scripts/run-integration.mjs 印的訊息）。認得出來才敢建議 rerun——
 // 其他失敗一律當真錯，不可自動重跑。測試內的 `waitForCloud timeout` 不算：暖機已在
 // 測試前付掉（run-integration.mjs#warmUp），再逾時就是真問題（docs/ci-troubleshooting.md）。
+//
+// android e2e：emulator-runner 的「Install Android SDK」由 sdkmanager 現抓的套件（模擬器本體、系統映像）
+// 偶爾是壞檔，模擬器根本沒開機（一條測試都沒跑）就紅。log 裡有跑過測試的結論（N passed／failed）就不算。
 export function isKnownFlaky(jobName, log) {
-  if (!/integration/i.test(String(jobName))) return false;
-  return /not ready in \d+ms|Emulator failed to become ready|warm-up failed/.test(String(log || ""));
+  const name = String(jobName);
+  const text = String(log || "");
+  if (/android/i.test(name))
+    return (
+      /error occurred while preparing SDK package|Error on ZipFile unknown archive/.test(text) &&
+      !/\d+ (?:passed|failed)\b/.test(text)
+    );
+  if (!/integration/i.test(name)) return false;
+  return /not ready in \d+ms|Emulator failed to become ready|warm-up failed/.test(text);
 }
 
 // GitHub runs API 的 `head_sha` 參數**只吃完整 40 字元 SHA**：短 sha 一律回空陣列，
@@ -212,14 +222,18 @@ async function api(p, { raw = false, method = "GET" } = {}) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 失敗 step 的 log 尾巴。整包 log 可能很大，只留最後 N 行——失敗訊息幾乎都在尾端。
-async function tailJobLog(repo, jobId, lines = 40) {
+// 失敗 job 的整包 log。印出來只留最後 N 行（tailLines）——失敗訊息幾乎都在尾端；判斷已知基礎設施
+// 問題要看整包（android 的 SDK 壞檔訊息在後面幾百行的 post 步驟之前）。
+async function fetchJobLog(repo, jobId) {
   try {
-    const text = await api(`/repos/${repo}/actions/jobs/${jobId}/logs`, { raw: true });
-    return text.split(/\r?\n/).slice(-lines).join("\n");
+    return await api(`/repos/${repo}/actions/jobs/${jobId}/logs`, { raw: true });
   } catch (e) {
     return `（抓不到 log：${e.message}）`;
   }
+}
+
+export function tailLines(text, lines = 40) {
+  return String(text || "").split(/\r?\n/).slice(-lines).join("\n");
 }
 
 async function main() {
@@ -358,15 +372,15 @@ async function main() {
     const { jobs } = await api(`/repos/${repo}/actions/runs/${r.id}/jobs`);
     for (const f of pickFailures(jobs)) {
       console.log(`\n--- ${r.name} / ${f.name} → ${f.conclusion}（step: ${f.step || "?"}）`);
-      const log = await tailJobLog(repo, f.id);
-      console.log(log);
+      const log = await fetchJobLog(repo, f.id);
+      console.log(tailLines(log));
       if (isKnownFlaky(f.name, log)) flakyJobs.push({ runId: r.id, name: f.name });
     }
   }
 
   if (flakyJobs.length) {
     console.log(
-      `\n偵測到已知基礎設施問題（integration emulator 沒起來，測試未執行）：${flakyJobs.map((f) => f.name).join(", ")}`,
+      `\n偵測到已知基礎設施問題（integration emulator 沒起來／android SDK 下載到壞檔，測試未執行）：${flakyJobs.map((f) => f.name).join(", ")}`,
     );
     if (flag("rerun-failed")) {
       const ids = [...new Set(flakyJobs.map((f) => f.runId))];
