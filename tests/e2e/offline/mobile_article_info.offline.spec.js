@@ -41,6 +41,8 @@ test.describe('手機：文章資訊', () => {
     await users.first().tap();
     await expect(page.locator(PANEL)).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => (window.__app.view.activeCommentFilter() || {}).userid)).toBe(top);
+    // 手機上看得到篩選橫幅，可以自己取消。
+    await expect(page.locator('#commentFilterBar')).toBeVisible();
     expect(await takeCapture(page)).toBe('');
   });
 

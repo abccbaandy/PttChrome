@@ -71,11 +71,12 @@ export const ArticleInfoSheet = ({
 }) => {
   const s = (info && info.stats) || { push: 0, boo: 0, arrow: 0, modern: 0 };
   const segs = ratioSegments(s);
-  const onUser = (user) => {
+  // 原 PO 傳 op＝true：篩選橫幅寫「只看原 PO」，同長按選單分開傳 op 的做法。
+  const onUser = (u) => {
     onClose();
     const view = pttchrome && pttchrome.view;
     if (view && typeof view.setCommentFilter === "function")
-      view.setCommentFilter(user, false);
+      view.setCommentFilter(u.user, !!u.op);
   };
   const onImage = (row) => {
     onClose();
@@ -145,7 +146,7 @@ export const ArticleInfoSheet = ({
                     className="nomouse_command articleInfoUser pttRipple"
                     data-info-user={u.user}
                     data-op={u.op ? "" : undefined}
-                    onClick={() => onUser(u.user)}
+                    onClick={() => onUser(u)}
                   >
                     <span className="articleInfoUserName">
                       {u.user}

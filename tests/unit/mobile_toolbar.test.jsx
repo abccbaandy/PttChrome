@@ -14,6 +14,7 @@ import { setupI18n, i18n } from "../../src/js/i18n";
 import { readValuesWithDefault, writeValues } from "../../src/js/pref_storage";
 import { promptChoicesFromBuf, promptPanelFromBuf } from "../../src/js/prompt_choices";
 import toolbarCss from "../../src/components/MobileToolbar/MobileToolbar.css?raw";
+import { setNetworkMetered } from "../../src/js/image_load_gate";
 
 beforeAll(() => {
   setupI18n();
@@ -1211,7 +1212,8 @@ describe("文章資訊（P102）", () => {
     expect(parseFloat(segs[2][1])).toBeCloseTo(200 / 6, 3);
     expect([...panel.querySelectorAll("[data-info-user]")].map((e) => e.dataset.infoUser)).toEqual(["bob", "alice"]);
     fireEvent.click(panel.querySelector('[data-info-user="alice"]'));
-    expect(core.view.setCommentFilter).toHaveBeenCalledWith("alice", false);
+    // alice 是原 PO ⇒ 篩選橫幅寫「只看原 PO」（同長按選單）。
+    expect(core.view.setCommentFilter).toHaveBeenCalledWith("alice", true);
     await vi.waitFor(() => expect(document.querySelector('[data-panel="articleInfo"]')).toBeNull());
     expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
   });
@@ -1231,5 +1233,42 @@ describe("文章資訊（P102）", () => {
     fireEvent.click(document.querySelector("[data-info-back]"));
     await vi.waitFor(() => expect(byKey("__select")).not.toBeNull());
     expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
+  });
+
+  test("行動網路省流量閘門開著 ⇒ 不載縮圖，只畫一格「圖」，點了照樣捲過去", async () => {
+    const core = withTools(true);
+    INFO.images[0].thumbs = ["https://i.imgur.com/abcm.jpg"];
+    setNetworkMetered(true);
+    try {
+      renderBar(core);
+      await openMore();
+      fireEvent.click(byKey("__articleInfo"));
+      await infoShown();
+      const cell = document.querySelector('[data-info-image="7"]');
+      expect(cell.querySelector("img")).toBeNull();
+      expect(cell.querySelector(".articleInfoThumbStub")).not.toBeNull();
+      fireEvent.click(cell);
+      expect(core.articleTools.jumpTo).toHaveBeenCalledWith(7);
+    } finally {
+      setNetworkMetered(false);
+      INFO.images[0].thumbs = [];
+    }
+  });
+
+  test("縮圖候選全部載入失敗 ⇒ 退成「圖」", async () => {
+    const core = withTools(true);
+    INFO.images[0].thumbs = ["https://i.imgur.com/abcm.jpg"];
+    try {
+      renderBar(core);
+      await openMore();
+      fireEvent.click(byKey("__articleInfo"));
+      await infoShown();
+      const cell = document.querySelector('[data-info-image="7"]');
+      fireEvent.error(cell.querySelector("img"));
+      await vi.waitFor(() => expect(cell.querySelector("img")).toBeNull());
+      expect(cell.querySelector(".articleInfoThumbStub")).not.toBeNull();
+    } finally {
+      INFO.images[0].thumbs = [];
+    }
   });
 });
