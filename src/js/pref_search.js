@@ -5,7 +5,7 @@
 //
 // **索引是設定頁勾選列的文字來源**：PrefModal.jsx 的 <PrefCheckRow name="…"> 直接
 // 用這裡的 titleKey／tooltipKey 畫標題與說明（prefItem）；「一般」分頁的四個分區（一般、右鍵選單與輸入、外觀、
-// 游標所在列）整區由這裡的順序與 type 畫出（<PrefIndexRows>，prefSectionRows）。其他分區的其餘欄位（數字、下拉、
+// 游標所在列）與「增強功能」分頁整區由這裡的順序與 type 畫出（<PrefIndexRows>，prefSectionRows）。其他分區的其餘欄位（數字、下拉、
 // 帶額外內容的勾選）仍是 hardcode JSX，這份 PREF_SEARCH_ITEMS 要手工跟著改。防線是
 // tests/unit/pref_search_index.test.js——它靜態掃 PrefModal.jsx 的每個
 // name="…" 與 <legend>，漏收就紅。新增設定項卻忘了進索引，是這個功能唯一
@@ -853,12 +853,14 @@ export const PREF_SEARCH_ITEMS = [
     {
       key: "blacklist",
       type: "textarea",
+      rows: 6,
       titleKey: "options_blacklist",
       tooltipKey: "tooltip_blacklist",
     },
     {
       key: "titleBlacklist",
       type: "textarea",
+      rows: 6,
       titleKey: "options_title_blacklist",
       tooltipKey: "tooltip_title_blacklist",
     },
@@ -871,6 +873,7 @@ export const PREF_SEARCH_ITEMS = [
     {
       key: "followList",
       type: "textarea",
+      rows: 3,
       requires: "enableFollowList",
       titleKey: "options_followList",
       tooltipKey: "tooltip_followList",
@@ -878,6 +881,7 @@ export const PREF_SEARCH_ITEMS = [
     {
       key: "followTitleList",
       type: "textarea",
+      rows: 3,
       requires: "enableFollowList",
       titleKey: "options_followTitleList",
       tooltipKey: "tooltip_followTitleList",
@@ -988,7 +992,8 @@ export const PREF_SEARCH_ITEMS = [
  * hintInBox：勾選列的說明畫在勾選框裡（Mantine Checkbox 的 description，緊貼標題下方），
  *   不是勾選列下面另一行灰字（PrefHint）。舊版設定頁兩種寫法並存，照原樣記下來，畫面不變。
  * shownIf：PREF_SHOWN_IF 的 id，條件不成立時設定頁整格不畫。
- * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean, shownIf?: string }} PrefIndexItem
+ * rows：名單欄（textarea）最少幾列高。
+ * @typedef {{ key: string, type?: PrefFieldType, sub?: boolean, titleKey: string, tooltipKey?: string, requires?: string, min?: number, hintInBox?: boolean, shownIf?: string, rows?: number }} PrefIndexItem
  */
 
 // key → 索引項（只收 kind:"pref"）。設定頁的 PrefCheckRow 從這裡拿標題與說明的文字鍵

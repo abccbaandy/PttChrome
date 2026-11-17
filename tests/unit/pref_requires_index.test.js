@@ -3,7 +3,12 @@
 // 其他欄位走 prefRequiresOff）。行為表在 pref_modal_requires.test.jsx。
 import fs from "node:fs";
 import path from "node:path";
-import { PREF_SEARCH_ITEMS, prefRequiresChain, prefRequiresOff } from "../../src/js/pref_search";
+import {
+  PREF_SEARCH_ITEMS,
+  prefRequiresChain,
+  prefRequiresOff,
+  prefSectionItems,
+} from "../../src/js/pref_search";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 
 const prefs = PREF_SEARCH_ITEMS.filter((it) => it.kind === "pref");
@@ -33,8 +38,13 @@ describe("設定索引的前置開關", () => {
       "utf8",
     );
     const rows = [...src.matchAll(/<PrefCheckRow\b([\s\S]*?)\/>/g)].map((m) => m[1]);
-    // 分區陸續改由索引畫出（PrefIndexRows），手寫的勾選列會越來越少；只擋「掃描本身壞掉、一列都沒抓到」。
-    expect(rows.length).toBeGreaterThan(10);
+    // 分區陸續改由索引畫出（PrefIndexRows），手寫的勾選列會越來越少；門檻算「手寫＋由索引畫出」，
+    // 只擋「掃描本身壞掉、一列都沒抓到」。
+    const fromIndex = [...src.matchAll(/<PrefIndexRows\s+sectionKey="([^"]+)"/g)].reduce(
+      (n, m) => n + prefSectionItems(m[1]).filter((it) => it.type === "check").length,
+      0,
+    );
+    expect(rows.length + fromIndex).toBeGreaterThan(10);
     for (const body of rows) {
       const name = /name="(\w+)"/.exec(body)?.[1];
       expect(body, name).not.toMatch(/\bchecked=/);
