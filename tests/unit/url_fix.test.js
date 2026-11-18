@@ -52,6 +52,23 @@ describe('detectFixableUrls — path 後單一空白 + 純數字尾段（X statu
   test('雙空白 + 數字 → 不併（真正的字距）', () => {
     expect(detectFixableUrls('看 https://a.com/  123 這個')).toEqual([]);
   });
+
+  // 數字尾段只接在「/」後面（X 的 status/ 後面才是 ID）。路徑中段後面跟空白＋數字是散文：
+  // 「網址 3:20 開始」「看板 5 樓」，接起來會在原本已經連好的網址下面多畫一條錯的 ↳ 連結。
+  test.each([
+    'https://www.youtube.com/watch?v=abc 3:20 開始',
+    'https://www.youtube.com/watch?v=abc 320',
+    'https://www.ptt.cc/bbs/Gossiping/index.html 5 樓',
+  ])('路徑不是以 / 結尾 ⇒ 不併數字：%s', (text) => {
+    expect(detectFixableUrls(text)).toEqual([]);
+  });
+
+  test.each([
+    ['見 example.com/news 2024年的報導', 'https://example.com/news'],
+    ['網址 ptt.cc/bbs/Gossiping 5 樓', 'https://ptt.cc/bbs/Gossiping'],
+  ])('沒 scheme 的深連結照修，但不併後面的數字：%s', (text, fixed) => {
+    expect(fixedOf(text)).toEqual([fixed]);
+  });
 });
 
 describe('detectFixableUrls — false-positive guards', () => {

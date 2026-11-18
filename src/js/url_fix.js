@@ -80,8 +80,10 @@ const CANDIDATE_RE = new RegExp(
     '\\s*\\.\\s*(?:' + TLD_ALT + ')\\b' + // final dot + TLD
     '(?::\\d+)?' + // optional port
     // path + opt. broken ext, OR opt. single space + digits-only tail
-    // ("https://x.com/i/status/ 1933827730166178100" — the X status-ID pattern)
-    '(?:[ ]?/(?:' + PATH + ')*(?:[ ]+\\.?[ ]*(?:' + EXT + ')\\b|[ ]\\d+\\b)?)?',
+    // ("https://x.com/i/status/ 1933827730166178100" — the X status-ID pattern).
+    // 數字尾段只接在「/」後面（lookbehind）：路徑中段後面的「 3:20 開始」「 5 樓」是散文，
+    // 接起來會在主偵測器已連好的網址下面多畫一條錯的 ↳ 連結（watch?v=abc3）。
+    '(?:[ ]?/(?:' + PATH + ')*(?:[ ]+\\.?[ ]*(?:' + EXT + ')\\b|(?<=/)[ ]\\d+\\b)?)?',
   'ig'
 );
 
