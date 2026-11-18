@@ -4,6 +4,7 @@ import {
   groupImageCaptionBlocks,
   maxCaptionCols,
 } from "../../src/js/image_caption_group";
+import { textCellWidth } from "../../src/js/string_util";
 
 const IMG1 = "https://i.imgur.com/aaa111.jpg";
 const IMG2 = "https://i.imgur.com/bbb222.jpg";
@@ -147,6 +148,13 @@ describe("groupImageCaptionBlocks", () => {
     const blocks = groupImageCaptionBlocks(rows);
     expect(maxCaptionCols(rows, blocks)).toBe(8);
     expect(maxCaptionCols(rows, [])).toBe(0);
+  });
+
+  test("maxCaptionCols 照畫面格寬算（textCellWidth）：emoji 一個字 2 格，不是兩個 surrogate 各 2 格", () => {
+    const rows = [IMG1, "😀😀😀😀"];
+    const blocks = groupImageCaptionBlocks(rows);
+    expect(maxCaptionCols(rows, blocks)).toBe(textCellWidth("😀😀😀😀"));
+    expect(maxCaptionCols(rows, blocks)).toBe(8);
   });
 
   test("無圖文章 → 空陣列；null/undefined 列容錯", () => {

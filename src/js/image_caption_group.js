@@ -28,6 +28,7 @@
 // 而非隱藏刪除，內容零遺失，再按一次按鈕即還原。
 import { parseComment } from "./comment_parse";
 import { isImageLikeUrl } from "./image_url_detect";
+import { textCellWidth } from "./string_util";
 
 // export 供 caption_ai_logic.js 重用（AI 候選段掃描要用完全相同的「圖行 / 中性
 // sole-URL 行 / header」判準，兩邊各養一套必漂移）。行為不變。
@@ -141,18 +142,14 @@ export function groupImageCaptionBlocks(rowTexts, direction = "imageFirst") {
   return blocks;
 }
 
-// 說明段的「顯示欄寬」最大值（半形=1、全形=2 欄；行尾空白不計），供 Screen
+// 說明段的「顯示欄寬」最大值（照畫面格寬 textCellWidth；行尾空白不計），供 Screen
 // 動態決定右欄寬度（右欄不換行，寬度跟著最寬的翻譯行走）。回傳 0 表無說明段。
 export function maxCaptionCols(rowTexts, blocks) {
   let max = 0;
   for (let k = 0; k < blocks.length; ++k) {
     const b = blocks[k];
     for (let r = b.captionStart; r <= b.captionEnd; ++r) {
-      const text = (rowTexts[r] || "").replace(/\s+$/, "");
-      let cols = 0;
-      for (let i = 0; i < text.length; ++i) {
-        cols += text.charCodeAt(i) > 0xff ? 2 : 1;
-      }
+      const cols = textCellWidth((rowTexts[r] || "").replace(/\s+$/, ""));
       if (cols > max) max = cols;
     }
   }
