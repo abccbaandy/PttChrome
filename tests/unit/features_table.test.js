@@ -7,6 +7,7 @@ import path from "node:path";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import {
   ALL_FEATURE_TABLES,
+  HOME_FEATURES,
   LATE_PERIPHERAL_FEATURES,
   PERIPHERAL_FEATURES,
   createFeatures,
@@ -31,22 +32,35 @@ describe("週邊功能宣告表", () => {
     },
   );
 
-  test("App 建構子不再自己 new 表裡的功能、兩段表照順序建", () => {
+  test("App 建構子不再自己 new 表裡的功能、三段表照順序建", () => {
     const app = read("src/js/pttchrome.jsx");
+    const home = app.indexOf("createFeatures(this, HOME_FEATURES)");
     const first = app.indexOf("createFeatures(this, PERIPHERAL_FEATURES)");
     const late = app.indexOf("createFeatures(this, LATE_PERIPHERAL_FEATURES)");
-    expect(first).toBeGreaterThan(0);
+    expect(home).toBeGreaterThan(0);
+    expect(first).toBeGreaterThan(home);
     expect(late).toBeGreaterThan(first);
     for (const f of ALL) {
       expect(app).not.toMatch(new RegExp(`this\\.${f.name}\\s*=\\s*new\\b`));
     }
   });
 
-  test("after 只指向排在前面的功能（同表前面，或前一張表）", () => {
+  test("after 只指向排在前面的功能（同表前面、前面的表，或那段表之前建構子已經 new 的核心流程）", () => {
+    const app = read("src/js/pttchrome.jsx");
     const seen = new Set();
-    for (const table of [PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES]) {
+    const tables = [
+      ["HOME_FEATURES", HOME_FEATURES],
+      ["PERIPHERAL_FEATURES", PERIPHERAL_FEATURES],
+      ["LATE_PERIPHERAL_FEATURES", LATE_PERIPHERAL_FEATURES],
+    ];
+    for (const [label, table] of tables) {
+      const at = app.indexOf(`createFeatures(this, ${label})`);
       for (const f of table) {
-        for (const dep of f.after || []) expect(seen.has(dep), `${f.name} after ${dep}`).toBe(true);
+        for (const dep of f.after || []) {
+          const core = app.search(new RegExp(`this\\.${dep}\\s*=\\s*new\\b`));
+          const ok = seen.has(dep) || (core > 0 && core < at);
+          expect(ok, `${f.name} after ${dep}`).toBe(true);
+        }
         seen.add(f.name);
       }
     }

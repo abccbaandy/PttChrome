@@ -74,9 +74,9 @@ import { navKeyAllowed, navKeyBlockReason } from './nav_key_gate';
 import { isHorizontalWheel } from './swipe_gesture';
 import { isPreviewTarget } from './preview_targets';
 import { ImageUploadController, isUploadLayerTarget } from './image_upload_controller';
-import { HomeDashboard, isHomeDashboardTarget } from './home_dashboard';
-import { WhatsNew, isWhatsNewTarget } from './whats_new';
-import { RecentArticles, isRecentResumeTarget } from './recent_articles';
+import { isHomeDashboardTarget } from './home_dashboard';
+import { isWhatsNewTarget } from './whats_new';
+import { isRecentResumeTarget } from './recent_articles';
 import { SavedArticles } from './saved_articles';
 import { isCommentFilterBarTarget } from './comment_filter';
 import { isMessageInboxTarget } from './message_inbox';
@@ -93,7 +93,7 @@ import { isSearchStatusTarget } from './search_status';
 import { isFollowOnlyTarget } from './follow_only';
 import { isListFastScrollTarget } from './list_fast_scroll';
 import { isEditorInputTarget } from './editor_input';
-import { createFeatures, PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES } from './features';
+import { createFeatures, HOME_FEATURES, PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES } from './features';
 import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { essenceCursorRowOk } from './essence_list';
 import { classRootCursorRowOk, parseClassRootRow } from './class_root';
@@ -323,18 +323,9 @@ export const App = function() {
 
   this.inputArea = document.getElementById('t');
   this.BBSWin = document.getElementById('BBSWindow');
-  // 首頁儀表板（主功能表上的我的最愛／最近看板面板，home_dashboard.js）。要在 inputArea 之後
-  // （聽 #t 的按鍵收起面板），screenSettled 監聽也排在 deep link／斷線回到原處之後。
-  this.homeDashboard = new HomeDashboard(this);
-  // 更新後的新功能介紹（首頁儀表板最上面／右下角小卡，whats_new.js）。
-  this.whatsNew = new WhatsNew(this);
-  // 最近讀過的文章＋稍後再讀（儀表板／指令面板／右鍵選單共用的清單，recent_articles.js）。
-  // 稍後閱讀跨裝置同步（read_later_sync.js）：pref_sync 的 snapshot 交雲端清單過來、變動由它寫回。
-  this.recentArticles = new RecentArticles(this, undefined, {
-    signedIn: () => !!prefSync.getUser(),
-    upload: (plan) => prefSync.saveReadLaterEntries(plan),
-    subscribe: (cb) => prefSync.registerOnCloudReadLater(cb),
-  });
+  // 首頁儀表板（after deep link／斷線回原處）／新功能介紹／最近讀過：宣告表第一段（features.js）。
+  // 要在 inputArea 之後（儀表板聽 #t 的按鍵收起面板）。
+  createFeatures(this, HOME_FEATURES);
   // 存到本機（P64，saved_articles.js）：存好讀累積頁到 IndexedDB、在唯讀頁打開。
   // 收藏清單跟著偏好同步（P70）：pref_sync 的 snapshot 交雲端清單過來、變動由它寫回。
   this.savedArticles = new SavedArticles(this);
