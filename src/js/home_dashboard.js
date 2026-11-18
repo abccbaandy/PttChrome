@@ -337,6 +337,8 @@ export function HomeDashboard(core) {
   this._autoTimer = null;
   // 閱讀紀錄交回的待還原錨（面板下一次畫出來時套用，見 applyPendingViewport）。
   this._pendingViewport = null;
+  // 上一次記進最近看板的板：停在同一個板（每一幀都 settle）不再記；離開文章列表就清掉。
+  this._recentNoted = null;
   const fav = readJson('homeFavorites');
   const recent = readJson('homeRecentBoards');
   this._state = {
@@ -448,9 +450,14 @@ HomeDashboard.prototype = {
     ends[rows - 1] = buf.getRowText(rows - 1, 0, buf.cols);
     const board = articleListBoard(ends, rows);
     if (board) {
-      this._noteRecent(board);
+      // 只在「到了」這個板時記一次：兩個分頁停在不同板一直 settle 時，每幀都推到最前會兩邊輪流改順序、
+      // 每一幀都寫 storage。
+      if (this._recentNoted !== board) {
+        this._recentNoted = board;
+        this._noteRecent(board);
+      }
       this._noteBoardUnread(board);
-    }
+    } else this._recentNoted = null;
     // 抓最愛的途中畫面會離開主功能表：面板留著顯示「更新中」，判定交給那條序列。
     if (this._state.fetching) return;
     if (this._state.boards && rowHasTitle(row0, BOARD_LIST)) this._noteFavPage();
