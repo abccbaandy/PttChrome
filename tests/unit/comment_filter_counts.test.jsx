@@ -52,6 +52,20 @@ describe("FilterChipCounter", () => {
     expect(c.counts(null, null).all).toBe(0);
   });
 
+  test("內文貼了別篇的結尾（自帶發信站＋推文）⇒ 只數本篇真正的推文區", () => {
+    const c = new FilterChipCounter(null);
+    feedAll(c, [
+      HEAD,
+      "※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 9.9.9.9",
+      ts("推 pasted: 別篇的推文"),
+      ts("噓 pasted: 別篇的噓"),
+      "我自己的內文",
+      ...BODY.slice(3),
+    ]);
+    feedAll(c, [ts("推 aa: 1")]);
+    expect(c.counts(null, "pasted")).toEqual({ all: 1, push: 1, boo: 0, op: 0, user: 0 });
+  });
+
   test("chipCountText：載完「12」、沒載完「12+」", () => {
     expect(chipCountText(12, true)).toBe("12");
     expect(chipCountText(12, false)).toBe("12+");

@@ -49,7 +49,10 @@ export class CommentScanner {
     const row = this.scanned++;
     const c = parseComment(text);
     if (!c) {
-      this.counter.nonComment(text);
+      if (this.counter.nonComment(text)) {
+        this.rows = [];
+        this.score = 0;
+      }
       return;
     }
     const f = this.counter.next(c.type);

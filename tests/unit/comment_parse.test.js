@@ -730,6 +730,27 @@ describe("FloorCounter", () => {
       expect(c.next("推").seq).toBe(3);
     });
 
+    // 內文整段貼了別篇的結尾（含它的 ※ 發信站 與推文），後面才是本篇自己的 ※ 發信站。
+    // PTT 自己（mbbsd/pmore.c 的 comments_start）以檔案裡**最後一個** ※ 列之後才算推文區；
+    // 發信站／文章網址只在發文時寫一次，所以較早出現的那組一定是貼來的 ⇒ 每遇到一次就從 1 重數。
+    test("後面又出現發信站／文章網址列 ⇒ 從 1 重數（貼來的別篇推文不算本篇樓層）", () => {
+      const c = new FloorCounter();
+      c.nonComment("※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4 (臺灣)"); // 貼來的
+      c.next("推");
+      c.next("推");
+      c.nonComment("我自己的內文");
+      c.nonComment("※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 5.6.7.8 (臺灣)"); // 本篇的
+      c.nonComment("※ 文章網址: https://www.ptt.cc/bbs/Test/M.2.A.2.html");
+      expect(c.next("噓")).toEqual({ seq: 1, sub: 1, type: "噓" });
+    });
+
+    test("meta 列的回傳值：是發信站／文章網址列才回 true（給累加別的數字的呼叫端歸零用）", () => {
+      const c = new FloorCounter();
+      expect(c.nonComment("內文")).toBe(false);
+      expect(c.nonComment("※ 發信站: 批踢踢實業坊(ptt.cc)")).toBe(true);
+      expect(c.nonComment("※ 編輯: someone (1.2.3.4 臺灣), 06/06/2026 16:13:24")).toBe(false);
+    });
+
     test("no-meta article: trailing consecutive comments still count from 1", () => {
       // Test #1g9GI-Zh case — no 發信站/文章網址 lines at all. The reset only
       // fires on non-comment rows, so the trailing comment block accumulates.
