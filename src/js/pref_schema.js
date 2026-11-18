@@ -879,6 +879,7 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_mergedCommentEachTime",
     },
     { key: "commentBlockSpacing", type: "check", titleKey: "options_commentBlockSpacing" },
+    { key: "enableQuoteCollapse", type: "check", titleKey: "options_enableQuoteCollapse" },
     {
       key: "showMergeCaptionButton",
       type: "check",

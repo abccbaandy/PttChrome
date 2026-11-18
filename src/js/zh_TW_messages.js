@@ -904,6 +904,12 @@
   "options_mergedCommentEachTime": {
     "message": "合併推文標出每則時間"
   },
+  "options_enableQuoteCollapse": {
+    "message": "把回文的長引言收起來 (連續 5 行以上只留前 2 行，點一下展開；僅好讀模式)"
+  },
+  "quoteCollapse_expand": {
+    "message": "展開引言（還有 {n} 行）"
+  },
   "options_dimReadArticles": {
     "message": "已讀文章低亮顯示"
   },

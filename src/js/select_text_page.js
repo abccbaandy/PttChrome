@@ -20,6 +20,7 @@ import { readEffectivePrefs } from './pref_storage';
 
 // 這一列在畫面上是不是被藏起來（render/screen.js 的 dropHidden 規則：hidden 且不是篩選展開的列）。
 export function annotationHidesRow(ann) {
+  // 長引言收起（P106）的列不標 hidden（還在、只是不顯示）⇒ 這裡照樣列出，選字頁拿得到完整原文。
   return !!(ann && ann.hidden && !ann.filterShown);
 }
 

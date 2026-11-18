@@ -2455,6 +2455,10 @@ App.prototype.onPrefChange = function(name, value) {
       this.view.mergeSameAuthorComments = value;
       this.view.redraw(true);
       break;
+    case 'enableQuoteCollapse':
+      this.view.enableQuoteCollapse = value;
+      this.view.redraw(true);
+      break;
     case 'mergedCommentEachTime':
       this.view.mergedCommentEachTime = value;
       this.view.redraw(true);

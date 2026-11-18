@@ -51,6 +51,7 @@ import { isBoardBulletMark, isBoardUnreadMark } from "./board_list_parse";
 import { mergeRunKey } from "./screen_annotate_cache";
 import { detectHiddenRow } from "./hidden_text";
 import { applyJustPushedMark } from "./just_pushed";
+import { applyQuoteCollapse, isQuoteLine } from "./quote_collapse";
 
 // PttChrome pageState (see term_buf.js#setPageState): 2 = board list, 3 = reading.
 export const PAGE_LIST = 2;
@@ -317,6 +318,8 @@ export function detectRowExtras(chars, text, ann, opts) {
 //           ⇒ 那一串的第一列（groupSameAuthorRuns 的規則）。
 //   wrap  ：內文跨行網址鏈——最後一列寫滿 maxcol 時鏈還開著（body_wrap.bodyWrapFrontier）。
 //   blank ：手機文末補白——最後一個非空白列之後。
+//   quote ：長引言收起（P106）——結尾那一段連續引言下一頁可能再變長（收起幾行、要不要收都會變）
+//           ⇒ 那一段的第一列。
 // 圖文合併塊不在這裡：它由呼叫端的 captionSettled 把關（掃描停點在前沿之前才放行）。
 // 樓層（FloorCounter）、hidden text、steamgifts 是只往前推的累加，與前沿無關。
 // 反向讀取的接合點標記不適用（反向期間不算前沿）。
@@ -352,6 +355,11 @@ function annotationFrontier(lines, texts, result, opts) {
     // 展開過的串（filterShown）也是同一串。
     const a = (row) => result[row] && (result[row].hidden || result[row].filterShown);
     while (r > 0 && (a(r - 1) || !texts[r - 1].trim())) --r;
+    f = Math.min(f, r);
+  }
+  if (opts.quote) {
+    let r = n;
+    while (r > 0 && isQuoteLine(texts[r - 1])) --r;
     f = Math.min(f, r);
   }
   if (opts.blank) {
@@ -992,6 +1000,11 @@ export function computeAnnotations(
     applyNewCommentsMark(result, enhance);
     applyJustPushedMark(result, texts, enhance);
     if (easyReading && commentFilter) applyCommentFilterSkips(result, commentFilterExpanded, texts);
+    // 長引言收起（P106）：跨列 ⇒ 只在 PAGE_READING（annotationsAreRowIndependent 本來就排除）；
+    // 排在推文篩選之後（篩選的串認 hidden，引言收起不標 hidden、也不碰已藏的列，兩者互不影響）。
+    // 反向讀取接合中不收（提案：一律整段展開；接合完 J 消失 ⇒ 快取鍵變 ⇒ 全量重算時才收）。
+    if (easyReading && enhance.quoteCollapse && J == null)
+      applyQuoteCollapse(result, enhance.quoteExpanded, texts);
     // ---- 給下一幀的前沿（見上方 fastFrom）----
     // 反向期間不算（tail 之後還會往 J 插入，前沿的前提「只往後接」不成立）。
     let frontier =
@@ -1001,6 +1014,7 @@ export function computeAnnotations(
             wrap: !!autoFixUrl,
             blank: !!enhance.commentCards,
             filter: !!(easyReading && commentFilter),
+            quote: !!(easyReading && enhance.quoteCollapse),
           })
         : null;
     // 前沿只會往後走（推導見 annotationFrontier）。萬一沒有，下一幀走全量——寧可慢

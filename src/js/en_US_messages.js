@@ -902,6 +902,12 @@ export const en_US = {
   "options_mergeSameAuthorComments": {
     "message": "Merge consecutive comments by the same author into one paragraph (easy reading only; shows time and floor range)"
   },
+  "options_enableQuoteCollapse": {
+    "message": "Collapse long quotes in easy reading (5+ quoted lines keep the first 2; tap to expand)"
+  },
+  "quoteCollapse_expand": {
+    "message": "Show quote ({n} more lines)"
+  },
   "options_mergedCommentEachTime": {
     "message": "Show each comment's time in merged comments"
   },

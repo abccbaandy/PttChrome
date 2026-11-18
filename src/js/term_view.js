@@ -382,6 +382,11 @@ export function TermView() {
   this._emittedCommentFilter = null;
   // 引用穩定（render 層的細線直接掛它）。
   this._onCommentFilterToggle = this.toggleCommentFilterSkip.bind(this);
+  // 好讀文章把長引言收起來（P106，js/quote_collapse.js、render/quote_fold.js）。pref enableQuoteCollapse；
+  // _quoteExpanded＝這一篇展開過的段落 key（換文就清）。只改顯示、不送鍵。
+  this.enableQuoteCollapse = true;
+  this._quoteExpanded = [];
+  this._onQuoteExpand = this.expandQuote.bind(this);
   this.showFloorNumbers = true;
   // 好讀「連續同作者推文合併」：render 層合併（Screen#computeAnnotations +
   // comment_merge.js），僅好讀文章頁生效。Set via App.onPrefChange.
@@ -1312,6 +1317,24 @@ TermView.prototype = {
     return true;
   },
 
+  // 「展開引言」（P106）：key＝那一段的 quoteKey；el＝被點的鈕，或被瀏覽器找字／手機找字／複製打開的
+  // 那一列（.quoteFold）。一個 byte 都不送。重畫前後讓 el 那一列留在同一個螢幕位置：點鈕＝露出來的第 2 行，
+  // 找字＝命中的那一列（不然上面插回的引言會把命中處推出畫面）。el 已經不在畫面上（延後展開期間換了文章）⇒ 不理。
+  expandQuote: function(key, el) {
+    if (typeof key !== 'string' || this._quoteExpanded.indexOf(key) >= 0) return false;
+    if (el && el.isConnected === false) return false;
+    var head = el && el.parentNode && el.parentNode.__quoteRow;
+    if (head == null && el && typeof el.querySelector === 'function') {
+      var rowEl = el.querySelector('[type="bbsrow"]');
+      if (rowEl) head = Number(rowEl.getAttribute('srow'));
+    }
+    var anchor = head != null && !isNaN(head) ? this._filterAnchor(head) : null;
+    this._quoteExpanded = this._quoteExpanded.concat([key]);
+    this.redraw(true);
+    this._restoreFilterAnchor(anchor);
+    return true;
+  },
+
   // { row, offset }：該列節點距捲動容器可視頂端的距離（量不到 null）。
   _filterAnchor: function(row) {
     var disp = this.mainDisplay, mc = this.mainContainer;
@@ -1485,6 +1508,10 @@ TermView.prototype = {
           // 「略過 N 則」展開了哪幾串（P38，進 annotationsKey）；點細線的入口給 render 層。
           commentFilterExpanded: this.activeCommentFilter() ? this._commentFilter.expanded : null,
           onCommentFilterToggle: this._onCommentFilterToggle,
+          // 長引言收起（P106，進 annotationsKey）；展開入口給 render 層。
+          quoteCollapse: !!this.enableQuoteCollapse,
+          quoteExpanded: this._quoteExpanded,
+          onQuoteExpand: this._onQuoteExpand,
           showFloorNumbers: this.showFloorNumbers,
           mergeSameAuthorComments: this.mergeSameAuthorComments,
           mergedCommentEachTime: this.mergedCommentEachTime,
@@ -3577,6 +3604,8 @@ TermView.prototype = {
         this.buf.easyReadingPendingReset = false;
       // 同 redraw 的清空點：只設欄位，由隨後的 render 同步給 ScreenController。
       this._selectedPusher = null;
+      // 長引言展開狀態也只活在那一篇。
+      if (this._quoteExpanded && this._quoteExpanded.length) this._quoteExpanded = [];
       // 推文篩選只活在那一篇（換文、重進同一篇都清掉；這一幀的 render 已經不帶它）。
       if (this._commentFilter) {
         this._commentFilter = null;

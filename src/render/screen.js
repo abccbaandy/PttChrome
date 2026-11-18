@@ -84,6 +84,7 @@ import {
 import { resetImageUnlocks } from "../js/image_load_gate";
 import { computeAnchoredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import { ChunkLayer } from "./screen_chunk";
+import { buildQuoteFold, buildQuoteSkipHead, installQuoteCopy } from "./quote_fold";
 import { applyHangIndent, hangIndentOf } from "../js/hang_indent";
 import { imageSizeMode, stepImageZoom } from "../js/image_zoom";
 import { setFullResWanted } from "../js/image_fit";
@@ -188,6 +189,8 @@ export class ScreenController {
     this.screenRoot = screenRoot;
     this.container = el("div", { id: "mainContainer" });
     screenRoot.appendChild(this.container);
+    // 長引言收起（P106）：系統複製碰到收起段時補回全文（只裝一次）。
+    installQuoteCopy(document);
 
     // 最後一次 update() 的 props（互動 state 改變時據此重畫）。
     this.props = null;
@@ -1108,6 +1111,31 @@ export class ScreenController {
       return ann.filterSkip
         ? buildFilterSkipNode(row, ann.filterSkip, ann, onToggle)
         : null;
+    // 長引言收起（P106，render/quote_fold.js）：收起的列照常畫、包進 until-found；露出來的最後一行
+    // 下面接「展開引言」鈕。借用同一份 annotations 畫列本身（暫換這一列的標註、畫完換回，同 filterExpanded）。
+    if (dropHidden && ann && (ann.quoteHidden || ann.quoteSkip)) {
+      const onQuote = enhance && enhance.onQuoteExpand;
+      let inner;
+      annotations[row] = { ...ann, quoteHidden: undefined, quoteSkip: undefined };
+      try {
+        inner = this._buildRowNode(row, lines, annotations);
+      } finally {
+        annotations[row] = ann;
+      }
+      if (ann.quoteHidden) {
+        if (!inner) return null;
+        const fold = buildQuoteFold(inner, ann.quoteKey, onQuote);
+        fold.__slots = inner.__slots;
+        inner.__slots = null;
+        return fold;
+      }
+      const head = buildQuoteSkipHead(inner, row, ann.quoteSkip, ann.quoteKey, onQuote);
+      if (inner) {
+        head.__slots = inner.__slots;
+        inner.__slots = null;
+      }
+      return head;
+    }
     // 說明行已併入所屬圖行的右欄；連續同作者推文的後續列已併進 run 首列。
     if (ann && ann.mergedInto !== undefined) return null;
     if (ann && ann.mergedIntoComment !== undefined) return null;

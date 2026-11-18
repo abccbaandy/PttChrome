@@ -54,7 +54,7 @@ function wrappedUrl(r, k) {
   return out;
 }
 
-function makeArticle(seed, total, fullPush = false) {
+function makeArticle(seed, total, fullPush = false, quotes = false) {
   const r = rng(seed);
   const rows = [
     pad80("作者  poster (暱稱) 看板  Test"),
@@ -70,6 +70,11 @@ function makeArticle(seed, total, fullPush = false) {
   }
   rows.push(...wrappedUrl(r, 2));
   rows.push(pad80("看看 example.com 這個站"));
+  // 長引言（P106）：只在 quotes 組出現（不多抽亂數，其他組的種子序列不變）。
+  if (quotes) {
+    rows.push(pad80("※ 引述《someone (某人)》之銘言："));
+    for (let q = 0; q < 7; ++q) rows.push(pad80(": 前言引言第 " + q + " 行"));
+  }
   rows.push(pad80("--"));
   rows.push(pad80("※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4"));
   const authors = ["alpha1", "alpha1", "beta22", "badguy", "gamma3", "poster"];
@@ -91,7 +96,11 @@ function makeArticle(seed, total, fullPush = false) {
     } else if (x < 0.62) {
       rows.push(push("推", "badguy", "黑名單 " + i, mm));
     } else if (x < 0.72) {
-      rows.push(pad80("edit reply line " + i));
+      if (quotes) {
+        // 引言段長度 1～9 行，常常剛好被頁界切開（下一頁再變長、收不收會變）。
+        const k = 1 + Math.floor(r() * 9);
+        for (let q = 0; q < k; ++q) rows.push(pad80(": 引言 " + i + "-" + q));
+      } else rows.push(pad80("edit reply line " + i));
     } else if (x < 0.8) {
       rows.push(...wrappedUrl(r, r() < 0.5 ? 2 : 3));
     } else if (x < 0.86) {
@@ -130,6 +139,8 @@ const enhanceFor = (o) => ({
   articleId: 1,
   // 推文篩選（P29）：「略過 N 則」是跨列的累計，尾端那串由前沿的 filter 選項留給下一幀。
   commentFilter: o.filter || null,
+  // 長引言收起（P106）：尾端那一段下一頁可能再變長，由前沿的 quote 選項留給下一幀。
+  quoteCollapse: !!o.quotes,
 });
 
 // 序列化：函式（onClick 閉包、TermChar 方法）略過，其餘逐欄比。
@@ -156,7 +167,17 @@ const OPTION_SETS = [
   { merge: false, autoFixUrl: false, cards: true, mergeCaption: null, filter: "poster" },
   // P38：「略過 N 則」點開的串（隔一串展開一串）。展開的列改成 filterShown、仍算同一串。
   { merge: true, autoFixUrl: true, cards: false, mergeCaption: null, filter: "alpha1", expand: true },
+  // P106：長引言收起（含隔一段展開一段）。
+  { merge: true, autoFixUrl: true, cards: false, mergeCaption: null, quotes: true },
+  { merge: false, autoFixUrl: true, cards: true, mergeCaption: null, quotes: true, quoteExpand: true },
 ];
+
+// 全文先算一次，每隔一段取那段的 quoteKey 當「使用者點開過的」。
+const expandedQuoteKeys = (full, o) => {
+  const { annotations } = computeAnnotations(full, enhanceFor(o), o.mergeCaption, false, {}, {}, {}, null, null);
+  const keys = annotations.filter((a) => a && a.quoteSkip).map((a) => a.quoteKey);
+  return keys.filter((_, i) => i % 2 === 0);
+};
 
 // 全文先算一次，每隔一串取那串的 key（第一列文字）當「使用者點開過的」。
 const expandedKeys = (full, o) => {
@@ -169,8 +190,17 @@ describe("前沿快路徑：逐頁 append 與全量重算逐列相同", () => {
   for (const [oi, o] of OPTION_SETS.entries()) {
     for (const seed of [1, 7, 42]) {
       test(`選項組 ${oi}／種子 ${seed}`, () => {
-        const full = makeArticle(seed * 31 + oi, 700, !!o.fullPush);
+        const full = makeArticle(seed * 31 + oi, 700, !!o.fullPush, !!o.quotes);
         const enhance = enhanceFor(o);
+        if (o.quotes) {
+          // 正向對照：真的有收起的段
+          const { annotations } = computeAnnotations(full, enhance, o.mergeCaption, false, {}, {}, {}, null, null);
+          expect(annotations.filter((a) => a && a.quoteSkip).length).toBeGreaterThan(2);
+        }
+        if (o.quoteExpand) {
+          enhance.quoteExpanded = expandedQuoteKeys(full, o);
+          expect(enhance.quoteExpanded.length).toBeGreaterThan(1);
+        }
         if (o.expand) {
           enhance.commentFilterExpanded = expandedKeys(full, o);
           // 正向對照：真的有展開到東西

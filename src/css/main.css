@@ -2432,6 +2432,32 @@ body.mobile-layout {
   user-select: none;
   -webkit-user-select: none;
 }
+/* 長引言收起（P106，render/quote_fold.js）：收起段第 2 行下面的「展開引言」鈕，樣子同推文篩選細線。
+   收起的列本身是 hidden="until-found"（瀏覽器內建 content-visibility:hidden，不用另寫）。 */
+#mainContainer .quoteSkip {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 2px 0;
+  padding: 0 1em;
+  border: 0;
+  border-top: 1px dashed #3a4660;
+  background: none;
+  color: #7f8aa3;
+  font-family: system-ui, sans-serif;
+  font-size: max(12px, 0.55em);
+  line-height: 1.8;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#mainContainer .quoteSkip::before {
+  content: "▸ ";
+}
+#mainContainer .quoteSkip:hover {
+  color: #aab4cc;
+}
 /* P38：點細線就地展開／收起。箭頭放 ::after（不進 textContent）。 */
 #mainContainer .commentFilterSkip::after {
   content: " ▾";
