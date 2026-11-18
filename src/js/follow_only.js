@@ -49,9 +49,16 @@ export function FollowOnly(core, opts) {
   this._state = Object.assign({}, HIDDEN);
   if (core.view) core.view.followOnly = readOn(this._storage);
   const self = this;
+  // 故障停用（docs/feature-isolation.md）：settle 出錯 ⇒ 這次連線收起切換鈕、列表回到全部（篩選
+  // 經 suspended() 失效，view.listFollowOnly 回 null；使用者存的切換狀態不動），resize、設定變更、
+  // 點鈕這些入口也擋。新連線 enableAllListeners 恢復：篩選照存的狀態回來。
+  this._onSettle = function() {
+    self.refresh();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self.refresh();
+    core.buf.addEventListener('screenSettled', this._onSettle, {
+      feature: 'enableFollowOnly',
+      disable: () => self._suspend(),
     });
   if (typeof window !== 'undefined' && window.addEventListener)
     window.addEventListener('resize', function() {
@@ -80,6 +87,18 @@ FollowOnly.prototype = {
     this._listeners.forEach(function(fn) {
       fn(next);
     });
+  },
+
+  // 被故障停用中（這次連線）：篩選不生效、鈕不出現。
+  suspended: function() {
+    const buf = this._core.buf;
+    return !!(buf && buf.isListenerDisabled && buf.isListenerDisabled(this._onSettle));
+  },
+
+  _suspend: function() {
+    this._set({ visible: false });
+    const view = this._core.view;
+    if (view && view.followOnly && typeof view.redraw === 'function') view.redraw(true);
   },
 
   _facts: function() {
@@ -117,6 +136,7 @@ FollowOnly.prototype = {
   },
 
   refresh: function() {
+    if (this.suspended()) return this._set({ visible: false });
     const facts = this._facts();
     if (!followOnlyAvailable(facts)) return this._set({ visible: false });
     const g = this._geometry();
@@ -136,7 +156,7 @@ FollowOnly.prototype = {
   // 切換鈕：只改顯示（view.followOnly）＋重畫，本身不送鍵（不夠看時由列表好讀照常補頁）。
   toggle: function() {
     const view = this._core.view;
-    if (!view) return;
+    if (!view || this.suspended()) return;
     view.followOnly = !view.followOnly;
     writeOn(this._storage, view.followOnly);
     if (typeof view.redraw === 'function') view.redraw(true);

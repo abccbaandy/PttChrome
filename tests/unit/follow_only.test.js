@@ -22,6 +22,7 @@ import {
 import { OWNER_ARTICLE_LIST } from "../../src/js/list_render_owner";
 import { TermView } from "../../src/js/term_view";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 import { row, seg } from "./helpers/screen_fixtures";
 
 const listRow = (num, author, title) =>
@@ -213,5 +214,72 @@ describe("切換鈕（FollowOnly）", () => {
     core.buf.pageState = 3;
     fo.refresh();
     expect(fo.state.visible).toBe(false);
+  });
+});
+
+// 故障停用（docs/feature-isolation.md；架構 review A6）：沒登記時 settle 出錯每幀再炸，
+// 篩選照樣藏列、鈕還在、點了照切。
+describe("FollowOnly：故障停用", () => {
+  test("settle 出錯 ⇒ 鈕收起、列表回到全部、點鈕不切；存的切換狀態不動；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const storage = new Map([[FOLLOW_ONLY_KEY, "1"]]);
+      const st = {
+        getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+        setItem: (k, v) => storage.set(k, v),
+        removeItem: (k) => storage.delete(k),
+      };
+      const view = Object.create(TermView.prototype);
+      Object.assign(view, {
+        enableFollowOnly: true,
+        enableFollowList: true,
+        followAuthors: FOLLOW.authors,
+        followTitleKeywords: [],
+        _followOnlyCache: null,
+        redraw: vi.fn(),
+        mainDisplay: { getBoundingClientRect: () => ({ width: 800, right: 900, top: 40 }) },
+      });
+      const visible = { n: 2 };
+      const core = {
+        view,
+        buf: { pageState: 2, listRenderMode: "buffer", listRenderOwner: OWNER_ARTICLE_LIST },
+        activeListSession: () => ({
+          visibleRowCount: () => {
+            if (visible.boom) throw new Error("boom");
+            return visible.n;
+          },
+        }),
+      };
+      Event.mixin(core.buf, { isolate: true });
+      view.bbscore = core;
+      const fo = new FollowOnly(core, { storage: st });
+      core.followOnly = fo;
+      const settle = () => core.buf.dispatchEvent({ type: "screenSettled" });
+
+      settle();
+      expect(fo.state).toMatchObject({ visible: true, on: true });
+      expect(view.listFollowOnly()).not.toBeNull();
+
+      visible.boom = true;
+      settle();
+      expect(core.buf.isListenerDisabled(fo._onSettle)).toBe(true);
+      expect(fo.state.visible).toBe(false);
+      expect(view.listFollowOnly()).toBeNull();
+      expect(view.redraw).toHaveBeenCalledWith(true);
+
+      visible.boom = false;
+      fo.refresh(); // resize／設定變更也走 refresh
+      expect(fo.state.visible).toBe(false);
+      fo.toggle();
+      expect(view.followOnly).toBe(true);
+      expect(storage.get(FOLLOW_ONLY_KEY)).toBe("1");
+
+      core.buf.enableAllListeners();
+      settle();
+      expect(fo.state).toMatchObject({ visible: true, on: true });
+      expect(view.listFollowOnly()).not.toBeNull();
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
   });
 });
