@@ -445,6 +445,30 @@ describe("故障停用", () => {
     }
   });
 
+  test("回覆進行中被停用 ⇒ 同一次派發裡回覆那條不再多送 ^R", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const { buf, inbox, sent, settle } = makeIsolated();
+      const screen = [];
+      buf.getRowText = (i) => screen[i] || "";
+      inbox.noteData(wire("aaa", "一"));
+      inbox.noteData(wire("bbb", "二"));
+      expect(inbox.reply(inbox.state.items.find((i) => i.from === "aaa"))).toBe(true);
+      expect(sent).toHaveLength(1);
+      // 一對一模式停在 bbb（還要再按一下才換到 aaa），同一幀收件匣自己的 settle 出錯。
+      screen[0] = "丟bbb:";
+      screen[1] = "                             ↑反擊對象↓ ";
+      inbox.noteScreen = () => {
+        throw new Error("boom");
+      };
+      settle();
+      expect(buf.isListenerDisabled(inbox._onSettle)).toBe(true);
+      expect(sent).toHaveLength(1);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
+  });
+
   test("測試／dev（strict）照樣往外丟，測試不會因此變鈍", () => {
     const { inbox } = makeIsolated();
     inbox._noteData = () => {

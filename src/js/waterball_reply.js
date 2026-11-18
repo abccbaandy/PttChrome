@@ -102,6 +102,9 @@ export function startWaterballReply(core, target, latest, opts) {
     view.sendKeyAsUser('r', { ctrlKey: true });
   };
   function onSettled() {
+    // 同一次派發裡排在前面的監聽者可能已經收掉這趟（收件匣故障停用、斷線 reset 呼叫 cancel）：
+    // 派發用的是複製出來的清單，移除監聽者擋不住這一幀 ⇒ 自己看 ended，不再多送一下 ^R。
+    if (ended) return;
     const rows = [];
     for (let i = 0; i < buf.rows; i++) rows.push(buf.getRowText(i));
     const step = nextReplyStep(classifyReplyScreen(rows), target, latest, steps);
