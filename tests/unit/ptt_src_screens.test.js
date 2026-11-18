@@ -823,6 +823,20 @@ describe("upstream pttbbs 產的讀信（信件列表 ⏎ → mail.c#mail_read �
     expect(buf.pageState).toBe(3);
   });
 
+  // P104：手機「更多」的上一封／下一封（b／f，more.c#more_list_nav_cmds）只在讀信畫面出現。
+  test("讀信畫面 ⇒ 工具列給上一封／下一封；信件列表不給", () => {
+    const read = at("read");
+    expect(toolbarContextFromFacts(read.facts, read.buf.pageState, { mailNav: true })).toMatchObject({
+      mail: true,
+      mailNav: true,
+      threadNav: false,
+    });
+    for (const name of ["mail", "back"]) {
+      const s = at(name);
+      expect(toolbarContextFromFacts(s.facts, s.buf.pageState, { mailNav: true }).mailNav, name).toBe(false);
+    }
+  });
+
   // setPageState 以前認不出信件列表（欄位標題列右端「(大小:N篇)」另一個底色），pageState 沿用
   // 上一幀 ⇒ 從主功能表進來是 1、讀完回來黏在 3：點信件沒反應、游標列沒底色、App Bar 是信的標題。
   test("讀完 ← 回信件列表：pageState 跟從主功能表進來一樣是 1，不黏在文章的 3", () => {

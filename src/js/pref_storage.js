@@ -378,6 +378,9 @@ export const DEFAULT_PREFS = {
   // 手機文章列表「更多」的「這個看板」（P66，mobile_toolbar.boardTools）：進板畫面 b／精華區 z／文摘 Tab／
   // 看板資訊 i，每顆是使用者自己按的單一原生鍵 ⇒ 不在安全模式清單（同 mobileMailListTools）。
   mobileBoardTools: true,
+  // 手機讀信「更多」的上一封／下一封（P104，mobile_toolbar.mailNav）：使用者自己按的 PTT 讀信鍵 b／f
+  // （more.c#more_list_nav_cmds），只在認得出是讀信的 pager 出現 ⇒ 不在安全模式清單（同 mobileBoardTools）。
+  mobileMailNav: true,
   mobilePromptChoices: true,
   // 手機上 PTT 的其他輸入欄（P62，prompt_choices.typeInputPanel）浮出「開鍵盤輸入」：本身不送 byte，
   // 「取消」是使用者自己按的 ^C ⇒ 不在安全模式清單（同 mobilePromptChoices）。

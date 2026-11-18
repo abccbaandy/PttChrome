@@ -61,6 +61,7 @@ import {
   EMPTY_TOOLBAR_CONTEXT,
   TOOLBAR_KEYS,
   THREAD_NAV_GROUPS,
+  MAIL_NAV_GROUP,
   BOARD_TOOL_KEYS,
   toolbarSlots,
   mobileToolbarContext,
@@ -538,6 +539,20 @@ export const MobileToolbar = ({
     [pttchrome, sendKey],
   );
 
+  // P104 讀信的上一封／下一封：同 onBoardTool，按下時用本幀再算一次，不是讀信就不送。
+  const onMailNav = useCallback(
+    (key) => {
+      setPanel(null);
+      const now =
+        pttchrome.buf && typeof pttchrome.buf.getRowText === "function"
+          ? mobileToolbarContext(pttchrome)
+          : null;
+      if (now && !now.mailNav) return;
+      sendKey(key);
+    },
+    [pttchrome, sendKey],
+  );
+
   // 全選／圖片上傳：與桌機右鍵選單同一組 App 入口（ContextMenu 的 menuHandlerByEventKey）。
   const onSelectAll = useCallback(() => {
     setPanel(null);
@@ -871,6 +886,8 @@ export const MobileToolbar = ({
   // 「更多」的項目（P40：常用的收成最上面的圖示格，見 more_sheet_layout.js）。key＝data-key。
   // label＝完整的字（清單項目的字、圖示格的 aria-label／title）。
   const moreItems = {
+    // P104 讀信的上一封／下一封：最上面（清單第一列）。
+    __mailNav: !!context.mailNav,
     __unreadJump: context.unreadJump && {
       label: i18n("mobileToolbar_unreadJump"),
       Icon: IconCircleDot,
@@ -963,10 +980,10 @@ export const MobileToolbar = ({
       ? {}
       : { "aria-pressed": it.pressed ? "true" : "false" };
   const renderMoreListItem = (key) => {
-    if (key === "__threadNav")
+    if (key === "__threadNav" || key === "__mailNav")
       return (
-        <div key={key} className="mobileToolbarNavGrid" data-key="__threadNav">
-          {THREAD_NAV_GROUPS.map((g) => (
+        <div key={key} className="mobileToolbarNavGrid" data-key={key}>
+          {(key === "__mailNav" ? [MAIL_NAV_GROUP] : THREAD_NAV_GROUPS).map((g) => (
             <div key={g.title} className="mobileToolbarNavRow">
               <span className="mobileToolbarNavLabel">{i18n(g.title)}</span>
               {g.keys.map((k) => {
@@ -979,6 +996,10 @@ export const MobileToolbar = ({
                     data-key={k.key}
                     aria-label={i18n(k.label)}
                     onClick={() => {
+                      if (key === "__mailNav") {
+                        onMailNav(k.key);
+                        return;
+                      }
                       setPanel(null);
                       sendKey(k.key);
                     }}
