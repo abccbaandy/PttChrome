@@ -978,8 +978,11 @@ const META_LATCH_RE = /※ (發信站|文章網址): /;
 //     non-comment rows like "※ 編輯:" never interrupt the numbering.
 // Net effect: body/signature fake comments get transient numbers but the meta
 // lines always sit between them and the real comments, so real floors start at 1.
-// Known BePTT-identical limits: a quoted "※ 發信站" inside a 轉錄 body latches
-// early; in articles with no meta lines, a blank row between comments re-counts.
+// Every later meta line restarts the count (pmore's comments_start is the region
+// after the LAST "※ " line): a body that pastes another post's ending — its own
+// "※ 發信站" plus its comments — no longer shifts this post's floors.
+// Known BePTT-identical limit: in articles with no meta lines, a blank row
+// between comments re-counts.
 export class FloorCounter {
   constructor() {
     this.reset();
@@ -994,16 +997,18 @@ export class FloorCounter {
   }
 
   // Called (via annotateComment) for every article row that is NOT a comment.
+  // Returns true on a meta line, so callers that accumulate their own totals
+  // (CommentScanner, FilterChipCounter) can zero them at the same moment.
   nonComment(text) {
-    if (!this.metaSeen) {
+    const meta = !!(text && META_LATCH_RE.test(text));
+    if (!this.metaSeen || meta) {
       this.seq = 0;
       this.push = 0;
       this.shu = 0;
       this.arrow = 0;
     }
-    if (text && META_LATCH_RE.test(text)) {
-      this.metaSeen = true;
-    }
+    if (meta) this.metaSeen = true;
+    return meta;
   }
 
   next(type) {
@@ -1037,7 +1042,12 @@ export class FilterChipCounter {
     const c = parseComment(text);
     const h = c ? null : parseModernCommentHeader(text);
     if (!c && !h) {
-      this.latch.nonComment(text);
+      if (this.latch.nonComment(text)) {
+        this.all = 0;
+        this.push = 0;
+        this.boo = 0;
+        this.byUser = new Map();
+      }
       return;
     }
     if (!this.latch.metaSeen) return;

@@ -53,6 +53,25 @@ describe("CommentScanner：與樓層同一個數法", () => {
     expect(s.rowAfter(3)).toBeNull();
     expect(s.rowAfter(null)).toBeNull();
   });
+  test("內文貼了別篇的結尾（它的發信站＋推文）⇒ 只算本篇 meta 列之後的推文，推噓分也重算", () => {
+    const pasted = [
+      "作者  alice (Alice) 看板 Test",
+      "標題  [閒聊] 轉貼",
+      "",
+      "※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 9.9.9.9",
+      push("old1", "貼來的推文"),
+      push("old2", "貼來的噓文", "噓"),
+      "我的心得",
+      "--",
+      "※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4",
+      "※ 文章網址: https://www.ptt.cc/bbs/Test/M.1700000000.A.ABC.html",
+    ];
+    const s = new CommentScanner();
+    pasted.concat([push("u1", "本篇第一則"), push("u2", "第二則")]).forEach((t) => s.feed(t));
+    expect(s.count).toBe(2);
+    expect(s.rowAfter(0)).toBe(pasted.length);
+    expect(s.score).toBe(2);
+  });
   test("沒有 meta 列（數不準）⇒ 0 則，不標", () => {
     const s = new CommentScanner();
     [push("a", "x"), push("b", "y")].forEach((t) => s.feed(t));

@@ -20,6 +20,8 @@
 - `FloorCounter`：`seq`(總樓)、`sub`(該 type 分項)；每篇文章 reset。含 **BePTT meta-latch 規則**
   （`nonComment(text)`，演算法來源見踩坑 B「BePTT 反編譯」）：非推文列在 `※ 發信站/※ 文章網址` latch 前一律歸零計數
   → 內文/簽名檔「帶假時間戳的假推文」拿到的暫時樓號被清掉，真推文從 1 起算。
+  之後**每遇到一列** meta 都再歸零一次（同 pmore `comments_start`＝最後一列 `※ ` 之後）：內文貼了別篇結尾
+  （自帶發信站＋推文）時，本篇樓層、新推文數、篩選則數都不會被貼來的那段墊高。
 - `parseBlacklist(str)`→lower-case Set（換行分隔）。
 - `parseArticleAuthor(text)`→原PO id(lower)|null，正則 `/^\s*作者\s+([0-9A-Za-z]+)/`。**僅文章首頁首行**（作者列）解析得到；翻頁後 lines[0] 是內文→null。
 - **`annotateComment(text, ctx)`→逐列判斷的單一真相**（floor/hidden/pusher/contentCol/authorId 範圍）。
