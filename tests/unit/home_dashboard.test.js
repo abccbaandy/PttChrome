@@ -78,9 +78,9 @@ const boards = (from, to, unreadOf = () => false) => {
   return out;
 };
 
-const ARTICLE_LIST = () => {
+const ARTICLE_LIST = (board = "C_Chat") => {
   const rowTexts = Array.from({ length: ROWS }, () => "");
-  rowTexts[0] = "【板主:someone】                  看板《C_Chat》";
+  rowTexts[0] = "【板主:someone】                  看板《" + board + "》";
   rowTexts[ROWS - 1] = " 文章選讀  (y)回應(X)推文(^X)轉錄 (=[]<>)相關主題(/?a)找標題/作者 (b)進板畫面 ";
   return { rowTexts, rows: ROWS, curX: 0, curY: 3 };
 };
@@ -439,6 +439,36 @@ describe("HomeDashboard：何時出現", () => {
       show(ARTICLE_LIST());
       expect(setSpy).not.toHaveBeenCalled();
       expect(home.state.recents).toBe(before);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // 兩個分頁停在不同板、各自一直 settle（捲動、新推文）：若每次 settle 都「第一個不是我 ⇒ 推到最前」，
+  // 兩邊輪流把自己推到最前面，每一幀都寫 storage、清單順序來回翻。只在到了一個板時記一次。
+  test("兩個分頁停在不同板一直 settle ⇒ 只在到的時候記一次，不來回改順序", () => {
+    const KEY = "pttchrome.homeRecentBoards.v1";
+    const store = new Map();
+    let writes = 0;
+    const fake = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => (writes++, store.set(k, String(v))),
+      removeItem: (k) => store.delete(k),
+    };
+    vi.stubGlobal("window", { localStorage: fake });
+    try {
+      const a = makeCore();
+      const b = makeCore();
+      a.show(ARTICLE_LIST());
+      b.show(ARTICLE_LIST("Stock"));
+      expect(JSON.parse(fake.getItem(KEY))).toEqual(["Stock", "C_Chat"]);
+      const after = writes;
+      for (let i = 0; i < 5; ++i) {
+        a.show(ARTICLE_LIST());
+        b.show(ARTICLE_LIST("Stock"));
+      }
+      expect(writes).toBe(after);
+      expect(JSON.parse(fake.getItem(KEY))).toEqual(["Stock", "C_Chat"]);
     } finally {
       vi.unstubAllGlobals();
     }
