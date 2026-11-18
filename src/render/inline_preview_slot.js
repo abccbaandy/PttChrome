@@ -157,8 +157,8 @@ export function clearInlinePreviewGray() {
 
 // 版面寬度改變了（字級／視窗 resize、圖文並排切換）⇒ pinned 全部過期。
 // **只清有 aspect 的那些**：那些 slot 的替身盒能在新寬度下自己算出正確高度，交給它
-// 更準；沒有 aspect 的（iframe、相簿）留著舊值當最佳猜測 —— iframe 是固定
-// height:450px，本來就與寬度無關，丟掉只換來一次無謂的塌陷。
+// 更準；沒有 aspect 的（iframe、相簿）留著舊值當最佳猜測 —— 播放器框寬度封頂 800px（之上固定
+// 450px 高）、手機只有轉向才會變，丟掉只換來一次無謂的塌陷。
 // 呼叫端是 render/screen.js#notifyLayoutChanged（同時廣播給存活中的 slot）。
 export function invalidateInlinePreviewHeights() {
   for (const entry of sizeMemo.values()) {
