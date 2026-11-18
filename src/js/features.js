@@ -10,11 +10,18 @@
 // 列在 `tests/e2e/offline/listener_order.offline.spec.js` 的 BEFORE（真 boot 量派發順序），由
 // `tests/unit/features_table.test.js` 對（兩邊不能各寫各的）。
 //
-// 兩張表各是建構子裡本來就連在一起的一段，原地換成 createFeatures ⇒ 建構順序與搬之前完全相同。
+// `after` 也可以指向核心流程（deepLinkController、reconnectResume 這類建構子裡直接 new 的），只要它們
+// 在那一次 createFeatures 之前就建好。
+//
+// 三張表各是建構子裡本來就連在一起的一段，原地換成 createFeatures ⇒ 建構順序與搬之前完全相同。
 // 中間夾的 installPullNextArticle／installWheelNextArticle 不是週邊功能物件（只掛 DOM 監聽、沒有 settle），
 // 留在建構子裡。核心流程（listSession、aidNavigation…）不進表。草稿見共享資料夾
 // research/plans/a6-feature-interface.md。
 
+import { HomeDashboard } from './home_dashboard';
+import { WhatsNew } from './whats_new';
+import { RecentArticles } from './recent_articles';
+import * as prefSync from './pref_sync';
 import { CommentBar } from './comment_bar';
 import { SearchStatus } from './search_status';
 import { FollowOnly } from './follow_only';
@@ -29,6 +36,32 @@ import { BoardTabs } from './board_tabs';
 /**
  * @typedef {{ name: string, pref: string, create: (app: any) => any, after?: ReadonlyArray<string> }} FeatureDecl
  */
+
+/** 建構子裡 inputArea 之後那一段（首頁）。 @type {ReadonlyArray<FeatureDecl>} */
+export const HOME_FEATURES = Object.freeze([
+  // 首頁儀表板（主功能表上的我的最愛／最近看板面板）。要在 inputArea 之後（聽 #t 的按鍵收起面板）；
+  // settle 排在 deep link／斷線回原處之後（使用者剛給的連結、斷線前的位置優先於首頁）。
+  {
+    name: 'homeDashboard',
+    pref: 'enableHomeDashboard',
+    create: (app) => new HomeDashboard(app),
+    after: ['deepLinkController', 'reconnectResume'],
+  },
+  // 更新後的新功能介紹（首頁儀表板最上面／右下角小卡）。
+  { name: 'whatsNew', pref: 'showWhatsNew', create: (app) => new WhatsNew(app) },
+  // 最近讀過的文章＋稍後再讀（儀表板／指令面板／右鍵選單共用的清單）。稍後閱讀跨裝置同步
+  // （read_later_sync.js）：pref_sync 的 snapshot 交雲端清單過來、變動由它寫回。
+  {
+    name: 'recentArticles',
+    pref: 'enableRecentArticles',
+    create: (app) =>
+      new RecentArticles(app, undefined, {
+        signedIn: () => !!prefSync.getUser(),
+        upload: (/** @type {any} */ plan) => prefSync.saveReadLaterEntries(plan),
+        subscribe: (/** @type {any} */ cb) => prefSync.registerOnCloudReadLater(cb),
+      }),
+  },
+]);
 
 /** 建構子裡手機找字（articleFind）之後那一段。 @type {ReadonlyArray<FeatureDecl>} */
 export const PERIPHERAL_FEATURES = Object.freeze([
@@ -60,7 +93,7 @@ export const LATE_PERIPHERAL_FEATURES = Object.freeze([
 ]);
 
 /** 所有宣告表（給守護測試逐一對）。 */
-export const ALL_FEATURE_TABLES = Object.freeze([PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES]);
+export const ALL_FEATURE_TABLES = Object.freeze([HOME_FEATURES, PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES]);
 
 /**
  * 照表順序建，掛到 app[name]。`after` 列的功能必須已經建好，否則丟例外。
