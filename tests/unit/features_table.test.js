@@ -4,19 +4,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DEFAULT_PREFS } from "../../src/js/pref_storage";
-import { LIST_TOOL_FEATURES, createFeatures } from "../../src/js/features";
+import { PERIPHERAL_FEATURES, createFeatures } from "../../src/js/features";
 
 const read = (p) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
 const snake = (name) => name.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase());
 
 describe("週邊功能宣告表", () => {
   test("名稱不重複、pref 是預設值裡的鍵", () => {
-    const names = LIST_TOOL_FEATURES.map((f) => f.name);
+    const names = PERIPHERAL_FEATURES.map((f) => f.name);
     expect(new Set(names).size).toBe(names.length);
-    for (const f of LIST_TOOL_FEATURES) expect(DEFAULT_PREFS).toHaveProperty(f.pref);
+    for (const f of PERIPHERAL_FEATURES) expect(DEFAULT_PREFS).toHaveProperty(f.pref);
   });
 
-  test.each(LIST_TOOL_FEATURES.map((f) => [f.name, f.pref]))(
+  test.each(PERIPHERAL_FEATURES.map((f) => [f.name, f.pref]))(
     "%s 的故障停用登記用的就是表裡的 pref（%s）",
     (name, pref) => {
       const src = read(`src/js/${snake(name)}.js`);
@@ -26,8 +26,8 @@ describe("週邊功能宣告表", () => {
 
   test("App 建構子不再自己 new 表裡的功能", () => {
     const app = read("src/js/pttchrome.jsx");
-    expect(app).toMatch(/createFeatures\(this, LIST_TOOL_FEATURES\)/);
-    for (const f of LIST_TOOL_FEATURES) {
+    expect(app).toMatch(/createFeatures\(this, PERIPHERAL_FEATURES\)/);
+    for (const f of PERIPHERAL_FEATURES) {
       expect(app).not.toMatch(new RegExp(`this\\.${f.name}\\s*=\\s*new\\b`));
     }
   });
