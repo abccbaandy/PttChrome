@@ -45,7 +45,7 @@ const HIDDEN = { visible: false, on: false, empty: false, right: 0, top: 0, mobi
 // 鈕高（FollowOnly.css .followOnlyChip height）。
 export const FOLLOW_ONLY_CHIP_HEIGHT = 24;
 
-// P108（L 11/18 同意）：桌機的鈕原本疊在標題列（終端機第 0 列）最右邊，蓋住「看板《板名》」的後半。
+// P108：桌機的鈕原本疊在標題列（終端機第 0 列）最右邊，蓋住「看板《板名》」的後半。
 //   - 看板分頁開著 ⇒ 移到分頁列（第 1 列，本來就被分頁列整條蓋住）的最右邊，垂直置中，不多蓋任何字；
 //   - 分頁關著 ⇒ 留在原位、縮成只剩星號的小圓鈕（只蓋到最後的「》」）。整段都被收起時照舊寫「這一段沒有」
 //     （那是唯一的說明，不能縮）。

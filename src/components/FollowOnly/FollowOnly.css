@@ -86,3 +86,8 @@ body:has(#searchStatus) .followOnlyChip--mobile {
 body:has(#aidBackButton) .followOnlyChip {
   margin-top: 44px;
 }
+
+/* P108：在分頁列上時已經離開標題列，不用再替搜尋狀態列／回上一篇鈕往下讓（再讓就落到表頭）。 */
+body .followOnlyChip--inTabs {
+  margin-top: 0;
+}

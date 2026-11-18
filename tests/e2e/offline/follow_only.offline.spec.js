@@ -121,8 +121,20 @@ test.describe('只看關注（離線重放）', () => {
       });
       expect(title.close, '標題列找不到「》」').toBeTruthy();
       if (withTabs) {
-        // 整顆在標題列下面（分頁列那一列），不碰標題列。
+        // 整顆在分頁列那一列裡：不碰標題列、不掉到表頭，也不壓到任何一顆分頁。
+        const bar = await page.evaluate(() => {
+          const b = document.getElementById('boardTabs');
+          const r = b.getBoundingClientRect();
+          const tabs = Array.from(b.querySelectorAll('button')).map((t) => {
+            const q = t.getBoundingClientRect();
+            return { left: q.left, right: q.right };
+          });
+          return { top: r.top, bottom: r.bottom, tabs };
+        });
         expect(chip.top).toBeGreaterThanOrEqual(title.bottom - 0.5);
+        expect(chip.top + chip.height).toBeLessThanOrEqual(bar.bottom + 0.5);
+        expect(bar.tabs.length).toBeGreaterThan(0);
+        for (const t of bar.tabs) expect(t.right <= chip.left || t.left >= chip.left + chip.width).toBe(true);
       } else {
         // 小圓鈕：最多蓋到最後的「》」，「《板名」整段露出來。
         expect(chip.width).toBeLessThanOrEqual(26);
