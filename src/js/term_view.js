@@ -1196,6 +1196,9 @@ TermView.prototype = {
   // 切換鈕開著＋功能開關＋關注名單開關都開＋名單不是空的才算；同一份名單回傳同一個物件。
   listFollowOnly: function() {
     if (!this.followOnly || !this.enableFollowOnly || !this.enableFollowList) return null;
+    // 只看關注出錯被停用（這次連線）⇒ 列表回到全部，存的切換狀態不動（follow_only.js#suspended）。
+    var fo = this.bbscore && this.bbscore.followOnly;
+    if (fo && typeof fo.suspended === 'function' && fo.suspended()) return null;
     var a = this.followAuthors, k = this.followTitleKeywords;
     if (!(a && a.size > 0) && !(k && k.length > 0)) return null;
     var c = this._followOnlyCache;
