@@ -11,6 +11,7 @@ import {
   READING_FEATURES,
   LATE_PERIPHERAL_FEATURES,
   PERIPHERAL_FEATURES,
+  closeFeatures,
   createFeatures,
 } from "../../src/js/features";
 
@@ -98,6 +99,23 @@ describe("週邊功能宣告表", () => {
     expect(order).toEqual(["a", "b"]);
     expect(app.a.owner).toBe(app);
     expect(app.b).toBe(2);
+  });
+
+  test("closeFeatures 照表順序呼叫 onClose、每一個各自經 run 包起來、沒建的略過", () => {
+    const calls = [];
+    const app = { messageInbox: { reset: () => calls.push("inbox") } };
+    const labels = [];
+    closeFeatures(app, (label, fn) => (labels.push(label), fn()));
+    expect(calls).toEqual(["inbox"]);
+    expect(labels).toEqual(ALL.filter((f) => f.onClose).map((f) => f.name).filter((n) => n in app));
+  });
+
+  test("App.onClose 不直接收攤表裡的功能（斷線收攤寫在表的 onClose，經 closeFeatures）", () => {
+    const app = read("src/js/pttchrome.jsx");
+    const start = app.indexOf("App.prototype.onClose = function");
+    const body = app.slice(start, app.indexOf("\n};", start));
+    expect(body).toContain("closeFeatures(this, iso)");
+    for (const f of ALL) expect(body).not.toMatch(new RegExp(`this\\.${f.name}\\.`));
   });
 
   test("after 的功能還沒建 ⇒ 丟例外、不建（不會靜默換了 settle 派發順序）", () => {

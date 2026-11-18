@@ -90,7 +90,7 @@ import { isSearchStatusTarget } from './search_status';
 import { isFollowOnlyTarget } from './follow_only';
 import { isListFastScrollTarget } from './list_fast_scroll';
 import { isEditorInputTarget } from './editor_input';
-import { createFeatures, HOME_FEATURES, READING_FEATURES, PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES } from './features';
+import { closeFeatures, createFeatures, HOME_FEATURES, READING_FEATURES, PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES } from './features';
 import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { essenceCursorRowOk } from './essence_list';
 import { classRootCursorRowOk, parseClassRootRow } from './class_root';
@@ -748,8 +748,8 @@ App.prototype.onClose = function(e) {
   // reconnect starts back at the login screen, and firing a jump into whatever
   // the user does next is worse than making them click the link again.
   iso('deepLinkController', () => this.deepLinkController.reset());
-  // 收件匣跟著連線走：斷線清空。
-  iso('messageInbox', () => this.messageInbox.reset());
+  // 週邊功能的斷線收攤（宣告表的 onClose，例：水球收件匣跟著連線走、斷線清空）。
+  closeFeatures(this, iso);
 
   iso('mbTimer', () => this.cancelMbTimer());
 
