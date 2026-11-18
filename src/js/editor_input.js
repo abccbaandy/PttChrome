@@ -44,9 +44,16 @@ export function EditorInput(core) {
   this._listeners = new Set();
   this._state = CLOSED;
   const self = this;
+  // 故障停用（docs/feature-isolation.md）：settle 出錯 ⇒ 入口與框收起、這次連線不再派發。別的入口
+  // （resize、App 的 refresh、open、insert）都經 _available，被停用就回 false ⇒ 叫不回來、不送字。
+  // 框裡打到一半的字留在元件裡（沒卸載），新連線 enableAllListeners 恢復後再開框還在。
+  this._onSettle = function() {
+    self.refresh();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self.refresh();
+    core.buf.addEventListener('screenSettled', this._onSettle, {
+      feature: 'enableEditorInput',
+      disable: () => self._set({ available: false, open: false })
     });
   if (typeof window !== 'undefined' && window.addEventListener)
     window.addEventListener('resize', function() {
@@ -77,7 +84,13 @@ EditorInput.prototype = {
     });
   },
 
+  _disabled: function() {
+    const buf = this._core.buf;
+    return !!(buf && buf.isListenerDisabled && buf.isListenerDisabled(this._onSettle));
+  },
+
   _available: function() {
+    if (this._disabled()) return false;
     const core = this._core;
     const prefs = readEffectivePrefs();
     // 畫面事實讀這一幀的畫面物件（screen_model.js，docs/screen-model.md）。

@@ -11,6 +11,7 @@ import {
   prepareEditorInsert,
 } from "../../src/js/editor_input";
 import { DEFAULT_PREFS, NATIVE_SAFE_MODE_KEYS } from "../../src/js/pref_storage";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 
 beforeAll(() => loadBig5Tables());
@@ -119,5 +120,62 @@ describe("EditorInput（控制器）", () => {
     ed.open();
     expect(ed.insert("   ")).toMatchObject({ ok: false, reason: "empty" });
     expect(core.onPasteDone).not.toHaveBeenCalled();
+  });
+});
+
+// 故障停用（docs/feature-isolation.md；架構 review A6）：沒登記時 settle 出錯，入口鈕／框停在上一幀
+// （離開編輯器了鈕還在、還能按插入），resize 與 App 的 refresh 每次再叫一次。
+describe("EditorInput：故障停用", () => {
+  const makeIsolatedCore = () => {
+    const buf = {
+      pageState: 6,
+      boom: false,
+      isEditorScreenNow() {
+        return this.pageState === 6;
+      },
+      isCursorOnInputField() {
+        return false;
+      },
+      isEditorTypingNow() {
+        if (this.boom) throw new Error("boom");
+        return this.isEditorScreenNow();
+      },
+    };
+    // 真的 TermBuf 派發（event.js 的故障隔離）。
+    Event.mixin(buf, { isolate: true });
+    return { buf, view: { mainDisplay: null, chh: 20 }, onPasteDone: vi.fn() };
+  };
+  const settle = (core) => core.buf.dispatchEvent({ type: "screenSettled" });
+
+  test("settle 出錯 ⇒ 入口與框收起、refresh／open／insert 叫不回來也不送字；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const core = makeIsolatedCore();
+      const ed = new EditorInput(core);
+      settle(core);
+      expect(ed.open()).toBe(true);
+      expect(ed.state).toMatchObject({ available: true, open: true });
+
+      core.buf.boom = true;
+      settle(core);
+      expect(core.buf.isListenerDisabled(ed._onSettle)).toBe(true);
+      expect(ed.state).toMatchObject({ available: false, open: false });
+
+      // 原因消失了也不回來：這次連線不再派發，其他入口（resize／App.refresh、open、insert）也擋。
+      core.buf.boom = false;
+      settle(core);
+      ed.refresh();
+      expect(ed.state.available).toBe(false);
+      expect(ed.open()).toBe(false);
+      expect(ed.insert("內容")).toMatchObject({ ok: false, reason: "not-editor" });
+      expect(core.onPasteDone).not.toHaveBeenCalled();
+
+      core.buf.enableAllListeners();
+      settle(core);
+      expect(ed.state.available).toBe(true);
+      expect(ed.open()).toBe(true);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
   });
 });
