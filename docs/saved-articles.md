@@ -38,6 +38,15 @@
 ## 還沒做（依序）
 
 1. 存圖片本體（現在只存連結；沒網路時預覽打不開）。要先評估 IndexedDB 容量與 200 篇上限怎麼算。
+   量測（離線素材裡真文章的圖，真 Chromium 在別的 origin 用 `fetch(mode: 'cors')` 抓）：
+   - **抓得到 blob 的**：i.imgur.com、pbs.twimg.com（ACAO 回填 origin）、i.ibb.co、i.snipboard.io、專案的圖片代理 Worker（`ACAO: *`）。
+     **抓不到的**：i.meee.com.tw、i.urusai.cc（沒有 ACAO；`no-cors` 拿到的 opaque 回應讀不出 bytes，存了也畫不出來）、
+     `imgur.com/<id>.jpg`（轉址那一跳沒有 ACAO，要先改寫成 i.imgur.com，`image_url_detect` 本來就會改）。
+     ⇒ 沒有 CORS 的站只能經代理 Worker（要擴白名單、吃 Worker 額度）或維持只存連結。
+   - **大小**：一般文章 5～9 張圖原檔 0.9～2.3 MB；縮成寬 1080 的 webp（quality 0.8）後 0.2～0.4 MB（靜態圖省 70～80%）。
+     **GIF 是大頭**：179 張圖的長文原檔 35 MB，其中 3 張 GIF 就 20 MB（最大一張 16 MB），GIF 不能這樣縮。
+   - **配額**：`navigator.storage.estimate()` 在雲端 headless Chromium 是 10 GB（依磁碟比例給，真機會不同）；不是 persistent 時瀏覽器空間吃緊會整個 origin 清掉，存圖前要 `navigator.storage.persist()`。
+   - 可行的做法：只存抓得到的靜態圖、縮成 webp；GIF／影片／超過某大小的維持連結；圖跟文分開記帳（總量上限到了先丟最舊文章的圖、文字照留）。
 
 ## 入口
 
