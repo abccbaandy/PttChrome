@@ -54,7 +54,8 @@ export const requestPreview = (href) => {
 
 // resolveSrcToImageUrl turns a link into a *media descriptor*:
 //   { type: "image", src, srcset? } | { type: "video", src }
-//   | { type: "iframe", src }       | { type: "album", images: [descriptor] }
+//   | { type: "iframe", src, aspect? } | { type: "album", images: [descriptor] }
+//   iframe 的 aspect：播放器框的寬高比（"16/9"、直式 Shorts "9/16"）；沒給＝舊的固定 450px 高。
 // `type` defaults to "image" when omitted (back-compat with bare { src }).
 export const resolveSrcToImageUrl = ({ src }) =>
   imageUrlResolvers.find((r) => r.test(src)).request(src);
@@ -471,10 +472,21 @@ const InlineVideo = React.memo(function InlineVideo({ src, gif }) {
   );
 });
 
-const InlineIframe = React.memo(function InlineIframe({ src }) {
+// 播放器框照影片比例（aspect-ratio）：固定 450px 高在手機寬度下，16:9 影片只佔 232px、上下各一條黑邊。
+// 橫式：寬撐滿、封頂 800px（桌機仍是 800×450）。直式（Shorts）：高度封頂、寬度跟著比例縮。
+// 播放器絕對定位填滿框：「讀取中」指示器在框裡排版，不能把框撐得比比例高。
+const IFRAME_BOX = { position: "relative", margin: "0.5em auto" };
+const iframeBoxStyle = (aspect) => {
+  if (aspect === "9/16")
+    return { ...IFRAME_BOX, height: "min(80vh, 640px)", aspectRatio: aspect, maxWidth: "100%" };
+  if (aspect) return { ...IFRAME_BOX, maxWidth: "800px", aspectRatio: aspect };
+  return { ...IFRAME_BOX, maxWidth: "800px", height: "450px" };
+};
+
+const InlineIframe = React.memo(function InlineIframe({ src, aspect }) {
   const [loaded, setLoaded] = React.useState(false);
   return (
-    <div style={{ margin: "0.5em auto", maxWidth: "800px", height: "450px" }}>
+    <div style={iframeBoxStyle(aspect)}>
       {!loaded && <LoadingOverlay />}
       <iframe
         type="text/html"
@@ -482,7 +494,7 @@ const InlineIframe = React.memo(function InlineIframe({ src }) {
         allowFullScreen
         referrerPolicy="origin-when-cross-origin"
         onLoad={() => setLoaded(true)}
-        style={{ border: "none", width: "100%", height: "100%" }}
+        style={{ position: "absolute", inset: 0, border: "none", width: "100%", height: "100%" }}
       />
     </div>
   );
@@ -496,7 +508,9 @@ const inlineVideo = (descriptor, key) => (
   <InlineVideo key={key} src={descriptor.src} gif={descriptor.gif} />
 );
 
-const inlineIframe = (src, key) => <InlineIframe key={key} src={src} />;
+const inlineIframe = (descriptor, key) => (
+  <InlineIframe key={key} src={descriptor.src} aspect={descriptor.aspect} />
+);
 
 // 單一 descriptor → 元素。相簿展開的每一項也走這裡，所以相簿內的圖自動吃到
 // srcset 候選鏈（如 imgur 的 webp 優先），不必在 album 分支複製一份判斷。
@@ -505,7 +519,7 @@ const renderMedia = (descriptor, key) => {
     case "video":
       return inlineVideo(descriptor, key);
     case "iframe":
-      return inlineIframe(descriptor.src, key);
+      return inlineIframe(descriptor, key);
     default:
       return inlineImage(descriptor, key);
   }
@@ -734,7 +748,8 @@ const imageUrlResolvers = [
       } catch (e) {
         // ignore malformed url
       }
-      return Promise.resolve({ type: "iframe", src: embed });
+      const aspect = /youtube\.com\/shorts\//i.test(src) ? "9/16" : "16/9";
+      return Promise.resolve({ type: "iframe", src: embed, aspect });
     },
   },
   {
@@ -748,6 +763,7 @@ const imageUrlResolvers = [
       return Promise.resolve({
         type: "iframe",
         src: `https://clips.twitch.tv/embed?clip=${id}&parent=${location.hostname}`,
+        aspect: "16/9",
       });
     },
   },
