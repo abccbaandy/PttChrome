@@ -111,6 +111,39 @@ describe("內嵌播放器先放縮圖", () => {
     expect(boxSize(host)).toEqual({ w: 412, h: 232 });
   });
 
+  test("播放鈕有中文的無障礙名稱", async () => {
+    const value = await requestPreview("https://youtu.be/1m2KVNX4DhI");
+    const { host } = mount(value);
+    expect(
+      host.querySelector("button[data-video-facade]").getAttribute("aria-label"),
+    ).toBe("播放影片");
+  });
+
+  test("縮圖載不到（圖床 404／被擋）⇒ 拿掉壞圖，留深色底＋播放鈕，框不變", async () => {
+    const value = {
+      type: "iframe",
+      src: "https://www.youtube.com/embed/broken",
+      aspect: "16/9",
+      poster: "data:image/png;base64,AAAA",
+      facade: true,
+    };
+    const { host } = mount(value);
+    await vi.waitFor(() =>
+      expect(host.querySelector("img.videoFacadePoster")).toBeNull(),
+    );
+    expect(host.querySelector("button[data-video-facade]")).not.toBeNull();
+    expect(boxSize(host)).toEqual({ w: 412, h: 232 });
+  });
+
+  test("Shorts：縮圖框跟直式播放器一樣是 9:16、有高度上限", async () => {
+    const value = await requestPreview("https://youtube.com/shorts/1m2KVNX4DhI");
+    const { host } = mount(value, 1200);
+    expect(host.querySelector("iframe")).toBeNull();
+    const { w, h } = boxSize(host);
+    expect(h).toBeLessThanOrEqual(640);
+    expect(Math.abs(w / h - 9 / 16)).toBeLessThan(0.02);
+  });
+
   test("開關關掉 ⇒ 跟以前一樣直接嵌播放器（不帶 autoplay）", async () => {
     setVideoThumbFirst(false);
     const value = await requestPreview("https://www.youtube.com/watch?v=1m2KVNX4DhI");

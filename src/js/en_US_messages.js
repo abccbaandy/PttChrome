@@ -1274,6 +1274,9 @@ export const en_US = {
   "tooltip_tapToLoadImagesOnMobileData": {
     "message": "When the Android App is on mobile data (or a metered network such as a hotspot), image links get a \"Load image\" button instead: tap to load that one, long-press to load the whole article. Images load automatically again on Wi-Fi."
   },
+  "videoFacade_play": {
+    "message": "Play video"
+  },
   "options_videoThumbFirst": {
     "message": "Show YouTube thumbnails first"
   },

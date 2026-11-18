@@ -1273,6 +1273,9 @@
   "tooltip_tapToLoadImagesOnMobileData": {
     "message": "Android App 連的是行動數據（或手機熱點等計費網路）時，圖片連結下改放「開圖」按鈕：點一下開那張，長按開整篇的圖。換回 Wi-Fi 就恢復自動開圖。"
   },
+  "videoFacade_play": {
+    "message": "播放影片"
+  },
   "options_videoThumbFirst": {
     "message": "YouTube 先放縮圖"
   },

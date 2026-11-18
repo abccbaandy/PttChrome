@@ -35,6 +35,7 @@ import {
   youtubePoster,
 } from "../js/video_facade";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
+import { i18n } from "../js/i18n";
 
 const noop = () => {};
 
@@ -491,13 +492,16 @@ const iframeBoxStyle = (aspect) => {
 
 // P109：先放縮圖＋播放鈕，點了才載播放器（js/video_facade.js）。框跟播放器同一個，版面不跳。
 // 縮圖載不到（Twitch clip 本來就沒有、或圖被擋）就是深色底＋播放鈕。
+// 唯讀頁（離線文章）不一定跑過 setupI18n ⇒ 拿不到字就用中文。
+const playLabel = () => i18n("videoFacade_play") || "播放影片";
+
 const VideoFacade = ({ poster, onPlay }) => {
   const [posterOk, setPosterOk] = React.useState(!!poster);
   return (
     <button
       type="button"
       className="videoFacade"
-      aria-label="播放影片"
+      aria-label={playLabel()}
       data-video-facade=""
       onClick={onPlay}
     >
