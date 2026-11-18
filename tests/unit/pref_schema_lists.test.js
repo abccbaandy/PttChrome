@@ -1,4 +1,4 @@
-// 設定的「三份清單」對得起來（架構 review A7：設定 schema 單一來源的前置守護）。
+// 設定的各份清單對得起來（架構 review A7：設定 schema 單一來源的前置守護）。
 //
 // 同一個設定鍵現在散在四個地方：
 //   - pref_storage.js#DEFAULT_PREFS        預設值（決定這個鍵存不存在）
@@ -17,6 +17,8 @@ import {
   NATIVE_SAFE_MODE_KEYS,
 } from "../../src/js/pref_storage";
 import { LOCAL_ONLY_PREF_KEYS } from "../../src/js/pref_sync_logic";
+import fs from "fs";
+import path from "path";
 
 const prefItems = PREF_SEARCH_ITEMS.filter((it) => it.kind === "pref");
 const sectionKeys = new Set(
@@ -67,6 +69,51 @@ describe("預設值 ↔ 設定索引", () => {
       )
       .map((it) => it.key);
     expect(orphan).toEqual([]);
+  });
+});
+
+// 第五個地方：套用端。App.onValuesPrefChange 把每個頂層鍵丟進 onPrefChange 的 switch；
+// case 名打錯字不會有任何東西壞掉，只是那個設定改了要重整才生效（或永遠不生效）。
+// 沒有 case 的鍵是「用到時才讀」（讀 prefs.values），那它至少要在程式某處被讀到。
+describe("套用端（App.onPrefChange）↔ 預設值", () => {
+  const SRC = path.resolve(__dirname, "../../src");
+  const appSrc = fs.readFileSync(path.join(SRC, "js/pttchrome.jsx"), "utf8");
+  const start = appSrc.indexOf("App.prototype.onPrefChange = function");
+  const body = appSrc.slice(start, appSrc.indexOf("\n};", start));
+  const cases = [...body.matchAll(/case\s+['"]([\w.]+)['"]\s*:/g)].map(
+    (m) => m[1],
+  );
+
+  test("找得到 onPrefChange 的 switch", () => {
+    expect(start).toBeGreaterThan(0);
+    expect(cases.length).toBeGreaterThan(20);
+  });
+
+  test("每個 case 都是預設值裡的鍵（打錯字或鍵已刪的 case 永遠不會跑）", () => {
+    expect(cases.filter((k) => !(k in DEFAULT_PREFS))).toEqual([]);
+  });
+
+  test("沒有 case 的鍵在定義它的模組以外至少被讀一次", () => {
+    // 設定的定義／索引／文案檔不算「讀」。
+    const defining =
+      /(pref_storage|pref_schema|pref_search|pref_sync_logic|_messages)\.jsx?$/;
+    const sources = [];
+    const walk = (dir) => {
+      for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, f.name);
+        if (f.isDirectory()) walk(p);
+        else if (/\.jsx?$/.test(f.name) && !defining.test(f.name))
+          sources.push(fs.readFileSync(p, "utf8"));
+      }
+    };
+    walk(SRC);
+    const unread = Object.keys(DEFAULT_PREFS)
+      .filter((k) => !cases.includes(k))
+      .filter((k) => {
+        const re = new RegExp(`\\b${k}\\b`);
+        return !sources.some((s) => re.test(s));
+      });
+    expect(unread).toEqual([]);
   });
 });
 
