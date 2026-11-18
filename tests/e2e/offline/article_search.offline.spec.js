@@ -396,6 +396,25 @@ test.describe('搜尋彈窗：看板比照 PTT 原生補全（離線）', () => 
     await waitScreenSettled(page, { 0: '看板《Golfer》' });
   });
 
+  test('輸入欄空著先列最近看過的板（P105）；點一個走同一條送出路徑進板，一打字換回補全', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('pttchrome.homeRecentBoards.v1', JSON.stringify(['Golfer', 'C_Chat']));
+    });
+    await openBoardSearch(page);
+    await expect(page.locator('[data-board-recent]')).toHaveCount(1);
+    // 現在停的 Test 板也是剛記進最近看板的（列表一 settle 就記），排在最前。
+    expect(await candidates(page)).toEqual(['Test', 'Golfer', 'C_Chat']);
+    await modalInput(page).pressSequentially('go');
+    await expect(page.locator('[data-board-recent]')).toHaveCount(0);
+    await expect.poll(() => candidates(page)).toEqual(['GO', 'Golf', 'Golfer', 'Gossiping']);
+    await modalInput(page).fill('');
+    await expect(page.locator('[data-board-recent]')).toHaveCount(1);
+    await page.locator('[data-board-candidate="C_Chat"]').click();
+    await expect(modalInput(page)).toHaveCount(0);
+    await waitScreenSettled(page, { 0: '看板《C_Chat》' });
+    await expect.poll(() => lastSent(page)).toMatch(/C_Chat\r$/);
+  });
+
   test('Esc 關彈窗 ⇒ 送 Ctrl-C 收掉背景的 prompt，回到列表', async ({ page }) => {
     await openBoardSearch(page);
     await modalInput(page).pressSequentially('go');

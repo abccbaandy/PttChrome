@@ -589,6 +589,15 @@
   "tooltip_searchPushPresets": {
     "message": "搜尋彈窗切到推文數時，輸入框下面多一排「推 10↑／30↑／50↑／爆／噓 10↑」，點一下就用那個門檻搜尋（跟自己打數字按搜尋一樣）。"
   },
+  "options_searchRecentBoards": {
+    "message": "搜尋看板時先列出最近看過的板"
+  },
+  "tooltip_searchRecentBoards": {
+    "message": "搜尋彈窗切到看板、還沒打字時，下面的框列出最近看過的板（首頁那份，最多 8 個），點一下就進那個板；一打字就換回 PTT 的補全清單。"
+  },
+  "searchModal_boardRecent": {
+    "message": "最近看過的板"
+  },
   "searchModal_cancel": {
     "message": "取消"
   },

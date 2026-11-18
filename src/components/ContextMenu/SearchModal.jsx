@@ -22,6 +22,17 @@ import {
   forgetSearchKind,
 } from "../../js/search_history";
 import { readValuesWithDefault } from "../../js/pref_storage";
+import { readJson } from "../../js/user_data";
+
+// 首頁儀表板記的最近看板（home_dashboard.js#pushRecentBoard，最多 8 個）。只收看起來像板名的
+// 字串：資料是本機存的、可能被設定備份匯入或舊版寫壞，壞的那幾筆略過，不會變成要送出的字。
+const BOARD_NAME_RE = /^[A-Za-z0-9_.-]{1,12}$/;
+export function readRecentBoards() {
+  if (!readValuesWithDefault().searchRecentBoards) return [];
+  const list = readJson("homeRecentBoards");
+  if (!Array.isArray(list)) return [];
+  return list.filter((n) => typeof n === "string" && BOARD_NAME_RE.test(n)).slice(0, 8);
+}
 import "./SearchModal.css";
 
 // 搜尋彈窗（docs/article-search.md）。取代 PTT 原生的 / ? a Z s prompt：
@@ -86,6 +97,8 @@ export const SearchModal = ({
   const [pushPresets, setPushPresets] = useState(
     () => !!readValuesWithDefault().searchPushPresets,
   );
+  // P105：看板種類、輸入欄空著時，補全框改列最近看過的板（點了走 onPick＝跟點補全候選同一條路）。
+  const [recentBoards, setRecentBoards] = useState(() => readRecentBoards());
   // -1 ＝ 正在編輯自己的字；0.. ＝ 正顯示記憶的第幾筆。
   const indexRef = useRef(-1);
   const draftRef = useRef("");
@@ -103,6 +116,7 @@ export const SearchModal = ({
     setValue("");
     setHistory(readSearchHistory());
     setPushPresets(!!readValuesWithDefault().searchPushPresets);
+    setRecentBoards(readRecentBoards());
     indexRef.current = -1;
     draftRef.current = "";
   }, [show, kind]);
@@ -311,6 +325,7 @@ export const SearchModal = ({
               : interimCandidates(lastAcceptedRef.current, boardQuery)
           }
           mobile={mobile}
+          recent={value ? null : recentBoards}
           onPick={submit}
         />
       )}
@@ -416,8 +431,11 @@ const BoardSuggestions = ({
   ascii,
   interim,
   mobile,
+  recent,
   onPick,
 }) => {
+  // 輸入欄空著（recent 有值）＝列最近看過的板；一打字 recent 變 null，換回 PTT 的補全。
+  const showRecent = !query && !!recent && recent.length > 0;
   let status = null;
   if (!ascii) status = i18n("searchModal_boardAscii");
   else if (rejected)
@@ -428,8 +446,15 @@ const BoardSuggestions = ({
     status = i18n("searchModal_boardUnavailable");
   else if (query && !result) status = i18n("searchModal_boardPending");
   else if (blocks) status = i18n("searchModal_boardAmbiguous");
-  const pending = !result && !!interim && interim.length > 0;
-  const names = result ? result.candidates || [] : pending ? interim : [];
+  else if (showRecent) status = i18n("searchModal_boardRecent");
+  const pending = !showRecent && !result && !!interim && interim.length > 0;
+  const names = showRecent
+    ? recent
+    : result
+      ? result.candidates || []
+      : pending
+        ? interim
+        : [];
   return (
     <div
       className="searchBoardSuggest"
@@ -450,6 +475,7 @@ const BoardSuggestions = ({
         className="searchBoardCandidates"
         data-board-candidates
         data-board-interim={pending ? "" : undefined}
+        data-board-recent={showRecent ? "" : undefined}
       >
         <Group gap={4}>
           {names.map((name) => (
@@ -464,7 +490,7 @@ const BoardSuggestions = ({
             </Button>
           ))}
         </Group>
-        {result && result.more && (
+        {!showRecent && result && result.more && (
           <Text size="xs" c="dimmed" mt={4} data-board-more>
             {i18n("searchModal_boardMore")}
           </Text>

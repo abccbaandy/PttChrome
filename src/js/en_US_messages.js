@@ -589,6 +589,15 @@ export const en_US = {
   "tooltip_searchPushPresets": {
     "message": "In the search dialog's score tab, a row of buttons (10+, 30+, 50+, Hot, 10+ boos) appears under the input; tap one to search with that threshold (same as typing the number and pressing Search)."
   },
+  "options_searchRecentBoards": {
+    "message": "List recently visited boards in board search"
+  },
+  "tooltip_searchRecentBoards": {
+    "message": "When the search dialog is on Board and nothing is typed yet, the box lists boards you visited recently (the home screen list, up to 8). Tap one to enter it; typing switches back to PTT's completion list."
+  },
+  "searchModal_boardRecent": {
+    "message": "Recently visited boards"
+  },
   "searchModal_cancel": {
     "message": "Cancel"
   },

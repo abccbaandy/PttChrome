@@ -412,3 +412,47 @@ test("手機字串兩語系都有，且不含快捷鍵或 ↑", () => {
     expect(en["searchModal_" + base + "Mobile"]).toBeTruthy();
   }
 });
+
+// ---- P105：輸入欄空著時，補全框列首頁那份最近看板（user_data homeRecentBoards）----
+const seedRecentBoards = (names) =>
+  localStorage.setItem("pttchrome.homeRecentBoards.v1", JSON.stringify(names));
+
+test("看板：輸入欄空著 ⇒ 補全框列最近看過的板，點一個走同一條送出路徑", () => {
+  seedRecentBoards(["Stock", "C_Chat", "Baseball"]);
+  const createBoardSearch = fakeBoardSearch();
+  const { input, onConfirm } = renderModal({
+    kind: "board",
+    kinds: ["board"],
+    createBoardSearch,
+  });
+  const bridge = createBoardSearch.made[0];
+  const shown = () =>
+    [...document.querySelectorAll("[data-board-candidate]")].map((n) =>
+      n.getAttribute("data-board-candidate"),
+    );
+  expect(shown()).toEqual(["Stock", "C_Chat", "Baseball"]);
+  expect(document.querySelector("[data-board-recent]")).not.toBeNull();
+  fireEvent.click(document.querySelector('[data-board-candidate="C_Chat"]'));
+  expect(onConfirm).toHaveBeenCalledWith({ kind: "board", text: "C_Chat", bridge });
+  // 一打字就換回 PTT 的補全。
+  fireEvent.change(input, { target: { value: "go" } });
+  expect(document.querySelector("[data-board-recent]")).toBeNull();
+  bridge.answer({ query: "go", completion: "go", candidates: ["GO", "Golf"] });
+  expect(shown()).toEqual(["GO", "Golf"]);
+});
+
+test("看板：設定關掉或沒有最近看板 ⇒ 空的框照舊", () => {
+  seedRecentBoards(["Stock"]);
+  writeValues({ ...readValuesWithDefault(), searchRecentBoards: false });
+  renderModal({ kind: "board", kinds: ["board"], createBoardSearch: fakeBoardSearch() });
+  expect(document.querySelector("[data-board-candidate]")).toBeNull();
+  expect(document.querySelector("[data-board-recent]")).toBeNull();
+});
+
+test("看板：存的資料壞掉（不是陣列、混了非板名）⇒ 只列合法板名", () => {
+  seedRecentBoards(["Stock", 3, "", "a b", null, "Gossiping"]);
+  renderModal({ kind: "board", kinds: ["board"], createBoardSearch: fakeBoardSearch() });
+  expect(
+    [...document.querySelectorAll("[data-board-candidate]")].map((n) => n.textContent),
+  ).toEqual(["Stock", "Gossiping"]);
+});

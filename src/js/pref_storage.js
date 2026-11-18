@@ -504,6 +504,9 @@ export const DEFAULT_PREFS = {
   // 搜尋彈窗推文數頁的常用門檻按鈕（P103，SearchModal.jsx#PUSH_PRESETS）：點一下＝打那個數字
   // 按搜尋，走同一條搜尋流程、不新增送鍵路徑 ⇒ 不在安全模式名單。
   searchPushPresets: true,
+  // 搜尋彈窗看板頁、輸入欄空著時列最近看過的板（P105，SearchModal.jsx#readRecentBoards）：點一下
+  // ＝點補全候選，走同一條送出路徑、不新增送鍵方式 ⇒ 不在安全模式名單。
+  searchRecentBoards: true,
   // 停在搜尋結果（系列文章）時右上角的搜尋狀態列（js/search_status.js）：顯示搜尋條件、
   // ✕ 回完整列表、＋條件。按鈕只是替使用者按 ← 與 / ⇒ 不在安全模式名單。
   enableSearchStatus: true,

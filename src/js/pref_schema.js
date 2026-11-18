@@ -451,6 +451,12 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_searchPushPresets",
     },
     {
+      key: "searchRecentBoards",
+      type: "check",
+      titleKey: "options_searchRecentBoards",
+      tooltipKey: "tooltip_searchRecentBoards",
+    },
+    {
       key: "enableSearchStatus",
       type: "check",
       titleKey: "options_enableSearchStatus",
