@@ -2590,9 +2590,6 @@ App.prototype.onPrefChange = function(name, value) {
     case 'antiIdleTime':
       this.antiIdleTime = value * 1000;
       break;
-    case 'dbcsDetect':
-      this.view.dbcsDetect = value;
-      break;
     case 'enableBell':
       setBellEnabled(!!value);
       break;
