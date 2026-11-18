@@ -852,7 +852,7 @@ async function waitFed(page, n, timeout = 20000) {
 // 判定穩定 —— seekInlineMedia 甚至會一路捲到底都找不到任何媒體而回 found:0，測試以
 // 「no inline image rendered」假紅。見 helpers/layout.js。
 const PREVIEW_SEL =
-  '.previewLoading, .previewError, .easyReadingImg, .easyReadingVideo, img.hyperLinkPreview, video.easyReadingVideo, iframe';
+  '.previewLoading, .previewError, .easyReadingImg, .easyReadingVideo, img.hyperLinkPreview, video.easyReadingVideo, iframe, .videoFacade';
 
 // 把 selector 指到的元素捲到視窗中央，等到它裡面的預覽全部到終局（載到／失敗）。
 // 回傳實際掛出來的預覽數。

@@ -547,7 +547,7 @@ const InlineIframe = React.memo(function InlineIframe({ src, aspect, poster, fac
       <iframe
         type="text/html"
         src={playSrc}
-        allow="autoplay; fullscreen"
+        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
         allowFullScreen
         referrerPolicy="origin-when-cross-origin"
         onLoad={() => setLoaded(true)}

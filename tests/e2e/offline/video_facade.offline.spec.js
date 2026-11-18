@@ -12,7 +12,8 @@ const { waitRectStable } = require('../helpers/layout');
 function trackEmbeds(page) {
   const urls = [];
   page.on('request', (req) => {
-    if (/youtube\.com\/embed\//.test(req.url())) urls.push(req.url());
+    const u = new URL(req.url());
+    if (u.hostname === 'www.youtube.com' && u.pathname.startsWith('/embed/')) urls.push(u.href);
   });
   return urls;
 }

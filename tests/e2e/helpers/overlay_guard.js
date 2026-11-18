@@ -52,7 +52,7 @@ async function bottomOverlayViolations(page) {
     // 目標
     const targets = [];
     const isBlank = (el) =>
-      el.getAttribute('type') === 'bbsrow' && !/\S/.test(el.textContent) && !el.querySelector('img, video, iframe');
+      el.getAttribute('type') === 'bbsrow' && !/\S/.test(el.textContent) && !el.querySelector('img, video, iframe, .videoFacade');
     let last = null;
     outer: for (let n = mc.lastElementChild; n; n = n.previousElementSibling) {
       const nodes = n.classList.contains('screenChunk') ? [...n.children] : [n];

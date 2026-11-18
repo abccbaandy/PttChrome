@@ -212,7 +212,7 @@ async function assertElementUnder(page, x, y, expected, opts = {}) {
 // 退出帶），elementFromPoint 正常情況下不會回它 —— **留著不是冗餘**：那條 CSS 一旦被
 // 拿掉，這裡會立刻把「留白又變成預覽」講出來，而不是讓下游斷言退化成沉默的 0。
 const OVERRIDING_SEL =
-  'a, img, video, iframe, .inlinePreviewSlot, .previewLoading, .previewError';
+  'a, img, video, iframe, .videoFacade, .inlinePreviewSlot, .previewLoading, .previewError';
 
 // 「量一個會走到 buf.mouseAction 的座標」時要避開的**完整**清單 ——
 // App.mouse_click 在讀 mouseAction 之前就 return 的每一種目標的鏡像：
@@ -399,8 +399,9 @@ async function plainLeftEdge(page, { settleTimeout = 60000 } = {}) {
 //              找不到 img 的斷言（見下方 loaded 的計算）。
 // 一律**不丟錯**：要斷言還是 skip 由呼叫端決定（同 waitEasyReadingComplete 的約定）。
 const MOUNTED_SEL =
-  'img.hyperLinkPreview, video, iframe, .previewLoading, .previewError';
-const MEDIA_SEL = 'img.hyperLinkPreview, video, iframe';
+  'img.hyperLinkPreview, video, iframe, .videoFacade, .previewLoading, .previewError';
+// .videoFacade：YouTube／Twitch 先放的縮圖（P109，點了才換成 iframe），跟 iframe 同一級。
+const MEDIA_SEL = 'img.hyperLinkPreview, video, iframe, .videoFacade';
 
 async function seekMountedPreview(
   page,
