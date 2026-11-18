@@ -299,6 +299,17 @@ scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的
 渲染鏈的 log 走 `src/js/diag.js` 的 module 級 sink（錄製時由 DebugRecorder 掛上）；會觸發 layout
 的量測一律先檢查 `diagActive()`。
 
+## 長引言收起（P106，pref `enableQuoteCollapse`）
+
+- 判準只有一條：**連續**以「: 」開頭的行（pttbbs `mbbsd/edit.c` 回文引用的格式；多層「: : 」也算），≥5 行留前 2 行。
+  標註在 `js/quote_collapse.js`，接在 `computeAnnotations` 的推文篩選之後；反向讀取接合中不收。跨列 ⇒ 前沿的 `quote`
+  選項把結尾那段留給下一幀（`screen_annotations_frontier.test.js` 有引言組）。
+- 收起的列**不標 `hidden`**（那是「整列移除」）、只標 `quoteHidden`：render 照常畫那一列、包進
+  `div.quoteFold[hidden="until-found"]`（`render/quote_fold.js`）。瀏覽器 Ctrl+F 命中會自己打開並發 `beforematch`，
+  我們再把整段記成展開；手機找字走 `revealQuoteFold`。複製：`Selection.toString` 不含 until-found 的字，
+  `screen_chunk.readSelectionText` 讀之前暫時打開選取碰到的那幾列、同一個 task 放回。
+- 展開狀態 `view._quoteExpanded`（段落 key）換文就清，進 `annotationsKey`。
+
 ## 文章 functionMode（按非導覽鍵 → 鏡像原生 LIVE，CONFIRMED 讀碼+unit）
 
 對應 `EasyReading._functionMode`(=`buf.easyReadingFunctionMode`)。**原則：底部互動不 hardcode、不逐選單 parse——原生畫什麼好讀就鏡像什麼**（與列表好讀的 functionMode 同概念，文章版獨立、更單純）。

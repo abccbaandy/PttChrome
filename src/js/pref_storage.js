@@ -416,6 +416,8 @@ export const DEFAULT_PREFS = {
   showLightsOnButton: true,
   showFloorNumbers: true,
   mergeSameAuthorComments: true, // 好讀：連續同作者推文合併成一段
+  // 好讀文章把長引言收起來（P106）：連續 5 行以上的「: 」引言只留前 2 行，點了展開。
+  enableQuoteCollapse: true,
   // 合併塊裡每一則都標自己的時間（P82）：桌機每行在原時間欄、手機第二則起行右「時:分」。
   mergedCommentEachTime: true,
   // 推文區塊行距（僅文章好讀累積長頁）：推文之間拉開距離，同作者合併塊內部的

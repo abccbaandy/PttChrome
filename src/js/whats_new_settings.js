@@ -19,6 +19,7 @@ export const FEATURE_SETTING = {
   好讀模式: "enableEasyReading",
   "Ctrl+F 搜全文": "easyReadingBrowserFind",
   推文篩選: "enableCommentFilter",
+  長引言收起: "enableQuoteCollapse",
   新推文標記: "markNewComments",
   推文樓層編號: "showFloorNumbers",
   同作者連續推文合併: "mergeSameAuthorComments",

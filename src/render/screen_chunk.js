@@ -43,6 +43,7 @@
 import { el } from "./dom";
 import { offsetTopWithin } from "../js/scroll_anchor";
 import { LAZY_MOUNT_MARGIN_PX, LAZY_UNMOUNT_MARGIN_PX } from "../js/lazy_media";
+import { unfoldSelection } from "./quote_fold";
 
 // 每塊的列數（頂層節點數；合併推文塊算一個）。main.css `.screenChunk` 的估計高度
 // （`contain-intrinsic-height: auto 100lh`）與它同值 —— 守護 tests/unit/screen_chunk.test.js。
@@ -123,12 +124,21 @@ const liveLayers = new Set();
 // selectionchange 驅動的展開（不變量 5）是**非同步**的，而 copyOnSelect 在 mouseup
 // 當下就讀 ⇒ 讀之前先同步展開＋強制排版。Firefox 實測（3000 行、11 塊）：選取當下
 // 直接讀 30556 字；同步展開＋排版後 110085 字（完整）；不展開的話過一幀又掉回 90329。
+//
+// 長引言收起（P106）的列包在 hidden="until-found" 裡，toString 不含它們 ⇒ 讀之前暫時打開選取碰到的
+// 那幾列、讀完放回（同一個 task，畫面不會閃；render/quote_fold.js#unfoldSelection）。
 export function readSelectionText() {
   let opened = false;
   for (const layer of liveLayers) if (layer.syncSelection()) opened = true;
   if (opened && document.body) void document.body.offsetHeight;
   const sel = window.getSelection();
-  return sel ? sel.toString() : "";
+  if (!sel) return "";
+  const restore = unfoldSelection(sel, document.getElementById("mainContainer"));
+  try {
+    return sel.toString();
+  } finally {
+    restore();
+  }
 }
 
 export class ChunkLayer {

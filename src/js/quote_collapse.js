@@ -1,7 +1,9 @@
 // @ts-check
-// 好讀文章把長引言收起來（P106，L 11/18 同意）：**純邏輯層**，還沒接上渲染。
-// 實作筆記（共享資料夾 research/plans/p106-quote-collapse.md）：接線照抄推文篩選細線
-// （screen_annotations.js#applyCommentFilterSkips）的 hidden＋串首標記＋展開 key 那一套。
+// 好讀文章把長引言收起來（P106，L 11/18 同意）：標註層。接線在 screen_annotations.computeAnnotations
+// （PAGE_READING＋好讀＋pref enableQuoteCollapse，反向讀取接合中不收），畫法在 render/screen.js：
+// 收起的列**還在 DOM**、包在 hidden="until-found" 裡（瀏覽器的找字命中會自己打開，beforematch 時
+// 我們把整段記成展開；複製由 screen_chunk.readSelectionText 暫時打開再讀），所以收起的列**不**標
+// `hidden`（那是「整列移除」的語意，黑名單／推文篩選在用），只標 `quoteHidden`。
 //
 // 引言的形狀照 pttbbs mbbsd/edit.c 回文引用：先一行「※ 引述《作者》之銘言：」，原文每一行前面加
 // 「: 」（色碼拔掉）、讀到簽名檔分隔「--」就停；多層引言就是引文本身已經以「: 」開頭（「: : 」）。
@@ -64,10 +66,10 @@ export function quoteRunKeys(texts, runs) {
 
 /**
  * 把長引言段標進標註（只寫 result[row]，同 applyCommentFilterSkips 的規則）。
- *   - 收起：第 QUOTE_KEEP 行之後 `hidden: true, quoteHidden: true`；最後一個露出來的行標
- *     `quoteSkip: N`（收起幾行）、`quoteKey`（quoteRunKeys）。別的功能已經藏起來的列不動
- *     （不掛 quoteHidden，展開時也不會被這裡改回看得到）。
- *   - 展開（expanded 含這段的 key）：都不藏，同一行改標 `quoteExpanded: N`（render 畫「收起引言」）。
+ *   - 收起：第 QUOTE_KEEP 行之後 `quoteHidden: true, quoteKey`（render 包進 until-found）；最後一個
+ *     露出來的行標 `quoteSkip: N`（收起幾行）、`quoteKey`（quoteRunKeys）。別的功能已經藏起來
+ *     （hidden）的列不動（不掛 quoteHidden）。
+ *   - 展開（expanded 含這段的 key）：都不收，同一行改標 `quoteExpanded: N`。
  * 標註內容沒變就不換物件（前沿快路徑沿用的前綴要保持同一批物件）。
  * **不清舊標註**：引言段變短／消失時殘留的 quoteHidden／quoteSkip 要靠呼叫端每次給新的 result
  * （computeAnnotations 每幀都是新陣列；前沿快路徑沿用的前綴不會再變）。
@@ -89,11 +91,11 @@ export function applyQuoteCollapse(result, expanded, texts) {
         if (a.quoteHidden) {
           const next = { ...a };
           delete next.quoteHidden;
-          delete next.hidden;
+          delete next.quoteKey;
           result[r] = next;
         }
-      } else if (!a.hidden) {
-        result[r] = { ...a, hidden: true, quoteHidden: true };
+      } else if (!a.hidden && (!a.quoteHidden || a.quoteKey !== key)) {
+        result[r] = { ...a, quoteHidden: true, quoteKey: key };
       }
     }
     const a = result[head] || {};

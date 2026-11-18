@@ -24,6 +24,7 @@
 // 守護：tests/unit/article_find.test.js、offline e2e mobile_article_find.offline.spec.js。
 import { readEffectivePrefs } from './pref_storage';
 import { renderChunksAround } from '../render/screen_chunk';
+import { revealQuoteFold } from '../render/quote_fold';
 
 export const FIND_HIGHLIGHT = 'pttFind';
 export const FIND_CURRENT_HIGHLIGHT = 'pttFindCurrent';
@@ -76,9 +77,10 @@ function locate(nodes, pos, end) {
   return { node: last.node, offset: last.node.nodeValue.length };
 }
 
-// 被藏起來的列（黑名單推文等）不算：它們在 DOM 裡但使用者看不到。
+// 被藏起來的列（黑名單推文等）不算：它們在 DOM 裡但使用者看不到。長引言收起的列（P106，
+// hidden="until-found"）算：跳到那裡時整段展開（_reveal → revealQuoteFold，同瀏覽器找字）。
 function rowHidden(rowEl) {
-  return !!(rowEl.closest && rowEl.closest('[hidden]'));
+  return !!(rowEl.closest && rowEl.closest('[hidden]:not([hidden="until-found"])'));
 }
 
 // container 裡所有畫面列的符合處：[{ rowEl, range }]，照畫面順序。
@@ -333,6 +335,7 @@ ArticleFind.prototype = {
     const m = this._matches[i];
     const disp = this._scroller();
     if (!m || !m.rowEl.isConnected || !disp) return;
+    revealQuoteFold(m.rowEl);
     renderChunksAround(m.rowEl);
     const box = disp.getBoundingClientRect();
     let r = m.range.getBoundingClientRect();

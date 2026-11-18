@@ -124,6 +124,9 @@ export function annotationsKey(input) {
     stable(e.listFollowOnly),
     stable(e.commentFilter),
     stable(e.commentFilterExpanded),
+    // 長引言收起（P106）：開關＋這篇展開過哪幾段。
+    stable(e.quoteCollapse),
+    stable(e.quoteExpanded),
     stable(e.showFloorNumbers),
     stable(e.highlightAuthor),
     stable(e.articleAuthor),
