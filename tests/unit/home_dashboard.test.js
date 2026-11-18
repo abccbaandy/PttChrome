@@ -23,6 +23,7 @@ import {
 } from "../../src/js/home_dashboard";
 import { serializedOpHint } from "../../src/js/serialized_op_gate";
 import { HINT_ERROR } from "../../src/js/status_hint";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 
 const ROWS = 24;
 const ZA_FAV = "\x1af";
@@ -302,28 +303,39 @@ test("重新整理鍵（⌘R）不收起面板：面板先收起的話 screen_re
 });
 
 // ── 控制器：假 App（buf 讀目前的 frame，CommandQueue 只收集命令）──────────────────
-function makeCore(start = mainMenu()) {
+// isolate：buf 換成真的故障隔離派發（event.js），測故障停用用；boom() 讓下一次讀畫面丟例外。
+function makeCore(start = mainMenu(), { isolate = false } = {}) {
   const enqueued = [];
   const hints = [];
   let frame = start;
+  let boom = false;
   const listeners = {};
   const inputListeners = {};
+  const buf = {
+    rows: ROWS,
+    cols: 80,
+    get cur_x() {
+      return frame.curX;
+    },
+    get cur_y() {
+      return frame.curY;
+    },
+    pageState: 1,
+    getRowText: (r) => {
+      if (boom) throw new Error("boom");
+      return frame.rowTexts[r];
+    },
+    isCursorOnInputField: () => !!frame.inputField,
+  };
+  if (isolate) {
+    Event.mixin(buf, { isolate: true });
+    listeners.screenSettled = () => buf.dispatchEvent({ type: "screenSettled" });
+  } else {
+    buf.addEventListener = (name, fn) => (listeners[name] = fn);
+  }
   const core = {
     conn: { isConnected: true },
-    buf: {
-      rows: ROWS,
-      cols: 80,
-      get cur_x() {
-        return frame.curX;
-      },
-      get cur_y() {
-        return frame.curY;
-      },
-      pageState: 1,
-      getRowText: (r) => frame.rowTexts[r],
-      isCursorOnInputField: () => !!frame.inputField,
-      addEventListener: (name, fn) => (listeners[name] = fn),
-    },
+    buf,
     inputArea: { addEventListener: (name, fn) => (inputListeners[name] = fn) },
     view: { flashListHint: (m, ms, level) => hints.push({ m, level }) },
     commandQueue: {
@@ -346,7 +358,8 @@ function makeCore(start = mainMenu()) {
     listeners.screenSettled();
   };
   const key = (k) => inputListeners.keydown({ key: k });
-  return { core, home, enqueued, hints, show, land, key };
+  const setBoom = (v) => (boom = v);
+  return { core, home, enqueued, hints, show, land, key, setBoom };
 }
 
 describe("HomeDashboard：何時出現", () => {
@@ -634,6 +647,59 @@ describe("HomeDashboard：自動抓我的最愛", () => {
     show(ARTICLE_LIST());
     expect(home.fetchFavorites()).toBe(false);
     expect(enqueued).toHaveLength(0);
+  });
+});
+
+// 故障停用（docs/feature-isolation.md；架構 review A6）：沒登記時 settle 出錯每幀再炸，面板卡在
+// 主功能表上、自動抓我的最愛照樣送鍵、點卡片照樣送。
+describe("HomeDashboard：故障停用", () => {
+  let prev;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+  });
+  afterEach(() => {
+    setListenerErrorPolicy(prev);
+    vi.useRealTimers();
+  });
+
+  test("settle 出錯 ⇒ 面板收起、自動抓取取消、點卡片／信箱／更新都不送；新連線恢復", () => {
+    const { core, home, enqueued, show, setBoom } = makeCore(mainMenu(), { isolate: true });
+    show(mainMenu());
+    expect(home.state.visible).toBe(true);
+    setBoom(true);
+    show(mainMenu());
+    setBoom(false);
+    expect(core.buf.isListenerDisabled(home._onSettle)).toBe(true);
+    expect(home.state.visible).toBe(false);
+    vi.advanceTimersByTime(AUTO_FETCH_DELAY_MS * 2);
+    expect(home.openBoard("C_Chat")).toBe(false);
+    expect(home.openMail()).toBe(false);
+    expect(home.fetchFavorites()).toBe(false);
+    show(mainMenu());
+    expect(home.state.visible).toBe(false);
+    expect(enqueued).toHaveLength(0);
+
+    core.buf.enableAllListeners();
+    show(mainMenu());
+    expect(home.state.visible).toBe(true);
+  });
+
+  test("抓我的最愛途中被停用：鍵照常跑完回主功能表，面板不再出現", () => {
+    const { core, home, enqueued, show, land, setBoom } = makeCore(mainMenu(), { isolate: true });
+    show(mainMenu());
+    expect(home.fetchFavorites()).toBe(true);
+    land(enqueued[0], favScreen(boards(1, 3)));
+    setBoom(true);
+    show(favScreen(boards(1, 3)));
+    setBoom(false);
+    expect(core.buf.isListenerDisabled(home._onSettle)).toBe(true);
+    expect(home.state.visible).toBe(false);
+    expect(enqueued.map((c) => c.keys)).toEqual([ZA_FAV, "q"]);
+    land(enqueued[1], mainMenu());
+    expect(home.state.fetching).toBe(false);
+    expect(core[HOME_FAV_FETCH_FLAG]).toBe(false);
+    expect(home.state.visible).toBe(false);
   });
 });
 

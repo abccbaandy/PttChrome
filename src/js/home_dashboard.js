@@ -352,13 +352,18 @@ export function HomeDashboard(core) {
     newMail: false
   };
   const self = this;
+  // 故障停用（docs/feature-isolation.md）：settle 出錯 ⇒ 這次連線收起面板（露出原生主功能表）、
+  // 自動抓我的最愛的計時取消；點卡片／信箱／更新（含 F5 認首頁）這些入口也擋。正在抓我的最愛時
+  // 被停用：鍵已經在佇列裡，照常跑完回主功能表、閱讀紀錄照常收尾，只是面板不再出現（_onSettled
+  // 先看停用）。最近看板、看板未讀也不再記。新連線 enableAllListeners 恢復。
+  this._onSettle = function() {
+    self._onSettled();
+  };
   if (core.buf && core.buf.addEventListener)
     core.buf.addEventListener(
       'screenSettled',
-      function() {
-        self._onSettled();
-      },
-      { owner: 'homeDashboard' }
+      this._onSettle,
+      { owner: 'homeDashboard', feature: 'enableHomeDashboard', disable: () => self._suspend() }
     );
   const input = core.inputArea;
   if (input && input.addEventListener) {
@@ -417,7 +422,22 @@ HomeDashboard.prototype = {
     return false;
   },
 
+  // 被故障停用中（這次連線）。
+  _disabled: function() {
+    const buf = this._core.buf;
+    return !!(buf && buf.isListenerDisabled && buf.isListenerDisabled(this._onSettle));
+  },
+
+  _suspend: function() {
+    this._atHome = false;
+    this._pendingViewport = null;
+    this._clearAutoTimer();
+    this._set({ visible: false });
+  },
+
   _onSettled: function() {
+    // 抓我的最愛的收尾也會叫這裡（不經派發）：停用中不讓面板回來。
+    if (this._disabled()) return this._suspend();
     const buf = this._core.buf;
     if (!buf || typeof buf.getRowText !== 'function') return;
     // 先只讀頭尾兩列：每次 settle 都會跑，不在主功能表時不必讀滿整頁。
@@ -567,7 +587,7 @@ HomeDashboard.prototype = {
   // 點卡片：與搜尋彈窗的「前往看板」同一條（s<板>⏎、閱讀紀錄 board-search）。
   openBoard: function(name) {
     const core = this._core;
-    if (!name || this._state.fetching) return false;
+    if (!name || this._state.fetching || this._disabled()) return false;
     const sent = submitSearch(core, 'board', name, {
       onFail: () => this._hint('開不了看板 ' + name + '（已停在原生畫面）', 0, HINT_ERROR)
     });
@@ -578,7 +598,7 @@ HomeDashboard.prototype = {
   // 新信：Ctrl+Z m（ZA 的信箱，PERM_READMAIL）。落地＝離開主功能表。
   openMail: function() {
     const core = this._core;
-    if (this._state.fetching) return false;
+    if (this._state.fetching || this._disabled()) return false;
     let bm = recordFor(core).begin('home-mail');
     const finish = function(outcome) {
       if (bm) recordFor(core).end(bm, outcome);
@@ -613,7 +633,7 @@ HomeDashboard.prototype = {
   // 序列邊走邊長（同 unread_jump）：每一頁讀完才決定下一步。
   fetchFavorites: function() {
     const core = this._core;
-    if (this._state.fetching) return false;
+    if (this._state.fetching || this._disabled()) return false;
     if (!isHomeScreen(this._facts())) return false;
     if (serializedOpHint(core)) return false;
     const self = this;
