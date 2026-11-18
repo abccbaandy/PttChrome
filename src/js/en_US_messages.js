@@ -1274,6 +1274,12 @@ export const en_US = {
   "tooltip_tapToLoadImagesOnMobileData": {
     "message": "When the Android App is on mobile data (or a metered network such as a hotspot), image links get a \"Load image\" button instead: tap to load that one, long-press to load the whole article. Images load automatically again on Wi-Fi."
   },
+  "options_videoThumbFirst": {
+    "message": "Show YouTube thumbnails first"
+  },
+  "tooltip_videoThumbFirst": {
+    "message": "YouTube and Twitch clips in articles show only a thumbnail and a play button; the player loads and starts when you click it, so scrolling past many videos doesn't load many players. Off = embed the player right away."
+  },
   "tooltip_imageFitScreen": {
     "message": "Images from X (Twitter) load at just the size your screen shows: they look the same but appear faster and use less data. The original is loaded when you click to enlarge or zoom in. Off = always load the original. Takes effect after reload."
   },

@@ -67,6 +67,8 @@ describe("main.css：內嵌預覽的命中範圍", () => {
       ".previewError",
       ".previewGrayBtn",
       ".previewZoomBar",
+      // P109 影片縮圖：少了它整顆播放鈕點不到（點擊穿到列上），影片永遠開不了。
+      ".videoFacade",
     ]) {
       expect(selector, `${need} 沒有取回 pointer-events`).toContain(need);
     }

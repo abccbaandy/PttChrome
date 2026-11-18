@@ -10,7 +10,8 @@ function mount(value, width) {
   host.style.width = width + "px";
   document.body.appendChild(host);
   render(<ImagePreviewer.Inline value={value} />, { container: host });
-  const box = host.querySelector("iframe").parentElement.getBoundingClientRect();
+  // 縮圖（P109）與播放器共用同一個框 [data-video-box]。
+  const box = host.querySelector("[data-video-box]").getBoundingClientRect();
   return { w: Math.round(box.width), h: Math.round(box.height) };
 }
 

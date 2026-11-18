@@ -18,9 +18,10 @@
 //   .previewError        載入失敗提示（本身可點＝重試）
 //   img.easyReadingImg   內嵌圖（含 .hyperLinkPreview 放大切換）
 //   video.easyReadingVideo / iframe  自動開的影片
+//   .videoFacade         影片先放的縮圖＋播放鈕（P109，點了才換成 iframe）
 export const PREVIEW_CLICK_SELECTOR =
   '.inlinePreviewSlot, .previewLoading, .previewError, ' +
-  'img.easyReadingImg, video.easyReadingVideo, iframe';
+  'img.easyReadingImg, video.easyReadingVideo, iframe, .videoFacade';
 
 // e.target 是否落在預覽媒體上（含其後代）。
 export function isPreviewTarget(el) {

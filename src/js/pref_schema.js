@@ -132,6 +132,12 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_tapToLoadImagesOnMobileData",
       tooltipKey: "tooltip_tapToLoadImagesOnMobileData",
     },
+    {
+      key: "videoThumbFirst",
+      type: "check",
+      titleKey: "options_videoThumbFirst",
+      tooltipKey: "tooltip_videoThumbFirst",
+    },
     { key: "enableNotifications", type: "check", titleKey: "options_enableNotifications" },
     { key: "deepLinkHandoffNotify", type: "check", titleKey: "options_deepLinkHandoffNotify" },
     {

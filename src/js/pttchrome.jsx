@@ -105,6 +105,7 @@ import { unescapeStr, b2u, parseWaterball, normalizeCopyText } from './string_ut
 import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
 import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp, androidCanSetProtocol, androidSetProtocol, watchAndroidMeteredNetwork } from './android_bridge';
 import { setNetworkMetered, setTapToLoadEnabled } from './image_load_gate';
+import { setVideoThumbFirst } from './video_facade';
 import { bootSite } from './boot_site';
 import { shouldWarnBeforeUnload } from './unload_guard';
 import {
@@ -2408,6 +2409,10 @@ App.prototype.onPrefChange = function(name, value) {
     case 'tapToLoadImagesOnMobileData':
       // 只改閘門狀態：存活中的佔位盒自己訂閱了變化（按鈕出現／消失），不 redraw。
       setTapToLoadEnabled(value);
+      break;
+    case 'videoThumbFirst':
+      // 只改模組旗標：對之後新掛的播放器生效，已經在畫面上的縮圖／播放器不動。
+      setVideoThumbFirst(value);
       break;
     case 'useImgurProxy':
       setImageProxyConfig({ enabled: value });
