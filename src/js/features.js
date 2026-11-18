@@ -41,7 +41,9 @@ import { BoardTabs } from './board_tabs';
 /**
  * `settle: false`＝這個功能沒有 screenSettled 監聽者（只掛 DOM 事件或給別人呼叫），所以也沒有故障停用登記；
  * features_table.test.js 改查「它的檔案裡真的沒有 settle 監聽」。
- * @typedef {{ name: string, pref: string, create: (app: any) => any, after?: ReadonlyArray<string>, settle?: false }} FeatureDecl
+ * `onClose`＝斷線收攤（選填）：App.onClose 經 closeFeatures 照表順序呼叫，每一個各自隔離（一個丟例外其餘照收）。
+ * 跟著連線走的狀態才需要；其餘功能靠下一幀 settle 自己收起。
+ * @typedef {{ name: string, pref: string, create: (app: any) => any, after?: ReadonlyArray<string>, settle?: false, onClose?: (feature: any) => void }} FeatureDecl
  */
 
 /** 建構子裡 inputArea 之後那一段（首頁）。 @type {ReadonlyArray<FeatureDecl>} */
@@ -102,8 +104,13 @@ export const PERIPHERAL_FEATURES = Object.freeze([
 
 /** 建構子裡下一篇手勢（installPull／WheelNextArticle）之後那一段。 @type {ReadonlyArray<FeatureDecl>} */
 export const LATE_PERIPHERAL_FEATURES = Object.freeze([
-  // 水球／系統訊息收件匣（這次連線收到的水球與廣播，鈴鐺打開看）。斷線收攤在 App.onClose。
-  { name: 'messageInbox', pref: 'enableMessageInbox', create: (app) => new MessageInbox(app) },
+  // 水球／系統訊息收件匣（這次連線收到的水球與廣播，鈴鐺打開看）。收件匣跟著連線走：斷線清空。
+  {
+    name: 'messageInbox',
+    pref: 'enableMessageInbox',
+    create: (app) => new MessageInbox(app),
+    onClose: (inbox) => inbox.reset(),
+  },
   // 新推文標記（重開讀過的文章，上次讀完之後的推文前面一條灰線）；term_view 畫好讀累積頁時
   // 經 app.newComments.rowFor 問那一列。
   { name: 'newComments', pref: 'markNewComments', create: (app) => new NewComments(app) },
@@ -132,5 +139,21 @@ export function createFeatures(app, list) {
       if (app[dep] == null) throw new Error(`features: ${f.name} 要排在 ${dep} 之後，但 ${dep} 還沒建`);
     }
     app[f.name] = f.create(app);
+  }
+}
+
+/**
+ * 斷線收攤：照表順序呼叫有 onClose 的功能，每一個交給 run(name, fn) 包起來（App.onClose 傳 runIsolated 的包裝）。
+ * 沒建起來的（app[name] 不在）略過。
+ * @param {any} app
+ * @param {(label: string, fn: () => void) => void} run
+ */
+export function closeFeatures(app, run) {
+  for (const table of ALL_FEATURE_TABLES) {
+    for (const f of table) {
+      const close = f.onClose;
+      const feature = app[f.name];
+      if (close && feature != null) run(f.name, () => close(feature));
+    }
   }
 }

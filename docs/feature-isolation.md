@@ -25,7 +25,7 @@
 ## 不走事件派發的入口
 
 - **`App.onPrefChange` 逐 key**：每個 key 自己 try/catch，失敗交給 `event.js#reportIsolatedError('pref:<key>')`。以前是默默吞掉；現在 dev／測試照樣丟出。
-- **`App.onClose` 逐功能收攤**：每個 reset／disable 用 `runIsolated('close:<名稱>')` 包起來，一個丟例外，其餘照收、斷線提示照畫（不然畫面停在「連線中」、沒有重連鈕）。新增收攤項目照同樣包。
+- **`App.onClose` 逐功能收攤**：每個 reset／disable 用 `runIsolated('close:<名稱>')` 包起來，一個丟例外，其餘照收、斷線提示照畫（不然畫面停在「連線中」、沒有重連鈕）。新增收攤項目照同樣包。週邊功能（宣告表裡的）的收攤寫在表的 `onClose`，`App.onClose` 經 `closeFeatures(this, iso)` 照表順序呼叫、每一個各自包起來；`App.onClose` 裡不准直接碰表裡的功能（`features_table.test.js` 守）。
 - 這兩種只記錄、不停用、不提示（沒有對應的開關）。
 
 ## 全域未捕捉的例外
