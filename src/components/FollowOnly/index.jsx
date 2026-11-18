@@ -38,13 +38,16 @@ export const FollowOnly = ({ pttchrome }) => {
       className={
         "nomouse_command followOnlyChip" +
         (state.on ? " followOnlyChip--on" : "") +
-        (state.mobile ? " followOnlyChip--mobile" : "")
+        (state.mobile ? " followOnlyChip--mobile" : "") +
+        (state.compact ? " followOnlyChip--compact" : "") +
+        (state.inTabs ? " followOnlyChip--inTabs" : "")
       }
       style={
         state.mobile
           ? undefined
-          : { right: state.right + 8, top: state.top + 1 }
+          : { right: state.right + 8, top: state.top }
       }
+      aria-label={state.compact ? label : undefined}
       aria-pressed={state.on ? "true" : "false"}
       title={i18n("followOnly_tip")}
       onMouseDown={keepFocus}

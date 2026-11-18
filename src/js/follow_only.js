@@ -40,7 +40,28 @@ export function followOnlyAvailable(facts) {
   return !!(f.enabled && f.followListOn && f.hasFollow && f.listWindow && f.pageState !== PAGE_STATE.READING);
 }
 
-const HIDDEN = { visible: false, on: false, empty: false, right: 0, top: 0, mobile: false };
+const HIDDEN = { visible: false, on: false, empty: false, right: 0, top: 0, mobile: false, inTabs: false, compact: false };
+
+// 鈕高（FollowOnly.css .followOnlyChip height）。
+export const FOLLOW_ONLY_CHIP_HEIGHT = 24;
+
+// P108（L 11/18 同意）：桌機的鈕原本疊在標題列（終端機第 0 列）最右邊，蓋住「看板《板名》」的後半。
+//   - 看板分頁開著 ⇒ 移到分頁列（第 1 列，本來就被分頁列整條蓋住）的最右邊，垂直置中，不多蓋任何字；
+//   - 分頁關著 ⇒ 留在原位、縮成只剩星號的小圓鈕（只蓋到最後的「》」）。整段都被收起時照舊寫「這一段沒有」
+//     （那是唯一的說明，不能縮）。
+// 手機不變（入口在「更多」，浮動鈕只在 empty 時出現，位置由 CSS 定）。純函式：tabs＝BoardTabs.state。
+export function followOnlySlot(tabs, opts) {
+  const o = opts || {};
+  if (o.mobile) return { inTabs: false, compact: false, top: o.top };
+  if (tabs && tabs.visible && !tabs.mobile && tabs.rowHeight > 0) {
+    return {
+      inTabs: true,
+      compact: false,
+      top: Math.round(tabs.top + (tabs.rowHeight - FOLLOW_ONLY_CHIP_HEIGHT) / 2),
+    };
+  }
+  return { inTabs: false, compact: !o.empty, top: o.top + 1 };
+}
 
 export function FollowOnly(core, opts) {
   this._core = core;
@@ -135,21 +156,40 @@ FollowOnly.prototype = {
     return ls && typeof ls.visibleRowCount === 'function' ? ls.visibleRowCount() : null;
   },
 
+  // 看板分頁的位置變了就跟著挪（P108）。看板分頁在建構子裡排在這個功能之後（features.js 第二段），
+  // 建構當下還沒有 ⇒ 第一次 refresh 時才訂（onChange 會立刻回呼一次，先立旗標擋重入）。
+  _watchTabs: function() {
+    const tabs = this._core.boardTabs;
+    if (this._tabsWatched || !tabs || typeof tabs.onChange !== 'function') return;
+    this._tabsWatched = true;
+    const self = this;
+    tabs.onChange(function() {
+      self.refresh();
+    });
+  },
+
   refresh: function() {
     if (this.suspended()) return this._set({ visible: false });
+    this._watchTabs();
     const facts = this._facts();
     if (!followOnlyAvailable(facts)) return this._set({ visible: false });
     const g = this._geometry();
     if (!g) return this._set({ visible: false });
     const on = !!this._core.view.followOnly;
     const count = on ? this._visibleCount() : null;
+    const empty = on && count === 0;
+    const mobile = !!this._core.mobile;
+    const tabs = this._core.boardTabs;
+    const slot = followOnlySlot(tabs && tabs.state, { mobile: mobile, empty: empty, top: g.top });
     this._set({
       visible: true,
       on: on,
-      empty: on && count === 0,
+      empty: empty,
       right: g.right,
-      top: g.top,
-      mobile: !!this._core.mobile,
+      top: slot.top,
+      mobile: mobile,
+      inTabs: slot.inTabs,
+      compact: slot.compact,
     });
   },
 

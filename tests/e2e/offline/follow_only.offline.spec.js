@@ -75,4 +75,59 @@ test.describe('只看關注（離線重放）', () => {
     await ptt.applyPrefs(page, { enableFollowOnly: false });
     await expect(page.locator(CHIP)).toHaveCount(0);
   });
+
+  // P108：桌機的鈕原本疊在標題列（第 0 列）最右邊，蓋住「看板《板名》」的後半。
+  for (const withTabs of [true, false]) {
+    test(`P108 桌機：鈕不蓋標題列的看板名（看板分頁${withTabs ? '開著 ⇒ 移到分頁列' : '關著 ⇒ 縮成小圓鈕'}）`, async ({ page }) => {
+      test.setTimeout(60000);
+      await page.setViewportSize({ width: 1280, height: 800 });
+      if (withTabs)
+        await page.addInitScript(() => {
+          try {
+            localStorage.setItem('pttchrome.boardTabs.v1', JSON.stringify([{ name: 'Stock', at: 1 }, { name: 'Gossiping', at: 2 }]));
+          } catch (e) {}
+        });
+      await bootOffline(page, ptt, { boardTabs: withTabs });
+      await replayListCassette(page, nav);
+      await page.waitForFunction(() => window.__app.buf.pageState === 2);
+      await ptt.applyPrefs(page, { enableEasyReadingList: true, easyReadingListPrefetchCount: 0 });
+      await page.waitForFunction(() => {
+        const app = window.__app;
+        return app.listSession.state === 'active' && app.buf.listRenderMode === 'buffer' && app.commandQueue.idle;
+      });
+      const author = await page.evaluate(() =>
+        document.querySelector('#mainContainer [data-list-author]').getAttribute('data-list-author')
+      );
+      await ptt.applyPrefs(page, { followList: author });
+      await expect(page.locator(CHIP)).toBeVisible();
+      if (withTabs) await expect(page.locator('#boardTabs')).toBeVisible();
+      const chip = await waitRectStable(page, CHIP);
+      // 標題列（第 0 列）裡「看板《…》」那段字的範圍：真的量文字節點，不猜欄寬。
+      const title = await page.evaluate(() => {
+        const row = document.querySelector('#mainContainer [type="bbsrow"][srow="0"]');
+        const r = row.getBoundingClientRect();
+        const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+        let right = null;
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const i = n.nodeValue.indexOf('》');
+          if (i < 0) continue;
+          const rg = document.createRange();
+          rg.setStart(n, i);
+          rg.setEnd(n, i + 1);
+          const b = rg.getBoundingClientRect();
+          right = { left: b.left, right: b.right };
+        }
+        return { top: r.top, bottom: r.bottom, close: right };
+      });
+      expect(title.close, '標題列找不到「》」').toBeTruthy();
+      if (withTabs) {
+        // 整顆在標題列下面（分頁列那一列），不碰標題列。
+        expect(chip.top).toBeGreaterThanOrEqual(title.bottom - 0.5);
+      } else {
+        // 小圓鈕：最多蓋到最後的「》」，「《板名」整段露出來。
+        expect(chip.width).toBeLessThanOrEqual(26);
+        expect(chip.left).toBeGreaterThanOrEqual(title.close.left - 1);
+      }
+    });
+  }
 });
