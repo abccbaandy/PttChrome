@@ -191,6 +191,7 @@ WebCrypto 的 X25519／Ed25519 是較新的 API：沒有時自動退回 DH14＋E
 - **說明畫在勾選框裡**（A7 第十五步）：舊設定頁有兩種說明寫法（勾選框下另一行灰字 `PrefHint`／Mantine Checkbox 的 `description` 緊貼標題）。後者在索引記 `hintInBox: true`，`PrefCheckRow` 照著畫，一般分區的 `custom` 只剩帶通知權限警告的 `deepLinkHandoffNotify`。安全模式開／關兩種狀態的設定頁 DOM 前後都逐字相同。
 - **自動登入分頁也由索引畫出**（A7 第二十三步）：`tooltip_autoLogin`（帳密交給密碼管理員的警告）改掛在憑證分區上；「重複連線」下拉的 autocomplete=off 記成索引的 `noAutofill`，帳號欄記 `credential`。密碼欄（type=password、長度上限）與 2FA 密鑰（前置風險警告、格式錯誤、失焦正規化）留在 `custom`。有／沒有密碼管理員兩種狀態的分頁 DOM 前後逐字相同。至此每個設定分頁的設定格都照索引排（設定備份、快速搜尋自訂列這類不是設定格的照舊手寫）。守護：`pref_modal_autologin_tab.test.jsx`「由索引畫出」。
 - **四份設定清單對得起來**（A7「設定表單一來源」的前置守護）：預設值 `DEFAULT_PREFS`、設定索引、安全模式名單 `NATIVE_SAFE_MODE_KEYS`、本機專屬名單 `LOCAL_ONLY_PREF_KEYS` 還是分開手寫。`tests/unit/pref_schema_lists.test.js` 守：每個預設值都有索引項（刻意沒有的寫進 `pref_search.js#PREF_DEFAULTS_NOT_INDEXED` 並附理由）、每個索引項都有預設值、安全模式名單每項是索引裡的勾選格且預設是布林、本機專屬名單每項存在且索引標成 `credential` 的都在裡面。新增設定時這支紅了就照訊息補；之後要併成一張表也靠它確認沒漏。
+- **索引搬進葉模組 `pref_schema.js`**（A7「設定表單一來源」第一步）：索引資料與查表函式（`PREF_SEARCH_ITEMS`、`prefItem`、`prefShown`、`prefRequiresChain`…）從 `pref_search.js` 原樣搬出，`pref_search.js` 只留要讀語系字串的比對／排序並 `export *` 轉出，呼叫端不用改。理由：之後要把預設值、安全模式名單、上雲與否併進這張表，開站就載的 `pref_storage` 得 import 它；`pref_search.js` 靜態 import 兩份語系檔，直接 import 會把英文語系拉回主 bundle。守護 `pref_schema_leaf.test.js`（沿靜態 import 走不到 `i18n`／語系檔，報錯印出 import 鏈）。
 
 ## Deprecated 瀏覽器 API
 
