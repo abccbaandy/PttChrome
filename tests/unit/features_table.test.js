@@ -8,6 +8,7 @@ import { DEFAULT_PREFS } from "../../src/js/pref_storage";
 import {
   ALL_FEATURE_TABLES,
   HOME_FEATURES,
+  READING_FEATURES,
   LATE_PERIPHERAL_FEATURES,
   PERIPHERAL_FEATURES,
   createFeatures,
@@ -24,7 +25,7 @@ describe("週邊功能宣告表", () => {
     for (const f of ALL) expect(DEFAULT_PREFS).toHaveProperty(f.pref);
   });
 
-  test.each(ALL.map((f) => [f.name, f.pref]))(
+  test.each(ALL.filter((f) => f.settle !== false).map((f) => [f.name, f.pref]))(
     "%s 的故障停用登記用的就是表裡的 pref（%s）",
     (name, pref) => {
       const src = read(`src/js/${snake(name)}.js`);
@@ -32,13 +33,24 @@ describe("週邊功能宣告表", () => {
     },
   );
 
-  test("App 建構子不再自己 new 表裡的功能、三段表照順序建", () => {
+  test.each(ALL.filter((f) => f.settle === false).map((f) => [f.name]))(
+    "%s 標成 settle: false ⇒ 檔案裡真的沒有 screenSettled 監聽、也沒有故障停用登記",
+    (name) => {
+      const src = read(`src/js/${snake(name)}.js`);
+      expect(src).not.toMatch(/addEventListener\(\s*['"]screenSettled/);
+      expect(src).not.toMatch(/feature:\s*['"]/);
+    },
+  );
+
+  test("App 建構子不再自己 new 表裡的功能、四段表照順序建", () => {
     const app = read("src/js/pttchrome.jsx");
     const home = app.indexOf("createFeatures(this, HOME_FEATURES)");
+    const reading = app.indexOf("createFeatures(this, READING_FEATURES)");
     const first = app.indexOf("createFeatures(this, PERIPHERAL_FEATURES)");
     const late = app.indexOf("createFeatures(this, LATE_PERIPHERAL_FEATURES)");
     expect(home).toBeGreaterThan(0);
-    expect(first).toBeGreaterThan(home);
+    expect(reading).toBeGreaterThan(home);
+    expect(first).toBeGreaterThan(reading);
     expect(late).toBeGreaterThan(first);
     for (const f of ALL) {
       expect(app).not.toMatch(new RegExp(`this\\.${f.name}\\s*=\\s*new\\b`));
@@ -50,6 +62,7 @@ describe("週邊功能宣告表", () => {
     const seen = new Set();
     const tables = [
       ["HOME_FEATURES", HOME_FEATURES],
+      ["READING_FEATURES", READING_FEATURES],
       ["PERIPHERAL_FEATURES", PERIPHERAL_FEATURES],
       ["LATE_PERIPHERAL_FEATURES", LATE_PERIPHERAL_FEATURES],
     ];

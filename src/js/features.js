@@ -22,6 +22,11 @@ import { HomeDashboard } from './home_dashboard';
 import { WhatsNew } from './whats_new';
 import { RecentArticles } from './recent_articles';
 import * as prefSync from './pref_sync';
+import { SavedArticles } from './saved_articles';
+import { SplitReader } from './split_reader';
+import { ArticleTools } from './article_tools';
+import { SelectTextPage } from './select_text_page';
+import { ArticleFind } from './article_find';
 import { CommentBar } from './comment_bar';
 import { SearchStatus } from './search_status';
 import { FollowOnly } from './follow_only';
@@ -34,7 +39,9 @@ import { ArticleNav } from './article_nav';
 import { BoardTabs } from './board_tabs';
 
 /**
- * @typedef {{ name: string, pref: string, create: (app: any) => any, after?: ReadonlyArray<string> }} FeatureDecl
+ * `settle: false`＝這個功能沒有 screenSettled 監聽者（只掛 DOM 事件或給別人呼叫），所以也沒有故障停用登記；
+ * features_table.test.js 改查「它的檔案裡真的沒有 settle 監聽」。
+ * @typedef {{ name: string, pref: string, create: (app: any) => any, after?: ReadonlyArray<string>, settle?: false }} FeatureDecl
  */
 
 /** 建構子裡 inputArea 之後那一段（首頁）。 @type {ReadonlyArray<FeatureDecl>} */
@@ -61,6 +68,20 @@ export const HOME_FEATURES = Object.freeze([
         subscribe: (/** @type {any} */ cb) => prefSync.registerOnCloudReadLater(cb),
       }),
   },
+]);
+
+/** 建構子裡最近讀過（recentArticles）之後那一段＝首頁表的後半，接著就是 PERIPHERAL_FEATURES。 @type {ReadonlyArray<FeatureDecl>} */
+export const READING_FEATURES = Object.freeze([
+  // 存到本機（P64）：存好讀累積頁到 IndexedDB、在唯讀頁打開。只掛 keydown／給選單呼叫，沒有 settle。
+  { name: 'savedArticles', pref: 'enableSavedArticles', create: (app) => new SavedArticles(app), settle: false },
+  // 寬螢幕雙欄閱讀（讀文章時左邊空白列出剛才的文章列表）。
+  { name: 'splitReader', pref: 'enableSplitReading', create: (app) => new SplitReader(app) },
+  // 文章工具側欄（好讀文章時右邊空白放 AID／推文統計／推文者／圖片牆）。
+  { name: 'articleTools', pref: 'enableArticleTools', create: (app) => new ArticleTools(app) },
+  // 手機「選取文字」頁（P81）：好讀文章的文字開成可原生選取的全螢幕頁。由「更多」呼叫，沒有 settle。
+  { name: 'selectTextPage', pref: 'mobileSelectTextPage', create: (app) => new SelectTextPage(app), settle: false },
+  // 手機文章內找字（P75）：好讀文章「更多」→ 找字，標亮並逐一跳到每一處。
+  { name: 'articleFind', pref: 'mobileFindInArticle', create: (app) => new ArticleFind(app) },
 ]);
 
 /** 建構子裡手機找字（articleFind）之後那一段。 @type {ReadonlyArray<FeatureDecl>} */
@@ -93,7 +114,12 @@ export const LATE_PERIPHERAL_FEATURES = Object.freeze([
 ]);
 
 /** 所有宣告表（給守護測試逐一對）。 */
-export const ALL_FEATURE_TABLES = Object.freeze([HOME_FEATURES, PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES]);
+export const ALL_FEATURE_TABLES = Object.freeze([
+  HOME_FEATURES,
+  READING_FEATURES,
+  PERIPHERAL_FEATURES,
+  LATE_PERIPHERAL_FEATURES,
+]);
 
 /**
  * 照表順序建，掛到 app[name]。`after` 列的功能必須已經建好，否則丟例外。

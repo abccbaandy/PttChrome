@@ -77,14 +77,11 @@ import { ImageUploadController, isUploadLayerTarget } from './image_upload_contr
 import { isHomeDashboardTarget } from './home_dashboard';
 import { isWhatsNewTarget } from './whats_new';
 import { isRecentResumeTarget } from './recent_articles';
-import { SavedArticles } from './saved_articles';
 import { isCommentFilterBarTarget } from './comment_filter';
 import { isMessageInboxTarget } from './message_inbox';
-import { SplitReader, isSplitReaderTarget } from './split_reader';
+import { isSplitReaderTarget } from './split_reader';
 import { filterSummary } from './list_row_filter';
-import { ArticleTools, isArticleToolsTarget } from './article_tools';
-import { SelectTextPage } from './select_text_page';
-import { ArticleFind } from './article_find';
+import { isArticleToolsTarget } from './article_tools';
 import { isNextArticleTarget } from './next_article';
 import { isCommentBarTarget } from './comment_bar';
 import { isArticleNavTarget } from './article_nav';
@@ -93,7 +90,7 @@ import { isSearchStatusTarget } from './search_status';
 import { isFollowOnlyTarget } from './follow_only';
 import { isListFastScrollTarget } from './list_fast_scroll';
 import { isEditorInputTarget } from './editor_input';
-import { createFeatures, HOME_FEATURES, PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES } from './features';
+import { createFeatures, HOME_FEATURES, READING_FEATURES, PERIPHERAL_FEATURES, LATE_PERIPHERAL_FEATURES } from './features';
 import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { essenceCursorRowOk } from './essence_list';
 import { classRootCursorRowOk, parseClassRootRow } from './class_root';
@@ -326,17 +323,8 @@ export const App = function() {
   // 首頁儀表板（after deep link／斷線回原處）／新功能介紹／最近讀過：宣告表第一段（features.js）。
   // 要在 inputArea 之後（儀表板聽 #t 的按鍵收起面板）。
   createFeatures(this, HOME_FEATURES);
-  // 存到本機（P64，saved_articles.js）：存好讀累積頁到 IndexedDB、在唯讀頁打開。
-  // 收藏清單跟著偏好同步（P70）：pref_sync 的 snapshot 交雲端清單過來、變動由它寫回。
-  this.savedArticles = new SavedArticles(this);
-  // 寬螢幕雙欄閱讀（讀文章時左邊空白列出剛才的文章列表，split_reader.js）。
-  this.splitReader = new SplitReader(this);
-  // 文章工具側欄（好讀文章時右邊空白放 AID／推文統計／推文者／圖片牆，article_tools.js）。
-  this.articleTools = new ArticleTools(this);
-  // 手機「選取文字」頁（P81，select_text_page.js）：好讀文章的文字開成可原生選取的全螢幕頁。
-  this.selectTextPage = new SelectTextPage(this);
-  // 手機文章內找字（P75，article_find.js）：好讀文章「更多」→ 找字，標亮並逐一跳到每一處。
-  this.articleFind = new ArticleFind(this);
+  // 存到本機／雙欄閱讀／文章工具側欄／選取文字頁／手機找字：宣告表第二段（features.js）。
+  createFeatures(this, READING_FEATURES);
   // 推文列／搜尋狀態列／只看關注／列表快速捲動把手／編輯器輸入框／下一篇卡片：週邊功能宣告表
   // （features.js，A6），照表順序建。
   createFeatures(this, PERIPHERAL_FEATURES);
