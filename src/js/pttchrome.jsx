@@ -91,9 +91,10 @@ import { CommentBar, isCommentBarTarget } from './comment_bar';
 import { ArticleNav, isArticleNavTarget } from './article_nav';
 import { BoardTabs, isBoardTabsTarget } from './board_tabs';
 import { SearchStatus, isSearchStatusTarget } from './search_status';
-import { FollowOnly, isFollowOnlyTarget } from './follow_only';
-import { ListFastScroll, isListFastScrollTarget } from './list_fast_scroll';
-import { EditorInput, isEditorInputTarget } from './editor_input';
+import { isFollowOnlyTarget } from './follow_only';
+import { isListFastScrollTarget } from './list_fast_scroll';
+import { isEditorInputTarget } from './editor_input';
+import { createFeatures, LIST_TOOL_FEATURES } from './features';
 import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { essenceCursorRowOk } from './essence_list';
 import { classRootCursorRowOk, parseClassRootRow } from './class_root';
@@ -349,12 +350,8 @@ export const App = function() {
   // 好讀文章底部常駐推文列（comment_bar.js；送出走長推文管線，App.openQuickPush）。
   this.commentBar = new CommentBar(this);
   this.searchStatus = new SearchStatus(this);
-  // 只看關注（文章列表右上角的切換鈕，follow_only.js）。
-  this.followOnly = new FollowOnly(this);
-  // 列表快速捲動把手（P30，js/list_fast_scroll.js）：捲動列表好讀時右緣出現，拖動不送鍵、放開跳號。
-  this.listFastScroll = new ListFastScroll(this);
-  // 編輯器輸入框（P27，js/editor_input.js）：PTT 編輯器畫面用一般文字框打字，按插入走貼上漏斗。
-  this.editorInput = new EditorInput(this);
+  // 只看關注／列表快速捲動把手／編輯器輸入框：週邊功能宣告表（features.js，A6），照表順序建。
+  createFeatures(this, LIST_TOOL_FEATURES);
   // 讀完接著讀下一篇（好讀文末的下一篇標題卡，next_article.js）。
   this.nextArticle = new NextArticle(this);
   // 手機讀到文末再往上拉過門檻 ⇒ 開下一篇（只在 mobile 版面起作用，被動監聽）。
