@@ -514,6 +514,30 @@ describe("HomeDashboard：何時出現", () => {
     expect(enqueued).toHaveLength(0);
   });
 
+  // 我的最愛快取是整份寫回的：別的分頁剛整份抓過（時間比較新），這邊改一個板的未讀時
+  // 不能拿手上的舊清單把它蓋掉（下次開站先畫的就會是舊的那份）。
+  test("別的分頁剛抓過比較新的我的最愛 ⇒ 這邊改未讀不把它蓋回舊的", () => {
+    const KEY = "pttchrome.homeFavorites.v1";
+    const store = new Map();
+    const fake = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    vi.stubGlobal("window", { localStorage: fake });
+    try {
+      const { home, show } = makeCore();
+      home._set({ savedAt: 1000, boards: [{ name: "C_Chat", desc: "", unread: true }] });
+      const newer = { at: 2000, boards: [{ name: "C_Chat", desc: "", unread: true }, { name: "NewFav", desc: "", unread: true }] };
+      fake.setItem(KEY, JSON.stringify(newer));
+      show(listFrame("C_Chat", [[1, " "], [2, " "]]));
+      expect(home.state.boards[0].unread).toBe(false);
+      expect(JSON.parse(fake.getItem(KEY))).toEqual(newer);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("逛的時候來了新文章（最新一篇變 +）⇒ 標回有新文章；看不出來的幀不動", () => {
     const { home, show } = makeCore();
     home._set({ boards: [{ name: "C_Chat", desc: "", unread: false }] });

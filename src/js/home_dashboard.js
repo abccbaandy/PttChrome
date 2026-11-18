@@ -524,7 +524,10 @@ HomeDashboard.prototype = {
   _setBoards: function(boards) {
     if (boards === this._state.boards) return;
     // 「幾點更新」仍是上次整份抓的時間：這裡只改了個別板的未讀。
-    writeJson('homeFavorites', { at: this._state.savedAt, boards: boards });
+    // 快取是整份寫回的：別的分頁剛整份抓過（時間比較新）就不拿手上的舊清單蓋掉它，只改畫面。
+    const stored = readJson('homeFavorites');
+    const newerElsewhere = !!(stored && stored.at && (!this._state.savedAt || stored.at > this._state.savedAt));
+    if (!newerElsewhere) writeJson('homeFavorites', { at: this._state.savedAt, boards: boards });
     this._set({ boards: boards });
   },
 
