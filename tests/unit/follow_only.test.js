@@ -9,6 +9,8 @@
 //   3. view.listFollowOnly：切換鈕＋功能開關＋名單開關＋名單不空才生效；開關進 annotationsKey。
 //   4. 切換鈕：只在列表好讀的文章列表出現；按一下只改顯示＋重畫（不送鍵），存 localStorage；
 //      整段都被收起時寫「這一段沒有」。
+//   5. P108：桌機的鈕不蓋標題列的看板名 ⇒ 看板分頁開著時移到分頁列（垂直置中）、關著時縮成小圓鈕；
+//      看板分頁出現／收起時跟著挪（它在建構子裡排在後面，晚訂）。
 import { isFollowOnlyHidden } from "../../src/js/list_row_filter";
 import { visibleListIndices, isHiddenListRow } from "../../src/js/list_session";
 import { computeAnnotations } from "../../src/js/screen_annotations";
@@ -17,6 +19,7 @@ import { parseBlacklist, parseTitleBlacklist } from "../../src/js/comment_parse"
 import {
   FollowOnly,
   followOnlyAvailable,
+  followOnlySlot,
   FOLLOW_ONLY_KEY,
 } from "../../src/js/follow_only";
 import { OWNER_ARTICLE_LIST } from "../../src/js/list_render_owner";
@@ -202,6 +205,40 @@ describe("切換鈕（FollowOnly）", () => {
     visible.n = 2;
     fo.refresh();
     expect(fo.state.empty).toBe(false);
+  });
+
+  test("P108：看板分頁開著 ⇒ 鈕在分頁列垂直置中；關著 ⇒ 標題列上的小圓鈕；empty 不縮；手機不變", () => {
+    const tabs = { visible: true, mobile: false, top: 60, rowHeight: 20 };
+    expect(followOnlySlot(tabs, { top: 40 })).toEqual({ inTabs: true, compact: false, top: 58 });
+    expect(followOnlySlot({ ...tabs, visible: false }, { top: 40 })).toEqual({ inTabs: false, compact: true, top: 41 });
+    expect(followOnlySlot(null, { top: 40 })).toEqual({ inTabs: false, compact: true, top: 41 });
+    expect(followOnlySlot(null, { top: 40, empty: true })).toEqual({ inTabs: false, compact: false, top: 41 });
+    expect(followOnlySlot(tabs, { top: 40, mobile: true })).toMatchObject({ inTabs: false, compact: false });
+  });
+
+  test("P108：看板分頁出現／收起時鈕跟著挪（不用等下一幀 settle）", () => {
+    const { core, st } = makeCore({ n: 3 });
+    const fo = new FollowOnly(core, { storage: st });
+    // 看板分頁在建構子裡排在後面：建只看關注時還沒有它。
+    let tabsState = { visible: false };
+    const subs = new Set();
+    core.boardTabs = {
+      get state() {
+        return tabsState;
+      },
+      onChange: (fn) => {
+        subs.add(fn);
+        fn(tabsState);
+        return () => subs.delete(fn);
+      },
+    };
+    fo.refresh();
+    expect(fo.state).toMatchObject({ visible: true, inTabs: false, compact: true, top: 41 });
+    tabsState = { visible: true, mobile: false, top: 64, rowHeight: 24 };
+    subs.forEach((fn) => fn(tabsState));
+    expect(fo.state).toMatchObject({ inTabs: true, compact: false, top: 64 });
+    fo.refresh();
+    expect(subs.size).toBe(1);
   });
 
   test("不是列表好讀（原生鏡像）／看文章 ⇒ 不出現", () => {

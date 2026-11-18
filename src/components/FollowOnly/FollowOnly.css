@@ -57,6 +57,18 @@
   text-overflow: ellipsis;
 }
 
+/* P108：桌機看板分頁關著時縮成只剩星號的小圓鈕（疊在標題列最右邊，只蓋到「》」）。
+   名稱改由 aria-label 給（index.jsx）。整段被收起（empty）時不縮。 */
+.followOnlyChip--compact {
+  width: 24px;
+  padding: 0;
+  justify-content: center;
+}
+
+.followOnlyChip--compact .followOnlyLabel {
+  display: none;
+}
+
 .followOnlyChip--mobile {
   top: calc(48px + var(--safe-top, 0px) + 8px);
   right: 8px;
@@ -73,4 +85,9 @@ body:has(#searchStatus) .followOnlyChip--mobile {
 
 body:has(#aidBackButton) .followOnlyChip {
   margin-top: 44px;
+}
+
+/* P108：在分頁列上時已經離開標題列，不用再替搜尋狀態列／回上一篇鈕往下讓（再讓就落到表頭）。 */
+body .followOnlyChip--inTabs {
+  margin-top: 0;
 }
