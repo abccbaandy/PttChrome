@@ -64,7 +64,8 @@ Mantine 自己的色彩模式鍵、Firebase SDK 自己的登入狀態（IndexedD
      新推文標記（`new_comments.saveSeen`）、搜尋紀錄、上傳紀錄、首頁「最近看板」（`home_dashboard._noteRecent`）、
      長推文草稿（別的分頁清掉時不寫回）、設定（見下）、看板分頁（L 11/17 決定同一台的視窗共用一組，
      `board_tabs.js#_reload`，見 `docs/board-tabs.md`「多個視窗」）。
-   - 拿記憶體那份寫回：沒有了。
+   - 拿記憶體那份寫回：沒有了。我的最愛快取改個別板的未讀時是整份寫回，但先比時間：storage 裡那份
+     比手上的新（別的分頁剛整份抓過）就只改畫面不寫（`home_dashboard._setBoards`）。
    - 「現在在哪」這類每一幀都會碰到的紀錄（最近看板、看板分頁）只在**到了**的時候記一次，停著不再記，
      別的分頁寫的也只拿來重畫：否則兩個以上分頁停在不同地方時，會輪流把自己推到最前面、每一幀都寫。
    設定頁關閉時只寫回在設定頁裡改過的格子（`pref_merge.js#mergeEditedPrefs`，跟打開時的快照比），
