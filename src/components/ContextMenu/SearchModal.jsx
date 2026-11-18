@@ -24,16 +24,20 @@ import {
 import { readValuesWithDefault } from "../../js/pref_storage";
 import { readJson } from "../../js/user_data";
 
-// 首頁儀表板記的最近看板（home_dashboard.js#pushRecentBoard，最多 8 個）。只收看起來像板名的
-// 字串：資料是本機存的、可能被設定備份匯入或舊版寫壞，壞的那幾筆略過，不會變成要送出的字。
+import "./SearchModal.css";
+
+// 首頁儀表板記的最近看板（home_dashboard.js#pushRecentBoard；上限 RECENT_LIMIT＝8，兩邊同步）。
+// 只收看起來像板名的字串：資料是本機存的、可能被設定備份匯入或舊版寫壞，壞的那幾筆略過，
+// 不會變成要送出的字。
 const BOARD_NAME_RE = /^[A-Za-z0-9_.-]{1,12}$/;
 export function readRecentBoards() {
   if (!readValuesWithDefault().searchRecentBoards) return [];
   const list = readJson("homeRecentBoards");
   if (!Array.isArray(list)) return [];
-  return list.filter((n) => typeof n === "string" && BOARD_NAME_RE.test(n)).slice(0, 8);
+  return list
+    .filter((n) => typeof n === "string" && BOARD_NAME_RE.test(n))
+    .slice(0, 8);
 }
-import "./SearchModal.css";
 
 // 搜尋彈窗（docs/article-search.md）。取代 PTT 原生的 / ? a Z s prompt：
 //   - ↑／↓ 在輸入框裡循環**這個種類**的本機記憶（↑ 從最新的開始，比照 PTT 的
@@ -435,7 +439,8 @@ const BoardSuggestions = ({
   onPick,
 }) => {
   // 輸入欄空著（recent 有值）＝列最近看過的板；一打字 recent 變 null，換回 PTT 的補全。
-  const showRecent = !query && !!recent && recent.length > 0;
+  // 被 PTT 退字而輸入欄被清空時不列：紅字「沒有以 x 開頭的看板」下面接一排最近看板會被當成補全結果。
+  const showRecent = !query && !rejected && !!recent && recent.length > 0;
   let status = null;
   if (!ascii) status = i18n("searchModal_boardAscii");
   else if (rejected)
