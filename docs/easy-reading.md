@@ -309,6 +309,9 @@ scaleX / scaleY / dpr / fontsReady`，另有 `cursor.geom` 取樣（游標真的
   我們再把整段記成展開；手機找字走 `revealQuoteFold`。複製：`Selection.toString` 不含 until-found 的字，
   `screen_chunk.readSelectionText` 讀之前暫時打開選取碰到的那幾列、同一個 task 放回。
 - 展開狀態 `view._quoteExpanded`（段落 key）換文就清，進 `annotationsKey`。
+- 引文裡的圖片連結跟著收起（預覽插槽在 until-found 裡，延遲載入不會觸發），展開才載。offline e2e 的
+  `bootOffline` 因此預設關掉這個 pref（挑「第一個預覽插槽」的 spec 會挑到收起的那個），只有 quote_collapse
+  兩支 spec 以 `opts.quoteCollapse` 打開。
 
 ## 文章 functionMode（按非導覽鍵 → 鏡像原生 LIVE，CONFIRMED 讀碼+unit）
 

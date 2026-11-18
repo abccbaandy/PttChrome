@@ -37,7 +37,7 @@ async function open(page, prefs) {
       },
     });
   });
-  await bootOffline(page, ptt);
+  await bootOffline(page, ptt, { quoteCollapse: true });
   await ptt.applyPrefs(page, { enableEasyReading: true, enableEasyReadingList: false, ...(prefs || {}) });
   await replayCassette(page, cas, { easyReading: true });
   await page.waitForFunction(() => /引述/.test(document.getElementById('mainContainer').textContent));

@@ -137,6 +137,10 @@ async function installReplay(page, opts = {}) {
   // 開站回到上次的地方（pref resumeLastPlace）：同一個 context 裡重整／重開時會自己送鍵
   // 回上次的地方 ⇒ 預設關（行為由 unit reconnect_resume_open.test.js 守）。
   if (!opts.resumeLastPlace) off.resumeLastPlace = false;
+  // 長引言收起（pref enableQuoteCollapse，P106）：回文裡的引言（連引文裡的圖片連結、預覽插槽）
+  // 收進 hidden="until-found" ⇒ 挑「第一個預覽插槽／第一張圖」的 spec 會挑到收起的那個。
+  // 預設關，只有 quote_collapse 兩支 spec 以 opts.quoteCollapse 打開。
+  if (!opts.quoteCollapse) off.enableQuoteCollapse = false;
   if (Object.keys(off).length) {
     await page.addInitScript(({ KEY, off }) => {
       try {
@@ -800,6 +804,7 @@ async function bootOffline(page, ptt, opts = {}) {  // eslint-disable-line no-un
     searchStatus: !!opts.searchStatus,
     articleNav: !!opts.articleNav,
     boardTabs: !!opts.boardTabs,
+    quoteCollapse: !!opts.quoteCollapse,
   });
   await installOfflineNetwork(page, { profile: offlineImageProfile(opts.imageProfile) });
   await page.goto('/');

@@ -20,7 +20,7 @@ test.describe('手機好讀長引言收起（離線重放）', () => {
 
   test('只露 2 行＋展開鈕；點一下整段展開、不送鍵', async ({ page }) => {
     test.setTimeout(60000);
-    await bootOffline(page, ptt);
+    await bootOffline(page, ptt, { quoteCollapse: true });
     await ptt.applyPrefs(page, { enableEasyReading: true, enableEasyReadingList: false });
     await replayCassette(page, cas, { easyReading: true });
     const btn = page.locator('#mainContainer .quoteSkip');
@@ -39,7 +39,7 @@ test.describe('手機好讀長引言收起（離線重放）', () => {
 
   test('找字命中收起的那幾行 ⇒ 算得到、跳到那裡時整段展開', async ({ page }) => {
     test.setTimeout(60000);
-    await bootOffline(page, ptt);
+    await bootOffline(page, ptt, { quoteCollapse: true });
     await ptt.applyPrefs(page, { enableEasyReading: true, enableEasyReadingList: false });
     await replayCassette(page, cas, { easyReading: true });
     await expect(page.locator('#mainContainer .quoteSkip')).toHaveCount(1);
