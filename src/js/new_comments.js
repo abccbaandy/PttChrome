@@ -210,9 +210,17 @@ export function NewComments(core, storage) {
   this._storage = storage === undefined ? defaultStorage() : storage;
   this._reset(null);
   const self = this;
+  // 故障停用（docs/feature-isolation.md）：settle 出錯 ⇒ 這次連線不再記推文數、不再標新推文與
+  // 列表「+N」、還沒落地的「點徽章跳到新推文」作廢。兩個開關（markNewComments、listNewPushCount）
+  // 共用這一條監聽與同一份紀錄 ⇒ 一起停；提示用 markNewComments 的名稱。渲染時問的 rowFor／
+  // listBadge 也擋（回 null ＝畫面照原文，下一次重畫標記就消失）。新連線 enableAllListeners 恢復。
+  this._onSettle = function() {
+    self._onSettled();
+  };
   if (core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self._onSettled();
+    core.buf.addEventListener('screenSettled', this._onSettle, {
+      feature: 'markNewComments',
+      disable: () => self.cancelJumpOnOpen()
     });
 }
 
@@ -224,7 +232,13 @@ NewComments.prototype = {
     else this.cancelJumpOnOpen();
   },
 
+  _disabled: function() {
+    const buf = this._core.buf;
+    return !!(buf && buf.isListenerDisabled && buf.isListenerDisabled(this._onSettle));
+  },
+
   armJumpOnOpen: function() {
+    if (this._disabled()) return;
     const view = this._core.view || {};
     this._jump = { armedInst: view._articleInstanceId, at: Date.now(), bound: false };
   },
@@ -324,7 +338,7 @@ NewComments.prototype = {
 
   // term_view 每次畫好讀累積頁時問：第一則新推文在哪一列（pageLines 的列號）；沒有 ⇒ null。
   rowFor: function(lines) {
-    if (!readEffectivePrefs().markNewComments || !lines || !lines.length) return null;
+    if (!readEffectivePrefs().markNewComments || !lines || !lines.length || this._disabled()) return null;
     if (this._reversing()) return null;
     this._sync(lines);
     if (this._seen == null) return null;
@@ -333,7 +347,7 @@ NewComments.prototype = {
 
   // term_view 畫文章列表時問：{ key, fn(text) }（key 進 annotationsKey）；關掉／認不出板 ⇒ null。
   listBadge: function(board) {
-    if (!board || !this._storage || !readEffectivePrefs().listNewPushCount) return null;
+    if (!board || !this._storage || !readEffectivePrefs().listNewPushCount || this._disabled()) return null;
     // 列表每一幀都會問：原文沒變就沿用上次解析的結果（別的分頁寫的也認得出來）。
     const raw = readRaw('newComments', this._storage);
     const lb = String(board).toLowerCase();

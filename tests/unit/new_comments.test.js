@@ -16,6 +16,7 @@ import {
 } from "../../src/js/new_comments";
 import { applyNewCommentsMark } from "../../src/js/screen_annotations";
 import { annotationsKey } from "../../src/js/screen_annotate_cache";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 
 function memStorage() {
   const m = new Map();
@@ -233,4 +234,55 @@ test("annotationsKey：newCommentsRow 變了 ⇒ 快取鍵變（那一幀全量�
   const k = (row) => annotationsKey({ enhance: { pageState: 3, easyReading: true, newCommentsRow: row } });
   expect(k(null)).not.toEqual(k(12));
   expect(k(12)).toEqual(k(12));
+});
+
+// 故障停用（docs/feature-isolation.md；架構 review A6）：沒登記時 settle 出錯每幀再炸，渲染時問的
+// rowFor／listBadge 照樣標，點徽章的跳轉還掛著。
+describe("NewComments：故障停用", () => {
+  test("settle 出錯 ⇒ 不標、不記、列表 +N 收掉、點徽章不再跳；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const st = memStorage();
+      // 帶作者／主題的紀錄，列表才認得出是哪一篇（listBadge）。
+      saveSeen(st, "test/1ABCDEFG", 1, 1, null, { score: 0, author: "alice", subject: "測試" });
+      const easyReading = { _enabled: true, _functionMode: false, _reverse: null, easyReadingReachedPageEnd: true };
+      const core = {
+        easyReading,
+        buf: { cols: 80, pageState: 3, pageLines: withComments(3), getRowText: (r, s0, e, lines) => lines[r] },
+        view: { _articleBoard: "Test", _articleInstanceId: 1 },
+        aidNavigation: { findLocalPostAid: () => ({ aid: "1ABCDEFG" }) },
+      };
+      Event.mixin(core.buf, { isolate: true });
+      const nc = new NewComments(core, st);
+      const settle = () => core.buf.dispatchEvent({ type: "screenSettled" });
+      expect(nc.rowFor(core.buf.pageLines)).toBe(ARTICLE.length + 1);
+      expect(nc.listBadge("Test")).not.toBeNull();
+      nc.armJumpOnOpen();
+
+      const find = core.aidNavigation.findLocalPostAid;
+      core.view._articleInstanceId = 2;
+      core.aidNavigation.findLocalPostAid = () => {
+        throw new Error("boom");
+      };
+      settle();
+      expect(core.buf.isListenerDisabled(nc._onSettle)).toBe(true);
+      expect(nc._jump).toBeNull();
+
+      core.aidNavigation.findLocalPostAid = find;
+      expect(nc.rowFor(core.buf.pageLines)).toBeNull();
+      expect(nc.listBadge("Test")).toBeNull();
+      nc.armJumpOnOpen();
+      expect(nc._jump).toBeNull();
+      core.buf.pageLines = withComments(5);
+      settle();
+      expect(loadSeen(st, "test/1ABCDEFG")).toBe(1);
+
+      core.buf.enableAllListeners();
+      settle();
+      expect(loadSeen(st, "test/1ABCDEFG")).toBe(5);
+      expect(nc.rowFor(core.buf.pageLines)).toBe(ARTICLE.length + 1);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
+  });
 });
