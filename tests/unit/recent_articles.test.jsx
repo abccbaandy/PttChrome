@@ -36,6 +36,7 @@ import { buildContextMenuEntries } from "../../src/components/ContextMenu/contex
 import { readLaterTargetOf, readLaterFromList } from "../../src/components/ContextMenu";
 import { HomeDashboard } from "../../src/components/HomeDashboard";
 import { setupI18n, i18n } from "../../src/js/i18n";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 
 beforeAll(() => setupI18n());
 afterEach(() => {
@@ -448,6 +449,61 @@ describe("接著上次讀到的地方", () => {
     core.landed = { board: A1.board, aid: A1.aid };
     core.settle();
     expect(core.easyReading.requestScrollRestore).not.toHaveBeenCalled();
+  });
+
+  // 故障停用（docs/feature-isolation.md；架構 review A6）：沒登記時 settle 出錯每幀再炸，
+  // 還沒落地的「接著讀」一直掛著，之後落地時突然把畫面捲走；捲動取樣照樣寫 storage。
+  test("settle 出錯 ⇒ 接著讀作廢、提示收起、不再記；open 不再接著讀；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const core = readingCore();
+      delete core.buf.addEventListener;
+      Event.mixin(core.buf, { isolate: true });
+      core.settle = () => core.buf.dispatchEvent({ type: "screenSettled" });
+      const st = memStorage();
+      const ra = new RecentArticles(core, st);
+      core.settle();
+      const k1 = recentKey(A1.board, A1.aid);
+      core.view.line = 80;
+      expect(ra.samplePosition()).toBe(true);
+      core.buf.pageState = 2;
+      core.settle();
+      expect(ra.open(A1)).toBe(true);
+      expect(ra._resume).not.toBeNull();
+
+      const find = core.aidNavigation.findLocalPostAid;
+      core.aidNavigation.findLocalPostAid = () => {
+        throw new Error("boom");
+      };
+      core.buf.pageState = 3;
+      core.view._articleInstanceId = 2;
+      core.aidNavigation.active = true; // 還在跳，接著讀還沒落地
+      core.settle();
+      expect(core.buf.isListenerDisabled(ra._onSettle)).toBe(true);
+      expect(ra._resume).toBeNull();
+
+      // 原因消失也不回來：落地不捲、捲動不記、open 不再接著讀、新的一篇不記。
+      core.aidNavigation.findLocalPostAid = find;
+      core.aidNavigation.active = false;
+      core.landed = { board: A1.board, aid: A1.aid };
+      core.settle();
+      expect(core.easyReading.requestScrollRestore).not.toHaveBeenCalled();
+      core.view.line = 120;
+      expect(ra.samplePosition()).toBe(false);
+      expect(ra.savedLine(k1)).toBe(80);
+      ra.open(A1);
+      expect(ra._resume).toBeNull();
+      core.current = { board: A2.board, aid: A2.aid };
+      core.settle();
+      expect(ra.state.recent.map((e) => e.aid)).toEqual([A1.aid]);
+
+      core.buf.enableAllListeners();
+      core.view._articleInstanceId = 3;
+      core.settle();
+      expect(ra.state.recent.map((e) => e.aid)).toEqual([A2.aid, A1.aid]);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
   });
 });
 

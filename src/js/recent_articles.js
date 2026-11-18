@@ -217,9 +217,16 @@ export function RecentArticles(core, storage, cloud, now) {
   this._scrollBound = null;
   this._toastTimer = null;
   const self = this;
+  // 故障停用（docs/feature-isolation.md）：settle 出錯 ⇒ 這次連線不再記最近讀過／讀到哪、
+  // 還沒落地的「接著讀」作廢、提示收起；捲動取樣與 open 的接著讀也擋。已存的清單照舊讀得到，
+  // 使用者自己按的稍後閱讀增刪（右鍵、列表選單）不受影響。新連線 enableAllListeners 恢復。
+  this._onSettle = function() {
+    self._onSettled();
+  };
   if (core && core.buf && core.buf.addEventListener)
-    core.buf.addEventListener('screenSettled', function() {
-      self._onSettled();
+    core.buf.addEventListener('screenSettled', this._onSettle, {
+      feature: 'enableRecentArticles',
+      disable: () => self._shutdown()
     });
 }
 
@@ -374,7 +381,22 @@ RecentArticles.prototype = {
     this.noteRead(cur);
   },
 
+  _disabled: function() {
+    const buf = this._core && this._core.buf;
+    return !!(buf && buf.isListenerDisabled && buf.isListenerDisabled(this._onSettle));
+  },
+
+  _shutdown: function() {
+    this._resume = null;
+    clearTimeout(this._sampleTimer);
+    this._sampleTimer = null;
+    this._lastKey = null;
+    this._lastInst = null;
+    this._hideToast();
+  },
+
   resumeEnabled: function() {
+    if (this._disabled()) return false;
     const p = readEffectivePrefs();
     return !!(p.enableRecentArticles && p.resumeRecentArticles);
   },
