@@ -100,6 +100,14 @@ describe("toolbarContextFromFacts", () => {
       push: false, reply: true, mail: true, share: false, threadNav: false, post: false,
     });
   });
+  test("P104 讀信的上一封／下一封：只在讀信、pref 開著時；文章與 prompt 幀不給", () => {
+    expect(toolbarContextFromFacts(frame({ 23: MAIL_ROW }), 3, { mailNav: true }).mailNav).toBe(true);
+    expect(toolbarContextFromFacts(frame({ 23: MAIL_ROW }), 3, { mailNav: false }).mailNav).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 23: READ_ROW }), 3, { mailNav: true }).mailNav).toBe(false);
+    expect(toolbarContextFromFacts(frame({ 23: "搜尋標題: " }), 3, { mailNav: true }).mailNav).toBe(false);
+    expect(toolbarContextFromFacts({ ...frame({ 23: MAIL_ROW }), inputField: true }, 3, { mailNav: true }).mailNav).toBe(false);
+    expect(toolbarContextFromFacts({ ...frame({ 23: MAIL_ROW }), pagerFromEssence: true }, 3, { mailNav: true }).mailNav).toBe(false);
+  });
   test("prompt 幀（沿用 pageState 3）⇒ 文章動作全收", () => {
     expect(toolbarContextFromFacts(frame({ 23: "搜尋標題: " }), 3)).toMatchObject({
       push: false, reply: false, share: false, threadNav: false,

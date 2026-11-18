@@ -2182,6 +2182,21 @@
   "tooltip_mobileBoardTools": {
     "message": "文章列表的「更多」最上面一列：進板畫面、精華區、文摘、看板資訊，點了就送 PTT 自己的按鍵（b、z、Tab、i），畫面照 PTT 原生。搜尋結果裡不出現。"
   },
+  "options_mobileMailNav": {
+    "message": "手機讀信的「更多」加上一封／下一封"
+  },
+  "tooltip_mobileMailNav": {
+    "message": "讀信時「更多」最上面兩顆：上一封、下一封，點了就送 PTT 讀信時的 b、f（跟電腦上自己按一樣）。到第一封或最後一封時 PTT 自己會停。"
+  },
+  "mobileToolbar_navGroupMail": {
+    "message": "信件"
+  },
+  "mobileToolbar_mailPrev": {
+    "message": "上一封"
+  },
+  "mobileToolbar_mailNext": {
+    "message": "下一封"
+  },
   "mobileMore_sectionBoard": {
     "message": "這個看板"
   },

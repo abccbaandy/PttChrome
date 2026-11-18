@@ -421,6 +421,30 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(byKey("__threadNav")).toBeNull();
   });
 
+  test("P104 更多：讀信時清單第一列是上一封／下一封，送 b／f 並收起 sheet；文章不出現", async () => {
+    const core = makeCore({ context: { push: false, reply: true, mail: true, mailNav: true, search: [] } });
+    renderBar(core);
+    await openMore();
+    const nav = byKey("__mailNav");
+    expect(nav).not.toBeNull();
+    expect(byKey("__threadNav")).toBeNull();
+    // 清單最上面（最前面的一項）。
+    const listItems = [...nav.parentElement.children].filter((el) => el.getAttribute("data-key"));
+    expect(listItems[0]).toBe(nav);
+    expect([...nav.querySelectorAll("button")].map((b) => b.getAttribute("data-key"))).toEqual(["b", "f"]);
+    expect(nav.querySelector(".mobileToolbarNavLabel").textContent).toBe(i18n("mobileToolbar_navGroupMail"));
+    expect(byKey("b").getAttribute("aria-label")).toBe(i18n("mobileToolbar_mailPrev"));
+    fireEvent.click(byKey("f"));
+    await sheetClosed();
+    await openMore();
+    fireEvent.click(byKey("b"));
+    await sheetClosed();
+    expect(core.view.sendKeyAsUser.mock.calls.map((c) => c[0])).toEqual(["f", "b"]);
+    act(() => core.setContext(ARTICLE));
+    await openMore();
+    expect(byKey("__mailNav")).toBeNull();
+  });
+
   // P56：「前一篇」「下一篇」不再被拆到兩列；同一組的前／下在同一列，箭頭標方向。
   test("更多：文章導覽兩列成對——同主題（首篇｜前篇｜下篇）、看板（前一篇｜下一篇）", async () => {
     renderBar(makeCore({ context: ARTICLE }));

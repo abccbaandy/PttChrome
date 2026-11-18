@@ -617,6 +617,13 @@ export const PREF_SEARCH_ITEMS = [
       tooltipKey: "tooltip_mobileBoardTools",
     },
     {
+      key: "mobileMailNav",
+      type: "check",
+      shownIf: "mobileLayoutOn",
+      titleKey: "options_mobileMailNav",
+      tooltipKey: "tooltip_mobileMailNav",
+    },
+    {
       key: "mobileMailListTools",
       type: "check",
       shownIf: "mobileLayoutOn",

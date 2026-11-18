@@ -2183,6 +2183,21 @@ export const en_US = {
   "tooltip_mobileBoardTools": {
     "message": "Top row of More on the article list: board notes, archive, digest and board info. Each sends PTT's own key (b, z, Tab, i) and shows PTT's own screen. Not shown in search results."
   },
+  "options_mobileMailNav": {
+    "message": "Previous/next mail in the mobile More sheet"
+  },
+  "tooltip_mobileMailNav": {
+    "message": "While reading mail, the top of More gets Previous and Next. Each sends PTT's own mail-reading key (b, f), same as pressing it on a computer. PTT stops by itself at the first or last mail."
+  },
+  "mobileToolbar_navGroupMail": {
+    "message": "Mail"
+  },
+  "mobileToolbar_mailPrev": {
+    "message": "Previous"
+  },
+  "mobileToolbar_mailNext": {
+    "message": "Next"
+  },
   "mobileMore_sectionBoard": {
     "message": "This board"
   },

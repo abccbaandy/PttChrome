@@ -484,6 +484,10 @@ offline e2e `mobile_select_text.offline.spec.js`（長按以真右鍵代替，�
   底部導覽第 1 格「搜尋」（只給標題／作者：`searchGateFacts.mailListTools`＝手機＋pref＋信件列表；推文數在
   `RMAIL` 被 `ask_filter_predicate` 直接取消、`s` 不是信箱指令；桌機的 `/`、`a` 照舊原生 prompt）、第 2 格「寫信」
   送 ^P（`mail.c#mail_comms` 的 `Ctrl('P')`，按下前再驗本幀還是信件列表、沒有 prompt）、「到底」送 End（read.c 共用）。
+- P104（pref `mobileMailNav`，預設開）：讀信時「更多」清單第一列「信件：上一封｜下一封」，送 b／f
+  （`mbbsd/more.c#more_list_nav_cmds`，`mail.c#mail_read` 掛這層；到頭到尾由 PTT 自己停）。出現條件＝
+  `mobile_toolbar` 的 `mail`（本幀是讀信的 pager 狀態列、游標不在輸入欄），認不出讀信就不出現。
+  守護：unit `mobile_toolbar`（判定與元件）、`ptt_src_screens`（upstream 產的讀信畫面），offline e2e `mobile_mail_nav`。
 - 第一版只做卡片＋點開；不做累積捲動與背景預讀（信箱不接列表好讀）。讀信是同一個 pmore 狀態列，好讀照常接手（upstream 產的 `mail_read` 場景驗過）。
 - 守護：unit `mail_card`（upstream 產的畫面＋各種狀態＋DOM）、`parse_failure_degrade`（突變）；offline e2e
   `mobile_mail_cards`（卡片高、真 tap 送「↑↑＋⏎」、認不出 ⇒ 格線）。

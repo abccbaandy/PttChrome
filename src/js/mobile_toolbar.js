@@ -13,6 +13,8 @@
 //   end    ：pager／文章列表／看板列表，送 End（文末／最後一筆；pmore 與列表的 KEY_END）。
 //   threadNav：pager && !mail，「更多」裡的同主題前／下／首篇（[ ] =）與列表前／下篇（b f），
 //            同表 'pager_common_cmds'。
+//   mailNav：P104（pref mobileMailNav）。mail（讀信的 pager）時「更多」最上面的上一封／下一封，送 b／f
+//            （mbbsd/more.c#more_list_nav_cmds，mail.c#mail_read 掛這層）。認不出讀信就不出現。
 //   post   ：文章列表（列表好讀 session 持有，或 《看板》＋文章列表 footer），送 Ctrl+P
 //            （mbbsd/bbs.c 的 bbs_cmd_new_post）。游標在輸入欄（prompt 開著）時不給。
 //   unreadJump：文章列表（同 post 的判準），「更多」裡的「跳到第一篇未讀」（unread_jump.js）。
@@ -61,7 +63,7 @@ import { searchListMode } from './search_status';
 import { PAGE_STATE } from './screen_model';
 
 export const EMPTY_TOOLBAR_CONTEXT = Object.freeze({
-  push: false, reply: false, mail: false, share: false, threadNav: false, post: false,
+  push: false, reply: false, mail: false, share: false, threadNav: false, mailNav: false, post: false,
   unreadJump: false, markAllRead: false, boardTools: false, help: false, contentTools: false, refresh: false, end: false,
   editor: false, editorSave: false, mailList: false, readOnly: false, search: [], appBar: EMPTY_APP_BAR, choices: null
 });
@@ -133,6 +135,15 @@ export const BOARD_TOOL_KEYS = Object.freeze([
   Object.freeze({ id: '__boardInfo', key: 'i', label: 'mobileBoard_info', short: 'mobileBoardShort_info' })
 ]);
 
+// P104 讀信的上一封／下一封（同 THREAD_NAV_GROUPS 的格式，MobileToolbar 用同一種按鈕畫）。
+export const MAIL_NAV_GROUP = Object.freeze({
+  title: 'mobileToolbar_navGroupMail',
+  keys: Object.freeze([
+    { key: 'b', label: 'mobileToolbar_mailPrev', short: 'mobileToolbar_mailPrev', dir: 'prev' },
+    { key: 'f', label: 'mobileToolbar_mailNext', short: 'mobileToolbar_mailNext', dir: 'next' }
+  ])
+});
+
 export const THREAD_NAV_KEYS = Object.freeze(
   THREAD_NAV_GROUPS.reduce((all, g) => all.concat(g.keys), [])
 );
@@ -164,6 +175,9 @@ export function toolbarContextFromFacts(facts, pageState, opts) {
     mail: mail,
     share: article,
     threadNav: article,
+    // mail 是 footer 的單向推論（string_util#parsePagerFooterContext：upstream 只有 mail.c#mail_read_cmds
+    // 印「回信」）；精華區明確排除。就算推錯，b／f 在看板文章與精華區也是同一張 more_list_nav_cmds（前／下篇）。
+    mailNav: mail && !essence && !!o.mailNav,
     post: !pager && isArticleList(facts),
     unreadJump: !pager && isArticleList(facts),
     markAllRead: !pager && isArticleList(facts),
@@ -224,6 +238,7 @@ export function mobileToolbarContext(core) {
     home: homeDashboardShown(core),
     editorSave: editorSave,
     boardTools: !!readEffectivePrefs().mobileBoardTools,
+    mailNav: !!readEffectivePrefs().mobileMailNav,
     // 推文提問由推文列接手（P90／P91）時不出提問選項：兩個疊在一起，點面板會繞過推文列送鍵。
     choices:
       core && core.buf && !(core.commentBar && core.commentBar.takesOverListPrompt && core.commentBar.takesOverListPrompt())
@@ -233,7 +248,7 @@ export function mobileToolbarContext(core) {
 }
 
 const FLAGS = [
-  'push', 'reply', 'mail', 'share', 'threadNav', 'post', 'unreadJump', 'markAllRead', 'boardTools', 'help', 'contentTools', 'refresh', 'end',
+  'push', 'reply', 'mail', 'share', 'threadNav', 'mailNav', 'post', 'unreadJump', 'markAllRead', 'boardTools', 'help', 'contentTools', 'refresh', 'end',
   'editor', 'editorSave', 'mailList', 'readOnly'
 ];
 
