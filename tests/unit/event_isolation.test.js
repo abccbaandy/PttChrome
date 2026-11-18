@@ -397,3 +397,30 @@ describe("接線", () => {
     expect(src).toMatch(/feature:\s*'enableArticleNav',\s*disable:\s*\(\)\s*=>\s*self\._set\(\{\s*visible:\s*false\s*\}\)/);
   });
 });
+
+// 不走派發的主入口（收件匣在 App.onData 每包解析）出錯時借用同一套政策。
+describe("reportListenerError", () => {
+  test("沒有 isolate 的物件照樣往外丟", () => {
+    const o = {};
+    Event.mixin(o);
+    expect(() => o.reportListenerError("data", () => {}, new Error("x"))).toThrow("x");
+  });
+
+  test("isolate＋正式版：登記了的監聽者停用、disable 呼叫一次、onError 收到 type", () => {
+    const errors = [];
+    const prev = setListenerErrorPolicy({ strict: false, onError: (e) => errors.push(e) });
+    try {
+      const o = {};
+      Event.mixin(o, { isolate: true });
+      const fn = () => {};
+      const disable = vi.fn();
+      o.addEventListener("screenSettled", fn, { feature: "enableX", disable });
+      o.reportListenerError("data", fn, new Error("x"));
+      expect(o.isListenerDisabled(fn)).toBe(true);
+      expect(disable).toHaveBeenCalledTimes(1);
+      expect(errors).toEqual([expect.objectContaining({ type: "data", feature: "enableX", disabled: true })]);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
+  });
+});
