@@ -86,15 +86,15 @@ import { filterSummary } from './list_row_filter';
 import { ArticleTools, isArticleToolsTarget } from './article_tools';
 import { SelectTextPage } from './select_text_page';
 import { ArticleFind } from './article_find';
-import { NextArticle, isNextArticleTarget } from './next_article';
+import { isNextArticleTarget } from './next_article';
 import { CommentBar, isCommentBarTarget } from './comment_bar';
 import { ArticleNav, isArticleNavTarget } from './article_nav';
 import { BoardTabs, isBoardTabsTarget } from './board_tabs';
-import { SearchStatus, isSearchStatusTarget } from './search_status';
+import { isSearchStatusTarget } from './search_status';
 import { isFollowOnlyTarget } from './follow_only';
 import { isListFastScrollTarget } from './list_fast_scroll';
 import { isEditorInputTarget } from './editor_input';
-import { createFeatures, LIST_TOOL_FEATURES } from './features';
+import { createFeatures, PERIPHERAL_FEATURES } from './features';
 import { inputModeFor, isListCardTarget, isTouchCardMultiTap, touchTapClearsSelection, menuCardTargetRow, isMobileEnv, keyboardInset, overlayKeyboardInset, listRowSpan, listViewportGeometry, mobileTermGeometry, mobileRowsHeight, mobileChromeInsets, normalizeMobileFontPx, MOBILE_ROW_FONT_PX } from './mobile_layout';
 import { essenceCursorRowOk } from './essence_list';
 import { classRootCursorRowOk, parseClassRootRow } from './class_root';
@@ -349,11 +349,9 @@ export const App = function() {
   this.articleFind = new ArticleFind(this);
   // 好讀文章底部常駐推文列（comment_bar.js；送出走長推文管線，App.openQuickPush）。
   this.commentBar = new CommentBar(this);
-  this.searchStatus = new SearchStatus(this);
-  // 只看關注／列表快速捲動把手／編輯器輸入框：週邊功能宣告表（features.js，A6），照表順序建。
-  createFeatures(this, LIST_TOOL_FEATURES);
-  // 讀完接著讀下一篇（好讀文末的下一篇標題卡，next_article.js）。
-  this.nextArticle = new NextArticle(this);
+  // 搜尋狀態列／只看關注／列表快速捲動把手／編輯器輸入框／下一篇卡片：週邊功能宣告表
+  // （features.js，A6），照表順序建。
+  createFeatures(this, PERIPHERAL_FEATURES);
   // 手機讀到文末再往上拉過門檻 ⇒ 開下一篇（只在 mobile 版面起作用，被動監聽）。
   this._uninstallPullNextArticle = installPullNextArticle(this);
   // 桌機：讀到文末、停一下、再往下捲過門檻 ⇒ 開下一篇（被動監聽，pull_next_article.js）。
