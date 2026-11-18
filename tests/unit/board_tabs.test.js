@@ -287,6 +287,39 @@ describe("BoardTabs 控制器", () => {
     }
   });
 
+  // 超過上限（6）個視窗各停在不同板：storage 事件那條路若也「現在這個板不在 ⇒ 記回來」，
+  // A 記回 X 擠掉 B 的 Y、B 收到事件記回 Y 擠掉 C 的 Z…… 每個視窗輪流寫，永遠停不下來。
+  // 現在這個板只在自己這一幀（settle）記；別的視窗寫的只重畫。
+  test("7 個視窗各停一個板：storage 事件不會讓視窗互相擠來擠去寫不停", () => {
+    const handlers = [];
+    vi.stubGlobal("window", { addEventListener: (name, fn) => name === "storage" && handlers.push(fn) });
+    try {
+      const storage = memoryStorage();
+      let writes = 0;
+      const queue = [];
+      const set = storage.setItem;
+      storage.setItem = (k, v) => {
+        writes++;
+        set(k, v);
+        queue.push(k);
+      };
+      const boards = ["A1", "B2", "C3", "D4", "E5", "F6", "G7"];
+      const wins = boards.map(() => makeCore(storage));
+      wins.forEach((w, i) => w.show(listScreen(boards[i])));
+      // 把每次寫入當成 storage 事件發給所有視窗，直到沒有新的寫入（或明顯停不下來）。
+      let rounds = 0;
+      while (queue.length && rounds < 200) {
+        const key = queue.shift();
+        handlers.forEach((h) => h({ key }));
+        rounds++;
+      }
+      expect(rounds).toBeLessThan(200);
+      expect(writes).toBe(boards.length);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("localStorage 壞掉／丟例外 ⇒ 照常用，從空的開始", () => {
     const broken = { getItem: () => "{oops", setItem: () => { throw new Error("quota"); } };
     const { tabs, show } = makeCore(broken);

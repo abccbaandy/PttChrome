@@ -111,8 +111,10 @@ export function BoardTabs(core, opts) {
       self.refresh();
     });
     // 別的視窗開／關了分頁（storage 事件只發給別的視窗，自己寫的不會回來）。
+    // 只重畫、不記：超過上限個視窗各停在不同板時，「現在這個板被擠掉 ⇒ 記回來」會擠掉別的視窗的板，
+    // 它收到事件又記回來……輪流寫永遠停不下來。現在這個板等自己下一幀（settle）再記。
     window.addEventListener('storage', function(e) {
-      if (e && e.key === BOARD_TABS_KEY) self.refresh();
+      if (e && e.key === BOARD_TABS_KEY) self.refresh({ fromOtherWindow: true });
     });
   }
 }
@@ -173,8 +175,10 @@ BoardTabs.prototype = {
     return { left: Math.round(r.left), top: Math.round(r.top + rowHeight), width: Math.round(r.width), rowHeight: Math.round(rowHeight) };
   },
 
-  refresh: function() {
+  // opts.fromOtherWindow：別的視窗寫了分頁（storage 事件）⇒ 只照存的重畫，不記「到了現在這個板」。
+  refresh: function(opts) {
     const core = this._core;
+    const fromOtherWindow = !!(opts && opts.fromOtherWindow);
     // 出錯被停用（event.js 故障隔離）⇒ resize／別的視窗改分頁這些入口也不准把分頁列叫回來，新連線才恢復。
     const buf = core.buf;
     if (buf && typeof buf.isListenerDisabled === 'function' && buf.isListenerDisabled(this._onSettle)) {
@@ -191,7 +195,7 @@ BoardTabs.prototype = {
     let tabs = this._reload();
     const lower = board.toLowerCase();
     // 剛到這個板，或別的視窗把它擠掉／關掉了 ⇒ 記一次；同一個板停著不重寫。
-    if (this._visited !== lower || !tabs.some((t) => t.name.toLowerCase() === lower)) {
+    if (!fromOtherWindow && (this._visited !== lower || !tabs.some((t) => t.name.toLowerCase() === lower))) {
       tabs = visitBoard(tabs, board, Date.now());
       this._commit(tabs);
       this._visited = lower;
