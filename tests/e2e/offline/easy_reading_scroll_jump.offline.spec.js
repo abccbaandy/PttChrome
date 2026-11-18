@@ -46,7 +46,7 @@ const TOP_OF = `(el) => {
 }`;
 
 const ROW_SEL = '#mainContainer [data-type="bbsline"]';
-const MEDIA_IN_SLOT = 'img.easyReadingImg, video.easyReadingVideo, iframe';
+const MEDIA_IN_SLOT = 'img.easyReadingImg, video.easyReadingVideo, iframe, .videoFacade';
 
 // = LAZY_MOUNT_MARGIN_PX（src/js/lazy_media.js）。測試一端不能 import 那個 ESM
 // 模組（spec 是 CJS），所以抄成常數，並由 tests/unit/e2e_lazy_margin_constant.test.js

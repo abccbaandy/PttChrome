@@ -1273,6 +1273,12 @@
   "tooltip_tapToLoadImagesOnMobileData": {
     "message": "Android App 連的是行動數據（或手機熱點等計費網路）時，圖片連結下改放「開圖」按鈕：點一下開那張，長按開整篇的圖。換回 Wi-Fi 就恢復自動開圖。"
   },
+  "options_videoThumbFirst": {
+    "message": "YouTube 先放縮圖"
+  },
+  "tooltip_videoThumbFirst": {
+    "message": "文章裡的 YouTube 與 Twitch clip 先只放縮圖和播放鈕，點了才載入播放器並開始播放，捲過一篇貼很多影片的文章不會一直載播放器。關掉＝直接嵌入播放器。"
+  },
   "tooltip_imageFitScreen": {
     "message": "X（Twitter）的圖先載剛好夠螢幕顯示的尺寸，看起來一樣、出得更快也更省流量；點圖放大或調高倍率時才換原圖。關掉＝一律載原圖。重新整理後生效。"
   },

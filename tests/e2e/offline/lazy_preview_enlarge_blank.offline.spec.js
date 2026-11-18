@@ -79,7 +79,7 @@ const probeView = (page) =>
       const rect = s.getBoundingClientRect();
       if (rect.bottom <= view.top || rect.top >= view.bottom) continue;
       seen.push(Number(s.getAttribute('data-e2e-slot')));
-      const media = s.querySelector('img.hyperLinkPreview, video.easyReadingVideo, iframe');
+      const media = s.querySelector('img.hyperLinkPreview, video.easyReadingVideo, iframe, .videoFacade');
       // 佔位盒的高度扣掉真正的內容＝使用者看到的空白（媒體未掛載時整盒都是空白）。
       const blank = s.offsetHeight - (media ? media.offsetHeight : 0);
       if (!worst || blank > worst.blank) {

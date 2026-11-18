@@ -18,6 +18,9 @@ export const DEFAULT_PREFS = {
   // Android App 用行動數據／計費網路時，好讀不自動開圖，改在圖片連結下放「開圖」按鈕
   // （js/image_load_gate.js）。網路判定由 APK 原生回報，App 以外永遠不作用。不送 PTT ⇒ 不在安全模式名單。
   tapToLoadImagesOnMobileData: true,
+  // P109 文章裡的 YouTube／Twitch clip 先放縮圖，點了才載播放器（js/video_facade.js）。
+  // 一個 byte 都不送 PTT ⇒ 不在安全模式名單。
+  videoThumbFirst: true,
   enableNotifications: true,
   // 水球／系統訊息收件匣（js/message_inbox.js）：這次連線收到的水球與廣播留在鈴鐺裡。
   // 只看收到的資料、一個 byte 都不送 ⇒ 不在安全模式名單內。

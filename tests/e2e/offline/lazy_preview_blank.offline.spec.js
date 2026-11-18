@@ -47,7 +47,7 @@ test('※ 文章網址（非媒體連結）的佔位盒不得留下 min-height',
           text: el.textContent.replace(/\s+$/, ''),
           minHeight: slot.querySelector('.inlinePreviewSpacer').style.minHeight || '',
           height: Math.round(slot.getBoundingClientRect().height),
-          hasMedia: !!slot.querySelector('img, video, iframe'),
+          hasMedia: !!slot.querySelector('img, video, iframe, .videoFacade'),
         };
       })
       .filter(Boolean);

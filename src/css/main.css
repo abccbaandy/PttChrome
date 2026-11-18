@@ -1851,6 +1851,7 @@ body.mobile-layout #recentResume {
 .inlinePreviewSlot img.easyReadingImg,
 .inlinePreviewSlot video.easyReadingVideo,
 .inlinePreviewSlot iframe,
+.inlinePreviewSlot .videoFacade,
 .inlinePreviewSlot .previewLoading,
 .inlinePreviewSlot .previewError,
 .inlinePreviewSlot > .previewGrayBtn,
@@ -2016,6 +2017,42 @@ body.mobile-layout #recentResume {
    上方總高多一段小數，scroll anchoring 補償後捲動位置被對齊到整數 ⇒ 視窗內文字
    差一個次像素再跳回來（同 .commentSpacing 禁止事項 4）。1.6em 容得下字行與
    1em＋4px 的 spinner。守護：tests/unit/preview_indicator_height.test.js */
+/* P109 影片先放縮圖（ImagePreviewer.jsx#VideoFacade）：填滿播放器框（框的大小由 iframeBoxStyle 決定），
+   點了才換成播放器。縮圖 cover 填滿；載不到就是深色底＋播放鈕。 */
+.videoFacade {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: #111;
+  cursor: pointer;
+  overflow: hidden;
+}
+.videoFacadePoster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.videoFacadePlay {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  line-height: 0;
+  opacity: 0.9;
+}
+.videoFacade:hover .videoFacadePlay path:first-child,
+.videoFacade:focus-visible .videoFacadePlay path:first-child {
+  fill: #c00;
+}
+.videoFacade:focus-visible {
+  outline: 2px solid #4dabf7;
+  outline-offset: 2px;
+}
 .previewLoading {
   display: flex;
   box-sizing: border-box;

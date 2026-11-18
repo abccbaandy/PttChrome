@@ -28,6 +28,12 @@ import {
   subscribeFullRes,
 } from "../js/image_fit";
 import { tenorResolveUrl, tenorMediaDescriptor } from "../js/tenor";
+import {
+  needsVideoFacade,
+  activateVideo,
+  autoplaySrc,
+  youtubePoster,
+} from "../js/video_facade";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 
 const noop = () => {};
@@ -483,14 +489,65 @@ const iframeBoxStyle = (aspect) => {
   return { ...IFRAME_BOX, maxWidth: "800px", height: "450px" };
 };
 
-const InlineIframe = React.memo(function InlineIframe({ src, aspect }) {
-  const [loaded, setLoaded] = React.useState(false);
+// P109：先放縮圖＋播放鈕，點了才載播放器（js/video_facade.js）。框跟播放器同一個，版面不跳。
+// 縮圖載不到（Twitch clip 本來就沒有、或圖被擋）就是深色底＋播放鈕。
+const VideoFacade = ({ poster, onPlay }) => {
+  const [posterOk, setPosterOk] = React.useState(!!poster);
   return (
-    <div style={iframeBoxStyle(aspect)}>
+    <button
+      type="button"
+      className="videoFacade"
+      aria-label="播放影片"
+      data-video-facade=""
+      onClick={onPlay}
+    >
+      {posterOk && (
+        <img
+          className="videoFacadePoster"
+          src={poster}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setPosterOk(false)}
+        />
+      )}
+      <span className="videoFacadePlay" aria-hidden="true">
+        <svg viewBox="0 0 68 48" width="68" height="48">
+          <path d="M66.5 7.7a8.5 8.5 0 0 0-6-6C55.3.3 34 .3 34 .3s-21.3 0-26.5 1.4a8.5 8.5 0 0 0-6 6C.1 13 .1 24 .1 24s0 11 1.4 16.3a8.5 8.5 0 0 0 6 6C12.7 47.7 34 47.7 34 47.7s21.3 0 26.5-1.4a8.5 8.5 0 0 0 6-6C67.9 35 67.9 24 67.9 24s0-11-1.4-16.3z" fill="rgba(20,20,20,.8)" />
+          <path d="M27 14v20l18-10z" fill="#fff" />
+        </svg>
+      </span>
+    </button>
+  );
+};
+
+const InlineIframe = React.memo(function InlineIframe({ src, aspect, poster, facade }) {
+  const [loaded, setLoaded] = React.useState(false);
+  // 只在掛載時決定一次：開關切換對之後新掛的播放器生效，不把播到一半的收回成縮圖。
+  const [showFacade, setShowFacade] = React.useState(
+    () => !!facade && needsVideoFacade(src),
+  );
+  const [playSrc, setPlaySrc] = React.useState(src);
+  if (showFacade)
+    return (
+      <div style={iframeBoxStyle(aspect)} data-video-box="">
+        <VideoFacade
+          poster={poster}
+          onPlay={() => {
+            activateVideo(src);
+            setPlaySrc(autoplaySrc(src));
+            setShowFacade(false);
+          }}
+        />
+      </div>
+    );
+  return (
+    <div style={iframeBoxStyle(aspect)} data-video-box="">
       {!loaded && <LoadingOverlay />}
       <iframe
         type="text/html"
-        src={src}
+        src={playSrc}
+        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
         allowFullScreen
         referrerPolicy="origin-when-cross-origin"
         onLoad={() => setLoaded(true)}
@@ -509,7 +566,13 @@ const inlineVideo = (descriptor, key) => (
 );
 
 const inlineIframe = (descriptor, key) => (
-  <InlineIframe key={key} src={descriptor.src} aspect={descriptor.aspect} />
+  <InlineIframe
+    key={key}
+    src={descriptor.src}
+    aspect={descriptor.aspect}
+    poster={descriptor.poster}
+    facade={!!descriptor.facade}
+  />
 );
 
 // 單一 descriptor → 元素。相簿展開的每一項也走這裡，所以相簿內的圖自動吃到
@@ -752,7 +815,13 @@ const imageUrlResolvers = [
       } catch (e) {
         // ignore malformed url
       }
-      return Promise.resolve({ type: "iframe", src: embed, aspect });
+      return Promise.resolve({
+        type: "iframe",
+        src: embed,
+        aspect,
+        poster: youtubePoster(id),
+        facade: true,
+      });
     },
   },
   {
@@ -767,6 +836,8 @@ const imageUrlResolvers = [
         type: "iframe",
         src: `https://clips.twitch.tv/embed?clip=${id}&parent=${location.hostname}`,
         aspect: "16/9",
+        // 沒有不用 API 就拿得到的縮圖 ⇒ 深色底＋播放鈕。
+        facade: true,
       });
     },
   },
