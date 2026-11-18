@@ -742,13 +742,16 @@ const imageUrlResolvers = [
     request(src) {
       const id = src.match(this.regex)[1];
       let embed = `https://www.youtube.com/embed/${id}`;
+      // 直式 Shorts（/shorts/<id>）框要 9:16；其他一律 16:9（只決定框的比例）。
+      let aspect = "16/9";
       try {
-        const t = new URL(src, location.href).searchParams.get("t");
+        const u = new URL(src, location.href);
+        const t = u.searchParams.get("t");
         if (t) embed += `?start=${parseInt(t, 10) || t}`;
+        if (u.pathname.toLowerCase().startsWith("/shorts/")) aspect = "9/16";
       } catch (e) {
         // ignore malformed url
       }
-      const aspect = /youtube\.com\/shorts\//i.test(src) ? "9/16" : "16/9";
       return Promise.resolve({ type: "iframe", src: embed, aspect });
     },
   },
