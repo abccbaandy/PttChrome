@@ -110,10 +110,17 @@ export function MessageInbox(core, opts) {
   this._mail = false;
   this._state = { items: [], unread: 0, open: false };
   const buf = core && core.buf;
+  const self = this;
+  // 故障停用（docs/feature-isolation.md）：settle（新信提示）或 onData（每包解析，經
+  // buf.reportListenerError 算在同一條監聽者上）出錯 ⇒ 清空收件匣（鈴鐺消失）、取消進行中的回覆，
+  // 這次連線不再收；回覆入口也擋。水球照舊由 PTT 原生畫面顯示。新連線 enableAllListeners 恢復。
+  this._onSettle = function() {
+    self.noteScreen(buf.getRowText(0), buf.pageState);
+  };
   if (buf && buf.addEventListener) {
-    const self = this;
-    buf.addEventListener('screenSettled', function() {
-      self.noteScreen(buf.getRowText(0), buf.pageState);
+    buf.addEventListener('screenSettled', this._onSettle, {
+      feature: 'enableMessageInbox',
+      disable: () => self._shutdown()
     });
   }
 }
@@ -142,8 +149,33 @@ MessageInbox.prototype = {
     });
   },
 
+  _disabled: function() {
+    const buf = this._core && this._core.buf;
+    return !!(buf && buf.isListenerDisabled && buf.isListenerDisabled(this._onSettle));
+  },
+
+  _shutdown: function() {
+    if (this._cancelReply) this._cancelReply();
+    this._carry = '';
+    this._mail = false;
+    this.clear();
+  },
+
   // App.onData：每個 chunk 都進來。回傳這包新收進的訊息（給測試／呼叫端看）。
+  // 出錯算在收件匣自己頭上（停用），不往上丟進連線層。
   noteData: function(data) {
+    if (this._disabled()) return [];
+    const buf = this._core && this._core.buf;
+    if (!buf || typeof buf.reportListenerError !== 'function') return this._noteData(data);
+    try {
+      return this._noteData(data);
+    } catch (err) {
+      buf.reportListenerError('data', this._onSettle, err);
+      return [];
+    }
+  },
+
+  _noteData: function(data) {
     if (!enabled()) {
       // 使用中途關掉：已收的一起收掉（鈴鐺跟著消失）。
       this._carry = '';
@@ -178,7 +210,7 @@ MessageInbox.prototype = {
   // screenSettled：標題列的新信提示由無變有 ⇒ 收一則（看得出沒有新信時才重新武裝，
   // 讀完信再來一封會再收一則）。認不出標題列的畫面不動狀態。回傳新收的那則或 null。
   noteScreen: function(row0, pageState) {
-    if (!enabled()) return null;
+    if (!enabled() || this._disabled()) return null;
     const mail = newMailOnScreen(row0, pageState);
     if (mail === null) return null;
     const was = this._mail;
@@ -212,7 +244,7 @@ MessageInbox.prototype = {
   },
 
   reply: function(item) {
-    if (!this.canReply(item)) return false;
+    if (!this.canReply(item) || this._disabled()) return false;
     const core = this._core;
     const view = core.view;
     if (!view || typeof view.sendKeyAsUser !== 'function') return false;
@@ -237,10 +269,7 @@ MessageInbox.prototype = {
 
   // App.onClose：收件匣跟著連線走。
   reset: function() {
-    if (this._cancelReply) this._cancelReply();
-    this._carry = '';
-    this._mail = false;
-    this.clear();
+    this._shutdown();
   }
 };
 

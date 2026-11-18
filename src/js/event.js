@@ -125,6 +125,13 @@ Event.prototype.isListenerDisabled = function(listener) {
   return !!(this._disabledListeners && this._disabledListeners.has(listener));
 };
 
+// 同一個功能不走事件派發的入口（例：收件匣在 App.onData 每包解析）出錯時，交給同一套政策：
+// 當作那條監聽者出錯 ⇒ 登記了的功能一起停用、提示一次。沒隔離的物件照樣往外丟。
+Event.prototype.reportListenerError = function(type, listener, err) {
+  if (!this._isolateListeners) throw err;
+  this._onListenerError(type, listener, err);
+};
+
 // 新連線：出錯停用的功能恢復（下一次派發照常收到）。
 Event.prototype.enableAllListeners = function() {
   this._disabledListeners = null;

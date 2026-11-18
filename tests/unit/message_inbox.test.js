@@ -16,6 +16,7 @@ import { u2b } from "../../src/js/string_util";
 import { DEFAULT_PREFS, writeValues } from "../../src/js/pref_storage";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 import { setupI18n, i18n } from "../../src/js/i18n";
+import { Event, setListenerErrorPolicy } from "../../src/js/event";
 
 beforeAll(() => loadBig5Tables());
 
@@ -376,5 +377,79 @@ describe("新信提示", () => {
     const inbox = make();
     show(MENU_MAIL);
     expect(inbox.state.items).toEqual([]);
+  });
+});
+
+// 故障停用（docs/feature-isolation.md；架構 review A6）：沒登記時新信提示的 settle 每幀再炸一次；
+// onData 每包解析出錯會一路丟進連線層（同一包後面的失焦通知也跑不到），鈴鐺停在出錯前的清單。
+describe("故障停用", () => {
+  beforeEach(() => setPrefs({}));
+  const makeIsolated = () => {
+    const sent = [];
+    const buf = { rows: 24, row0: "", boom: false, pageState: 1 };
+    buf.getRowText = () => {
+      if (buf.boom) throw new Error("boom");
+      return buf.row0;
+    };
+    Event.mixin(buf, { isolate: true });
+    const inbox = new MessageInbox({ buf, view: { sendKeyAsUser: (k, m) => sent.push([k, m]) } });
+    const settle = () => buf.dispatchEvent({ type: "screenSettled" });
+    return { buf, inbox, sent, settle };
+  };
+
+  test("settle 出錯 ⇒ 收件匣清空、之後的水球不收、回覆不送鍵；新連線恢復", () => {
+    const prev = setListenerErrorPolicy({ strict: false, onError: () => {} });
+    try {
+      const { buf, inbox, sent, settle } = makeIsolated();
+      inbox.noteData(wire("aaa", "一"));
+      expect(inbox.state.items).toHaveLength(1);
+      const item = inbox.state.items[0];
+
+      buf.boom = true;
+      settle();
+      expect(buf.isListenerDisabled(inbox._onSettle)).toBe(true);
+      expect(inbox.state.items).toEqual([]);
+
+      buf.boom = false;
+      expect(inbox.noteData(wire("bbb", "二"))).toEqual([]);
+      expect(inbox.state.items).toEqual([]);
+      expect(inbox.reply(item)).toBe(false);
+      expect(sent).toEqual([]);
+
+      buf.enableAllListeners();
+      expect(inbox.noteData(wire("ccc", "三"))).toHaveLength(1);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
+  });
+
+  test("每包解析出錯 ⇒ 不往上丟（連線層照常）、同一個功能停用並回報一次", () => {
+    const errors = [];
+    const prev = setListenerErrorPolicy({ strict: false, onError: (e) => errors.push(e) });
+    try {
+      const { buf, inbox } = makeIsolated();
+      inbox.noteData(wire("aaa", "一"));
+      inbox._noteData = () => {
+        throw new Error("parse boom");
+      };
+      expect(() => inbox.noteData(wire("bbb", "二"))).not.toThrow();
+      expect(buf.isListenerDisabled(inbox._onSettle)).toBe(true);
+      expect(inbox.state.items).toEqual([]);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({ type: "data", feature: "enableMessageInbox", disabled: true });
+      // 停用後不再進解析，不會每包都再回報。
+      inbox.noteData(wire("ccc", "三"));
+      expect(errors).toHaveLength(1);
+    } finally {
+      setListenerErrorPolicy(prev);
+    }
+  });
+
+  test("測試／dev（strict）照樣往外丟，測試不會因此變鈍", () => {
+    const { inbox } = makeIsolated();
+    inbox._noteData = () => {
+      throw new Error("parse boom");
+    };
+    expect(() => inbox.noteData(wire("bbb", "二"))).toThrow("parse boom");
   });
 });
