@@ -77,7 +77,8 @@ class ImageFetchTest {
         // 縮完高度還超過 WebP 上限（16383）的長截圖不存。
         assertEquals(null, ImageFetch.outputSize(1080, 40000))
         assertEquals(null, ImageFetch.outputSize(0, 100))
-        assertEquals(1080 to 16200, ImageFetch.outputSize(2160, 32400))
+        // 縮到寬 1080 時有 1750 萬像素，超過解碼上限 ⇒ 再縮一半（長圖寧可窄一點也不要 OOM）。
+        assertEquals(540 to 8100, ImageFetch.outputSize(2160, 32400))
     }
 
     @Test
