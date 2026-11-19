@@ -46,6 +46,8 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -63,6 +65,8 @@ class MainActivity : ComponentActivity() {
     private val credentials by lazy { CredentialBridge(this) }
     private val settings by lazy { AppSettings(this) }
     private val updater by lazy { AppUpdater(this) }
+    /** bridge 'fetchImage' 同時最多幾張（ImageFetch.kt）。 */
+    private val imageFetchSlots = Semaphore(2)
     /** 行動數據／計費網路判定（bridge 'networkState'；變了就發 'pttandroid:network' 給網頁）。 */
     private val networkWatch by lazy { NetworkWatch(this) { reportNetwork(it) } }
     /** 目前 WebView 載入的來源；注入規則跟著 WebView 建立時決定，換來源＝重建 WebView。 */
@@ -290,14 +294,17 @@ class MainActivity : ComponentActivity() {
                     val id = request.optInt("id")
                     val url = request.optString("url")
                     lifecycleScope.launch {
-                        val res = withContext(Dispatchers.IO) {
-                            try {
-                                ImageFetch.fetch(id, url)
-                            } catch (e: Exception) {
-                                Log.w(TAG, "fetchImage: $e")
-                                ImageFetch.failed(id, "failed")
-                            } catch (_: OutOfMemoryError) {
-                                ImageFetch.failed(id, "tooLarge")
+                        // 同時最多兩張：網頁一次全丟過來時，解碼的記憶體不會疊加。
+                        val res = imageFetchSlots.withPermit {
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    ImageFetch.fetch(id, url)
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "fetchImage: $e")
+                                    ImageFetch.failed(id, "failed")
+                                } catch (_: OutOfMemoryError) {
+                                    ImageFetch.failed(id, "tooLarge")
+                                }
                             }
                         }
                         reply.postMessage(res.toString())

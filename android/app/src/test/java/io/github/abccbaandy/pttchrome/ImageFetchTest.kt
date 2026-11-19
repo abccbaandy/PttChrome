@@ -63,6 +63,24 @@ class ImageFetchTest {
     }
 
     @Test
+    fun tallNarrowImagesAreSampledByPixelCount() {
+        // 寬 1000、高 60000：只看寬度不會縮，解出來 6000 萬像素 ⇒ 要再縮。
+        val s = ImageFetch.sampleSize(1000, 60000)
+        assertTrue("$s", (1000L / s) * (60000 / s) <= ImageFetch.MAX_DECODE_PIXELS)
+        assertEquals(1, ImageFetch.sampleSize(1000, 3000))
+    }
+
+    @Test
+    fun outputSizeRefusesWhatWebpCannotEncode() {
+        assertEquals(1080 to 810, ImageFetch.outputSize(4320, 3240))
+        assertEquals(800 to 600, ImageFetch.outputSize(800, 600))
+        // 縮完高度還超過 WebP 上限（16383）的長截圖不存。
+        assertEquals(null, ImageFetch.outputSize(1080, 40000))
+        assertEquals(null, ImageFetch.outputSize(0, 100))
+        assertEquals(1080 to 16200, ImageFetch.outputSize(2160, 32400))
+    }
+
+    @Test
     fun scaledSizeIsProportionalAndCapped() {
         assertEquals(800 to 600, ImageFetch.scaledSize(800, 600))
         assertEquals(1080 to 810, ImageFetch.scaledSize(2160, 1620))
@@ -105,6 +123,13 @@ class ImageFetchTest {
     }
 
     @Test
+    fun totalTimeLimitStopsSlowDrips() {
+        server.enqueue(image(ByteArray(64 * 1024)).newBuilder().throttleBody(1024, 50, java.util.concurrent.TimeUnit.MILLISECONDS).build())
+        val d = ImageFetch.download(server.url("/slow.jpg").toString(), totalTimeoutMs = 200, requireHttps = false)
+        assertEquals(ImageFetch.Download.Failed("network"), d)
+    }
+
+    @Test
     fun rejectsPlainHttpInProduction() {
         assertEquals(ImageFetch.Download.Failed("url"), ImageFetch.download(server.url("/a.jpg").toString()))
         assertEquals(0, server.requestCount)
@@ -112,9 +137,9 @@ class ImageFetchTest {
 
     @Test
     fun unreachableHostIsNetworkError() {
-        val url = server.url("/a.jpg").toString()
-        server.close()
-        assertEquals(ImageFetch.Download.Failed("network"), ImageFetch.download(url, requireHttps = false))
+        // 另外佔一個 port 再關掉 ⇒ 那個 port 沒人聽（不動共用的 server）。
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        assertEquals(ImageFetch.Download.Failed("network"), ImageFetch.download("http://127.0.0.1:$port/a.jpg", requireHttps = false))
     }
 
     @Test

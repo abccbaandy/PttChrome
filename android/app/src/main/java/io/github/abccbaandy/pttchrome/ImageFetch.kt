@@ -20,9 +20,15 @@ import java.util.Base64
  */
 internal object ImageFetch {
     const val TIMEOUT_MS = 15_000
+    /** 整張圖（連線＋讀完）的總時限：readTimeout 只管單次讀取，對方每次吐一點就能一直占著。 */
+    const val TOTAL_TIMEOUT_MS = 30_000L
     /** 原圖上限：超過就中止（不讀完）。 */
     const val MAX_BYTES = 8 * 1024 * 1024
     const val MAX_WIDTH = 1080
+    /** WebP 單邊上限（libwebp 16383）：縮完還超過的長截圖不存，解碼前就擋下。 */
+    const val MAX_HEIGHT = 16383
+    /** 解碼後的像素上限（ARGB 每像素 4 bytes ⇒ ~48 MB）：又高又窄的圖只看寬度算倍率會解出好幾百 MB。 */
+    const val MAX_DECODE_PIXELS = 12_000_000L
     const val WEBP_QUALITY = 80
     /** 回給網頁的 WebP 上限：WebMessage 是一整串 base64 字串，太大的不送。 */
     const val MAX_OUTPUT_BYTES = 2 * 1024 * 1024
@@ -42,17 +48,29 @@ internal object ImageFetch {
         return u.scheme.equals("https", ignoreCase = true) && !u.host.isNullOrEmpty() && u.rawUserInfo == null
     }
 
-    /** `image/*` 但不是 GIF；沒給 Content-Type 不收（多半是錯誤頁）。 */
+    /** `image/` 開頭但不是 GIF；沒給 Content-Type 不收（多半是錯誤頁）。 */
     fun acceptsContentType(contentType: String?): Boolean {
         val type = contentType?.substringBefore(';')?.trim()?.lowercase() ?: return false
         return type.startsWith("image/") && type != "image/gif"
     }
 
-    /** BitmapFactory 的 inSampleSize：2 的次方，縮完寬度仍 ≥ maxWidth（之後再精確縮到 maxWidth）。 */
-    fun sampleSize(width: Int, maxWidth: Int = MAX_WIDTH): Int {
+    /**
+     * BitmapFactory 的 inSampleSize：2 的次方，縮完寬度仍 ≥ maxWidth（之後再精確縮到 maxWidth）；
+     * 解碼後像素超過 [MAX_DECODE_PIXELS] 就再加倍（寧可糊一點也不要 OOM）。
+     */
+    fun sampleSize(width: Int, height: Int = 1, maxWidth: Int = MAX_WIDTH): Int {
         var sample = 1
         while (width / (sample * 2) >= maxWidth) sample *= 2
+        while ((width / sample).toLong() * (height / sample) > MAX_DECODE_PIXELS) sample *= 2
         return sample
+    }
+
+    /** 原圖尺寸 → 縮完的尺寸；縮完高度還超過 [MAX_HEIGHT]（WebP 編不出來）回 null。 */
+    fun outputSize(width: Int, height: Int): Pair<Int, Int>? {
+        if (width <= 0 || height <= 0) return null
+        val sample = sampleSize(width, height)
+        val out = scaledSize(width / sample, height / sample)
+        return if (out.second > MAX_HEIGHT || out.first <= 0) null else out
     }
 
     /** 精確縮放後的尺寸：寬 ≤ maxWidth，等比例，至少 1px。 */
@@ -69,6 +87,7 @@ internal object ImageFetch {
     fun download(
         url: String,
         maxBytes: Int = MAX_BYTES,
+        totalTimeoutMs: Long = TOTAL_TIMEOUT_MS,
         /** 測試用：本機 MockWebServer 是 http。正式呼叫一律 true。 */
         requireHttps: Boolean = true,
         open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
@@ -79,6 +98,7 @@ internal object ImageFetch {
         } catch (_: Exception) {
             return Download.Failed("network")
         }
+        val deadline = System.nanoTime() + totalTimeoutMs * 1_000_000
         try {
             conn.connectTimeout = TIMEOUT_MS
             conn.readTimeout = TIMEOUT_MS
@@ -97,6 +117,7 @@ internal object ImageFetch {
                     val n = input.read(buf)
                     if (n < 0) break
                     if (out.size() + n > maxBytes) return Download.Failed("tooLarge")
+                    if (System.nanoTime() > deadline) return Download.Failed("network")
                     out.write(buf, 0, n)
                 }
             }
@@ -133,8 +154,8 @@ internal object ImageFetch {
     private fun encodeWebp(bytes: ByteArray): Triple<ByteArray, Int, Int>? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth) }
+        outputSize(bounds.outWidth, bounds.outHeight) ?: return null
+        val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight) }
         val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
         val (w, h) = scaledSize(decoded.width, decoded.height)
         val bitmap = if (w == decoded.width) decoded else Bitmap.createScaledBitmap(decoded, w, h, true)

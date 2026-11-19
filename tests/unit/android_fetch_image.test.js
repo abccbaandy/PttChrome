@@ -79,6 +79,9 @@ describe("native side (static)", () => {
     expect(i).toBeGreaterThan(0);
     const branch = activity.slice(i, activity.indexOf("return@addWebMessageListener", i));
     expect(branch).toMatch(/withContext\(Dispatchers\.IO\)/);
+    // 同時抓幾張有上限（解碼記憶體不疊加）。
+    expect(branch).toMatch(/imageFetchSlots\.withPermit/);
+    expect(activity).toMatch(/imageFetchSlots = Semaphore\(2\)/);
     expect(branch).toMatch(/ImageFetch\.fetch\(id, url\)/);
     expect(branch).toMatch(/reply\.postMessage\(res\.toString\(\)\)/);
   });
