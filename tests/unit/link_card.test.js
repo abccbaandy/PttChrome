@@ -85,6 +85,37 @@ describe("linkCardDescriptor", () => {
   });
 });
 
+describe("檢查者補的邊界", () => {
+  test("內網尾碼跟 Worker（proxy/imgur-worker/src/og.js）對齊", () => {
+    expect(linkCardEligible("https://wiki.intranet/")).toBe(false);
+    expect(linkCardEligible("https://git.corp/")).toBe(false);
+  });
+  test(":443 算預設埠、大寫加尾點的 PTT 網域照樣不卡", () => {
+    expect(linkCardEligible("https://example.com:443/")).toBe(true);
+    expect(linkCardEligible("HTTPS://WWW.PTT.CC./bbs/")).toBe(false);
+  });
+  test("標題的 bidi 控制字元拿掉（不能把顯示順序反過來）", () => {
+    const d = linkCardDescriptor({ title: "a‮b⁦c‏d" }, "https://example.com/");
+    expect(d.title).toBe("abcd");
+  });
+  test("descriptor 自己也檢查原始連結：javascript: 不出卡", () => {
+    expect(linkCardDescriptor({ title: "t" }, "javascript:alert(1)")).toBeNull();
+  });
+  test("limiter 的 n 不合理（0、NaN）當成 1", async () => {
+    for (const n of [0, NaN, -3]) {
+      const limit = createLimiter(n);
+      let running = 0;
+      let peak = 0;
+      const task = () => {
+        peak = Math.max(peak, ++running);
+        return Promise.resolve().then(() => running--);
+      };
+      await Promise.all([limit(task), limit(task)]);
+      expect(peak).toBe(1);
+    }
+  });
+});
+
 describe("createLimiter", () => {
   test("同時最多 n 個，完成一個才開下一個，照順序", async () => {
     const limit = createLimiter(2);

@@ -21,7 +21,8 @@ export const LINK_CARD_CONCURRENCY = 2;
 
 // PTT 自己的網址（文章連結點了在終端機裡開）不放卡。
 const PTT_HOSTS = /(?:^|\.)ptt\.cc$/;
-const BLOCKED_SUFFIXES = [".local", ".localhost", ".internal", ".lan", ".home.arpa"];
+// 跟 Worker（proxy/imgur-worker/src/og.js 的 BLOCKED_SUFFIXES）同一份，兩邊都改。
+const BLOCKED_SUFFIXES = [".local", ".localhost", ".internal", ".lan", ".home.arpa", ".intranet", ".corp"];
 
 /** @param {string} href */
 export function linkCardEligible(href) {
@@ -57,7 +58,12 @@ export function linkCardResolveUrl(href, proxyConfig, cardEnabled) {
 function cleanText(s, max) {
   if (typeof s !== "string") return "";
   // oxlint-disable-next-line no-control-regex -- 刻意比對控制字元
-  const one = s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  const one = s
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    // bidi 控制字元（LRM／RLM、嵌入／覆寫、隔離）：外部標題可以拿它把顯示順序反過來。
+    .replace(/[‎‏‪-‮⁦-⁩]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   const cps = Array.from(one);
   return cps.length > max ? cps.slice(0, max - 1).join("") + "…" : one;
 }
@@ -81,6 +87,8 @@ function httpsUrl(s) {
  */
 export function linkCardDescriptor(json, href) {
   if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+  // 點卡片開的是 href ⇒ 呼叫端傳錯（javascript: 之類）也不能出卡。
+  if (!linkCardEligible(href)) return null;
   const title = cleanText(json.title, LINK_CARD_MAX_TITLE);
   if (!title) return null;
   let site = cleanText(json.site, LINK_CARD_MAX_SITE);
@@ -100,11 +108,13 @@ export function linkCardDescriptor(json, href) {
  * @returns {<T>(task: () => Promise<T>) => Promise<T>}
  */
 export function createLimiter(n) {
+  // 0、負數、NaN 當成 1（0 會永遠不開始，NaN 會完全不限流）。
+  const cap = Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
   let running = 0;
   /** @type {Array<() => void>} */
   const queue = [];
   const next = () => {
-    if (running >= n || !queue.length) return;
+    if (running >= cap || !queue.length) return;
     running++;
     const start = /** @type {() => void} */ (queue.shift());
     start();
