@@ -237,6 +237,8 @@ class MainActivity : ComponentActivity() {
             .put("setProtocol", true)
             // 認得 bridge 'networkState' 並會發 'pttandroid:network'：網頁據此才在行動網路時改成點了才開圖。
             .put("networkState", true)
+            // 認得 bridge 'fetchImage'：網頁據此才在存離線文章時把圖片一起抓回來（ImageFetch.kt）。
+            .put("fetchImage", true)
         restoringRenderer = false
         WebViewCompat.addDocumentStartJavaScript(
             wv, "window.__PTT_ANDROID__ = Object.freeze($config);", origins
@@ -281,6 +283,25 @@ class MainActivity : ComponentActivity() {
                         JSONObject().put("id", request.optInt("id")).put("ok", true)
                             .put("metered", networkWatch.metered).toString()
                     )
+                    return@addWebMessageListener
+                }
+                "fetchImage" -> {
+                    // 離線文章存圖（P107）：網路與縮圖在 IO 執行緒，回覆回到主執行緒送。
+                    val id = request.optInt("id")
+                    val url = request.optString("url")
+                    lifecycleScope.launch {
+                        val res = withContext(Dispatchers.IO) {
+                            try {
+                                ImageFetch.fetch(id, url)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "fetchImage: $e")
+                                ImageFetch.failed(id, "failed")
+                            } catch (_: OutOfMemoryError) {
+                                ImageFetch.failed(id, "tooLarge")
+                            }
+                        }
+                        reply.postMessage(res.toString())
+                    }
                     return@addWebMessageListener
                 }
                 "notify" -> {

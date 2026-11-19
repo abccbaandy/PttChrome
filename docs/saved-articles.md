@@ -47,6 +47,12 @@
      **GIF 是大頭**：179 張圖的長文原檔 35 MB，其中 3 張 GIF 就 20 MB（最大一張 16 MB），GIF 不能這樣縮。
    - **配額**：`navigator.storage.estimate()` 在雲端 headless Chromium 是 10 GB（依磁碟比例給，真機會不同）；不是 persistent 時瀏覽器空間吃緊會整個 origin 清掉，存圖前要 `navigator.storage.persist()`。
    - 可行的做法：只存抓得到的靜態圖、縮成 webp；GIF／影片／超過某大小的維持連結；圖跟文分開記帳（總量上限到了先丟最舊文章的圖、文字照留）。
+   - **L 定案：只做 APK**（原生抓圖不受 CORS 限制），電腦版照舊只存連結。進度：
+     - 已做：挑圖純函式 `saved_image_pick.js`（https、靜態圖、去重、一篇最多 50 張）；
+       原生 bridge `fetchImage`（`ImageFetch.kt`：只收 https、不收 GIF、原圖 ≤8 MB、縮成寬 ≤1080 的 WebP、回給網頁 ≤2 MB；
+       網頁端 `android_bridge.js#androidFetchImage`，舊 APK 沒有 `config.fetchImage` ⇒ 不問）。
+     - 還沒做：IndexedDB 加 image store 並在 `saveCurrent()` 後背景逐張抓存、唯讀頁預覽先讀本機圖、設定頁開關（只在 APK 顯示）。
+     - 還沒量：WebMessage 一則 base64 字串在真機上的耗時（上限先訂 2 MB）。
 
 ## 入口
 
