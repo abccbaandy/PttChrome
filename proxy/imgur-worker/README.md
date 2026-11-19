@@ -87,6 +87,34 @@ GET  https://<worker>/tenor?url=<encodeURIComponent(tenor 分享連結)>
   **不得**碰 pathname 大小寫。
 - 錯誤一律 `no-store`（理由同圖片路徑：把 4xx 快取起來等於自我封鎖）。
 
+### `/og` — 網頁分享資訊（網頁連結預覽卡，非圖片代理）
+
+```
+GET  https://<worker>/og?url=<encodeURIComponent(網頁網址)>
+     → 200 {"title","site","image","url"}  Cache-Control: public, max-age=86400
+     → 200 {"none":true}                    Cache-Control: public, max-age=21600（不是 HTML／沒有標題）
+     → 400 {"error":"bad url"}              （網址不合規則）
+     → 404 {"error":…}                      （上游非 2xx、轉址太多或轉到不合規則的網址）
+     → 429 {"error":"rate limited"}         （同一 IP 每分鐘超過 OG_LIMITER 上限）
+     → 502 {"error":"upstream"}             （回源連線失敗或逾時）
+```
+
+- **為什麼需要**：文章裡新聞／部落格／雲端硬碟連結的預覽卡（標題＋縮圖＋網站名）。網頁讀不到別站的 HTML（沒有 CORS），
+  分享資訊只寫在對方頁面的 `<meta>`。APK 版由原生直接抓，不經這裡。
+- **這是唯一收「任意網址」的路由，安全邊界在 `src/og.js`**（守護 `test/og.test.js`）：
+  - 只收 http／https、預設埠、不帶帳密；host 不能是 IP、localhost、單一標籤或 `.local`／`.internal` 這類內網名稱。
+  - 轉址自己跟（`redirect: "manual"`，最多 3 次），**每一跳重新過同一套檢查**。總時限 6 秒、HTML 只讀前 300 KB。
+  - **只回四個欄位**（標題 ≤200 字、網站名 ≤60 字、縮圖只收 https、最後的網址），不轉送頁面內容 ⇒ 不能當內容代理。
+  - 每個 IP 每分鐘 60 次（`wrangler.jsonc` 的 `ratelimits` binding `OG_LIMITER`，Workers 免費方案可用）；
+    binding 不在或限流服務出錯就不限（最差等於沒有限流）。
+  - 解析到內網位址的公開網域（例如 `127.0.0.1.nip.io`）這裡擋不到，靠的是 **Workers 本身連不到私有位址**；
+    搬到別的執行環境前要先補 DNS 解析後的位址檢查。
+  - 解析外部 HTML 的正規式一律 `[^<>]*`，不寫 `[^>]*`（會跨過下一個 `<`，沒收尾的 `<meta` 連發是二次方時間，
+    Workers 每次請求只有 10ms CPU）。守護 `test/og.test.js`「惡意輸入」。
+- 「沒有分享資訊」也快取（6 小時），同一篇文章重開不再回源；上游錯誤一律 `no-store`。
+  因為 `cross_version_cache: true`，**改了解析邏輯重新部署後，已快取的結果最多一天後才換新**。
+- 編碼照 `Content-Type` 或 `<meta charset>`，Workers 的 `TextDecoder` 不認得的編碼退回 UTF-8（標題可能亂碼，但不會出錯）。
+
 ## 部署
 
 需 Cloudflare 帳號（免費方案即可）與 Node。
