@@ -322,6 +322,24 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     expect(slot.getAttribute("style")).toBeNull();
   });
 
+  // P109 的影片縮圖（.videoFacade，點了才換 iframe）也是佔版面的媒體：沒算進去的話，
+  // 捲遠卸載時不釘高度 ⇒ 佔位塌成 0，往回捲時縮圖一個個掛回來把上方內容撐開（跳頁）。
+  test("影片縮圖（還沒點開）捲遠卸載 ⇒ 同樣釘住高度", () => {
+    const slot = mountSlot("https://www.youtube.com/watch?v=dQw4w9WgXcQ").el;
+    near().emit(true);
+    fakeHeight(contentOf(slot), 232);
+    const facade = document.createElement("button");
+    facade.className = "videoFacade";
+    const poster = document.createElement("img");
+    poster.className = "videoFacadePoster";
+    facade.appendChild(poster);
+    fakeHeight(facade, 232);
+    contentOf(slot).appendChild(facade);
+    far().emit(false);
+    facade.remove();
+    expect(floorOf(slot)).toBe("232px");
+  });
+
   test("捲回來 ⇒ 重新掛載，佔位高度保留", () => {
     const slot = mountSlot(HREF).el;
     near().emit(true);

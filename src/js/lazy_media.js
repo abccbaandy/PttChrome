@@ -31,8 +31,10 @@ export function nextLazyState({ mounted, near, far }) {
 
 // 佔位盒內「真的載到媒體」的判準（LazyInlinePreview 卸載前用它查 slot）。
 // 刻意**不含** .previewLoading／.previewError —— 見 nextSlotHeight。
+// .videoFacade（P109 影片先放縮圖，點了才換 iframe）跟 iframe 同一級：它佔的版面就是之後
+// iframe 的框，捲遠卸載不釘高度會塌陷（preview_targets.PREVIEW_CLICK_SELECTOR 同一份清單）。
 export const LAZY_MEDIA_SELECTOR =
-  "img.easyReadingImg, video.easyReadingVideo, img.hyperLinkPreview, iframe";
+  "img.easyReadingImg, video.easyReadingVideo, img.hyperLinkPreview, iframe, .videoFacade";
 
 // 卸載時要把當下高度釘進佔位盒的 spacer（見 render/inline_preview_slot.js 檔頭
 // 「疊層佔位」），否則內容總高會塌陷、捲動容器的 scrollTop 被夾住 → 使用者的閱讀
