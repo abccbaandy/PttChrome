@@ -19,6 +19,17 @@
     "cross_version_cache": true
   },
 
+  // `/og`（網頁連結預覽卡）每個 IP 每分鐘的上限（src/og.js#handleOg 讀 env.OG_LIMITER）。
+  // 一篇文章通常只有幾個連結、前端同時最多抓 2 個；60／分鐘是給「被拿去當任意網址探測器」的上界。
+  // Workers Rate Limiting 免費方案可用；namespace_id 是本帳號內自訂的整數字串。
+  "ratelimits": [
+    {
+      "name": "OG_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
+
   "observability": {
     "enabled": true
   }

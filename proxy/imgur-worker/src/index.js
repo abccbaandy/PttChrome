@@ -1,3 +1,5 @@
+import { handleOg } from "./og.js";
+
 // 圖片快取代理（Cloudflare Worker）：i.imgur.com 起家，後來加上 pbs.twimg.com 與
 // files.catbox.moe（路由表見 upstreamFor）。以下原因段落是 imgur 的；twimg／catbox
 // 的量測在 docs/imgur-latency-research.md 各自的節。
@@ -262,7 +264,7 @@ const redirectToOrigin = (origin) =>
   Response.redirect(origin, 302);
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
@@ -282,6 +284,11 @@ export default {
     if (url.pathname === "/tenor") {
       return handleTenor(request, url);
     }
+    // 網頁連結預覽卡（P110）：任意網址的分享資訊，安全邊界見 og.js 檔頭。只收 GET。
+    if (url.pathname === "/og") {
+      if (request.method !== "GET") return new Response("method not allowed", { status: 405 });
+      return handleOg(request, url, env);
+    }
 
     const origin = upstreamFor(url.pathname);
     if (!origin) {
@@ -289,7 +296,8 @@ export default {
         "not found\nusage: /<imgur-id>.<jpg|jpeg|png|gif|webp>\n" +
           "       /twimg/<orig|large|medium|small|4096x4096>/<media-id>.<jpg|png|webp>\n" +
           "       /catbox/<name>.<jpg|jpeg|png|gif|webp>\n" +
-          "       /tenor?url=<tenor 分享連結>\n",
+          "       /tenor?url=<tenor 分享連結>\n" +
+          "       /og?url=<網頁網址>\n",
         {
           status: 404,
           headers: { "content-type": "text/plain; charset=utf-8" },
