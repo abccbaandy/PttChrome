@@ -1,0 +1,128 @@
+// @ts-check
+// 網頁連結預覽卡（P110）的純邏輯層：哪些連結要卡、Worker 網址、回應驗證、並行上限（無 DOM）。
+//
+// 一般網頁（新聞、部落格、雲端硬碟…）的分享資訊只寫在對方頁面的 <meta>，網頁讀不到別站 HTML
+// （沒有 CORS）⇒ 由圖片代理 Worker 的 `/og` 代抓（proxy/imgur-worker/src/og.js，安全邊界在那邊）。
+// 這裡是前端那一半：
+//   - linkCardEligible：只對 http(s)、不是 PTT 自己、不是 IP／內網的連結要卡（Worker 也會擋，兩層都要在）。
+//   - linkCardResolveUrl：開關＝圖片代理總開關（useImgurProxy）∧ 預覽卡開關（linkPreviewCard）。
+//     同 tenor 的理由：使用者關掉代理代表不想把瀏覽紀錄送過去，卡片也跟著不抓。
+//   - linkCardDescriptor：Worker 回的 JSON 一律當外部資料驗：標題必須是非空字串（截長）、
+//     縮圖只收 https、點下去開的永遠是文章裡那條原始連結（不是 Worker 回的 url）。
+//   - createLimiter：同時最多 N 個請求（一篇文章幾十個連結時不要一次全打出去）。
+// 守護 tests/unit/link_card.test.js。
+
+import { normalizeImgurProxyBase } from "./image_proxy.js";
+
+export const LINK_CARD_MAX_TITLE = 200;
+export const LINK_CARD_MAX_SITE = 60;
+const MAX_URL_LENGTH = 2048;
+export const LINK_CARD_CONCURRENCY = 2;
+
+// PTT 自己的網址（文章連結點了在終端機裡開）不放卡。
+const PTT_HOSTS = /(?:^|\.)ptt\.cc$/;
+const BLOCKED_SUFFIXES = [".local", ".localhost", ".internal", ".lan", ".home.arpa"];
+
+/** @param {string} href */
+export function linkCardEligible(href) {
+  if (!href || typeof href !== "string" || href.length > MAX_URL_LENGTH) return false;
+  let u;
+  try {
+    u = new URL(href);
+  } catch (e) {
+    return false;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+  if (u.username || u.password || u.port) return false;
+  const host = u.hostname.toLowerCase().replace(/\.$/, "");
+  if (!host.includes(".") || host.startsWith("[") || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return false;
+  if (BLOCKED_SUFFIXES.some((s) => host.endsWith(s))) return false;
+  if (PTT_HOSTS.test(host)) return false;
+  return true;
+}
+
+/**
+ * Worker `/og` 的網址；開關沒開或連結不合格回 null。
+ * @param {string} href
+ * @param {{ enabled?: boolean, base?: string } | null | undefined} proxyConfig 圖片代理設定（image_proxy.getImageProxyConfig）
+ * @param {boolean} cardEnabled pref linkPreviewCard
+ */
+export function linkCardResolveUrl(href, proxyConfig, cardEnabled) {
+  if (!cardEnabled || !proxyConfig || !proxyConfig.enabled) return null;
+  if (!linkCardEligible(href)) return null;
+  return `${normalizeImgurProxyBase(proxyConfig.base)}/og?url=${encodeURIComponent(href)}`;
+}
+
+/** @param {unknown} s @param {number} max */
+function cleanText(s, max) {
+  if (typeof s !== "string") return "";
+  // oxlint-disable-next-line no-control-regex -- 刻意比對控制字元
+  const one = s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  const cps = Array.from(one);
+  return cps.length > max ? cps.slice(0, max - 1).join("") + "…" : one;
+}
+
+/** @param {unknown} s */
+function httpsUrl(s) {
+  if (typeof s !== "string" || !s || s.length > MAX_URL_LENGTH) return "";
+  try {
+    const u = new URL(s);
+    return u.protocol === "https:" && !u.username && !u.password ? u.href : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+/**
+ * Worker 回應 → 卡片描述；沒有標題（含 `{none:true}`、錯誤物件）回 null（不放卡）。
+ * @param {any} json
+ * @param {string} href 文章裡的原始連結（點卡片開的就是它）
+ * @returns {{ type: "card", href: string, title: string, site: string, image: string } | null}
+ */
+export function linkCardDescriptor(json, href) {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+  const title = cleanText(json.title, LINK_CARD_MAX_TITLE);
+  if (!title) return null;
+  let site = cleanText(json.site, LINK_CARD_MAX_SITE);
+  if (!site) {
+    try {
+      site = new URL(href).hostname.replace(/^www\./, "");
+    } catch (e) {
+      site = "";
+    }
+  }
+  return { type: "card", href, title, site, image: httpsUrl(json.image) };
+}
+
+/**
+ * 同時最多 n 個在跑；其餘排隊，照呼叫順序開始。
+ * @param {number} n
+ * @returns {<T>(task: () => Promise<T>) => Promise<T>}
+ */
+export function createLimiter(n) {
+  let running = 0;
+  /** @type {Array<() => void>} */
+  const queue = [];
+  const next = () => {
+    if (running >= n || !queue.length) return;
+    running++;
+    const start = /** @type {() => void} */ (queue.shift());
+    start();
+  };
+  return (task) =>
+    new Promise((resolve, reject) => {
+      queue.push(() => {
+        let p;
+        try {
+          p = Promise.resolve(task());
+        } catch (e) {
+          p = Promise.reject(e);
+        }
+        p.then(resolve, reject).finally(() => {
+          running--;
+          next();
+        });
+      });
+      next();
+    });
+}
