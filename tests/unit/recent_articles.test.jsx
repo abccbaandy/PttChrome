@@ -545,10 +545,12 @@ describe("右鍵選單", () => {
       title: "",
       saved: false,
     });
+    // 本篇 ⇒ current（跟長按位置無關，手機長按選單不給，改在「更多」）；游標下的連結沒有 current。
     expect(readLaterTargetOf(pttchrome([recentKey(A1.board, A1.aid)]), on, null, A1)).toMatchObject({
       aid: A1.aid,
       title: A1.title,
       saved: true,
+      current: true,
     });
     expect(readLaterTargetOf(pttchrome([]), on, null, null)).toBeNull();
     expect(readLaterTargetOf(pttchrome([]), { enableRecentArticles: false }, null, A1)).toBeNull();

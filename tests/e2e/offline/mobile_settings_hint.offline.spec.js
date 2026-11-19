@@ -8,22 +8,15 @@
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
 const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
-const { waitRectStable } = require('../helpers/layout');
+const { waitRectStable, waitDialogSettled } = require('../helpers/layout');
 
 const ESC = '\x1b';
-const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
-// 手機的右鍵／長按選單是 bottom sheet（ContextMenu/ContextSheet.jsx）。
-const CONTEXT_SHEET = '[data-sheet="context"]';
-
+// 手機的設定在工具列「更多」（長按選單只放跟長按位置有關的項目）。
 async function openSettings(page) {
-  await page
-    .locator('#mainContainer [data-type="bbsline"]')
-    .first()
-    .click({ button: 'right', position: { x: 40, y: 2 } });
-  const menu = page.locator(CONTEXT_SHEET).first();
-  await expect(menu).toBeVisible();
-  await menu.getByText(await label(page, 'cmenu_settings'), { exact: true }).click();
+  await page.locator('[data-key="__more"]').tap();
+  await waitDialogSettled(page, '[data-key="__settings"]');
+  await page.locator('[data-key="__settings"]').tap();
   await expect(page.locator('.PrefModal')).toBeVisible();
   await waitRectStable(page, '.PrefModal');
 }

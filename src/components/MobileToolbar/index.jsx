@@ -34,6 +34,11 @@ import {
   IconInfoCircle,
   IconTextWrap,
   IconChartBar,
+  IconBookmarkPlus,
+  IconBookmarkMinus,
+  IconMessages,
+  IconClipboard,
+  IconCommand,
 } from "@tabler/icons-react";
 import { i18n } from "../../js/i18n";
 import {
@@ -118,10 +123,11 @@ const BOARD_TOOL_ICONS = {
 //   其他      搜尋（有可用種類時）／按鍵／更多
 //   搜尋  直接開搜尋彈窗（不開子選單；種類在彈窗上方切，article_search.js）
 //   按鍵  展開方向鍵面板（貼在工具列上方；含軟鍵盤開關與黏滯 Ctrl／Esc／Tab／Del）
-//   更多  快速搜尋（選取模式下有選取時）／跳到第一篇未讀／設為全部已讀／分享／文章導覽／
-//         選取模式／全選／圖片上傳／設定／登出
-//         （全選與圖片上傳在桌機是右鍵選單項；手機長按選單不放，集中在這裡；主功能表不給，
-//         見 mobile_toolbar.js 的 contentTools）
+//   更多  快速搜尋（選取模式下有選取時）／跳到第一篇未讀／設為全部已讀／分享（子頁：系統分享＋
+//         複製本篇連結三種）／稍後閱讀（本篇）／長推文／文章導覽／選取模式／全選／圖片上傳／貼上／
+//         指令面板／小幫手／設定／登出
+//         （跟長按位置無關的都在這裡、長按選單不放：context_menu_entries.js 檔頭。全選與圖片上傳
+//         主功能表不給，見 mobile_toolbar.js 的 contentTools）
 // 沒有返回：交給系統邊緣滑動／返回鍵（history_back_guard.js）。
 //
 // 三條不可以踩的線（同舊按鍵列，守護 tests/unit/mobile_toolbar.test.jsx）：
@@ -193,6 +199,10 @@ export const MobileToolbar = ({
   hidden,
   onOpenSearch,
   onOpenSettings,
+  // 從長按選單搬過來的幾項（稍後閱讀／長推文／小幫手／指令面板／貼上）：出現條件與動作都在
+  // ContextMenu（跟右鍵選單同一組判斷），開「更多」那一刻問一次 queryMoreTools()。
+  queryMoreTools,
+  onMoreTool,
 }) => {
   const [mobile, setMobile] = useState(() => !!pttchrome.mobile);
   const [keyboard, setKeyboard] = useState(() => !!pttchrome.softKeyboard);
@@ -213,6 +223,8 @@ export const MobileToolbar = ({
   // P93「複製本篇連結」一列三顆的開關（articleCopyLinkRow）：開「更多」當下現讀。
   // null＝不畫「複製本篇連結」；否則是 { ptt, aid, deep } 三種的預覽（可能是 null）。
   const [copyLinkRow, setCopyLinkRow] = useState(null);
+  // queryMoreTools() 的結果（開「更多」當下定案，收起時不重算，同 imageUploadEnabled）。
+  const [moreTools, setMoreTools] = useState({});
   // 「更多」裡的快速搜尋（src/js/quick_search.js）：選取模式下的長按走原生選單，我們的
   // 長按選單（快速搜尋原本唯一的入口）出不來 ⇒ 選好字後按「更多」查。開 sheet 當下
   // 定案 { query, items }，收起時不重算（同 imageUploadEnabled）。
@@ -360,6 +372,9 @@ export const MobileToolbar = ({
         setCopyLinkRow(
           prefs.articleCopyLinkRow ? copyLinkPreviews(pttchrome) : null,
         );
+        setMoreTools(
+          typeof queryMoreTools === "function" ? queryMoreTools() || {} : {},
+        );
         // 只在選取模式：模式關著時長按選單本身就有快速搜尋（長按的那個詞），而「全選」
         // 留下的整頁選取拿去查沒有意義。
         const query = pttchrome.mobileSelectMode
@@ -375,7 +390,7 @@ export const MobileToolbar = ({
       pressSelectionRef.current = "";
       setPanel((cur) => (cur === p ? null : p));
     },
-    [pttchrome],
+    [pttchrome, queryMoreTools],
   );
 
   const onToolbarPointerDown = useCallback(() => {
@@ -406,13 +421,28 @@ export const MobileToolbar = ({
   const onArticleInfo = useCallback(() => {
     const tools = pttchrome.articleTools;
     const info =
-      tools && typeof tools.mobileInfo === "function" ? tools.mobileInfo() : null;
+      tools && typeof tools.mobileInfo === "function"
+        ? tools.mobileInfo()
+        : null;
     setArticleInfo(info);
     setPanel(info ? "articleInfo" : null);
   }, [pttchrome]);
   const closeArticleInfo = useCallback(() => {
     setPanel((cur) => (cur === "articleInfo" ? null : cur));
   }, []);
+
+  // 「分享」子頁（系統分享＋複製本篇連結三種）：「‹ 返回」回到「更多」（不重算，沿用開「更多」時的預覽）。
+  const closeShare = useCallback(() => {
+    setPanel((cur) => (cur === "share" ? null : cur));
+  }, []);
+
+  const runMoreTool = useCallback(
+    (key) => {
+      setPanel(null);
+      if (typeof onMoreTool === "function") onMoreTool(key, moreTools);
+    },
+    [onMoreTool, moreTools],
+  );
 
   const onKeyboard = useCallback(() => {
     setKeyboard(pttchrome.toggleSoftKeyboard());
@@ -910,11 +940,30 @@ export const MobileToolbar = ({
       Icon: IconHelp,
       onClick: onHelp,
     },
+    // 「複製本篇連結」開著（articleCopyLinkRow）⇒ 開子頁（系統分享＋三種複製，各帶預覽）；
+    // 關著 ⇒ 直接叫系統分享（子頁只剩一項就沒必要多點一下）。
     __share: context.share && {
       label: i18n("mobileToolbar_share"),
       Icon: IconShare,
-      onClick: onShare,
+      onClick: copyLinkRow ? () => setPanel("share") : onShare,
     },
+    // 本篇的稍後閱讀（P34）：已收過 ⇒ 「移出稍後」（同一格、同一個 key）。
+    __readLater: moreTools.readLater && {
+      label: i18n(
+        moreTools.readLater.saved ? "cmenu_removeReadLater" : "cmenu_readLater",
+      ),
+      short: moreTools.readLater.saved
+        ? "mobileMoreShort_removeReadLater"
+        : null,
+      Icon: moreTools.readLater.saved ? IconBookmarkMinus : IconBookmarkPlus,
+      onClick: () => runMoreTool("readLater"),
+    },
+    __longPush: !context.readOnly &&
+      moreTools.longPush && {
+        label: i18n("cmenu_longPush"),
+        Icon: IconMessages,
+        onClick: () => runMoreTool("longPush"),
+      },
     // 好讀文章＋讀得到文末網址列才出現（savedArticles.canSave，開「更多」那一刻算）。
     __saveLocal: !!pttchrome.savedArticles?.canSave?.() && {
       label: i18n("saved_action"),
@@ -964,6 +1013,28 @@ export const MobileToolbar = ({
         label: i18n("cmenu_uploadHistory"),
         onClick: onUploadHistory,
       },
+    // 唯讀頁沒有連線：貼上會送進終端機 ⇒ 不列。
+    __paste: !context.readOnly && {
+      label: i18n("cmenu_paste"),
+      Icon: IconClipboard,
+      onClick: () => runMoreTool("paste"),
+    },
+    __commandPalette: moreTools.commandPalette && {
+      label: i18n("cmenu_commandPalette"),
+      Icon: IconCommand,
+      onClick: () => runMoreTool("commandPalette"),
+    },
+    // 兩個小幫手預設關（enableInputHelper／enableLiveArticleHelper），開了才在清單多一列。
+    __inputHelper: !context.readOnly &&
+      moreTools.inputHelper && {
+        label: i18n("cmenu_showInputHelper"),
+        onClick: () => runMoreTool("inputHelper"),
+      },
+    __liveArticleHelper: !context.readOnly &&
+      moreTools.liveArticleHelper && {
+        label: i18n("cmenu_showLiveArticleHelper"),
+        onClick: () => runMoreTool("liveArticleHelper"),
+      },
     __settings: { label: i18n("mobileToolbar_settings"), onClick: onSettings },
     __logout: !context.readOnly,
   };
@@ -983,39 +1054,41 @@ export const MobileToolbar = ({
     if (key === "__threadNav" || key === "__mailNav")
       return (
         <div key={key} className="mobileToolbarNavGrid" data-key={key}>
-          {(key === "__mailNav" ? [MAIL_NAV_GROUP] : THREAD_NAV_GROUPS).map((g) => (
-            <div key={g.title} className="mobileToolbarNavRow">
-              <span className="mobileToolbarNavLabel">{i18n(g.title)}</span>
-              {g.keys.map((k) => {
-                const Icon = NAV_DIR_ICONS[k.dir];
-                return (
-                  <button
-                    key={k.key}
-                    type="button"
-                    className="nomouse_command mobileSheetItem mobileToolbarNavBtn pttRipple"
-                    data-key={k.key}
-                    aria-label={i18n(k.label)}
-                    onClick={() => {
-                      if (key === "__mailNav") {
-                        onMailNav(k.key);
-                        return;
-                      }
-                      setPanel(null);
-                      sendKey(k.key);
-                    }}
-                  >
-                    {k.dir !== "next" && (
-                      <Icon size={18} stroke={2} aria-hidden="true" />
-                    )}
-                    <span>{i18n(k.short)}</span>
-                    {k.dir === "next" && (
-                      <Icon size={18} stroke={2} aria-hidden="true" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          {(key === "__mailNav" ? [MAIL_NAV_GROUP] : THREAD_NAV_GROUPS).map(
+            (g) => (
+              <div key={g.title} className="mobileToolbarNavRow">
+                <span className="mobileToolbarNavLabel">{i18n(g.title)}</span>
+                {g.keys.map((k) => {
+                  const Icon = NAV_DIR_ICONS[k.dir];
+                  return (
+                    <button
+                      key={k.key}
+                      type="button"
+                      className="nomouse_command mobileSheetItem mobileToolbarNavBtn pttRipple"
+                      data-key={k.key}
+                      aria-label={i18n(k.label)}
+                      onClick={() => {
+                        if (key === "__mailNav") {
+                          onMailNav(k.key);
+                          return;
+                        }
+                        setPanel(null);
+                        sendKey(k.key);
+                      }}
+                    >
+                      {k.dir !== "next" && (
+                        <Icon size={18} stroke={2} aria-hidden="true" />
+                      )}
+                      <span>{i18n(k.short)}</span>
+                      {k.dir === "next" && (
+                        <Icon size={18} stroke={2} aria-hidden="true" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ),
+          )}
         </div>
       );
     if (key === "__logout")
@@ -1174,14 +1247,45 @@ export const MobileToolbar = ({
                 >
                   <Icon size={22} stroke={1.75} aria-hidden="true" />
                   <span className="mobileSheetQuickLabel">
-                    {i18n(MORE_GRID_LABEL_KEYS[key]) || it.label}
+                    {i18n(it.short || MORE_GRID_LABEL_KEYS[key]) || it.label}
                   </span>
                 </button>
               );
             })}
           </div>
         ) : null}
-        {context.share && copyLinkRow ? (
+        {moreList.map(renderMoreListItem)}
+      </div>
+    </MobileSheet>
+  );
+  // 「分享」子頁：「更多」→「分享」（copyLinkRow 開著時）。三種複製各帶一行預覽（P95）原本攤在
+  // 「更多」主頁、佔三列約 200px，收進這裡主頁才放得下從長按選單搬過來的項目。
+  const shareSheet = (
+    <MobileSheet
+      pttchrome={pttchrome}
+      opened={panel === "share"}
+      onClose={closeShare}
+      sheetKey="share"
+    >
+      <div data-panel="share" className="mobileSheetSubPage">
+        <button
+          type="button"
+          className="nomouse_command mobileSheetBack pttRipple"
+          data-share-back=""
+          aria-label={i18n("mobileShare_back")}
+          onClick={() => togglePanel("more")}
+        >
+          ‹ {i18n("mobileToolbar_share")}
+        </button>
+        <button
+          type="button"
+          className="nomouse_command mobileSheetItem pttRipple"
+          data-key="__shareSystem"
+          onClick={onShare}
+        >
+          {i18n("mobileShare_system")}
+        </button>
+        {copyLinkRow ? (
           <LinkRows
             label={i18n("cmenu_copyArticleLinkRow")}
             data-copy-link-row=""
@@ -1195,7 +1299,6 @@ export const MobileToolbar = ({
             }))}
           />
         ) : null}
-        {moreList.map(renderMoreListItem)}
       </div>
     </MobileSheet>
   );
@@ -1211,6 +1314,7 @@ export const MobileToolbar = ({
     >
       {panelEl}
       {moreSheet}
+      {shareSheet}
       <ArticleInfoSheet
         pttchrome={pttchrome}
         opened={panel === "articleInfo"}

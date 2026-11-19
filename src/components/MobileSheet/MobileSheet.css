@@ -115,6 +115,25 @@
   overscroll-behavior-y: contain;
 }
 
+/* 「更多」的子頁（分享）：最上面一顆「‹ 標題」回到「更多」，樣子同文章資訊（ArticleInfoSheet.css）。 */
+.mobileSheetSubPage {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobileSheetBack {
+  align-self: flex-start;
+  min-height: 40px;
+  margin-bottom: 4px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #e4e4e8;
+  font: inherit;
+  font-weight: 600;
+}
+
 /* sheet 裡的清單項（更多／長按選單共用）。觸控目標最小 48px。 */
 .mobileSheetItem {
   display: flex;

@@ -83,6 +83,27 @@
   "mobileMoreShort_help": {
     "message": "說明"
   },
+  "mobileMoreShort_readLater": {
+    "message": "稍後閱讀"
+  },
+  "mobileMoreShort_removeReadLater": {
+    "message": "移出稍後"
+  },
+  "mobileMoreShort_longPush": {
+    "message": "長推文"
+  },
+  "mobileMoreShort_commandPalette": {
+    "message": "指令面板"
+  },
+  "mobileMoreShort_paste": {
+    "message": "貼上"
+  },
+  "mobileShare_system": {
+    "message": "分享到其他 App"
+  },
+  "mobileShare_back": {
+    "message": "返回「更多」"
+  },
   "cmenuShort_filterCommentUser": {
     "message": "只看他"
   },

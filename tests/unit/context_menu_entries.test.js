@@ -1,7 +1,10 @@
 // 右鍵／長按選單的項目清單（components/ContextMenu/context_menu_entries.js）。
-// 鎖：「設為全部已讀」只在桌機右鍵選單；手機長按選單不放全選／圖片上傳／設為全部已讀
-// （改在工具列「更多」，tests/unit/mobile_toolbar.test.jsx），且不留連續的分隔線。
-import { buildContextMenuEntries } from "../../src/components/ContextMenu/context_menu_entries";
+// 鎖：桌機右鍵選單全放；手機長按選單只放跟長按位置有關的項目（按到的列／推文／連結／選到的字），
+// 跟位置無關的改在工具列「更多」（tests/unit/mobile_toolbar.test.jsx）；不留頭尾或連續的分隔線。
+import {
+  buildContextMenuEntries,
+  hasMenuItems,
+} from "../../src/components/ContextMenu/context_menu_entries";
 import { setupI18n } from "../../src/js/i18n";
 
 beforeAll(() => setupI18n());
@@ -15,7 +18,33 @@ const BASE = {
   onMenuSelect: () => {},
 };
 const keys = (p) => buildContextMenuEntries(p).map((e) => e.key);
-const MOVED = ["selectAll", "uploadImage", "uploadHistory", "markAllRead"];
+// 跟長按位置無關 ⇒ 手機在「更多」，長按選單不放。
+const MOVED = [
+  "selectAll",
+  "uploadImage",
+  "uploadHistory",
+  "markAllRead",
+  "paste",
+  "saveLocal",
+  "copyArticleLinkRow",
+  "copyArticleLink",
+  "longPush",
+  "inputHelper",
+  "liveArticleHelper",
+  "commandPalette",
+  "settings",
+];
+// 每一項都打開的桌機／手機共用 props。
+const EVERYTHING = {
+  ...BASE,
+  saveLocalEnabled: true,
+  articleLinkEnabled: true,
+  articleLinkRow: true,
+  longPushEnabled: true,
+  inputHelperEnabled: true,
+  liveArticleHelperEnabled: true,
+  commandPaletteEnabled: true,
+};
 
 test("桌機：文章列表有「設為全部已讀」，點下去走 onMenuSelect('markAllRead')", () => {
   const calls = [];
@@ -27,7 +56,9 @@ test("桌機：文章列表有「設為全部已讀」，點下去走 onMenuSele
   expect(item).toBeDefined();
   item.onClick({});
   expect(calls).toEqual(["markAllRead"]);
-  for (const k of MOVED) expect(keys(BASE)).toContain(k);
+  const all = keys(EVERYTHING);
+  for (const k of MOVED.filter((k) => k !== "copyArticleLink"))
+    expect(all).toContain(k);
 });
 
 test("桌機：不在文章列表（markAllReadEnabled 假）就沒有", () => {
@@ -36,11 +67,36 @@ test("桌機：不在文章列表（markAllReadEnabled 假）就沒有", () => {
   );
 });
 
-test("手機：全選／圖片上傳／設為全部已讀都不在長按選單", () => {
-  const k = keys({ ...BASE, mobile: true });
-  for (const m of MOVED) expect(k).not.toContain(m);
-  expect(k).toContain("paste");
-  expect(k).toContain("settings");
+test("手機：跟長按位置無關的項目都不在長按選單（在「更多」）", () => {
+  for (const articleLinkRow of [true, false]) {
+    const k = keys({ ...EVERYTHING, articleLinkRow, mobile: true });
+    for (const m of MOVED) expect(k).not.toContain(m);
+  }
+});
+
+test("手機：長按一段沒有任何位置相關目標的文字 ⇒ 清單是空的（不開選單）", () => {
+  const entries = buildContextMenuEntries({ ...EVERYTHING, mobile: true });
+  expect(entries).toEqual([]);
+  expect(hasMenuItems(entries)).toBe(false);
+  expect(hasMenuItems(buildContextMenuEntries(EVERYTHING))).toBe(true);
+});
+
+test("稍後閱讀：連結／列表那一列（位置相關）手機長按照給；「本篇」（current）手機不給、桌機給", () => {
+  const link = { board: "movie", aid: "1abc", title: "", saved: false };
+  const row = { listNum: 3, title: "x", saved: false };
+  const current = { ...link, current: true };
+  for (const t of [link, row])
+    for (const mobile of [false, true])
+      expect(keys({ ...BASE, mobile, readLaterTarget: t })).toContain(
+        "readLater",
+      );
+  expect(keys({ ...BASE, readLaterTarget: current })).toContain("readLater");
+  expect(
+    keys({ ...BASE, mobile: true, readLaterTarget: current }),
+  ).not.toContain("readLater");
+  expect(
+    keys({ ...BASE, mobile: true, readLaterTarget: { ...link, saved: true } }),
+  ).toContain("removeReadLater");
 });
 
 test("看板列表「<板名> 設為已讀」：桌機與手機長按都在（要指定是哪一列）", () => {
@@ -83,28 +139,40 @@ test("回覆這則：有目標才出現（推文段最前面），標題帶帳�
   expect(keys(BASE)).not.toContain("replyComment");
 });
 
-test("存到本機（P64）：saveLocalEnabled 才有，桌機與手機長按都在，點下去走 onMenuSelect('saveLocal')", () => {
+test("存到本機（P64）：桌機 saveLocalEnabled 才有，點下去走 onMenuSelect('saveLocal')", () => {
   expect(keys(BASE)).not.toContain("saveLocal");
-  for (const mobile of [false, true]) {
-    const calls = [];
-    const item = buildContextMenuEntries({
-      ...BASE,
-      mobile,
-      saveLocalEnabled: true,
-      onMenuSelect: (k) => calls.push(k),
-    }).find((e) => e.key === "saveLocal");
-    expect(item).toBeDefined();
-    item.onClick({});
-    expect(calls).toEqual(["saveLocal"]);
-  }
+  const calls = [];
+  const item = buildContextMenuEntries({
+    ...BASE,
+    saveLocalEnabled: true,
+    onMenuSelect: (k) => calls.push(k),
+  }).find((e) => e.key === "saveLocal");
+  expect(item).toBeDefined();
+  item.onClick({});
+  expect(calls).toEqual(["saveLocal"]);
 });
 
-test("沒有連續的分隔線（手機工具段搬空時）", () => {
-  for (const p of [BASE, { ...BASE, mobile: true }]) {
-    const types = buildContextMenuEntries(p).map((e) => e.type);
-    for (let i = 1; i < types.length; ++i)
-      expect(types[i] === "divider" && types[i - 1] === "divider").toBe(false);
-  }
+test("分隔線只在兩段之間：不在開頭結尾、不連續", () => {
+  const variants = [
+    BASE,
+    EVERYTHING,
+    { ...BASE, normalEnabled: false, urlEnabled: true },
+    { ...BASE, authorBlacklistId: "abc" },
+    { ...BASE, previews: { copyComment: "x" } },
+  ];
+  for (const v of variants)
+    for (const mobile of [false, true]) {
+      const types = buildContextMenuEntries({ ...v, mobile }).map(
+        (e) => e.type,
+      );
+      if (!types.length) continue;
+      expect(types[0]).not.toBe("divider");
+      expect(types[types.length - 1]).not.toBe("divider");
+      for (let i = 1; i < types.length; ++i)
+        expect(types[i] === "divider" && types[i - 1] === "divider").toBe(
+          false,
+        );
+    }
 });
 
 // 手機推文卡片：長按就能「複製這則推文」（推文第一個字貼著螢幕左緣，拉不到選取把手）。
@@ -167,8 +235,8 @@ describe("複製本篇連結一列三顆（P93）", () => {
     expect(bare.chips.map((c) => c.preview)).toEqual([null, null, null]);
   });
 
-  test("開著：一個 chips 項，三顆依序是 PTT 網址／AID／分享連結，桌機手機都一樣", () => {
-    for (const mobile of [false, true]) {
+  test("開著：一個 chips 項，三顆依序是 PTT 網址／AID／分享連結（手機在「更多 → 分享」）", () => {
+    for (const mobile of [false]) {
       const calls = [];
       const entries = buildContextMenuEntries({
         ...P,

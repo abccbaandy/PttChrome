@@ -176,13 +176,14 @@ test.describe('手機：選取文字頁', () => {
     await expect(page.locator(ITEM)).toHaveCount(0);
     await page.goBack();
     await expect(page.locator('[data-key="__select"]')).toHaveCount(0);
+    // 長按推文列：選單一定有位置相關的項目（推文篩選），才分得出「開了但沒有選取文字」。
     await page.evaluate(() => {
-      const rows = [...document.querySelectorAll('#mainContainer [data-type="bbsline"]')];
-      rows.filter((r) => r.textContent.trim().length > 6)[12].setAttribute('data-e2e-target', '1');
+      const row = document.querySelector('#mainContainer [data-pusher]');
+      row.setAttribute('data-e2e-target', '1');
     });
     await rightClickElement(page, '[data-e2e-target]');
     // 選單真的開了（有別的項目），只是沒有選取文字。
-    await expect(page.locator('[data-cmenu="saveLocal"]')).toBeVisible();
+    await expect(page.locator('[data-sheet="context"] [data-cmenu]').first()).toBeVisible();
     await expect(page.locator('[data-cmenu="selectText"]')).toHaveCount(0);
   });
 });

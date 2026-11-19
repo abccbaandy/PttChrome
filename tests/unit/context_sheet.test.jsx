@@ -4,7 +4,8 @@
 // 手機長按選單＝bottom sheet（ContextMenu/ContextSheet.jsx）。鎖：
 //  1. 項目清單與桌機 Mantine Menu 同一份（context_menu_entries.js）：同樣的條件出現同樣的項目；
 //  2. 點項目走同一個 handler（onMenuSelect 帶 key）；反灰項目不能點；
-//  3. 開著＝modal（具名來源），收起時撤銷。
+//  3. 開著＝modal（具名來源），收起時撤銷；
+//  4. 只放跟長按位置有關的項目，一項都沒有就不開（收回 open）。
 import mantineCss from "@mantine/core/styles.css?raw";
 import sheetCss from "../../src/components/MobileSheet/MobileSheet.css?raw";
 import { page } from "vitest/browser";
@@ -26,7 +27,8 @@ const PROPS = {
   markReadTarget: { num: 1 },
   longPushEnabled: true,
   articleLinkEnabled: true,
-  previews: { copyArticleLink: "https://example/#Test/1abcDEFG" },
+  // 長按在一個網址上（urlEnabled 由個別 test 打開時才算）。
+  previews: { copyLinkUrl: "https://example/x" },
 };
 
 function setup(over = {}) {
@@ -58,16 +60,31 @@ const items = () =>
   Array.from(document.querySelectorAll('[data-sheet="context"] [data-cmenu]'));
 
 test("項目與桌機選單同一份清單、同一個順序", async () => {
-  const { props } = setup();
+  const { props } = setup({ urlEnabled: true });
   await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
-  // 手機版清單（mobile: true）：全選／圖片上傳／設為全部已讀改在工具列「更多」。
+  // 手機版清單（mobile: true）：跟位置無關的（長推文、複製本篇連結…）改在工具列「更多」。
   const want = buildContextMenuEntries({ ...props, mobile: true })
     .filter((e) => e.type === "item")
     .map((e) => e.key);
+  expect(want.length).toBeGreaterThan(0);
   expect(items().map((n) => n.getAttribute("data-cmenu"))).toEqual(want);
-  // 複製類的第二行預覽照畫
-  const link = document.querySelector('[data-cmenu="copyArticleLink"]');
-  expect(link.textContent).toContain("https://example/#Test/1abcDEFG");
+  // 複製類的第二行預覽照畫（長按的連結）。
+  const link = document.querySelector('[data-cmenu="copyLinkUrl"]');
+  expect(link.textContent).toContain("https://example/x");
+  for (const k of ["longPush", "copyArticleLink", "settings", "paste"])
+    expect(document.querySelector(`[data-cmenu="${k}"]`)).toBeNull();
+});
+
+test("長按的地方沒有位置相關的項目 ⇒ 不開，並收回 open（onHide）", async () => {
+  const { handlers, sources } = setup({
+    authorBlacklistId: null,
+    markReadTarget: null,
+    urlEnabled: false,
+    previews: {},
+  });
+  await vi.waitFor(() => expect(handlers.onHide).toHaveBeenCalled());
+  expect(document.querySelector('[data-sheet="context"]')).toBeNull();
+  expect(sources.size).toBe(0);
 });
 
 test("點項目走同一個 handler；反灰項目不能點", async () => {
@@ -78,50 +95,6 @@ test("點項目走同一個 handler；反灰項目不能點", async () => {
   fireEvent.click(document.querySelector('[data-cmenu="markReadUnread"]'));
   expect(handlers.onMenuSelect).toHaveBeenCalledWith(
     "markReadUnread",
-    expect.anything(),
-  );
-  fireEvent.click(document.querySelector('[data-cmenu="longPush"]'));
-  expect(handlers.onLongPushClick).toHaveBeenCalledTimes(1);
-});
-
-// P93／P95：長按選單的「複製本篇連結」一區三列：三種都畫出來、各帶自己的預覽（手機沒有
-// hover，不能只給第一種），長網址中段省略保住檔名；點了走同一個 handler。
-test("複製本篇連結三列：每種各自看得到預覽、點哪列送哪個 key", async () => {
-  const PTT = "https://www.ptt.cc/bbs/LongBoardName/M.1786465191.A.DBD.html";
-  const { handlers } = setup({
-    articleLinkRow: true,
-    previews: {
-      copyArticlePttUrl: PTT,
-      copyArticleCode: "#1abcDEFG (Test)",
-      copyArticleLink: null,
-    },
-  });
-  const row = await vi.waitFor(() => {
-    const el = document.querySelector('[data-cmenu="copyArticleLinkRow"]');
-    expect(el).not.toBeNull();
-    return el;
-  });
-  const chips = [...row.querySelectorAll("button")];
-  expect(chips.map((b) => b.getAttribute("data-cmenu"))).toEqual([
-    "copyArticlePttUrl",
-    "copyArticleCode",
-    "copyArticleLink",
-  ]);
-  const previewOf = (b) => {
-    const p = b.querySelector(".mobileSheetItemPreview");
-    return p ? p.textContent : null;
-  };
-  // 長網址：中段省略，結尾的檔名還在。
-  expect(previewOf(chips[0])).toMatch(
-    /^https:\/\/www\.pt.*…1786465191\.A\.DBD\.html$/,
-  );
-  expect(previewOf(chips[0]).length).toBeLessThanOrEqual(36);
-  expect(previewOf(chips[1])).toBe("#1abcDEFG (Test)");
-  // 讀不到的那種只畫名稱，照樣點得到。
-  expect(previewOf(chips[2])).toBeNull();
-  fireEvent.click(chips[1]);
-  expect(handlers.onMenuSelect).toHaveBeenCalledWith(
-    "copyArticleCode",
     expect.anything(),
   );
 });

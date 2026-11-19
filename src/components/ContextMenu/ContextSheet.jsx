@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import {
   IconMessageReply,
   IconCopy,
@@ -10,7 +10,7 @@ import {
 } from "@tabler/icons-react";
 import MobileSheet from "../MobileSheet";
 import LinkRows from "../MobileSheet/LinkRows";
-import { buildContextMenuEntries } from "./context_menu_entries";
+import { buildContextMenuEntries, hasMenuItems } from "./context_menu_entries";
 import { floatMenuPlacement } from "../../js/sheet_placement";
 import { i18n } from "../../js/i18n";
 import {
@@ -37,11 +37,16 @@ const QUICK_ICONS = {
 // 短、也不蓋住它（js/sheet_placement.js；選中文章外框才看得到）。量不到 ⇒ 退回貼底 sheet。
 export const ContextSheet = (props) => {
   const { pttchrome, open, onHide, menuAnchor } = props;
-  // mobile：全選／圖片上傳／設為全部已讀改放工具列「更多」（MobileToolbar）。
+  // mobile：只放跟長按位置有關的項目，其餘在工具列「更多」（MobileToolbar，見
+  // context_menu_entries.js 檔頭）。
   // 長按推文：常用的幾項收成最上面一排圖示鈕（P37，context_sheet_quick.js），其餘照舊。
-  const { quick, rest: entries } = splitQuickActions(
-    buildContextMenuEntries({ ...props, mobile: true }),
-  );
+  const all = buildContextMenuEntries({ ...props, mobile: true });
+  const { quick, rest: entries } = splitQuickActions(all);
+  // 長按的地方沒有任何位置相關的項目（一段普通文字）⇒ 不開，收回 open 狀態（空的選單只會擋路）。
+  const empty = !hasMenuItems(all);
+  useEffect(() => {
+    if (open && empty) onHide();
+  }, [open, empty, onHide]);
   // 收起時 menuAnchor 已被清成 null：沿用開著時的位置，退場動畫才不會中途跳到底部。
   const placementRef = useRef(undefined);
   if (open || placementRef.current === undefined) {
@@ -54,7 +59,7 @@ export const ContextSheet = (props) => {
   return (
     <MobileSheet
       pttchrome={pttchrome}
-      opened={open}
+      opened={open && !empty}
       onClose={onHide}
       sheetKey="context"
       float={placementRef.current}

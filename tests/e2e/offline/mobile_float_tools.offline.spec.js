@@ -199,25 +199,18 @@ test.describe('手機：文章工具收進「更多」', () => {
 
 const label = (page, key) => page.evaluate((k) => window.__i18n(k), key);
 
-// 手機的右鍵／長按選單是 bottom sheet（ContextMenu/ContextSheet.jsx），不是桌機的 .DropdownMenu。
-const CONTEXT_SHEET = '[data-sheet="context"]';
-
-// 在終端機第一列上按右鍵。不用 #BBSWindow 的固定座標：手機的頂部 App Bar 蓋在視窗最上方，
-// 終端機從它下面開始。
-const openTerminalContextMenu = (page) =>
-  page
-    .locator('#mainContainer [data-type="bbsline"]')
-    .first()
-    .click({ button: 'right', position: { x: 40, y: 2 } });
+// 手機的設定在工具列「更多」（長按選單只放跟長按位置有關的項目）。
+async function openSettings(page) {
+  await page.locator('[data-key="__more"]').tap();
+  await waitDialogSettled(page, '[data-key="__settings"]');
+  await page.locator('[data-key="__settings"]').tap();
+}
 
 test('手機：設定頁全螢幕、先列分類清單；點進分類內容佔滿寬度，系統返回回清單', async ({ page }) => {
   await bootOffline(page, ptt);
   await feedRaw(page, `${ESC}[2J${ESC}[H  MOBILE PREF TEST LINE  `);
   await waitScreenSettled(page);
-  await openTerminalContextMenu(page);
-  const menu = page.locator(CONTEXT_SHEET).first();
-  await expect(menu).toBeVisible();
-  await menu.getByText(await label(page, 'cmenu_settings'), { exact: true }).click();
+  await openSettings(page);
   const modal = page.locator('.PrefModal');
   await expect(modal).toBeVisible();
   await expect(modal).toHaveClass(/PrefModal--narrow/);
@@ -262,10 +255,7 @@ test('手機：debug 錄製鈕收在「⋯」裡，不與底部工具列重疊',
   await ptt.applyPrefs(page, { mobileFloatToolsInMore: false });
   await feedRaw(page, `${ESC}[2J${ESC}[H  MOBILE DEBUG RECORD TEST LINE  `);
   await waitScreenSettled(page);
-  await openTerminalContextMenu(page);
-  const menu = page.locator(CONTEXT_SHEET).first();
-  await expect(menu).toBeVisible();
-  await menu.getByText(await label(page, 'cmenu_settings'), { exact: true }).click();
+  await openSettings(page);
   await expect(page.locator('.PrefModal')).toBeVisible();
   await page.locator('.PrefModal [data-pref-category="about"]').click();
   await page.locator('#pref-debug-mode').check();

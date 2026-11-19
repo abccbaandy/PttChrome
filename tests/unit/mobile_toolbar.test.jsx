@@ -67,11 +67,14 @@ function makeCore({ mobile = true, context } = {}) {
 
 const byKey = (k) => document.querySelector(`[data-key="${k}"]`);
 // 「更多」是 Mantine Drawer：內容在 transition 開始後才掛上、結束後才卸下（非同步）。
+// 上限 5s：整批 unit 並行時 Drawer 的 transition 會超過 vi.waitFor 預設的 1s（只是等久一點，斷言不變）。
+const SHEET_WAIT = { timeout: 5000 };
 const openMore = async () => {
   fireEvent.click(byKey("__more"));
-  await vi.waitFor(() => expect(byKey("__select")).not.toBeNull());
+  await vi.waitFor(() => expect(byKey("__select")).not.toBeNull(), SHEET_WAIT);
 };
-const sheetClosed = () => vi.waitFor(() => expect(byKey("__select")).toBeNull());
+const sheetClosed = () =>
+  vi.waitFor(() => expect(byKey("__select")).toBeNull(), SHEET_WAIT);
 // 「更多」是 Mantine Drawer（components/MobileSheet）⇒ 要 MantineProvider。
 const renderBar = (core, props = {}) =>
   render(
@@ -239,17 +242,55 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(byKey("__share")).toBeNull();
   });
 
-  test("分享（在「更多」裡）：同步呼叫 deepLinkController.shareCurrentPostLink（帶 App Bar 標題）", async () => {
+  // 「分享」：articleCopyLinkRow 開著（預設）⇒ 開子頁（系統分享＋三種複製本篇連結，各帶預覽）；
+  // 關著 ⇒ 直接叫系統分享。三列複製原本攤在「更多」主頁，佔掉約 200px。
+  const shareShown = () =>
+    vi.waitFor(() => expect(document.querySelector('[data-panel="share"]')).not.toBeNull(), SHEET_WAIT);
+  const openShare = async () => {
+    await openMore();
+    fireEvent.click(byKey("__share"));
+    await shareShown();
+  };
+
+  test("分享子頁：「分享到其他 App」同步呼叫 deepLinkController.shareCurrentPostLink（帶 App Bar 標題）", async () => {
     const core = makeCore({
       context: { ...ARTICLE, appBar: { kind: "article", title: "[問卦] 測試", subtitle: "", newMail: false } },
     });
     core.deepLinkController = { shareCurrentPostLink: vi.fn(() => true) };
     renderBar(core);
     expect(byKey("__share")).toBeNull();
-    await openMore();
-    fireEvent.click(byKey("__share"));
+    await openShare();
+    expect(core.deepLinkController.shareCurrentPostLink).not.toHaveBeenCalled();
+    // 「更多」主頁不再有複製本篇連結那一塊（收進子頁）。
+    expect(document.querySelector('[data-panel="more"] [data-copy-link-row]')).toBeNull();
+    fireEvent.click(byKey("__shareSystem"));
     expect(core.deepLinkController.shareCurrentPostLink).toHaveBeenCalledWith("[問卦] 測試");
-    await sheetClosed();
+    await vi.waitFor(() => expect(document.querySelector('[data-panel="share"]')).toBeNull());
+  });
+
+  test("分享子頁：「‹ 分享」回到「更多」", async () => {
+    renderBar(makeCore({ context: ARTICLE }));
+    await openShare();
+    fireEvent.click(document.querySelector("[data-share-back]"));
+    await vi.waitFor(() => expect(byKey("__select")).not.toBeNull());
+    await vi.waitFor(() => expect(document.querySelector('[data-panel="share"]')).toBeNull());
+  });
+
+  test("articleCopyLinkRow 關掉 ⇒ 沒有子頁，「分享」直接叫系統分享並收起", async () => {
+    writeValues({ ...readValuesWithDefault(), articleCopyLinkRow: false });
+    try {
+      const core = makeCore({ context: ARTICLE });
+      core.deepLinkController = { shareCurrentPostLink: vi.fn(() => true) };
+      renderBar(core);
+      await openMore();
+      fireEvent.click(byKey("__share"));
+      expect(core.deepLinkController.shareCurrentPostLink).toHaveBeenCalledTimes(1);
+      await sheetClosed();
+      expect(document.querySelector('[data-panel="share"]')).toBeNull();
+      expect(document.querySelector("[data-copy-link-row]")).toBeNull();
+    } finally {
+      window.localStorage.clear();
+    }
   });
 
   test("更多：不是文章（share false）就沒有分享", async () => {
@@ -258,12 +299,12 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     expect(byKey("__share")).toBeNull();
   });
 
-  // P93：「更多」裡一塊「複製本篇連結」三顆，各自帶 format 呼叫 copyCurrentPostLink。
-  test("更多：文章裡有「複製本篇連結」三顆，點哪顆就用哪種格式複製", async () => {
+  // P93：子頁裡一塊「複製本篇連結」三顆，各自帶 format 呼叫 copyCurrentPostLink。
+  test("分享子頁：「複製本篇連結」三顆，點哪顆就用哪種格式複製", async () => {
     const core = makeCore({ context: ARTICLE });
     core.deepLinkController = { copyCurrentPostLink: vi.fn(() => true) };
     renderBar(core);
-    await openMore();
+    await openShare();
     const row = document.querySelector("[data-copy-link-row]");
     expect(row).not.toBeNull();
     const chips = [...row.querySelectorAll("[data-copy-link]")];
@@ -274,55 +315,39 @@ describe("依畫面的動作（文章／信件／文章列表）", () => {
     ]);
     fireEvent.click(chips[1]);
     expect(core.deepLinkController.copyCurrentPostLink).toHaveBeenCalledWith("aid");
-    await sheetClosed();
+    await vi.waitFor(() => expect(document.querySelector('[data-panel="share"]')).toBeNull());
     expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
   });
 
-  // P95：手機沒有 hover ⇒ 三種各自帶一行預覽（開面板當下從畫面上的文章網址列算，零送鍵），
+  // P95：手機沒有 hover ⇒ 三種各自帶一行預覽（開「更多」當下從畫面上的文章網址列算，零送鍵），
   // 網址中段省略、保住尾巴的檔名。
-  test("更多：「複製本篇連結」三種各自看得到預覽", async () => {
+  test("分享子頁：「複製本篇連結」三種各自看得到預覽，長網址中段省略", async () => {
     const core = makeCore({ context: ARTICLE });
     core.deepLinkController = { copyCurrentPostLink: vi.fn(() => true) };
-    core.aidNavigation = { findLocalPostAid: vi.fn(() => ({ board: "Test", aid: "1abcDEFG" })) };
+    core.aidNavigation = { findLocalPostAid: vi.fn(() => ({ board: "LongBoardName", aid: "1abcDEFG" })) };
     renderBar(core);
-    await openMore();
+    await openShare();
     const items = [...document.querySelectorAll("[data-copy-link-row] [data-copy-link]")];
     const previews = items.map((b) => b.querySelector(".mobileSheetItemPreview")?.textContent ?? null);
     expect(previews[0]).toMatch(/^https:\/\/www\.pt.*…\d+\.A\.[0-9A-F]{3}\.html$/);
-    expect(previews[1]).toBe("#1abcDEFG (Test)");
+    expect(previews[0].length).toBeLessThanOrEqual(36);
+    expect(previews[1]).toBe("#1abcDEFG (LongBoardName)");
     // 分享連結（本站網址＋同一個檔名）。
     expect(previews[2]).toMatch(/^https?:\/\/.*…\d+\.A\.[0-9A-F]{3}\.html$/);
     expect(core.view.sendKeyAsUser).not.toHaveBeenCalled();
   });
 
-  test("更多：讀不到本篇代碼 ⇒ 三列只有名稱，照樣點得到", async () => {
+  test("分享子頁：讀不到本篇代碼 ⇒ 三列只有名稱，照樣點得到", async () => {
     const core = makeCore({ context: ARTICLE });
     core.deepLinkController = { copyCurrentPostLink: vi.fn(() => true) };
     core.aidNavigation = { findLocalPostAid: vi.fn(() => null) };
     renderBar(core);
-    await openMore();
+    await openShare();
     const items = [...document.querySelectorAll("[data-copy-link-row] [data-copy-link]")];
     expect(items).toHaveLength(3);
     expect(document.querySelector("[data-copy-link-row] .mobileSheetItemPreview")).toBeNull();
     fireEvent.click(items[0]);
     expect(core.deepLinkController.copyCurrentPostLink).toHaveBeenCalledWith("ptt");
-  });
-
-  test("更多：不是文章（share false）或開關關掉就沒有「複製本篇連結」", async () => {
-    renderBar(makeCore({ context: { ...ARTICLE, share: false } }));
-    await openMore();
-    expect(document.querySelector("[data-copy-link-row]")).toBeNull();
-  });
-
-  test("更多：articleCopyLinkRow 關掉 ⇒ 沒有那一塊", async () => {
-    writeValues({ ...readValuesWithDefault(), articleCopyLinkRow: false });
-    try {
-      renderBar(makeCore({ context: ARTICLE }));
-      await openMore();
-      expect(document.querySelector("[data-copy-link-row]")).toBeNull();
-    } finally {
-      window.localStorage.clear();
-    }
   });
 
   test("重整：永遠在，context.refresh 為假時反灰；按下走 screenRefresh.refresh('toolbar')", () => {
@@ -1186,6 +1211,80 @@ describe("更多：常用項目的圖示格（P40）", () => {
     expect(grid()).toBeNull();
     expect(byKey("__select").classList.contains("mobileSheetItem")).toBe(true);
     expect(byKey("__select").textContent).toBe(i18n("mobileKeypad_select"));
+  });
+});
+
+// 從長按選單搬過來、跟長按位置無關的幾項（context_menu_entries.js 檔頭）：出現條件由
+// ContextMenu 的 queryMoreTools 在開「更多」那一刻給，按下交給 onMoreTool（帶當時的結果）。
+describe("更多：從長按選單搬過來的項目", () => {
+  const ARTICLE_CTX = { push: true, share: true, contentTools: true, search: [] };
+  const ALL = {
+    readLater: { board: "movie", aid: "1abc", title: "t", saved: false, current: true },
+    longPush: true,
+    inputHelper: true,
+    liveArticleHelper: true,
+    commandPalette: true,
+  };
+  const setup = (tools, context = ARTICLE_CTX) => {
+    const queryMoreTools = vi.fn(() => tools);
+    const onMoreTool = vi.fn();
+    const core = makeCore({ context });
+    renderBar(core, { queryMoreTools, onMoreTool });
+    return { core, queryMoreTools, onMoreTool };
+  };
+  const grid = () => document.querySelector("[data-more-grid]");
+
+  test("全開：稍後閱讀／長推文／貼上／指令面板進圖示格，小幫手在清單；按下帶開「更多」當時的結果並收起", async () => {
+    const { queryMoreTools, onMoreTool } = setup(ALL);
+    await openMore();
+    expect(queryMoreTools).toHaveBeenCalledTimes(1);
+    for (const k of ["__readLater", "__longPush", "__paste", "__commandPalette"])
+      expect(grid().contains(byKey(k))).toBe(true);
+    for (const k of ["__inputHelper", "__liveArticleHelper"]) {
+      expect(byKey(k)).not.toBeNull();
+      expect(grid().contains(byKey(k))).toBe(false);
+    }
+    expect(byKey("__readLater").textContent).toBe(i18n("mobileMoreShort_readLater"));
+    expect(byKey("__readLater").getAttribute("aria-label")).toBe(i18n("cmenu_readLater"));
+    fireEvent.click(byKey("__readLater"));
+    expect(onMoreTool).toHaveBeenCalledWith("readLater", ALL);
+    await sheetClosed();
+    for (const [key, tool] of [
+      ["__longPush", "longPush"],
+      ["__paste", "paste"],
+      ["__commandPalette", "commandPalette"],
+      ["__inputHelper", "inputHelper"],
+      ["__liveArticleHelper", "liveArticleHelper"],
+    ]) {
+      await openMore();
+      fireEvent.click(byKey(key));
+      expect(onMoreTool).toHaveBeenLastCalledWith(tool, ALL);
+      await sheetClosed();
+    }
+  });
+
+  test("本篇已在稍後閱讀 ⇒ 同一格改成「移出稍後」", async () => {
+    setup({ readLater: { ...ALL.readLater, saved: true } });
+    await openMore();
+    expect(byKey("__readLater").textContent).toBe(i18n("mobileMoreShort_removeReadLater"));
+    expect(byKey("__readLater").getAttribute("aria-label")).toBe(i18n("cmenu_removeReadLater"));
+  });
+
+  test("都不能用（queryMoreTools 全空）⇒ 只剩貼上", async () => {
+    setup({});
+    await openMore();
+    for (const k of ["__readLater", "__longPush", "__commandPalette", "__inputHelper", "__liveArticleHelper"])
+      expect(byKey(k)).toBeNull();
+    expect(byKey("__paste")).not.toBeNull();
+  });
+
+  test("唯讀頁（沒有連線）⇒ 不列要送鍵的貼上／長推文／小幫手；稍後閱讀、指令面板照列", async () => {
+    setup(ALL, { contentTools: true, end: true, readOnly: true, search: [] });
+    await openMore();
+    for (const k of ["__paste", "__longPush", "__inputHelper", "__liveArticleHelper"])
+      expect(byKey(k)).toBeNull();
+    expect(byKey("__readLater")).not.toBeNull();
+    expect(byKey("__commandPalette")).not.toBeNull();
   });
 });
 

@@ -11,16 +11,23 @@ import { quickSearchLabel } from "../../js/quick_search";
 //   { type: "chips", key, label, preview?, chips: [{ key, label, onClick(e) }] }
 //     一列標題＋幾顆小鈕（P93「複製本篇連結」三顆），點哪顆做哪顆。
 // preview：複製類選項的第二行（「按下去實際會複製什麼」，context_menu_items.copyPreviews）。
+//
+// 手機（p.mobile，ContextSheet 畫的）長按選單**只放跟長按位置有關的項目**：按到的那一列／那則推文／
+// 那個連結／長按選到的字。跟位置無關的（本篇的稍後再讀、複製本篇連結、存到本機、長推文、兩個小幫手、
+// 貼上、指令面板、設定、全選、圖片上傳、設為全部已讀）一律在工具列「更多」（MobileToolbar），
+// 不兩邊都放（docs/mobile.md「長按 vs 更多」）。桌機右鍵選單照舊全放。
 export function buildContextMenuEntries(p) {
   const out = [];
   const item = (key, label, onClick, extra) =>
     out.push({ type: "item", key, label, onClick, ...(extra || {}) });
-  // 連續兩條分隔線只留一條（手機把整段工具項搬去「更多」後，那段可能是空的）。
+  // 分隔線只畫在兩段之間：開頭不畫、連續兩條只留一條（手機把整段搬去「更多」後，那段可能是空的），
+  // 結尾的那條最後拿掉。
   const divider = (key) => {
     const last = out[out.length - 1];
-    if (last && last.type === "divider") return;
+    if (!last || last.type === "divider") return;
     out.push({ type: "divider", key });
   };
+  const desktop = !p.mobile;
   const previews = p.previews || {};
   const quickSearchItems = p.quickSearchItems || [];
 
@@ -147,7 +154,7 @@ export function buildContextMenuEntries(p) {
       p.onMenuSelect("copyAnsi", e),
     );
   }
-  if (p.normalEnabled)
+  if (p.normalEnabled && desktop)
     item("paste", i18n("cmenu_paste"), (e) => p.onMenuSelect("paste", e), {
       right: "Shift+Insert",
     });
@@ -189,15 +196,16 @@ export function buildContextMenuEntries(p) {
       { preview: previews.copyArticleDeepLink, copy: true },
     );
   }
-  // 稍後再讀（P34）：游標下的文章連結或本篇。已經收了就改給「移除」。
-  if (p.readLaterTarget) {
+  // 稍後再讀（P34）：游標下的文章連結、列表那一列，或本篇。已經收了就改給「移除」。
+  // 手機的「本篇」（readLaterTarget.current）跟長按位置無關 ⇒ 在「更多」。
+  if (p.readLaterTarget && (desktop || !p.readLaterTarget.current)) {
     const saved = p.readLaterTarget.saved;
     const key = saved ? "removeReadLater" : "readLater";
     item(key, i18n(saved ? "cmenu_removeReadLater" : "cmenu_readLater"), (e) =>
       p.onMenuSelect(key, e),
     );
   }
-  if (p.saveLocalEnabled)
+  if (p.saveLocalEnabled && desktop)
     item("saveLocal", i18n("saved_action"), (e) =>
       p.onMenuSelect("saveLocal", e),
     );
@@ -207,23 +215,24 @@ export function buildContextMenuEntries(p) {
       p.onMenuSelect("selectText", e),
     );
   divider("d-main");
+  // 以下整段（本篇連結、長推文、小幫手、全選、圖片上傳、指令面板、設定）跟長按位置無關：手機都在「更多」。
+  if (!desktop) {
+    trimDividers(out);
+    return out;
+  }
   if (p.normalEnabled) {
-    // 全選、圖片上傳兩項：手機搬到工具列「更多」（p.mobile ＝ ContextSheet 畫的）。
-    if (!p.mobile)
-      item(
-        "selectAll",
-        i18n("cmenu_selectAll"),
-        (e) => p.onMenuSelect("selectAll", e),
-        {
-          right: "Ctrl+A",
-        },
-      );
+    item(
+      "selectAll",
+      i18n("cmenu_selectAll"),
+      (e) => p.onMenuSelect("selectAll", e),
+      { right: "Ctrl+A" },
+    );
     // 複製本篇文章的 deep link（外部程式貼上後點開即跳回這篇）。只在
     // 文章畫面出現：要靠 Q 資訊框才問得出本篇的 AID。
     // P93：開關開著（預設）畫成一列三顆，點哪顆複製哪種；三顆走同一條 AID 解析。
     // 「分享連結」那顆沿用 copyArticleLink 的 key 與預覽（handler 不變）。
-    // 每顆帶自己的預覽：手機長按選單攤成三列各畫各的（P95，MobileSheet/LinkRows）；
-    // 桌機 ChipRow 先顯示整列的 preview（＝第一顆），再隨滑鼠／焦點換成那一顆的。
+    // ChipRow 先顯示整列的 preview（＝第一顆），再隨滑鼠／焦點換成那一顆的。
+    // （手機在「更多 → 分享」，攤成三列各帶預覽，P95。）
     if (p.articleLinkEnabled && p.articleLinkRow) {
       const chips = [
         ["copyArticlePttUrl", "cmenu_chipPttUrl"],
@@ -265,7 +274,7 @@ export function buildContextMenuEntries(p) {
       );
     // 圖片上傳（urusai）。拖放與 Ctrl+V 是主要入口，這兩項給「不方便
     // 拖曳」與「想插入之前傳過的圖」的情況；跟著總開關 enableImageUpload。
-    if (p.imageUploadEnabled && !p.mobile) {
+    if (p.imageUploadEnabled) {
       item("uploadImage", i18n("cmenu_uploadImage"), (e) =>
         p.onMenuSelect("uploadImage", e),
       );
@@ -275,16 +284,24 @@ export function buildContextMenuEntries(p) {
     }
     divider("d-tools");
   }
-  // 指令面板（pref enableCommandPalette，預設開）：快捷鍵之外的入口，手機長按也有。
+  // 指令面板（pref enableCommandPalette，預設開）：快捷鍵之外的入口（手機在「更多」）。
   if (p.commandPaletteEnabled)
     item(
       "commandPalette",
       i18n("cmenu_commandPalette"),
       p.onCommandPaletteClick,
-      p.commandPaletteKey && !p.mobile
-        ? { right: p.commandPaletteKey }
-        : undefined,
+      p.commandPaletteKey ? { right: p.commandPaletteKey } : undefined,
     );
   item("settings", i18n("cmenu_settings"), p.onSettingsClick);
   return out;
+}
+
+function trimDividers(out) {
+  while (out.length && out[out.length - 1].type === "divider") out.pop();
+}
+
+// 這份清單有沒有可以按的東西（分隔線不算）。手機長按選單只放位置相關的項目，
+// 長按一段普通文字可能一項都沒有 ⇒ 不開選單（index.jsx#onContextMenu）。
+export function hasMenuItems(entries) {
+  return entries.some((e) => e.type !== "divider");
 }

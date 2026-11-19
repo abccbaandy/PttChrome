@@ -1,6 +1,8 @@
 // 手機「更多」的版面（P40，docs/mobile.md「更多」）：常用的排成最上面的圖示格（圖示＋短字，
 // 跟長按推文那排 P37 同一種樣子，一排 4 格），不捲就點得到；少用的（文章導覽、上傳紀錄、
-// 設定、登出）留在下面清單。純資料：哪些算常用、排序、什麼時候才收（MobileToolbar 畫）。
+// 兩個小幫手、設定、登出）留在下面清單。純資料：哪些算常用、排序、什麼時候才收（MobileToolbar 畫）。
+// 圖示格一格約 70px 高放 4 項、清單一列 48px 放 1 項 ⇒ 從長按選單搬過來的（稍後閱讀、長推文、貼上、
+// 指令面板）進圖示格，「更多」才不會長過一屏。
 // 項目本身（出現條件、handler）仍在 MobileToolbar —— 這裡只重新分組。
 
 // 圖示格的項目與順序（只收這一刻看得到的）。
@@ -9,12 +11,16 @@ export const MORE_GRID_KEYS = [
   "__followOnly",
   "__markAllRead",
   "__share",
+  "__readLater",
+  "__longPush",
   "__select",
   "__selectText",
   "__findText",
   "__articleInfo",
   "__selectAll",
   "__uploadImage",
+  "__paste",
+  "__commandPalette",
   "__help",
 ];
 
@@ -33,13 +39,19 @@ export const MORE_GRID_LABEL_KEYS = {
   __articleInfo: "mobileMoreShort_articleInfo",
   __selectAll: "mobileMoreShort_selectAll",
   __uploadImage: "mobileMoreShort_uploadImage",
+  __paste: "mobileMoreShort_paste",
+  __commandPalette: "mobileMoreShort_commandPalette",
+  __longPush: "mobileMoreShort_longPush",
+  // 「稍後閱讀」已收過時換成 mobileMoreShort_removeReadLater（項目自帶 short，MobileToolbar）。
+  __readLater: "mobileMoreShort_readLater",
   __help: "mobileMoreShort_help",
 };
 
 // visibleKeys（這一刻要出現的項目，照清單順序）→ { grid, list }。不收時 grid 是空的、list 原封不動。
 export function splitMoreGrid(visibleKeys) {
   const grid = MORE_GRID_KEYS.filter((k) => visibleKeys.includes(k));
-  if (grid.length < MORE_GRID_MIN) return { grid: [], list: visibleKeys.slice() };
+  if (grid.length < MORE_GRID_MIN)
+    return { grid: [], list: visibleKeys.slice() };
   return { grid, list: visibleKeys.filter((k) => !grid.includes(k)) };
 }
 
@@ -51,7 +63,11 @@ export function stableMoreSplit(visibleKeys, prev) {
   if (!prev) return splitMoreGrid(visibleKeys);
   const toGrid = (k) =>
     prev.grid.includes(k) ||
-    (!prev.list.includes(k) && prev.grid.length > 0 && MORE_GRID_KEYS.includes(k));
-  const grid = MORE_GRID_KEYS.filter((k) => visibleKeys.includes(k) && toGrid(k));
+    (!prev.list.includes(k) &&
+      prev.grid.length > 0 &&
+      MORE_GRID_KEYS.includes(k));
+  const grid = MORE_GRID_KEYS.filter(
+    (k) => visibleKeys.includes(k) && toGrid(k),
+  );
   return { grid, list: visibleKeys.filter((k) => !grid.includes(k)) };
 }

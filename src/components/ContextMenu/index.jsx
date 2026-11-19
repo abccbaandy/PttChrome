@@ -341,7 +341,13 @@ export function readLaterTargetOf(
         }
       : null;
   if (!a || !a.board || !a.aid) return null;
-  return { ...a, saved: ra.isLater(recentKey(a.board, a.aid)) };
+  // current＝目標是「本篇」（不是游標下的連結）：跟長按位置無關，手機改在「更多」
+  //（context_menu_entries.js）。
+  return {
+    ...a,
+    saved: ra.isLater(recentKey(a.board, a.aid)),
+    ...(contextArticle ? {} : { current: true }),
+  };
 }
 
 // 推文篩選（P29）的選單目標：好讀文章裡的推文列（帳號、不是小天使）。篩選生效中 ⇒ 只給
@@ -1472,6 +1478,76 @@ export const ContextMenu = ({ pttchrome }) => {
   const onToolbarSettings = useCallback(() => {
     update({ ...initialState, showsSettings: true });
   }, [pttchrome, update]);
+  // 手機「更多」裡跟位置無關、從長按選單搬過去的幾項（context_menu_entries.js 檔頭）。出現條件與
+  // 右鍵選單同一組判斷，開「更多」那一刻現算一次（MobileToolbar 存起來，收起前不重算）。
+  const queryToolbarTools = useCallback(() => {
+    const prefs = readValuesWithDefault();
+    const buf = pttchrome.buf;
+    const nav = pttchrome.aidNavigation;
+    const currentArticle = nav?.findLocalPostAid?.() || null;
+    return {
+      readLater: readLaterTargetOf(
+        pttchrome,
+        prefs,
+        null,
+        currentArticle,
+        null,
+      ),
+      longPush:
+        !!buf &&
+        longPushAvailable({
+          prefs,
+          pageState: buf.pageState,
+          lastRowText: buf.getRowText(buf.rows - 1, 0, buf.cols),
+          pagerFromEssence: !!buf.pagerFromEssence,
+        }),
+      inputHelper: !!prefs.enableInputHelper,
+      liveArticleHelper: !!prefs.enableLiveArticleHelper,
+      commandPalette: !!prefs.enableCommandPalette,
+    };
+  }, [pttchrome]);
+  // tools＝開「更多」那一刻 queryToolbarTools 的結果（稍後再讀要用當時的目標）。
+  const onToolbarTool = useCallback(
+    (key, tools) => {
+      switch (key) {
+        case "readLater": {
+          const t = tools && tools.readLater;
+          if (t)
+            menuHandlerByEventKey[t.saved ? "removeReadLater" : "readLater"](
+              pttchrome,
+              { readLaterTarget: t },
+            );
+          return;
+        }
+        case "longPush":
+          if (!openLongPush())
+            pttchrome.view?.flashListHint?.(
+              serializedOpHint(pttchrome) || i18n("longPushError_busy"),
+              3000,
+            );
+          return;
+        case "inputHelper":
+          update({ ...initialState, showsInputHelper: true });
+          return;
+        case "liveArticleHelper":
+          update({
+            ...initialState,
+            showsLiveArticleHelper: true,
+            liveHelperView: liveHelperFacts(pttchrome),
+          });
+          return;
+        case "commandPalette":
+          openPalette();
+          return;
+        case "paste":
+          menuHandlerByEventKey.paste(pttchrome);
+          return;
+        default:
+          return;
+      }
+    },
+    [pttchrome, update, openLongPush, openPalette],
+  );
   // 首頁「這次更新」每條的「⚙ 設定」（P71）：開設定頁並停在那個開關（同指令面板挑設定項的 prefJump）。
   // 分頁要查設定搜尋索引：按下去才動態載入（索引會帶進兩份語系檔，不能進開站必載，
   // lazy_modal_chunks.test.js 守）。索引裡找不到 ⇒ 照樣開設定頁，只是不跳。
@@ -1913,6 +1989,8 @@ export const ContextMenu = ({ pttchrome }) => {
         hidden={modalOpen}
         onOpenSearch={onToolbarSearch}
         onOpenSettings={onToolbarSettings}
+        queryMoreTools={queryToolbarTools}
+        onMoreTool={onToolbarTool}
       />
       <SelectTextPage pttchrome={pttchrome} />
       <SavedReaderOverlay pttchrome={pttchrome} />

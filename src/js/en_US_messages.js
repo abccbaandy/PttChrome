@@ -83,6 +83,27 @@ export const en_US = {
   "mobileMoreShort_help": {
     "message": "Help"
   },
+  "mobileMoreShort_readLater": {
+    "message": "Read later"
+  },
+  "mobileMoreShort_removeReadLater": {
+    "message": "Unsave"
+  },
+  "mobileMoreShort_longPush": {
+    "message": "Long push"
+  },
+  "mobileMoreShort_commandPalette": {
+    "message": "Commands"
+  },
+  "mobileMoreShort_paste": {
+    "message": "Paste"
+  },
+  "mobileShare_system": {
+    "message": "Share to other apps"
+  },
+  "mobileShare_back": {
+    "message": "Back to More"
+  },
   "cmenuShort_filterCommentUser": {
     "message": "This ID"
   },
