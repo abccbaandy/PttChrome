@@ -110,6 +110,20 @@ describe("parseOgMeta", () => {
     expect(r2.title).toBe("a b");
   });
 
+  // 惡意頁面放一長串沒有 `>` 的 `<meta`：`[^>]*` 會跨過下一個 `<` 掃到檔尾 ⇒ 二次方時間。
+  // Workers 免費方案每次請求只有 10ms CPU，超過整個請求被砍。
+  test.each([
+    ["<meta", "meta 沒收尾"],
+    ["<title", "title 沒收尾"],
+    ["<meta charset", "meta charset 沒收尾"],
+  ])("惡意輸入 %s ×60000 線性時間（%s）", (piece) => {
+    const html = piece.repeat(60000);
+    const t0 = performance.now();
+    parseOgMeta(html, base);
+    pickCharset("text/html", html);
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+
   test("超過讀取上限之後的 meta 不看", () => {
     const html = " ".repeat(MAX_HTML_BYTES) + `<meta property="og:title" content="太後面">`;
     expect(parseOgMeta(html, base)).toBeNull();

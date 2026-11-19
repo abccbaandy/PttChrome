@@ -102,7 +102,9 @@ export const parseOgMeta = (html, baseUrl) => {
   if (!html || typeof html !== "string") return null;
   const head = html.slice(0, MAX_HTML_BYTES);
   const found = {};
-  for (const tag of head.match(/<meta\b[^>]*>/gi) || []) {
+  // `[^<>]*` 而不是 `[^>]*`：後者會跨過下一個 `<`，一長串沒收尾的 `<meta` 就是二次方時間
+  // （Workers 每次請求只有 10ms CPU）。守護 og.test.js「惡意輸入」。
+  for (const tag of head.match(/<meta\b[^<>]*>/gi) || []) {
     const key = (attr(tag, "property") || attr(tag, "name") || "").toLowerCase();
     const content = attr(tag, "content");
     if (!key || content == null) continue;
@@ -110,7 +112,7 @@ export const parseOgMeta = (html, baseUrl) => {
   }
   let title = clean(found["og:title"] || found["twitter:title"] || "", MAX_TITLE);
   if (!title) {
-    const m = /<title\b[^>]*>([^<]{1,2000})<\/title>/i.exec(head);
+    const m = /<title\b[^<>]*>([^<]{1,2000})<\/title>/i.exec(head);
     title = m ? clean(m[1], MAX_TITLE) : "";
   }
   if (!title) return null;
@@ -132,12 +134,13 @@ export const parseOgMeta = (html, baseUrl) => {
 export const pickCharset = (contentType, headBytesAsLatin1) => {
   const fromHeader = /charset\s*=\s*["']?([\w-]+)/i.exec(contentType || "");
   if (fromHeader) return fromHeader[1].toLowerCase();
-  const fromMeta = /<meta\b[^>]*charset\s*=\s*["']?([\w-]+)/i.exec(headBytesAsLatin1 || "");
+  const fromMeta = /<meta\b[^<>]*charset\s*=\s*["']?([\w-]+)/i.exec(headBytesAsLatin1 || "");
   return fromMeta ? fromMeta[1].toLowerCase() : "utf-8";
 };
 
 const decodeHtml = (bytes, contentType) => {
-  const latin1 = new TextDecoder("latin1").decode(bytes.subarray(0, 4096));
+  // 只是要找 `<meta charset>`：前 4 KB 逐 byte 當成字元，不靠 TextDecoder("latin1")（workerd 支不支援沒驗過）。
+  const latin1 = String.fromCharCode(...bytes.subarray(0, 4096));
   const charset = pickCharset(contentType, latin1);
   try {
     return new TextDecoder(charset).decode(bytes);
@@ -181,6 +184,7 @@ const ogJson = (body, status, cacheControl) =>
       "content-type": "application/json; charset=utf-8",
       "cache-control": cacheControl,
       "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff",
     },
   });
 
@@ -218,6 +222,7 @@ export const handleOg = async (request, url, env, fetchImpl = fetch) => {
         signal,
       });
       if (upstream.status < 300 || upstream.status >= 400) break;
+      if (upstream.body) upstream.body.cancel().catch(() => {});
       const loc = upstream.headers.get("location");
       if (!loc || hop >= MAX_REDIRECTS) return ogJson({ error: "redirect" }, 404, "no-store");
       let next;

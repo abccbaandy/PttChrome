@@ -107,7 +107,12 @@ GET  https://<worker>/og?url=<encodeURIComponent(網頁網址)>
   - **只回四個欄位**（標題 ≤200 字、網站名 ≤60 字、縮圖只收 https、最後的網址），不轉送頁面內容 ⇒ 不能當內容代理。
   - 每個 IP 每分鐘 60 次（`wrangler.jsonc` 的 `ratelimits` binding `OG_LIMITER`，Workers 免費方案可用）；
     binding 不在或限流服務出錯就不限（最差等於沒有限流）。
+  - 解析到內網位址的公開網域（例如 `127.0.0.1.nip.io`）這裡擋不到，靠的是 **Workers 本身連不到私有位址**；
+    搬到別的執行環境前要先補 DNS 解析後的位址檢查。
+  - 解析外部 HTML 的正規式一律 `[^<>]*`，不寫 `[^>]*`（會跨過下一個 `<`，沒收尾的 `<meta` 連發是二次方時間，
+    Workers 每次請求只有 10ms CPU）。守護 `test/og.test.js`「惡意輸入」。
 - 「沒有分享資訊」也快取（6 小時），同一篇文章重開不再回源；上游錯誤一律 `no-store`。
+  因為 `cross_version_cache: true`，**改了解析邏輯重新部署後，已快取的結果最多一天後才換新**。
 - 編碼照 `Content-Type` 或 `<meta charset>`，Workers 的 `TextDecoder` 不認得的編碼退回 UTF-8（標題可能亂碼，但不會出錯）。
 
 ## 部署
