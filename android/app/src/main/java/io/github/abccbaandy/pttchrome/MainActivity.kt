@@ -46,6 +46,8 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -63,6 +65,8 @@ class MainActivity : ComponentActivity() {
     private val credentials by lazy { CredentialBridge(this) }
     private val settings by lazy { AppSettings(this) }
     private val updater by lazy { AppUpdater(this) }
+    /** bridge 'fetchImage' 同時最多幾張（ImageFetch.kt）。 */
+    private val imageFetchSlots = Semaphore(2)
     /** 行動數據／計費網路判定（bridge 'networkState'；變了就發 'pttandroid:network' 給網頁）。 */
     private val networkWatch by lazy { NetworkWatch(this) { reportNetwork(it) } }
     /** 目前 WebView 載入的來源；注入規則跟著 WebView 建立時決定，換來源＝重建 WebView。 */
@@ -237,6 +241,8 @@ class MainActivity : ComponentActivity() {
             .put("setProtocol", true)
             // 認得 bridge 'networkState' 並會發 'pttandroid:network'：網頁據此才在行動網路時改成點了才開圖。
             .put("networkState", true)
+            // 認得 bridge 'fetchImage'：網頁據此才在存離線文章時把圖片一起抓回來（ImageFetch.kt）。
+            .put("fetchImage", true)
         restoringRenderer = false
         WebViewCompat.addDocumentStartJavaScript(
             wv, "window.__PTT_ANDROID__ = Object.freeze($config);", origins
@@ -281,6 +287,28 @@ class MainActivity : ComponentActivity() {
                         JSONObject().put("id", request.optInt("id")).put("ok", true)
                             .put("metered", networkWatch.metered).toString()
                     )
+                    return@addWebMessageListener
+                }
+                "fetchImage" -> {
+                    // 離線文章存圖（P107）：網路與縮圖在 IO 執行緒，回覆回到主執行緒送。
+                    val id = request.optInt("id")
+                    val url = request.optString("url")
+                    lifecycleScope.launch {
+                        // 同時最多兩張：網頁一次全丟過來時，解碼的記憶體不會疊加。
+                        val res = imageFetchSlots.withPermit {
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    ImageFetch.fetch(id, url)
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "fetchImage: $e")
+                                    ImageFetch.failed(id, "failed")
+                                } catch (_: OutOfMemoryError) {
+                                    ImageFetch.failed(id, "tooLarge")
+                                }
+                            }
+                        }
+                        reply.postMessage(res.toString())
+                    }
                     return@addWebMessageListener
                 }
                 "notify" -> {

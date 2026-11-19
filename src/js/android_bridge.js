@@ -32,6 +32,10 @@
 //     目前預設網路是否為行動數據／計費網路（NetworkWatch.kt）。之後的變化由原生主動發
 //     'pttandroid:network' 事件。只在 config.networkState 為 true（認得這個 op 的 APK 才宣告）時才問。
 //     消費端 image_load_gate.js：行動網路時好讀改成「點了才開圖」。
+//   → { id, op: 'fetchImage', url }                     ← { id, ok, mime, data, w, h } | { id, ok:false, error }
+//     離線文章連圖片一起存（P107，只做 APK；docs/saved-articles.md）：原生抓圖（不受 CORS 限制）、
+//     縮成寬 ≤1080 的 WebP，data＝base64（ImageFetch.kt）。只收 https、不收 GIF。error：'url'／'http'／
+//     'type'／'tooLarge'／'network'／'decode'／'failed'。只在 config.fetchImage 為 true 時才問（androidCanFetchImage）。
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
 // googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
 //   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider
@@ -243,6 +247,28 @@ export function watchAndroidMeteredNetwork(fn) {
     })
     .catch(() => null);
   return () => window.removeEventListener(NETWORK_EVENT, handler);
+}
+
+// 這個 APK 認得 'fetchImage'（見檔頭）。舊 APK ⇒ 離線文章照舊只存圖片連結。
+export function androidCanFetchImage() {
+  const c = config();
+  return !!(c && c.fetchImage === true) && androidBridgeAvailable();
+}
+
+/**
+ * 請原生抓一張圖（見檔頭 'fetchImage'）。成功回 { mime, data(base64), w, h }，其餘（舊 APK、失敗、逾時）回 null。
+ * @param {string} url
+ * @returns {Promise<{ mime: string, data: string, w: number, h: number } | null>}
+ */
+export async function androidFetchImage(url) {
+  if (!androidCanFetchImage() || typeof url !== 'string' || !url) return null;
+  try {
+    const r = await requestAndroid('fetchImage', { url });
+    if (!r || r.ok !== true || typeof r.data !== 'string' || !r.data || typeof r.mime !== 'string') return null;
+    return { mime: r.mime, data: r.data, w: Number(r.w) || 0, h: Number(r.h) || 0 };
+  } catch (e) {
+    return null;
+  }
 }
 
 export const _REQUEST_TIMEOUT_MS = REQUEST_TIMEOUT_MS;
