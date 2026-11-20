@@ -6,7 +6,9 @@
 // 真 CSS 下選項面板不蓋住提問那一列（終端機排在面板上方）、真 tap 送出的 byte、開關關掉不出現。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedScreensUntil, LIST_TAKEOVER_OFF } = require('../helpers/replay');
+const {
+  bootOffline, feedScreensUntil, feedRaw, waitScreenSettled, LIST_TAKEOVER_OFF,
+} = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const { waitRectStable } = require('../helpers/layout');
 
@@ -35,9 +37,11 @@ async function expectPromptRowVisible(page) {
   expect(r.rowBottom).toBeLessThanOrEqual(r.panelTop + 0.5);
 }
 
+// 回文對象另外兩條（見下方 describe）：它疊在文章畫面上，文章好讀接不接手要釘死。
 const SCENES = [
   { name: '發文種類', screens: 'post_flow', frame: 'post', tap: '3', bytes: '3\r', titleRe: /種類/ },
-  { name: '回文對象', screens: 'reply_prompt', frame: 'reply', tap: 'm', bytes: 'm\r', titleRe: /回應至/ },
+  { name: '回文對象（好讀關）', screens: 'reply_prompt', frame: 'reply', tap: 'm', bytes: 'm\r', titleRe: /回應至/,
+    prefs: { enableEasyReading: false } },
   { name: '編輯器檔案處理', screens: 'editor', frame: 'save-menu', tap: 'a', bytes: 'a\r', titleRe: /確定要儲存檔案嗎/ },
   // 主功能表卡片版面比視窗高（390px 視窗裡提問列落在折疊線下）：提問列本身不保證看得到，
   // 但選項面板的標題就是提問全文，使用者不用捲也知道在問什麼。
@@ -49,7 +53,9 @@ test.describe('手機提問選項（離線）', () => {
     test(`${s.name}：選項浮在工具列上方、不蓋提問；tap 送「字＋Enter」`, async ({ page }) => {
       test.setTimeout(60000);
       await bootOffline(page, ptt);
+      if (s.prefs) await ptt.applyPrefs(page, s.prefs);
       await feedUntil(page, fx(s.screens), s.frame);
+      expect(await page.evaluate(() => !!window.__app.buf.startedEasyReading)).toBe(false);
       const panel = page.locator('#mobilePromptChoices');
       await expect(panel).toBeVisible();
       await expect(panel.locator('.mobilePromptChoicesTitle')).toHaveText(s.titleRe);
@@ -61,6 +67,45 @@ test.describe('手機提問選項（離線）', () => {
       expect(await takeCapture(page)).toBe(s.bytes);
     });
   }
+
+  // 回文提問是 bbs.c#do_generalboardreply 的 getdata(b_lines - 1)：不清屏、直接疊在 pmore
+  // 文章畫面上（狀態列也還是「瀏覽 第 1/1 頁」）。文章好讀接手時畫面是累積長頁，那一列
+  // 不在裡面 —— 真實操作裡提問一定是使用者按 y／工具列「回文」叫出來的，那一下經
+  // onKeyDown 進 functionMode（原生鏡像），提問列才畫得出來。所以這裡照真實順序：
+  // 文章幀 settle、確定好讀接手 → 真 tap「回文」→ 才餵提問幀。不按鍵直接餵提問幀
+  // 是到不了的狀態（好讀長頁上看不到提問列），不測它。
+  test('回文對象（文章好讀已接手）：tap「回文」切原生鏡像，選項不蓋提問；tap 送「字＋Enter」', async ({ page }) => {
+    test.setTimeout(60000);
+    await bootOffline(page, ptt);
+    await ptt.applyPrefs(page, { enableEasyReading: true });
+    const screens = fx('reply_prompt');
+    const frame = (name) => screens.frames.find((f) => f.name === name).bytes;
+    // 好讀只在 settle 的「列表 → 文章」邊界接手（easy_reading.js#_onPageStateSettled）：
+    // 列表幀要先自己 settle，不然 prevSettledPageState 不是列表、好讀不開。
+    await feedUntil(page, screens, 'list');
+    const listIdx = screens.frames.findIndex((f) => f.name === 'list');
+    const articleIdx = screens.frames.findIndex((f) => f.name === 'article');
+    for (const f of screens.frames.slice(listIdx + 1, articleIdx + 1)) await feedRaw(page, f.bytes);
+    await waitScreenSettled(page);
+    await expect.poll(() => page.evaluate(() => !!window.__app.buf.startedEasyReading)).toBe(true);
+
+    await startCapture(page);
+    await page.locator('[data-key="__reply"]').tap();
+    await expect.poll(() => peekCapture(page)).toBe('y');
+    expect(await takeCapture(page)).toBe('y');
+    expect(await page.evaluate(() => !!window.__app.buf.easyReadingFunctionMode)).toBe(true);
+
+    await feedRaw(page, frame('reply'));
+    await waitScreenSettled(page);
+    const panel = page.locator('#mobilePromptChoices');
+    await expect(panel.locator('.mobilePromptChoicesTitle')).toHaveText(/回應至/);
+    await expectPromptRowVisible(page);
+
+    await startCapture(page);
+    await panel.locator('[data-choice="m"]').tap();
+    await expect.poll(() => peekCapture(page)).toBe('m\r');
+    expect(await takeCapture(page)).toBe('m\r');
+  });
 
   test('不是選擇題（列表、文章）不出現；開關關掉也不出現', async ({ page }) => {
     test.setTimeout(60000);
