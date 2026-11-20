@@ -166,6 +166,12 @@ time_t time(time_t *t)
 // 用 upstream 自己的 FormatCommentString 排成推文列，包成 LIVE_COMMENT 封包交回去。
 // generate.sh 看 proto.h 有沒有 pmore_feed_comment 決定 HAS_LIVE（舊 upstream 沒有這些符號）。
 #if HAS_LIVE
+// upstream f72c44a5 把 comments.c 的 FormatCommentString 搬進 bof、改名 bof_files_format_comment
+// （參數與輸出相同）⇒ generate.sh 看 bof_files.h 決定 HAS_BOF_FORMAT_COMMENT。
+#if HAS_BOF_FORMAT_COMMENT
+#include "bof_files.h"
+#define FormatCommentString bof_files_format_comment
+#endif
 #define LIVE_FD 3
 static uint32_t live_bid;
 static aidu_t live_aid;
@@ -587,7 +593,9 @@ int main(int argc, char *argv[])
     char home[PATHLEN];
     sethomepath(home, "tester");
     char cmd[PATHLEN * 2];
-    snprintf(cmd, sizeof(cmd), "mkdir -p %s", home);
+    // tmp/：真站台 BBSHOME 本來就有。upstream bof 起編輯／發文的草稿寫在 tmp/post.<pid>.<n>
+    // （post.c#post_draft_path），沒有它 edit_post 只會畫「系統錯誤，無法準備編輯檔案」。
+    snprintf(cmd, sizeof(cmd), "mkdir -p %s tmp", home);
     if (system(cmd)) die("mkdir home");
 
     seed(argv[2]);

@@ -45,6 +45,12 @@ make -s -C "$P" clean >/dev/null 2>&1
 # time.c 可能讀到寫到一半（空的）var.h ⇒「use of undeclared identifier 'now'」。先單獨產好。
 make -s -C "$P/common/bbs" "$X" ../../include/var.h >"$OUT/build.log" 2>&1 || { tail -60 "$OUT/build.log"; exit 2; }
 make -j8 -C "$P/common" "$X" >"$OUT/build.log" 2>&1 || { tail -60 "$OUT/build.log"; exit 2; }
+# bof（upstream 2026-11 起的 Birds Of Feather 層）：mbbsd 連 -lbof（含 mbbsd/testsz 這類小程式），
+# 頂層 GNUmakefile 的順序是 common → bof → mbbsd。舊 upstream 沒有 bof/ 就跳過。
+if [ -d "$P/bof" ]; then
+  BOF_LIBS='-L../bof -lbof'
+  make -j8 -C "$P/bof" "$X" libbof.a >>"$OUT/build.log" 2>&1 || { tail -60 "$OUT/build.log"; exit 2; }
+else BOF_LIBS=; fi
 make -j8 -C "$P/mbbsd" "$X" >>"$OUT/build.log" 2>&1 || { tail -60 "$OUT/build.log"; exit 2; }
 
 cd "$P/mbbsd" || exit 2
@@ -79,12 +85,14 @@ if grep -q 'pmore_feed_comment' ../include/proto.h || grep -qs '^live_run(' more
 # IPC handler 也從 wmsg_ipc_handler 改名 mbbsd_ipc_handler ⇒ --wrap=ipc_get_fd 交回 driver 掛的 fd（見 driver.c）。
 if grep -q 'vkey_sync_ipc' ../include/proto.h; then HAS_IPC_SYNC=1; LIVE_WRAP=$LIVE_WRAP,--wrap=ipc_get_fd; else HAS_IPC_SYNC=0; fi
 if grep -q 'mbbsd_ipc_handler' ../include/proto.h; then IPC_HANDLER=mbbsd_ipc_handler; else IPC_HANDLER=wmsg_ipc_handler; fi
-clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -DHAS_LIVE="$HAS_LIVE" -DHAS_CONTENT="$HAS_CONTENT" -DHAS_ACTIVITY_MSG="$HAS_ACTIVITY_MSG" -DHAS_ACTIVITY_SLOW="$HAS_ACTIVITY_SLOW" -DHAS_IPC_SYNC="$HAS_IPC_SYNC" -DIPC_HANDLER="$IPC_HANDLER" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
+# upstream f72c44a5：FormatCommentString 改名 bof_files_format_comment（driver 的實況推文用它排版）。
+if grep -qs 'bof_files_format_comment' ../include/bof_files.h; then HAS_BOF_FORMAT_COMMENT=1; else HAS_BOF_FORMAT_COMMENT=0; fi
+clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -DHAS_LIVE="$HAS_LIVE" -DHAS_CONTENT="$HAS_CONTENT" -DHAS_ACTIVITY_MSG="$HAS_ACTIVITY_MSG" -DHAS_ACTIVITY_SLOW="$HAS_ACTIVITY_SLOW" -DHAS_IPC_SYNC="$HAS_IPC_SYNC" -DIPC_HANDLER="$IPC_HANDLER" -DHAS_BOF_FORMAT_COMMENT="$HAS_BOF_FORMAT_COMMENT" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
 # --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）；
 # passwd_query 一律「查不到」（板主 id 從 SHM->userid 來，見 driver.c#set_moderators）。
 # shellcheck disable=SC2086
 clang -o "$OUT/driver" -Wl,--wrap=read,--wrap=select,--wrap=poll,--wrap=passwd_query$LIVE_WRAP$CONTENT_WRAP "$OUT/driver.o" "$OUT/mbbsd_nomain.o" $OBJS "$OUT/vers.o" \
-  -L../common/bbs -L../common/sys -L../common/osdep -lcmbbs -lcmsys -losdep -lrt -pthread || exit 2
+  $BOF_LIBS -L../common/bbs -L../common/sys -L../common/osdep -lcmbbs -lcmsys -losdep -lrt -pthread || exit 2
 
 iconv -f UTF-8 -t BIG5 "$HERE/seed.tsv" >"$OUT/seed.big5" || exit 2
 node "$HERE/capture.mjs" "$OUT/driver" "$OUT/seed.big5" "$ROOT/tests/unit/fixtures/ptt_src_screens" || exit 2

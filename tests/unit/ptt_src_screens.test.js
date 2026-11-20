@@ -108,6 +108,7 @@ import digestFx from "./fixtures/ptt_src_screens/digest.json";
 import digestAidFx from "./fixtures/ptt_src_screens/digest_aid.json";
 import essenceFx from "./fixtures/ptt_src_screens/essence.json";
 import essenceLegacyFx from "./fixtures/ptt_src_screens_legacy/essence_01b5517.json";
+import digestLegacyFx from "./fixtures/ptt_src_screens_legacy/digest_2b27c997.json";
 import { aidToFn, toPostAid } from "../../src/js/aid_codec";
 import { parsePagerFooterContext } from "../../src/js/string_util";
 import { isSubListFooter } from "../../src/js/screen_captions";
@@ -1208,16 +1209,22 @@ describe("upstream pttbbs 產的文摘（Tab，bbs.c#board_digest）", () => {
     expect(subjectOfListText(hit.rowTexts[hit.facts.curY])).toBe("[新聞] 第二篇文摘");
   });
 
-  test("文摘裡開的文章是 READING；← 回文摘（子列表），文摘上再 ← 回完整列表（不是離板）", () => {
-    const article = screenAt(digestFx, "article");
+  // 舊版：文摘文章跟看板文章同一組鍵表，footer 有「(y)回應(X)推文」⇒ reading。
+  // 新版（d3361184）：文摘是副本、不能回應／推文，bbs.c#read_post 換 read_digest_post_cmds（只有 s／#／Q），
+  // footer 只剩「(])同主題下篇 (←)離開」⇒ 沒有「回應」＝unknown（單向推論的安全路徑，不是 mail）。
+  test.each([
+    ["新版", digestFx, "unknown"],
+    ["舊版 2b27c997", digestLegacyFx, "reading"],
+  ])("文摘裡開的文章（%s）：pager；← 回文摘（子列表），文摘上再 ← 回完整列表（不是離板）", (_, fx, footer) => {
+    const article = screenAt(fx, "article");
     expect(article.buf.pageState).toBe(3);
-    expect(parsePagerFooterContext(article.rowTexts[article.facts.rows - 1])).toBe("reading");
+    expect(parsePagerFooterContext(article.rowTexts[article.facts.rows - 1])).toBe(footer);
 
-    const back = screenAt(digestFx, "back");
+    const back = screenAt(fx, "back");
     const backFacts = { ...back.facts, ...classifyListScreen(back.facts) };
     expect(landedOnBoardList(backFacts, "gossip")).toEqual({ sub: true });
 
-    const plain = screenAt(digestFx, "plain");
+    const plain = screenAt(fx, "plain");
     const plainFacts = { ...plain.facts, ...classifyListScreen(plain.facts) };
     expect(listModeOf(plain.facts)).toBe("plain");
     expect(landedOnBoardList(plainFacts, "gossip")).toEqual({ sub: false });
@@ -1272,12 +1279,13 @@ describe("upstream pttbbs 產的看板精華區（z，bbs.c#b_man → announce.c
     const list = screenAt(essenceFx, "list-again", { perFrame: true });
     expect(list.buf.pagerFromEssence).toBe(false);
 
-    const { buf } = screenAt(digestFx, "article", { perFrame: true });
+    // 看板文章用 article.json（文章列表 ⏎）：文摘文章新版起沒有回應／推文（d3361184），不能代表看板文章。
+    const { buf } = screenAt(articleFx, "article", { perFrame: true });
     expect(buf.pagerContext()).toBe("reading");
     const gate = searchGateFacts({ buf });
-    expect(refreshTargetFromFacts(gate, buf.pageState, { articleBoard: "Gossip" })).toEqual({
+    expect(refreshTargetFromFacts(gate, buf.pageState, { articleBoard: "Test" })).toEqual({
       kind: "article",
-      board: "Gossip",
+      board: "Test",
     });
     expect(toolbarContextFromFacts(gate, buf.pageState, {})).toMatchObject({ push: true, share: true });
     const push = pushGateFacts({ buf });

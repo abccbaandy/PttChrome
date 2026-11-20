@@ -93,7 +93,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `board_complete` | `menu`／24 | `s` `M` 空白 `x` `o` 空白 | 選看板自動完成：`parseBoardPromptFrame` 讀輸入欄／候選（依板名排序）、被拒的字輸入欄不變（`boardQueryResult` rejected）、中間幀的舊清單、唯一補完 `resolvedBoardName` |
 | `digest_aid` | `read:Gossip`／24 | `1⏎` `#5giJk-0-⏎` `#1giJk-0-⏎` | 完整列表上 # 文摘的 G AID：新版 `read_cmd_aid` 丟掉 `select_by_aid` 設的 default_ch=Tab ⇒ 不切文摘、游標不動、沒有錯誤，`aidSearchLanded` 照樣過；換成原文的 M（`aid_codec.toPostAid`）才落在原文 |
 | `essence` | `read:Gossip`／24 | `z` `⏎` `←` `←` | 看板精華區：標題列【精華文章】、pageState 1；開的文章 footer 舊版跟看板文章一字不差、e7acb746 起是共用鍵表（沒有「回應」）（`b_man` 不 `setutmpmode`，currstat 還是 READING）⇒ `TermBuf.pagerContext()` 回 `'essence'`，重新整理／推文攔截／手機工具列推回分享都不給；回文章列表後旗標清掉 |
-| `digest` | `read:Gossip`／24 | `Tab` `Q` 空白 `⏎` `←` `←` | 文摘：標題列「文摘《板》」＋底列「文摘列表」⇒ 子列表（`listModeOf` select、重新整理不接手）、自己的編號空間；文摘裡 Q 的 AID 是 G 檔名（type 1）；文章是 READING；文章裡 ← 回文摘、文摘上 ← 是 `board_digest` 回完整列表不是離板（`landedOnBoardList` 的 sub；`_enqueueLeaveSubList` 的依據） |
+| `digest` | `read:Gossip`／24 | `Tab` `Q` 空白 `⏎` `←` `←` | 文摘：標題列「文摘《板》」＋底列「文摘列表」⇒ 子列表（`listModeOf` select、重新整理不接手）、自己的編號空間；文摘裡 Q 的 AID 是 G 檔名（type 1）；文章是 pager，footer 舊版有「(y)回應(X)推文」＝reading，d3361184 起文摘是副本、鍵表 `read_digest_post_cmds` 只有 s／#／Q ⇒ footer「(])同主題下篇」＝unknown（舊版 fixture 留在 legacy `digest_2b27c997.json`）；文章裡 ← 回文摘、文摘上 ← 是 `board_digest` 回完整列表不是離板（`landedOnBoardList` 的 sub；`_enqueueLeaveSubList` 的依據） |
 | `mark_read_prompt` | `read:Test`／24 | `v` | 文章列表 v 的「設定所有文章 …」prompt（`markReadPromptShown`）；是輸入欄 ⇒ 逃生送 ^C |
 | `goodbye` | `menu`／24 | `G⏎` `y⏎` | 一鍵登出：主功能表不送逃生鍵、確認 prompt（`isGoodbyeConfirm`）、停留時間是 pressanykey（`isAnyKeyPause`） |
 | `waterball_default` | `wmsg:default`／24 | ^R ×4 | `classifyReplyScreen`：第一下 prompt、之後訊息回顧選中 carol → bob → alice；`nextReplyStep` |
@@ -133,6 +133,12 @@ pfterm 只在阻塞讀鍵前 flush。鍵送早了會被 typeahead 吃掉中間�
   `-Werror` 下常編不過 ⇒ `-Wno-error`。
 - 連結的物件檔：排除 `mbbsd.o`（用改名過的那份）、`vers.o`（重編）、`screen.o`（非 pfterm 畫面層），
   以及**任何自帶 `main` 的物件**（`nm` 偵測；upstream 的 `test_*.o`／`testsz.o` 這類小程式，新增的也自動排除）。
+- **bof**（a6ff78ff 起的 Birds Of Feather 層）：mbbsd 連 `-lbof`（`mbbsd/testsz` 這類小程式在 `make mbbsd`
+  時就要）⇒ 順序 common → `make -C bof libbof.a` → mbbsd，driver 連結也加 `-L../bof -lbof`；沒有 `bof/` 的舊
+  upstream 跳過。f72c44a5 把 `FormatCommentString` 改名 `bof_files_format_comment`（實況推文用，參數不變）⇒
+  `-DHAS_BOF_FORMAT_COMMENT`（看 `include/bof_files.h`）。編輯／發文的草稿改寫在 BBSHOME 的
+  `tmp/post.<pid>.<n>`（`post.c#post_draft_path`）⇒ driver 要建 `tmp/`，沒有它 `editor*` 場景只剩「系統錯誤，
+  無法準備編輯檔案」。
 - driver 要先 `init_io()`（否則 pfterm 沒輸出緩衝）、`currboard` 先清空再 `enter_board`（`brc_initial_board`
   同名會走捷徑不設 `currbid`）。
 - driver 要設 `is_login_ready = 1`（登入流程最後才設）：沒有它 Ctrl+Z 快速切換（`menu.c#ZA_Select`）、
