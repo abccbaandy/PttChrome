@@ -83,8 +83,9 @@ test.describe('手機提問選項（離線）', () => {
     // 好讀只在 settle 的「列表 → 文章」邊界接手（easy_reading.js#_onPageStateSettled）：
     // 列表幀要先自己 settle，不然 prevSettledPageState 不是列表、好讀不開。
     await feedUntil(page, screens, 'list');
-    await feedRaw(page, frame('null'));
-    await feedRaw(page, frame('article'));
+    const listIdx = screens.frames.findIndex((f) => f.name === 'list');
+    const articleIdx = screens.frames.findIndex((f) => f.name === 'article');
+    for (const f of screens.frames.slice(listIdx + 1, articleIdx + 1)) await feedRaw(page, f.bytes);
     await waitScreenSettled(page);
     await expect.poll(() => page.evaluate(() => !!window.__app.buf.startedEasyReading)).toBe(true);
 
