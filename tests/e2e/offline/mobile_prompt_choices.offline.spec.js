@@ -79,7 +79,13 @@ test.describe('手機提問選項（離線）', () => {
     await bootOffline(page, ptt);
     await ptt.applyPrefs(page, { enableEasyReading: true });
     const screens = fx('reply_prompt');
-    await feedUntil(page, screens, 'article');
+    const frame = (name) => screens.frames.find((f) => f.name === name).bytes;
+    // 好讀只在 settle 的「列表 → 文章」邊界接手（easy_reading.js#_onPageStateSettled）：
+    // 列表幀要先自己 settle，不然 prevSettledPageState 不是列表、好讀不開。
+    await feedUntil(page, screens, 'list');
+    await feedRaw(page, frame('null'));
+    await feedRaw(page, frame('article'));
+    await waitScreenSettled(page);
     await expect.poll(() => page.evaluate(() => !!window.__app.buf.startedEasyReading)).toBe(true);
 
     await startCapture(page);
@@ -88,7 +94,7 @@ test.describe('手機提問選項（離線）', () => {
     expect(await takeCapture(page)).toBe('y');
     expect(await page.evaluate(() => !!window.__app.buf.easyReadingFunctionMode)).toBe(true);
 
-    await feedRaw(page, screens.frames.find((f) => f.name === 'reply').bytes);
+    await feedRaw(page, frame('reply'));
     await waitScreenSettled(page);
     const panel = page.locator('#mobilePromptChoices');
     await expect(panel.locator('.mobilePromptChoicesTitle')).toHaveText(/回應至/);
