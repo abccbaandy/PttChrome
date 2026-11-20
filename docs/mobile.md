@@ -156,6 +156,8 @@ PTT 問「選一個」時，底部導覽上方浮出可點選項（`MobileToolba
 - 面板標題就是提問本身：主功能表卡片版面比視窗高時「離開」確認落在折疊線下，看面板就知道在問什麼。
 - 守護：`tests/unit/prompt_choices.test.js`（upstream 產的四種畫面＋字樣突變）、`mobile_toolbar.test.jsx`、
   `tests/e2e/offline/mobile_prompt_choices.offline.spec.js`（提問列不被蓋、真 tap 送出的 byte）。
+- 疊在文章上的提問（回文對象＝`getdata(b_lines-1)`，不清屏、狀態列不變）：文章好讀接手時看得到提問列，**只因為**叫出它的
+  按鍵（y／工具列「回文」）先經 onKeyDown 進 functionMode 鏡像原生。e2e 好讀關／已接手兩種都釘死；不按鍵直接餵提問幀是到不了的狀態。
 
 ### 同一個面板的另外兩種（`promptPanelFromBuf`，各自 pref、預設開）
 
