@@ -2,18 +2,23 @@
 // 編輯器畫面同桌機那支（upstream pttbbs 產的 editor.json）。真觸控 tap、真鍵盤。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw } = require('../helpers/replay');
+const { bootOffline, feedRaw, feedScreensUntil, LIST_TAKEOVER_OFF } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const screens = require('../../unit/fixtures/ptt_src_screens/editor.json');
+
 // 場景在編輯器之後還有 ^X「檔案處理」那一幀：只餵到編輯器畫面為止。
-const EDITOR_FRAMES = screens.frames.slice(0, screens.frames.findIndex((f) => f.name === 'edit') + 1);
+// 素材從 list 幀起跳：先關列表接管（見 feedScreensUntil）。
+async function enterEditor(page) {
+  await ptt.applyPrefs(page, LIST_TAKEOVER_OFF);
+  await feedScreensUntil(page, screens, 'edit');
+  await page.waitForFunction(() => window.__app.buf.pageState === 6);
+}
 
 test.describe('編輯器輸入框（手機，離線）', () => {
   test('工具列「輸入框」→ sheet 打字 → 插入 ⇒ 整段送進編輯器', async ({ page }) => {
     test.setTimeout(60000);
     await bootOffline(page, ptt);
-    for (const f of EDITOR_FRAMES) await feedRaw(page, f.bytes);
-    await page.waitForFunction(() => window.__app.buf.pageState === 6);
+    await enterEditor(page);
     const btn = page.locator('[data-key="__editorInput"]');
     await expect(btn).toBeVisible();
     // 桌機的浮動鈕在手機不出現（入口在工具列）
@@ -38,8 +43,7 @@ test.describe('編輯器輸入框（手機，離線）', () => {
   test('工具列「存檔」送 ^X；App Bar 寫編輯文章；檔案處理選單出來後收起', async ({ page }) => {
     test.setTimeout(60000);
     await bootOffline(page, ptt);
-    for (const f of EDITOR_FRAMES) await feedRaw(page, f.bytes);
-    await page.waitForFunction(() => window.__app.buf.pageState === 6);
+    await enterEditor(page);
     const save = page.locator('[data-key="__editorSave"]');
     await expect(save).toBeVisible();
     const title = await page.evaluate(() => window.__i18n('mobileAppBar_editor'));

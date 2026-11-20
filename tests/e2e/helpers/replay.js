@@ -252,6 +252,37 @@ async function waitScreenSettled(page, rows = {}) {
   }, rows);
 }
 
+// 兩個列表接管（文章列表好讀／看板列表平滑捲動）：在列表幀上會自己送機器鍵（預取
+// `1\r\f`、逾時探針 `\f`）。stub 不回應這些鍵 ⇒ 素材裡「列表 → 別的畫面」的跳轉不是
+// app 送鍵造成的，接管會卡在在飛命令上，之後把使用者在別的畫面的輸入當成列表輸入
+// （先送跳號同步 `1\r`）。真 PTT 會回應 `\f` 探針、整頁重畫讓接管自癒，stub 不會。
+const LIST_TAKEOVER_OFF = { enableEasyReadingList: false, enableBoardListSmoothScroll: false };
+
+// 依序餵 upstream pttbbs 產的畫面幀（tests/unit/fixtures/ptt_src_screens/*.json）直到
+// frameName（含），等畫面 settle。素材從 `list` 幀起跳時，呼叫前必須先
+// `ptt.applyPrefs(page, LIST_TAKEOVER_OFF)`：否則機器慢到 list 幀先 settle 時，列表好讀
+// 會接管、排預取，它的 `\f` 探針落在 startCapture 之前或之後全看機器快慢（「一個 byte
+// 都沒送」的斷言偶發紅）。結尾斷言沒人接管、佇列是空的 ⇒ 真的接管了就明講原因，
+// 不會變成神祕的 "\f"。
+async function feedScreensUntil(page, screens, frameName) {
+  const idx = screens.frames.findIndex((f) => f.name === frameName);
+  if (idx < 0) throw new Error(`feedScreensUntil: 素材裡沒有 ${frameName} 幀`);
+  for (const f of screens.frames.slice(0, idx + 1)) await feedRaw(page, f.bytes);
+  await waitScreenSettled(page);
+  const busy = await page.evaluate(() => {
+    const app = window.__app;
+    return {
+      listSession: app.listSession && app.listSession.state,
+      queueIdle: app.commandQueue.idle,
+    };
+  });
+  if (busy.listSession !== 'idle' || !busy.queueIdle)
+    throw new Error(
+      `feedScreensUntil: 列表接管自己送了機器鍵（${JSON.stringify(busy)}）；` +
+        '先 ptt.applyPrefs(page, LIST_TAKEOVER_OFF)'
+    );
+}
+
 // 裝置端 AI 推論鏈的 idle 訊號（src/render/screen.js#aiTaskStats）：
 // { caption|url|fix: { runs, inFlight } }。「沒有推論」斷言 runs === 0；
 // 「推論都回來了」等 inFlight === 0。取代固定時間的觀察窗。
@@ -821,8 +852,7 @@ const SCENARIO_BASE_PREFS = {
   enableEasyReading: false,
   showFloorNumbers: false,
   blacklist: '',
-  enableEasyReadingList: false,
-  enableBoardListSmoothScroll: false,
+  ...LIST_TAKEOVER_OFF,
 };
 async function bootScenario(page, ptt, cassette, opts = {}) {
   await bootOffline(page, ptt, opts);
@@ -937,6 +967,8 @@ module.exports = {
   waitConnected,
   feedRaw,
   waitScreenSettled,
+  feedScreensUntil,
+  LIST_TAKEOVER_OFF,
   aiTaskStats,
   replayCassette,
   replayListCassette,

@@ -6,17 +6,19 @@
 //   - 打一段（含換行）按「插入」⇒ 整段走貼上漏斗送出（換行＝Enter），框收起
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw } = require('../helpers/replay');
+const { bootOffline, feedScreensUntil, LIST_TAKEOVER_OFF } = require('../helpers/replay');
 const { waitRectStable } = require('../helpers/layout');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const screens = require('../../unit/fixtures/ptt_src_screens/editor.json');
-// 場景在編輯器之後還有 ^X「檔案處理」那一幀：只餵到編輯器畫面為止。
-const EDITOR_FRAMES = screens.frames.slice(0, screens.frames.findIndex((f) => f.name === 'edit') + 1);
 
 const CHIP = '#editorInputChip';
 
+// 場景在編輯器之後還有 ^X「檔案處理」那一幀：只餵到編輯器畫面為止。
+// 素材從 list 幀起跳：先關列表接管，否則它的預取探針 `\f` 會落在 startCapture
+// 之後被當成「打字漏給 PTT」（見 feedScreensUntil）。
 async function enterEditor(page) {
-  for (const f of EDITOR_FRAMES) await feedRaw(page, f.bytes);
+  await ptt.applyPrefs(page, LIST_TAKEOVER_OFF);
+  await feedScreensUntil(page, screens, 'edit');
   await page.waitForFunction(() => window.__app.buf.pageState === 6);
 }
 

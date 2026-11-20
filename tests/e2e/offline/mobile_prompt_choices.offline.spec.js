@@ -6,16 +6,17 @@
 // 真 CSS 下選項面板不蓋住提問那一列（終端機排在面板上方）、真 tap 送出的 byte、開關關掉不出現。
 const { test, expect } = require('@playwright/test');
 const ptt = require('../helpers/ptt');
-const { bootOffline, feedRaw, waitScreenSettled } = require('../helpers/replay');
+const { bootOffline, feedScreensUntil, LIST_TAKEOVER_OFF } = require('../helpers/replay');
 const { startCapture, peekCapture, takeCapture } = require('../helpers/capture');
 const { waitRectStable } = require('../helpers/layout');
 
 const fx = (name) => require(`../../unit/fixtures/ptt_src_screens/${name}.json`);
 
+// 多數素材從 list 幀起跳：先關列表接管，否則它的預取探針（`\f`）可能落在
+// startCapture 之後，讓「恰好送出 X」的斷言偶發紅（見 feedScreensUntil）。
 async function feedUntil(page, screens, frameName) {
-  const idx = screens.frames.findIndex((f) => f.name === frameName);
-  for (const f of screens.frames.slice(0, idx + 1)) await feedRaw(page, f.bytes);
-  await waitScreenSettled(page);
+  await ptt.applyPrefs(page, LIST_TAKEOVER_OFF);
+  await feedScreensUntil(page, screens, frameName);
 }
 
 // 游標那一列（提問）整列在 App Bar 下緣與選項面板上緣之間、看得到。
