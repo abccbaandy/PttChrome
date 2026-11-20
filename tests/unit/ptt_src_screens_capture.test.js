@@ -104,3 +104,20 @@ test("場景表：第一步不送鍵、幀名在場景內不重複、入口是 d
     expect(s.rows).toBeGreaterThanOrEqual(24);
   }
 });
+
+// nightly 拿新產的 fixture 跟 repo 的逐位元組比（git diff）：repo 裡的格式跟 capture.mjs 的輸出不同，
+// 就天天報「upstream 改了畫面」。lint-staged 對 *.json 跑 prettier（2 格縮排）⇒ 兩個目錄要在 .prettierignore。
+test("fixture 維持 capture.mjs 的原始格式（JSON 縮排 1），且不被 pre-commit 的 prettier 改寫", () => {
+  const root = path.join(__dirname, "../..");
+  const ignore = fs.readFileSync(path.join(root, ".prettierignore"), "utf8").split("\n");
+  const cap = fs.readFileSync(path.join(root, "tools/ptt-src-screens/capture.mjs"), "utf8");
+  expect(cap).toContain("JSON.stringify(out, null, 1) + '\\n'");
+  for (const dir of ["ptt_src_screens", "ptt_src_screens_legacy"]) {
+    expect(ignore).toContain(`tests/unit/fixtures/${dir}/`);
+    const abs = path.join(__dirname, "fixtures", dir);
+    for (const f of fs.readdirSync(abs).filter((n) => n.endsWith(".json"))) {
+      const raw = fs.readFileSync(path.join(abs, f), "utf8");
+      expect(raw, `${dir}/${f}`).toBe(JSON.stringify(JSON.parse(raw), null, 1) + "\n");
+    }
+  }
+});
