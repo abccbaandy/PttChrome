@@ -53,9 +53,13 @@ export function parseMenuItemRow(text, row) {
 
 // 這一幀是不是選單畫面（主功能表或任一子選單）。pageState 1 底下另一種是看板列表
 // （含分類看板根目錄，它的狀態列與選單相同，以標題排除）。
+// row 0 一定是 vs_draw_header 畫的「【標題】」（mbbsd/vtuikit.c，VMSG_HEADER_PREFIX）：被別的
+// 東西蓋掉（一對一水球的「丟<id>:」輸入列、半繪）⇒ 不是選單，照原生畫（手機卡片會把它蓋住）。
+var MENU_HEADER_PREFIX = '【';
 export function isMenuScreen(pageState, row0Text, lastRowText) {
   if (pageState !== PAGE_STATE.MENU) return false;
   var row0 = row0Text || '';
+  if (row0.indexOf(MENU_HEADER_PREFIX) !== 0) return false;
   if (rowHasAnyTitle(row0, BOARD_LIST_TITLES)) return false;
   return rowHasTitle(row0, MAIN_MENU) || parseListRow(lastRowText);
 }

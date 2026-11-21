@@ -327,7 +327,8 @@ const KIND_CENSUS = {
   search_prompts: "list=list title=list author=list push=list board=list",
   search_refine: "list=list result=list title=list",
   waterball_default: "menu=menu prompt=otherMenu panel-1=otherMenu panel-2=otherMenu panel-3=otherMenu",
-  waterball_ofo: "menu=menu ofo-1=menu ofo-2=menu ofo-3=menu",
+  // 一對一水球：row 0 被「丟<id>:」蓋掉 ⇒ 不是選單（手機主功能表卡片讓開，輸入列與名單才看得到）。
+  waterball_ofo: "menu=menu ofo-1=otherMenu ofo-2=otherMenu ofo-3=otherMenu",
 };
 
 // 每個有名字的幀：{ file, frame, kind, pass }（kind／pass 取該幀 notify 之後的畫面物件）。
