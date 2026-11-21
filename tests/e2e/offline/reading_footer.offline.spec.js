@@ -14,6 +14,13 @@ const article = findCassette('article');
 const footerText = (page) =>
   page.evaluate(() => (document.getElementById('easyReadingLastRow') || {}).textContent || '');
 
+// 底列第一段（「讀到」）的顏色 class（q<前景> b<背景>）。
+const headColorClass = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector('#easyReadingLastRow [class^="q"]');
+    return el ? el.className : '';
+  });
+
 const open = async (page, prefs) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await bootOffline(page, ptt);
@@ -33,6 +40,9 @@ test.describe('好讀底列顯示讀到哪', () => {
     expect(first).not.toMatch(/瀏覽|目前顯示/);
     expect(await page.locator('#easyReadingLastRow a.fnKey').count()).toBeGreaterThan(0);
 
+    // pmore 的「瀏覽」段依進度三色（mf_display_footer）：開頭黃字洋紅底 ⇒ 文末白字藍底。
+    expect(await headColorClass(page)).toBe('q3 b5');
+
     const total = Number(/共 (\d+) 列/.exec(first)[1]);
     const box = await page.locator('.main').boundingBox();
     for (let i = 0; i < 40; ++i) {
@@ -41,6 +51,7 @@ test.describe('好讀底列顯示讀到哪', () => {
     }
     await expect.poll(() => footerText(page)).toMatch(/讀到 100%/);
     expect(await footerText(page)).toMatch(new RegExp(`~${total} 列／共 ${total} 列`));
+    await expect.poll(() => headColorClass(page)).toBe('q7 b4');
   });
 
   test('關掉 ⇒ 照 PTT 原樣鏡像', async ({ page }) => {

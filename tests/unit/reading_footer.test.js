@@ -7,6 +7,7 @@ import { parseFunctionKeys } from "../../src/js/footer_keys";
 import { textCellWidth } from "../../src/js/string_util";
 import {
   footerLeftSpan,
+  footerPhase,
   footerProgressCells,
   footerProgressTexts,
   scrollPercent,
@@ -119,6 +120,46 @@ describe("換上去的格子", () => {
     const out = footerProgressCells(statusChars, span, texts);
     expect(out[2].getBg()).toBe(statusChars[2].getBg());
     expect(out[span.end - 1].getBg()).toBe(statusChars[span.secondStart + 1].getBg());
+  });
+
+  // pmore.c#mf_display_footer：開頭 33;45、中段 34;46、看到文末 37;44。好讀時 PTT 停在最後一頁，
+  // 鏡像永遠是文末那一色；讀者靠顏色分辨「到底了沒」⇒ 「讀到」段要跟讀者位置換色。
+  test("真狀態列（整篇放得下＝看到文末）是 pmore 的白字藍底", () => {
+    expect([statusChars[0].fg, statusChars[0].bg, statusChars[0].bright]).toEqual([7, 4, false]);
+  });
+
+  test.each([
+    ["文章開頭", { first: 1, last: 10, total: 28, complete: true, percent: 36 }, "none", [3, 5]],
+    ["中段", { first: 5, last: 14, total: 28, complete: true, percent: 50 }, "mid", [4, 6]],
+    ["看到文末", { first: 19, last: 28, total: 28, complete: true, percent: 100 }, "all", [7, 4]],
+    ["整篇放得下", { first: 1, last: 8, total: 8, complete: true, percent: 100 }, "all", [7, 4]],
+    ["還在接、捲到已載入的底", { first: 5, last: 40, total: 40, complete: false, percent: null }, "mid", [4, 6]],
+  ])("%s ⇒「讀到」段換成 pmore 那一色，「目前顯示」段與功能鍵不變", (_, progress, phase, [fg, bg]) => {
+    expect(footerPhase(progress)).toBe(phase);
+    const out = footerProgressCells(statusChars, span, footerProgressTexts(progress), footerPhase(progress));
+    for (const i of [0, 2, 4]) {
+      expect([out[i].getFg(), out[i].getBg()]).toEqual([fg, bg]);
+    }
+    expect(out[span.end - 1].getBg()).toBe(statusChars[span.secondStart + 1].getBg());
+    for (let i = span.end; i < statusChars.length; ++i) {
+      expect([out[i].getFg(), out[i].getBg()]).toEqual([statusChars[i].getFg(), statusChars[i].getBg()]);
+    }
+  });
+
+  test("「瀏覽」段不是 pmore 三色之一（站方改配色）⇒ 顏色照 PTT", () => {
+    const custom = statusChars.map((c) => Object.assign(Object.create(Object.getPrototypeOf(c)), c));
+    for (let i = 0; i < span.secondStart; ++i) {
+      custom[i].fg = 0;
+      custom[i].bg = 2;
+    }
+    const progress = { first: 1, last: 10, total: 28, complete: true, percent: 36 };
+    const out = footerProgressCells(custom, span, footerProgressTexts(progress), footerPhase(progress));
+    expect([out[0].getFg(), out[0].getBg()]).toEqual([0, 2]);
+  });
+
+  test("量不到位置 ⇒ 沒有 phase", () => {
+    expect(footerPhase(null)).toBeNull();
+    expect(footerPhase({ first: 0, last: 3, total: 3 })).toBeNull();
   });
 
   test("放不進原本左半的寬度 ⇒ null（原樣鏡像）", () => {
