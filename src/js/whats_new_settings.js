@@ -63,6 +63,7 @@ export const FEATURE_SETTING = {
   // 🔗 連結
   自動修復斷掉的連結: "enableAutoFixUrl",
   更聰明的自動連結: "enableBareDomainLink",
+  "網頁連結預覽卡": "linkPreviewCard",
   "@帳號連到 X": "enableXMentionLink",
   "Steamgifts 代碼連結": null,
   "文章代碼（AID）一鍵跳文": "aidNavBackKey",
