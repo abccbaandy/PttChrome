@@ -106,6 +106,7 @@ import { defaultSite, proxySiteFromPrefs, setTimer } from './util';
 import { isAndroidApp, androidImeInset, onAndroidIme, quitAndroidApp, androidCanSetProtocol, androidSetProtocol, watchAndroidMeteredNetwork } from './android_bridge';
 import { setNetworkMetered, setTapToLoadEnabled } from './image_load_gate';
 import { setVideoThumbFirst } from './video_facade';
+import { setLinkPreviewCard } from './link_card';
 import { bootSite } from './boot_site';
 import { shouldWarnBeforeUnload } from './unload_guard';
 import {
@@ -2413,6 +2414,10 @@ App.prototype.onPrefChange = function(name, value) {
     case 'videoThumbFirst':
       // 只改模組旗標：對之後新掛的播放器生效，已經在畫面上的縮圖／播放器不動。
       setVideoThumbFirst(value);
+      break;
+    case 'linkPreviewCard':
+      // 同 videoThumbFirst：只改模組旗標，對之後新解析的連結生效（已經畫出來的卡不收）。
+      setLinkPreviewCard(value);
       break;
     case 'useImgurProxy':
       setImageProxyConfig({ enabled: value });

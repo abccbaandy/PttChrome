@@ -53,8 +53,7 @@ import {
 import { createSignatureTask } from "./signature_task";
 import React from "react";
 import ImagePreviewer, {
-  of,
-  resolveSrcToImageUrl,
+  requestPreview,
   resolveWithImageDOM,
 } from "../components/ImagePreviewer";
 import { renderInto, unmountFrom } from "../js/react_root";
@@ -606,9 +605,9 @@ export class ScreenController {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
       this._hoverPos = { left: e.clientX, top: e.clientY };
     }
-    const preview = of(href)
-      .then(resolveSrcToImageUrl)
-      .then(resolveWithImageDOM);
+    // 走 requestPreview 的同一份快取：P110 預覽卡的解析要打 Worker，滑過一次就打一次不划算
+    // （懸停也不畫卡，OnHover 只畫圖片）；imgur 相簿 API 同理。
+    const preview = requestPreview(href).then(resolveWithImageDOM);
     // 同 requestPreview：不可預覽連結立即 reject，消費端（ImagePreviewer effect）
     // 晚一拍才掛 handler —— 先標記 handled，避免 unhandledrejection。
     preview.catch(() => {});

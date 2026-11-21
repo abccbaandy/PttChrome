@@ -1300,6 +1300,15 @@
   "options_videoThumbFirst": {
     "message": "YouTube 先放縮圖"
   },
+  "options_linkPreviewCard": {
+    "message": "網頁連結預覽卡"
+  },
+  "tooltip_linkPreviewCard": {
+    "message": "文章裡的新聞、部落格等網頁連結下面放一張小卡，顯示網頁標題、縮圖與網站名，點卡片開連結。網址會經過圖片代理抓標題（圖片代理關掉就不抓），縮圖由對方網站直接載入（跟文章裡的圖片一樣）。行動網路下跟圖片一樣點了才抓。"
+  },
+  "linkCardTapLoad": {
+    "message": "▶ 連結預覽（長按：全篇開圖）"
+  },
   "tooltip_videoThumbFirst": {
     "message": "文章裡的 YouTube 與 Twitch clip 先只放縮圖和播放鈕，點了才載入播放器並開始播放，捲過一篇貼很多影片的文章不會一直載播放器。關掉＝直接嵌入播放器。"
   },

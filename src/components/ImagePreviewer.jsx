@@ -34,10 +34,20 @@ import {
   autoplaySrc,
   youtubePoster,
 } from "../js/video_facade";
+import {
+  LINK_CARD_CONCURRENCY,
+  LINK_CARD_STALE,
+  createLimiter,
+  isLinkCardStale,
+  linkCardDescriptor,
+  linkCardResolveUrl,
+  linkCardWanted,
+  linkPreviewCardOn,
+} from "../js/link_card";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import { i18n } from "../js/i18n";
 
-const noop = () => {};
+const linkCardLimiter = createLimiter(LINK_CARD_CONCURRENCY);
 
 export const of = (src) => Promise.resolve({ src });
 
@@ -53,7 +63,10 @@ export const requestPreview = (href) => {
     // —— 中間隔著 microtask checkpoint，瀏覽器先射 unhandledrejection
     // （dev overlay 彈「Unimplemented」）。先掛一個 no-op catch 標記 handled；
     // 回傳的仍是原 promise，消費端照常收到 reject（state.error 路徑不變）。
-    p.catch(noop);
+    // 預覽卡排到時已經沒人要（STALE）⇒ 這一格作廢，下次捲回來重新排隊（不是「這頁沒有卡」）。
+    p.catch((e) => {
+      if (isLinkCardStale(e) && previewRequestCache.get(href) === p) previewRequestCache.delete(href);
+    });
     previewRequestCache.set(href, p);
   }
   return p;
@@ -71,6 +84,10 @@ export const resolveSrcToImageUrl = ({ src }) =>
 // 不發任何請求；行動網路「點了才開圖」用它決定哪些連結要給按鈕（image_load_gate.js）。
 export const isPreviewableUrl = (href) =>
   !!href && !imageUrlResolvers.find((r) => r.test(href)).isDefault;
+
+// 這條連結開出來的會是 P110 網頁預覽卡（不是圖片／影片）。行動網路的按鈕字用它分。
+export const isLinkCardUrl = (href) =>
+  !!href && !!imageUrlResolvers.find((r) => r.test(href)).isLinkCard;
 
 // Hover preview only deals with still images: measure height for positioning.
 // Non-image descriptors (video/iframe/album) pass through unchanged — OnHover
@@ -581,8 +598,43 @@ const inlineIframe = (descriptor, key) => (
 
 // 單一 descriptor → 元素。相簿展開的每一項也走這裡，所以相簿內的圖自動吃到
 // srcset 候選鏈（如 imgur 的 webp 優先），不必在 album 分支複製一份判斷。
+// P110 網頁連結預覽卡：整張是一條連結（點卡片＝點文章裡那條原始連結，不是 Worker 回的 url）。
+// 標題／網站名是外部資料，只能當文字放（React 的文字節點＝textContent，不解析 HTML）。
+// 縮圖由瀏覽器直接向對方網站載入（同文章裡的圖片）；載不到就收起縮圖、只留文字。
+// 固定高度：佔位盒量到的高度跨重建沿用（lazy_media），卡片高度不能隨標題長短變。
+const LinkCard = ({ descriptor }) => {
+  const [thumbOk, setThumbOk] = React.useState(!!descriptor.image);
+  return (
+    <a
+      className="linkCard"
+      href={descriptor.href}
+      target="_blank"
+      rel="noreferrer noopener"
+      title={descriptor.href}
+    >
+      {thumbOk ? (
+        <img
+          className="linkCardThumb"
+          src={descriptor.image}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          draggable={false}
+          onError={() => setThumbOk(false)}
+        />
+      ) : null}
+      <span className="linkCardText">
+        <span className="linkCardTitle">{descriptor.title}</span>
+        <span className="linkCardSite">{descriptor.site}</span>
+      </span>
+    </a>
+  );
+};
+
 const renderMedia = (descriptor, key) => {
   switch (descriptor.type) {
+    case "card":
+      return <LinkCard key={key} descriptor={descriptor} />;
     case "video":
       return inlineVideo(descriptor, key);
     case "iframe":
@@ -942,6 +994,34 @@ const imageUrlResolvers = [
     },
     request(src) {
       return Promise.resolve({ type: "image", src });
+    },
+  },
+  {
+    /* P110 一般網頁連結的預覽卡（標題＋縮圖＋網站名，取自對方網頁的分享資訊）。排在所有
+       圖片／影片 resolver 之後、Default 之前：能開圖的照舊開圖，其餘合格的網頁才要卡。
+       網頁讀不到別站 ⇒ 由圖片代理 Worker `/og` 代抓（src/js/link_card.js）；代理總開關或
+       卡片開關關著 ⇒ test 不成立 ⇒ 落到 Default（跟以前一樣什麼都不畫）。
+       同時最多 LINK_CARD_CONCURRENCY 個請求；排到時已經沒人要（捲過去了）就不打，見 link_card.js。 */
+    isLinkCard: true,
+    test(src) {
+      return !!linkCardResolveUrl(src, getImageProxyConfig(), linkPreviewCardOn());
+    },
+    request(src) {
+      return linkCardLimiter(() => {
+        if (!linkCardWanted(src)) throw new Error(LINK_CARD_STALE);
+        const endpoint = linkCardResolveUrl(src, getImageProxyConfig(), linkPreviewCardOn());
+        if (!endpoint) throw new Error("link-card: disabled");
+        return fetch(endpoint, { mode: "cors", referrerPolicy: "no-referrer" })
+          .then((r) => {
+            if (!r.ok) throw new Error("link-card: fetch failed");
+            return r.json();
+          })
+          .then((json) => {
+            const descriptor = linkCardDescriptor(json, src);
+            if (!descriptor) throw new Error("link-card: none");
+            return descriptor;
+          });
+      });
     },
   },
   {

@@ -340,6 +340,20 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     expect(floorOf(slot)).toBe("232px");
   });
 
+  // P110 網頁預覽卡：同樣是佔版面的盒子，捲遠卸載不釘高度 ⇒ 往回捲跳頁。
+  test("網頁預覽卡捲遠卸載 ⇒ 同樣釘住高度", () => {
+    const slot = mountSlot("https://example.com/news/1").el;
+    near().emit(true);
+    fakeHeight(contentOf(slot), 74);
+    const card = document.createElement("a");
+    card.className = "linkCard";
+    fakeHeight(card, 74);
+    contentOf(slot).appendChild(card);
+    far().emit(false);
+    card.remove();
+    expect(floorOf(slot)).toBe("74px");
+  });
+
   test("捲回來 ⇒ 重新掛載，佔位高度保留", () => {
     const slot = mountSlot(HREF).el;
     near().emit(true);
