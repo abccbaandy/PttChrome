@@ -54,6 +54,23 @@ export function linkCardResolveUrl(href, proxyConfig, cardEnabled) {
   return `${normalizeImgurProxyBase(proxyConfig.base)}/og?url=${encodeURIComponent(href)}`;
 }
 
+/**
+ * 這條連結的卡片從哪裡抓：APK 認得 'fetchOg' 且是 https ⇒ 原生直接抓（網址不經我們的 Worker，
+ * 所以不看圖片代理開關）；否則照舊走 Worker（要代理總開關）；都不行 ⇒ null（不放卡）。
+ * http 連結在 APK 也走 Worker：App 不准明文連線（network_security_config）。
+ * @param {string} href
+ * @param {{ enabled?: boolean, base?: string } | null | undefined} proxyConfig
+ * @param {boolean} cardEnabled pref linkPreviewCard
+ * @param {boolean} nativeOk android_bridge.androidCanFetchOg()
+ * @returns {{ kind: "native" } | { kind: "worker", url: string } | null}
+ */
+export function linkCardSource(href, proxyConfig, cardEnabled, nativeOk) {
+  if (!cardEnabled || !linkCardEligible(href)) return null;
+  if (nativeOk && /^https:/i.test(href)) return { kind: "native" };
+  const url = linkCardResolveUrl(href, proxyConfig, cardEnabled);
+  return url ? { kind: "worker", url } : null;
+}
+
 /** @param {unknown} s @param {number} max */
 function cleanText(s, max) {
   if (typeof s !== "string") return "";

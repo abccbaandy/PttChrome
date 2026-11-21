@@ -113,6 +113,63 @@ describe("請求", () => {
     }
   });
 
+  describe("APK 認得 fetchOg", () => {
+    let sent;
+    let respond;
+    beforeEach(() => {
+      const listeners = [];
+      sent = [];
+      window.__PTT_ANDROID__ = Object.freeze({ version: "1", site: "wstelnet://127.0.0.1:1/bbs", fetchOg: true });
+      window.PttAndroid = {
+        postMessage: (str) => sent.push(JSON.parse(str)),
+        addEventListener: (type, fn) => type === "message" && listeners.push(fn),
+      };
+      respond = (out) => listeners.forEach((fn) => fn({ data: JSON.stringify(out) }));
+    });
+    afterEach(() => {
+      delete window.__PTT_ANDROID__;
+      delete window.PttAndroid;
+    });
+
+    test("https 連結由原生抓、不打 Worker；代理關著也照樣有卡", async () => {
+      setImageProxyConfig({ enabled: false });
+      const href = freshHref();
+      const calls = stubFetch({ title: "不該用到" });
+      expect(isLinkCardUrl(href)).toBe(true);
+      markLinkCardWanted(href, 1);
+      try {
+        const p = requestPreview(href);
+        await vi.waitFor(() => expect(sent).toHaveLength(1));
+        expect(sent[0]).toMatchObject({ op: "fetchOg", url: href });
+        respond({ id: sent[0].id, ok: true, title: "原生抓的", site: "新聞網", image: "", url: href });
+        await expect(p).resolves.toMatchObject({ type: "card", href, title: "原生抓的" });
+        expect(calls).toEqual([]);
+      } finally {
+        markLinkCardWanted(href, -1);
+      }
+    });
+
+    test("原生失敗或這頁沒有分享資訊 ⇒ 不放卡", async () => {
+      const a = freshHref();
+      const b = freshHref();
+      markLinkCardWanted(a, 1);
+      markLinkCardWanted(b, 1);
+      try {
+        const pa = requestPreview(a);
+        await vi.waitFor(() => expect(sent).toHaveLength(1));
+        respond({ id: sent[0].id, ok: false, error: "address" });
+        await expect(pa).rejects.toThrow();
+        const pb = requestPreview(b);
+        await vi.waitFor(() => expect(sent).toHaveLength(2));
+        respond({ id: sent[1].id, ok: true, none: true });
+        await expect(pb).rejects.toThrow();
+      } finally {
+        markLinkCardWanted(a, -1);
+        markLinkCardWanted(b, -1);
+      }
+    });
+  });
+
   test("Worker 錯誤／沒有標題 ⇒ 不放卡（reject）", async () => {
     const a = freshHref();
     const b = freshHref();

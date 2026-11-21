@@ -2,6 +2,7 @@
 import {
   linkCardEligible,
   linkCardResolveUrl,
+  linkCardSource,
   linkCardDescriptor,
   createLimiter,
   LINK_CARD_MAX_TITLE,
@@ -57,6 +58,31 @@ describe("linkCardResolveUrl", () => {
     expect(linkCardResolveUrl("https://example.com/", { enabled: false }, true)).toBeNull();
     expect(linkCardResolveUrl("https://example.com/", null, true)).toBeNull();
     expect(linkCardResolveUrl("https://www.ptt.cc/bbs/a.html", on, true)).toBeNull();
+  });
+});
+
+describe("linkCardSource（APK 原生 vs Worker）", () => {
+  const on = { enabled: true, base: "" };
+  const off = { enabled: false };
+  test("APK 認得 fetchOg＋https ⇒ 原生抓，不看圖片代理開關", () => {
+    expect(linkCardSource("https://example.com/", on, true, true)).toEqual({ kind: "native" });
+    expect(linkCardSource("https://example.com/", off, true, true)).toEqual({ kind: "native" });
+  });
+  test("http 連結在 APK 也走 Worker（App 不准明文）；代理關著就不放卡", () => {
+    expect(linkCardSource("http://example.com/", on, true, true)).toMatchObject({ kind: "worker" });
+    expect(linkCardSource("http://example.com/", off, true, true)).toBeNull();
+  });
+  test("不是 APK ⇒ 跟以前一樣走 Worker", () => {
+    expect(linkCardSource("https://example.com/", on, true, false)).toEqual({
+      kind: "worker",
+      url: linkCardResolveUrl("https://example.com/", on, true),
+    });
+    expect(linkCardSource("https://example.com/", off, true, false)).toBeNull();
+  });
+  test("卡片開關關、不合格連結 ⇒ 不管哪一邊都不抓", () => {
+    expect(linkCardSource("https://example.com/", on, false, true)).toBeNull();
+    expect(linkCardSource("https://www.ptt.cc/bbs/a.html", on, true, true)).toBeNull();
+    expect(linkCardSource("https://nas.local/", on, true, true)).toBeNull();
   });
 });
 
