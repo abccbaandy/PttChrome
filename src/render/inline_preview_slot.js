@@ -60,6 +60,7 @@
 //     與圖文並排切換都會改寬度 ⇒ 由 invalidateInlinePreviewHeights() 清掉（見該函式）。
 import React from "react";
 import ImagePreviewer, {
+  isLinkCardUrl,
   isPreviewableUrl,
   requestPreview,
 } from "../components/ImagePreviewer";
@@ -71,6 +72,7 @@ import {
   unlockImage,
 } from "../js/image_load_gate";
 import { renderInto, unmountFrom } from "../js/react_root";
+import { markLinkCardWanted } from "../js/link_card";
 import { i18n } from "../js/i18n";
 import { diag, diagActive } from "../js/diag";
 import { el } from "./dom";
@@ -515,7 +517,8 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
         title: i18n("imageTapLoad_title"),
         "data-own-contextmenu": "1",
       },
-      i18n("imageTapLoad"),
+      // P110 預覽卡跟圖片同一套「點了才抓」（L 11/19 選定），按鈕字講清楚抓的是連結預覽。
+      i18n(isLinkCardUrl(href) ? "linkCardTapLoad" : "imageTapLoad"),
     );
     // 不搶終端機焦點（隱藏 input #t），同倍率列。
     tapButton.addEventListener("mousedown", (e) => e.preventDefault());
@@ -585,6 +588,9 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
     if (state.mounted || state.destroyed) return;
     if (tapGated()) return; // 行動網路：等使用者點（syncTapGate 會再叫回來）
     state.mounted = true;
+    // P110 預覽卡：排隊中的請求開始前看還有沒有人要（捲過去就作廢，見 js/link_card.js）。
+    // 先記再發 requestPreview，排到的那一刻才查得到。
+    markLinkCardWanted(href, 1);
     // 載過的記下來：整份重建、或之後才切到行動網路，都不把看過的圖收回成按鈕。
     rememberLoaded(href);
     removeTapButton();
@@ -605,6 +611,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
   function unmount() {
     if (!state.mounted) return;
     state.mounted = false;
+    markLinkCardWanted(href, -1);
     unmountFrom(content);
     // 圖沒了，按鈕就沒有對象可指（純 JS 渲染鏈要自己收生命週期）。灰階**態**仍留在
     // module 級的 grayHrefs 裡 ⇒ 捲回來重新掛載時圖還是灰的。
@@ -811,6 +818,7 @@ export function createInlinePreviewSlot(href, sizeMode = "normal") {
       removeZoomBar();
       if (state.mounted) {
         state.mounted = false;
+        markLinkCardWanted(href, -1);
         unmountFrom(content);
       }
     },

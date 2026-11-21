@@ -69,6 +69,8 @@ describe("main.css：內嵌預覽的命中範圍", () => {
       ".previewZoomBar",
       // P109 影片縮圖：少了它整顆播放鈕點不到（點擊穿到列上），影片永遠開不了。
       ".videoFacade",
+      // P110 網頁預覽卡：少了它整張卡點不到（點擊穿到列上），連結開不了。
+      ".linkCard",
     ]) {
       expect(selector, `${need} 沒有取回 pointer-events`).toContain(need);
     }

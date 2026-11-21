@@ -1852,6 +1852,7 @@ body.mobile-layout #recentResume {
 .inlinePreviewSlot video.easyReadingVideo,
 .inlinePreviewSlot iframe,
 .inlinePreviewSlot .videoFacade,
+.inlinePreviewSlot .linkCard,
 .inlinePreviewSlot .previewLoading,
 .inlinePreviewSlot .previewError,
 .inlinePreviewSlot > .previewGrayBtn,
@@ -2101,6 +2102,69 @@ body.mobile-layout #recentResume {
 /* 同 .previewLoading：inline-flex 的 margin:auto 是 no-op ⇒ 靠左壓掉退出帶。
    收斂後可點重試的命中區也剛好縮到文字本身。外框高度同樣要整數像素（理由同上；
    純文字可能折行，所以靠整數 line-height × 行數，不固定 height）。 */
+/* P110 網頁連結預覽卡（ImagePreviewer.jsx#LinkCard）：整張是一條連結，寬度上限同內嵌圖（39em）、置中。
+   **高度固定且是整數像素**（同 .previewLoading 的理由：延遲載入在視窗外出現／被取代時，小數高度會讓
+   scroll anchoring 補償出次像素跳動；佔位盒也會記住這個高度跨重建沿用）。標題最多兩行，網站名一行。
+   不用 .easyReadingImg：那是「點圖放大」的對象，卡片點了要開連結。 */
+.linkCard {
+  display: flex;
+  box-sizing: border-box;
+  width: min(39em, 100%);
+  height: round(4.6em, 1px);
+  margin: round(0.4em, 1px) auto;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #1b1b1b;
+  color: #ddd;
+  text-decoration: none;
+  overflow: hidden;
+  cursor: pointer;
+  /* 終端機列是 white-space:pre（桌機），卡片的標題要能折行（最多兩行）。 */
+  white-space: normal;
+}
+.linkCard:hover {
+  border-color: #5a5a5a;
+  background: #232323;
+}
+.linkCard:focus-visible {
+  outline: 2px solid #4dabf7;
+  outline-offset: 2px;
+}
+.linkCardThumb {
+  flex: none;
+  width: round(8.8em, 1px);
+  height: 100%;
+  object-fit: cover;
+  background: #111;
+  display: block;
+}
+.linkCardText {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 0.7em;
+  gap: 0.2em;
+}
+.linkCardTitle {
+  font-size: 0.9em;
+  line-height: 1.3;
+  color: #e8e8e8;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.linkCardSite {
+  font-size: 0.75em;
+  line-height: 1.3;
+  color: #9a9a9a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .previewError {
   display: flex;
   width: fit-content;

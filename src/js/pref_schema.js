@@ -138,6 +138,12 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_videoThumbFirst",
       tooltipKey: "tooltip_videoThumbFirst",
     },
+    {
+      key: "linkPreviewCard",
+      type: "check",
+      titleKey: "options_linkPreviewCard",
+      tooltipKey: "tooltip_linkPreviewCard",
+    },
     { key: "enableNotifications", type: "check", titleKey: "options_enableNotifications" },
     { key: "deepLinkHandoffNotify", type: "check", titleKey: "options_deepLinkHandoffNotify" },
     {

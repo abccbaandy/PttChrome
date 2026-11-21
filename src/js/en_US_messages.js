@@ -1301,6 +1301,15 @@ export const en_US = {
   "options_videoThumbFirst": {
     "message": "Show YouTube thumbnails first"
   },
+  "options_linkPreviewCard": {
+    "message": "Web link preview cards"
+  },
+  "tooltip_linkPreviewCard": {
+    "message": "Show a small card under news, blog and other web links in articles, with the page title, thumbnail and site name; click the card to open the link. The link goes through the image proxy to fetch the title (nothing is fetched when the image proxy is off); the thumbnail loads directly from that site, like images in articles. On mobile data it loads only when tapped, like images."
+  },
+  "linkCardTapLoad": {
+    "message": "▶ Link preview (long press: load all)"
+  },
   "tooltip_videoThumbFirst": {
     "message": "YouTube and Twitch clips in articles show only a thumbnail and a play button; the player loads and starts when you click it, so scrolling past many videos doesn't load many players. Off = embed the player right away."
   },

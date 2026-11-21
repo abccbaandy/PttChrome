@@ -21,6 +21,9 @@ export const DEFAULT_PREFS = {
   // P109 文章裡的 YouTube／Twitch clip 先放縮圖，點了才載播放器（js/video_facade.js）。
   // 一個 byte 都不送 PTT ⇒ 不在安全模式名單。
   videoThumbFirst: true,
+  // P110 文章裡的一般網頁連結下面放預覽卡（標題＋縮圖＋網站名，經圖片代理 Worker `/og` 抓，
+  // js/link_card.js）。圖片代理關著時也不抓。一個 byte 都不送 PTT ⇒ 不在安全模式名單。
+  linkPreviewCard: true,
   enableNotifications: true,
   // 水球／系統訊息收件匣（js/message_inbox.js）：這次連線收到的水球與廣播留在鈴鐺裡。
   // 只看收到的資料、一個 byte 都不送 ⇒ 不在安全模式名單內。

@@ -170,6 +170,23 @@ Worker **只回位址不代理影片位元組**（Cloudflare ToS 排除影片檔
 挑法：縮圖框 N ≥ 顯示框長邊（CSS px × DPR）才用 ⇒ 任何長寬比下縮圖都不小於實際顯示尺寸，
 看起來跟原圖一樣；量不到顯示框就載原圖。imgur 已經改載 webp（約原圖 1/5，見上面 imgur 節）。
 
+## 網頁連結預覽卡（P110，pref `linkPreviewCard`）
+
+- 一般網頁（新聞、部落格、雲端硬碟…）的分享資訊只在對方 HTML 的 `<meta>`，網頁讀不到別站 ⇒ Worker
+  `/og?url=` 代抓（`proxy/imgur-worker/src/og.js`，安全邊界寫在該檔）。前端：`src/js/link_card.js`
+  （合格連結、Worker 網址、回應驗證、limiter、「還有沒有人要」計數）＋ `ImagePreviewer.jsx` 的卡片 resolver
+  （**排在所有圖片／影片 resolver 之後、Default 之前**，`isLinkCard`）與 `LinkCard`。
+- 開關＝圖片代理總開關 ∧ `linkPreviewCard`；任一關著就落到 Default（跟以前一樣什麼都不畫）。
+  **「不可預覽」不進 `requestPreview` 快取**：那是開關當下的判斷，快取起來的話打開開關要重整才出卡。
+- 同時最多 2 個請求；排到時那條連結的佔位盒都已卸載（捲過去了）⇒ 不打 Worker、以 STALE 失敗並把快取那格拿掉，
+  捲回來重新排隊。計數在 `inline_preview_slot.js` 的 mount／unmount／destroy 成對加減（`lazy_inline_preview.test.js` 守）。
+- 卡片固定整數高度（佔位盒跨重建沿用量到的高度，`.linkCard` 也在 `LAZY_MEDIA_SELECTOR` 與 pointer-events 取回清單裡）；
+  桌機終端機列是 `white-space: pre`，卡片要自己改回 normal 標題才會折行。
+- 標題／網站名只當文字；點卡片開文章裡的原始連結（不是 Worker 回的 `url`）；縮圖只收 https，由瀏覽器直接向對方網站載入
+  （對方看得到使用者 IP，跟文章裡的圖片一樣，設定說明有寫）。
+- 行動網路下跟圖片同一套「點了才抓」（`image_load_gate`），按鈕字「▶ 連結預覽」。懸停預覽不畫卡，卡片連結的懸停走
+  `requestPreview` 快取免得每滑一次打一次 Worker；圖片懸停照舊每次重新解析。
+
 ## referer 規則（本專案已沿用，改動前先讀）
 
 - imgur 系一律 `referrerPolicy="no-referrer"`（否則被 referer 封鎖擋圖，403 實證見上節）。

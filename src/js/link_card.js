@@ -102,6 +102,38 @@ export function linkCardDescriptor(json, href) {
   return { type: "card", href, title, site, image: httpsUrl(json.image) };
 }
 
+// ---- 開關（pref linkPreviewCard，預設開；pttchrome.jsx 的 pref 套用處設定）----
+let cardEnabled = true;
+/** @param {boolean} on */
+export function setLinkPreviewCard(on) {
+  cardEnabled = !!on;
+}
+export function linkPreviewCardOn() {
+  return cardEnabled;
+}
+
+// ---- 還有沒有人要這張卡（排隊中的請求作廢用）----
+// 佔位盒掛載（捲到附近）時 +1、卸載／拆掉時 -1（render/inline_preview_slot.js）。請求排到開始時
+// 已經沒人要（捲過去了、整列被拆掉）⇒ 不打 Worker，以 STALE 失敗收掉；requestPreview 看到 STALE
+// 會把快取那一格拿掉，下次捲回來重新排隊。不然一篇幾十個連結快速捲過，排隊的請求會一個個照打。
+/** @type {Map<string, number>} */
+const wanted = new Map();
+/** @param {string} href @param {number} delta */
+export function markLinkCardWanted(href, delta) {
+  const n = (wanted.get(href) || 0) + delta;
+  if (n > 0) wanted.set(href, n);
+  else wanted.delete(href);
+}
+/** @param {string} href */
+export function linkCardWanted(href) {
+  return (wanted.get(href) || 0) > 0;
+}
+export const LINK_CARD_STALE = "link-card: stale";
+/** @param {unknown} e */
+export function isLinkCardStale(e) {
+  return !!(e && typeof e === "object" && /** @type {any} */ (e).message === LINK_CARD_STALE);
+}
+
 /**
  * 同時最多 n 個在跑；其餘排隊，照呼叫順序開始。
  * @param {number} n

@@ -53,7 +53,9 @@ import {
 import { createSignatureTask } from "./signature_task";
 import React from "react";
 import ImagePreviewer, {
+  isLinkCardUrl,
   of,
+  requestPreview,
   resolveSrcToImageUrl,
   resolveWithImageDOM,
 } from "../components/ImagePreviewer";
@@ -606,9 +608,11 @@ export class ScreenController {
     if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
       this._hoverPos = { left: e.clientX, top: e.clientY };
     }
-    const preview = of(href)
-      .then(resolveSrcToImageUrl)
-      .then(resolveWithImageDOM);
+    // P110 預覽卡的連結走 requestPreview 的同一份快取：懸停不畫卡（OnHover 只畫圖片），
+    // 不走快取的話滑過一次就打一次 Worker。圖片照舊每次重新解析（暫時失敗滑過可重試）。
+    const preview = (
+      isLinkCardUrl(href) ? requestPreview(href) : of(href).then(resolveSrcToImageUrl)
+    ).then(resolveWithImageDOM);
     // 同 requestPreview：不可預覽連結立即 reject，消費端（ImagePreviewer effect）
     // 晚一拍才掛 handler —— 先標記 handled，避免 unhandledrejection。
     preview.catch(() => {});
