@@ -23,7 +23,6 @@
 //
 // 詳細設計與 PTT 端事實見 docs/board-list-smooth-scroll.md。
 
-import { listRowSpan, listFillRows } from './mobile_layout';
 import {
   BRD_HEADER_ROWS,
   classifyBoardListScreen,
@@ -67,6 +66,7 @@ import { LEFT_ARROW } from './function_key_plan';
 import { readEffectivePrefs } from './pref_storage';
 import { HINT_ERROR } from './status_hint';
 import { recordFor, boardListRecordMatches } from './reading_record';
+import { LIST_ENGINE_SHARED } from './list_engine_shared';
 
 // 待還原捲動錨（_pendingViewport）的壽命與往回補頁的上限（同 list_session）。
 const PENDING_VIEWPORT_MAX_MS = 10000;
@@ -88,7 +88,6 @@ const PREFETCH_HARD_MS = 1500;
 const NATIVE_PASSTHROUGH_MS = 3000;
 // 凍結畫面的絕對後盾：任何一條回呼沒跑到都不能讓畫面永遠凍住 ＋ 永遠吞鍵。
 const FROZEN_WATCHDOG_MS = 2500;
-const STALL_WATCHDOG_SLACK_MS = 200; // 同 list_session.js
 // 非導覽操作結束後自動切回平滑捲動（pref enableListNativeAutoResume）。兩個常數
 // 的取值與理由完全同 list_session.js，那裡有完整說明（RESUME_QUIET_MS 不是體感
 // 旋鈕，它堵的是「一個回應 settle 兩次」那個洞；RESUME_GRACE_MS 擋回復後的殘餘幀）。
@@ -115,7 +114,6 @@ const FILL_MAX_PAGES = 3;
 // 連發判定（同 list_session.NAV_BURST_MS）：連續導覽一律 instant，否則瀏覽器的
 // programmatic 平滑捲動每次都從曲線起點重跑 ⇒ 按住鍵只會慢慢爬。
 const NAV_BURST_MS = 250;
-const SCROLL_ANIM_MAX_MS = 1000;
 
 function prefersReducedMotion() {
   return !!(
@@ -324,6 +322,9 @@ export function BoardListSession(core, view, termBuf, queue) {
 }
 
 BoardListSession.prototype = {
+  // 兩個列表引擎逐字相同的方法（A9），見 list_engine_shared.js。
+  ...LIST_ENGINE_SHARED,
+
   // ---- settle pipeline ------------------------------------------------------
 
   _onScreenSettled: function() {
@@ -425,11 +426,6 @@ BoardListSession.prototype = {
     return false;
   },
 
-  // pref 開著＝L1 凍結交易＋L2 自動回復生效；關掉＝逐位元回到 2026-09-03 之前。
-  _autoResumeEnabled: function() {
-    return !!readEffectivePrefs().enableListNativeAutoResume;
-  },
-
   // pref 開著 ∧ 終端機列數合法 ∧ 文章好讀沒有正在讀文（同 list_session 的守門，
   // 那條是為了不與文章模式的 render 分支搶畫面）。
   // 列數下界 24 ＝ server 端的 clamp（`mbbsd/term.c:55`）；**不是** `=== 24`，
@@ -445,32 +441,6 @@ BoardListSession.prototype = {
   // ---- 靜置探針（非導覽操作完成 → 自動回平滑捲動）----------------------------
   // 形狀與 list_session 完全相同（同一個 PTT、同一條線路、同一組洞），差別只有
   // 「回復＝重新 seed」而不是 resume 舊緩衝：_enterNative 已經把緩衝丟光了。
-
-  // 使用者往 PTT 送了 byte。**只記時間戳，不得有任何其他副作用**（不變量 N2）。
-  noteNativeInput: function() {
-    this._lastUserByteAt = Date.now();
-    this._scheduleResumeProbe();
-  },
-
-  _scheduleResumeProbe: function(delay) {
-    if (this._resumeProbe) {
-      clearTimeout(this._resumeProbe);
-      this._resumeProbe = null;
-    }
-    if (this._holdReason !== 'passthrough') return;
-    if (!this._autoResumeEnabled()) return;
-    const self = this;
-    this._resumeProbe = setTimeout(function() {
-      self._resumeProbe = null;
-      self._tryResumeProbe();
-    }, delay == null ? RESUME_QUIET_MS : delay);
-  },
-
-  _cancelResumeProbe: function() {
-    if (!this._resumeProbe) return;
-    clearTimeout(this._resumeProbe);
-    this._resumeProbe = null;
-  },
 
   // 只讀不寫（不變量 N2）：量當下畫面，唯一的輸出是一個合成事件。
   _tryResumeProbe: function() {
@@ -535,10 +505,6 @@ BoardListSession.prototype = {
     if (this.state !== 'idle') return;
     const facts = this._collectFacts(null);
     this._dispatch(this._settleEvent(facts, null), facts);
-  },
-
-  disable: function() {
-    this._dispatch({ type: 'pref-off' }, null);
   },
 
   // 外部序列化導覽（aid_navigation / long_push）要接管這條線路：先停到原生鏡像，
@@ -807,10 +773,6 @@ BoardListSession.prototype = {
     }
     this._runKeyClass(cls, null);
     return true;
-  },
-
-  onMouseExitClick: function() {
-    return this.onFunctionKey(LEFT_ARROW);
   },
 
   _classifyBytes: function(bytes) {
@@ -1322,12 +1284,6 @@ BoardListSession.prototype = {
     this._fillPages = 0;
   },
 
-  _startFill: function() {
-    this._fillTarget = readEffectivePrefs().easyReadingListPrefetchCount || 0;
-    this._fillPages = 0;
-    this._maybeFill();
-  },
-
   // 背景填充：先往下、下面到邊了再往上。一次一條命令，由 onDone 串起來，絕不平行。
   //
   // **兩個方向都要**（2026-09-03 實測）：`choose_board` 的 `num` 是 static
@@ -1452,22 +1408,6 @@ BoardListSession.prototype = {
 
   _armFrozenWatchdog: function() {
     this._setFrozenWatchdog(FROZEN_WATCHDOG_MS);
-  },
-
-  // 線路靜默寬限的讓路規則同 list_session.js#_setFrozenWatchdog。
-  _setFrozenWatchdog: function(ms) {
-    const self = this;
-    if (this._frozenWatchdog) clearTimeout(this._frozenWatchdog);
-    this._frozenWatchdog = setTimeout(function() {
-      self._frozenWatchdog = null;
-      if (self._renderMode !== 'frozen' && self.state !== 'opening') return;
-      const stallMs = self._queue.stallWaitMs ? self._queue.stallWaitMs() : 0;
-      if (stallMs > 0) {
-        self._setFrozenWatchdog(stallMs + STALL_WATCHDOG_SLACK_MS);
-        return;
-      }
-      self._degradeToNative('指令逾時，已切至原生模式');
-    }, ms);
   },
 
   // 把 server 的真游標對到本地選取。`choose_board` 的 `num` 是 **static**
@@ -1749,11 +1689,6 @@ BoardListSession.prototype = {
     return BRD_HEADER_ROWS;
   },
 
-  // body 的列數（原生 24 列畫面的 rows 3..22 ＝ p_lines ＝ 20）。
-  _bodyRows: function() {
-    return this._termBuf.rows - 4;
-  },
-
   // 序列＝整份緩衝（看板列表沒有黑名單過濾、沒有置底文門控）⇒ 位置就是索引。
   _sequenceLength: function() {
     return (this._termBuf.brdListLineNums || []).length;
@@ -1836,12 +1771,6 @@ BoardListSession.prototype = {
   evictPivot: function() {
     if (this._prunePivotOverride !== undefined) return this._prunePivotOverride;
     return this._topNum != null ? this._topNum : this._selectedNum;
-  },
-
-  prunePivot: function() {
-    return this._prunePivotOverride !== undefined
-      ? this._prunePivotOverride
-      : this._selectedNum;
   },
 
   // 累積端把超過上限／不連續的那一端丟掉了 ⇒ 清掉對應的邊界旗標，demand 才能
@@ -2195,16 +2124,6 @@ BoardListSession.prototype = {
     };
   },
 
-  _scrollAnimSettled: function(px) {
-    const a = this._scrollAnim;
-    if (!a) return true;
-    if (Math.abs(px - a.px) < 1 || Date.now() - a.at > SCROLL_ANIM_MAX_MS) {
-      this._scrollAnim = null;
-      return true;
-    }
-    return false;
-  },
-
   // 停住捲動：作廢排隊中的 reveal 與 rAF，並取消瀏覽器還在跑的平滑動畫
   //（`overflow:hidden` 只擋使用者輸入，不會取消已排定的 scrollTo）。
   // 消費 _landingLastNum（同 list_session._applyLandingFit）：卡片模式一屏只放
@@ -2269,28 +2188,6 @@ BoardListSession.prototype = {
       rowH: rowH,
       viewportPx: (screen.getListViewportPx && screen.getListViewportPx()) || B * rowH
     });
-  },
-
-  // 一筆在捲動視口裡的高度（未縮放）。一般＝chh；手機卡片（view.listCards，
-  // docs/mobile.md「Phase 4」）＝ LIST_CARD_ROWS × chh。list_scroll.js 的數學只要
-  // 「每筆等高」，所以整個捲動／錨定／reveal 只靠這一支就換成卡片座標。
-  _rowHeight: function() {
-    const v = this._view;
-    return ((v && v.chh) || 0) * listRowSpan(!!(v && v.listCards));
-  },
-
-  // PgUp／PgDn 一次翻幾筆＝視口放得下幾筆。卡片模式一筆佔 LIST_CARD_ROWS 列，
-  // 翻 bodyRows 筆會跳過半屏沒看過的東西。**只給視口操作用**：_bodyRows 仍是
-  // server 的 p_lines（抓頁／補頁的單位），不可以一起換。
-  _pageRows: function() {
-    const v = this._view;
-    const cards = !!(v && v.listCards);
-    // 視口高見 mobile_layout.listViewportGeometry（卡片模式 header／footer 收起）。
-    return listFillRows({ rows: this._termBuf.rows, headerRows: this.headerRows(), cards: cards });
-  },
-
-  _screen: function() {
-    return (this._view && this._view.componentScreen) || null;
   },
 
   _rowTextOf: function(num) {
