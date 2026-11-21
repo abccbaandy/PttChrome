@@ -40,10 +40,11 @@ import {
   createLimiter,
   isLinkCardStale,
   linkCardDescriptor,
-  linkCardResolveUrl,
+  linkCardSource,
   linkCardWanted,
   linkPreviewCardOn,
 } from "../js/link_card";
+import { androidCanFetchOg, androidFetchOg } from "../js/android_bridge";
 import { computeCenteredScrollTop, offsetTopWithin } from "../js/scroll_anchor";
 import { i18n } from "../js/i18n";
 
@@ -1006,18 +1007,25 @@ const imageUrlResolvers = [
        同時最多 LINK_CARD_CONCURRENCY 個請求；排到時已經沒人要（捲過去了）就不打，見 link_card.js。 */
     isLinkCard: true,
     test(src) {
-      return !!linkCardResolveUrl(src, getImageProxyConfig(), linkPreviewCardOn());
+      return !!linkCardSource(src, getImageProxyConfig(), linkPreviewCardOn(), androidCanFetchOg());
     },
     request(src) {
       return linkCardLimiter(() => {
         if (!linkCardWanted(src)) throw new Error(LINK_CARD_STALE);
-        const endpoint = linkCardResolveUrl(src, getImageProxyConfig(), linkPreviewCardOn());
-        if (!endpoint) throw new Error("link-card: disabled");
-        return fetch(endpoint, { mode: "cors", referrerPolicy: "no-referrer" })
-          .then((r) => {
-            if (!r.ok) throw new Error("link-card: fetch failed");
-            return r.json();
-          })
+        // APK 認得 'fetchOg' ⇒ https 連結由原生直接抓（不經 Worker），見 link_card.linkCardSource。
+        const source = linkCardSource(src, getImageProxyConfig(), linkPreviewCardOn(), androidCanFetchOg());
+        if (!source) throw new Error("link-card: disabled");
+        const loaded =
+          source.kind === "native"
+            ? androidFetchOg(src).then((json) => {
+                if (!json) throw new Error("link-card: native failed");
+                return json;
+              })
+            : fetch(source.url, { mode: "cors", referrerPolicy: "no-referrer" }).then((r) => {
+                if (!r.ok) throw new Error("link-card: fetch failed");
+                return r.json();
+              });
+        return loaded
           .then((json) => {
             const descriptor = linkCardDescriptor(json, src);
             if (!descriptor) throw new Error("link-card: none");

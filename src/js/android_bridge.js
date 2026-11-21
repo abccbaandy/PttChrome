@@ -36,6 +36,10 @@
 //     離線文章連圖片一起存（P107，只做 APK；docs/saved-articles.md）：原生抓圖（不受 CORS 限制）、
 //     縮成寬 ≤1080 的 WebP，data＝base64（ImageFetch.kt）。只收 https、不收 GIF。error：'url'／'http'／
 //     'type'／'tooLarge'／'network'／'decode'／'failed'。只在 config.fetchImage 為 true 時才問（androidCanFetchImage）。
+//   → { id, op: 'fetchOg', url }                        ← { id, ok, title, site, image, url } | { id, ok, none:true } | { id, ok:false, error }
+//     網頁連結預覽卡（P110）的 APK 版：原生直接抓網頁的分享資訊，不經圖片代理 Worker（OgFetch.kt，解析規則同
+//     Worker 的 og.js）。只收 https、解析到內網位址的不連。error：'url'／'address'／'http'／'network'／'failed'。
+//     只在 config.fetchOg 為 true 時才問（androidCanFetchOg）。
 // ok:false ＝使用者取消／沒有存任何密碼／原生出錯，一律當「沒有」處理。
 // googleSignIn（雲端同步登入，google_sign_in.js）：原生 Credential Manager
 //   GetSignInWithGoogleOption 取 Google ID token；serverClientId ＝ Firebase Google provider
@@ -266,6 +270,29 @@ export async function androidFetchImage(url) {
     const r = await requestAndroid('fetchImage', { url });
     if (!r || r.ok !== true || typeof r.data !== 'string' || !r.data || typeof r.mime !== 'string') return null;
     return { mime: r.mime, data: r.data, w: Number(r.w) || 0, h: Number(r.h) || 0 };
+  } catch (e) {
+    return null;
+  }
+}
+
+// 這個 APK 認得 'fetchOg'（見檔頭）。舊 APK ⇒ 預覽卡照舊經圖片代理 Worker。
+export function androidCanFetchOg() {
+  const c = config();
+  return !!(c && c.fetchOg === true) && androidBridgeAvailable();
+}
+
+/**
+ * 請原生抓網頁的分享資訊（見檔頭 'fetchOg'）。回原生給的 JSON（{ title, site, image, url } 或 { none:true }，
+ * 呼叫端再用 link_card.linkCardDescriptor 驗）；舊 APK、失敗、逾時回 null。
+ * @param {string} url
+ * @returns {Promise<Record<string, unknown> | null>}
+ */
+export async function androidFetchOg(url) {
+  if (!androidCanFetchOg() || typeof url !== 'string' || !url) return null;
+  try {
+    const r = await requestAndroid('fetchOg', { url });
+    if (!r || r.ok !== true) return null;
+    return r;
   } catch (e) {
     return null;
   }

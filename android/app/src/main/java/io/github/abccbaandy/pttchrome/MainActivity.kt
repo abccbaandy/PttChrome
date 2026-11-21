@@ -67,6 +67,8 @@ class MainActivity : ComponentActivity() {
     private val updater by lazy { AppUpdater(this) }
     /** bridge 'fetchImage' 同時最多幾張（ImageFetch.kt）。 */
     private val imageFetchSlots = Semaphore(2)
+    /** bridge 'fetchOg' 同時最多幾個（OgFetch.kt）。 */
+    private val ogFetchSlots = Semaphore(2)
     /** 行動數據／計費網路判定（bridge 'networkState'；變了就發 'pttandroid:network' 給網頁）。 */
     private val networkWatch by lazy { NetworkWatch(this) { reportNetwork(it) } }
     /** 目前 WebView 載入的來源；注入規則跟著 WebView 建立時決定，換來源＝重建 WebView。 */
@@ -243,6 +245,8 @@ class MainActivity : ComponentActivity() {
             .put("networkState", true)
             // 認得 bridge 'fetchImage'：網頁據此才在存離線文章時把圖片一起抓回來（ImageFetch.kt）。
             .put("fetchImage", true)
+            // 認得 bridge 'fetchOg'：網頁據此才讓 https 連結的預覽卡由原生直接抓、不經 Worker（OgFetch.kt）。
+            .put("fetchOg", true)
         restoringRenderer = false
         WebViewCompat.addDocumentStartJavaScript(
             wv, "window.__PTT_ANDROID__ = Object.freeze($config);", origins
@@ -304,6 +308,25 @@ class MainActivity : ComponentActivity() {
                                     ImageFetch.failed(id, "failed")
                                 } catch (_: OutOfMemoryError) {
                                     ImageFetch.failed(id, "tooLarge")
+                                }
+                            }
+                        }
+                        reply.postMessage(res.toString())
+                    }
+                    return@addWebMessageListener
+                }
+                "fetchOg" -> {
+                    // 網頁連結預覽卡（P110）：網路在 IO 執行緒。網頁端已限同時 2 個，這裡再守一次。
+                    val id = request.optInt("id")
+                    val url = request.optString("url")
+                    lifecycleScope.launch {
+                        val res = ogFetchSlots.withPermit {
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    OgFetch.reply(id, OgFetch.fetch(url))
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "fetchOg: $e")
+                                    OgFetch.failed(id, "failed")
                                 }
                             }
                         }

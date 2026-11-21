@@ -176,7 +176,11 @@ Worker **只回位址不代理影片位元組**（Cloudflare ToS 排除影片檔
   `/og?url=` 代抓（`proxy/imgur-worker/src/og.js`，安全邊界寫在該檔）。前端：`src/js/link_card.js`
   （合格連結、Worker 網址、回應驗證、limiter、「還有沒有人要」計數）＋ `ImagePreviewer.jsx` 的卡片 resolver
   （**排在所有圖片／影片 resolver 之後、Default 之前**，`isLinkCard`）與 `LinkCard`。
-- 開關＝圖片代理總開關 ∧ `linkPreviewCard`；任一關著就落到 Default（跟以前一樣什麼都不畫）。
+- **APK 版**：`config.fetchOg` 的 APK 對 https 連結改由原生 bridge `fetchOg` 直接抓（`OgFetch.kt`，解析規則跟
+  `og.js` 同一套、上限由 `android_fetch_og.test.js` 對齊），不經 Worker、也不看圖片代理開關（`link_card.linkCardSource`）。
+  原生是在使用者手機上連線 ⇒ 多一道：host 解析出私有／迴路／CGNAT／ULA 位址就不連（DNS rebinding 拿不到東西：只收 https，
+  內網那台的憑證對不上 host）。http 連結 App 不准明文，照舊走 Worker。
+- 開關（瀏覽器版）＝圖片代理總開關 ∧ `linkPreviewCard`；任一關著就落到 Default（跟以前一樣什麼都不畫）。
   **「不可預覽」不進 `requestPreview` 快取**：那是開關當下的判斷，快取起來的話打開開關要重整才出卡。
 - 同時最多 2 個請求；排到時那條連結的佔位盒都已卸載（捲過去了）⇒ 不打 Worker、以 STALE 失敗並把快取那格拿掉，
   捲回來重新排隊。計數在 `inline_preview_slot.js` 的 mount／unmount／destroy 成對加減（`lazy_inline_preview.test.js` 守）。
