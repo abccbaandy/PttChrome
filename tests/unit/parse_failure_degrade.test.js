@@ -46,7 +46,7 @@ import { parseStatusRow } from "../../src/js/string_util";
 import { parseHelpMenuScreen, HelpMenuController } from "../../src/js/help_menu";
 import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
 import { isMailListRows, parseMailRow, isMailboxOverLimitNotice, isMailKeyHintRow } from "../../src/js/mail_list";
-import { parseContentDenied } from "../../src/js/push_screen";
+import { classifyPushScreen, parseContentDenied } from "../../src/js/push_screen";
 import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
 import { isEssenceListRows, parseEssenceRow } from "../../src/js/essence_list";
 import { ESSENCE_ROWS, ESSENCE_HEADER_ROW_INDEX, ESSENCE_ITEM_ROWS } from "./fixtures/essence_rows";
@@ -492,6 +492,26 @@ describe("內容檢查擋下的整頁警告：要素缺一就不認", () => {
     ["文章內文第一列剛好寫著內容檢查未送出", screen(" 作者  bob   內容檢查 未送出", PAUSE)],
   ])("%s → 不認", (_n, rows) => {
     expect(parseContentDenied(rows)).toBeNull();
+  });
+});
+
+// upstream db2e6d86：禁推板問板主要不要強制推文。認錯的代價是長推文中止（不送 y），
+// 認不出就退回舊行為（等到逾時），兩邊都不會替使用者答 y。
+describe("禁推板的強制推文詢問：要素缺一就不認", () => {
+  const kindOf = (last) => {
+    const rows = Array(24).fill("");
+    rows[23] = last;
+    return classifyPushScreen(rows, 24).kind;
+  };
+  test("對照組：bbs.c#recommend 的整句認得", () => {
+    expect(kindOf("此板目前禁推，要以管理身份強制推文嗎？ [y/N]: ")).toBe("forceComment");
+  });
+  test.each([
+    ["沒有 [y/N]", "此板目前禁推，要以管理身份強制推文嗎？"],
+    ["字串被截斷", "此板目前禁推，要以管理身份 [y/N]: "],
+    ["不在列首", "  此板目前禁推，要以管理身份強制推文嗎？ [y/N]: "],
+  ])("%s → 不認", (_n, last) => {
+    expect(kindOf(last)).not.toBe("forceComment");
   });
 });
 
