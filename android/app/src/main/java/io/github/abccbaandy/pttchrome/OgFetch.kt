@@ -70,16 +70,31 @@ internal object OgFetch {
             return false
         }
         val b = a.address
-        if (a is Inet4Address) {
-            val b0 = b[0].toInt() and 0xff
-            val b1 = b[1].toInt() and 0xff
-            if (b0 == 0) return false
-            if (b0 == 100 && b1 in 64..127) return false
-        }
+        if (a is Inet4Address) return isPublicV4(b, 0)
         if (a is Inet6Address) {
             if ((b[0].toInt() and 0xfe) == 0xfc) return false
+            // NAT64（64:ff9b::/96）與 6to4（2002::/16）裡夾帶的 IPv4 也要過同一套檢查。
+            val nat64 = byteArrayOf(0, 0x64, 0xff.toByte(), 0x9b.toByte(), 0, 0, 0, 0, 0, 0, 0, 0)
+            if ((0 until 12).all { b[it] == nat64[it] }) return isPublicV4(b, 12)
+            if (b[0] == 0x20.toByte() && b[1] == 0x02.toByte()) return isPublicV4(b, 2)
         }
         return true
+    }
+
+    /** b[off..off+3] 這個 IPv4 是不是公開位址（InetAddress 的 is* 只認 Inet4Address 本身，夾帶在 IPv6 裡的要自己判）。 */
+    private fun isPublicV4(b: ByteArray, off: Int): Boolean {
+        val b0 = b[off].toInt() and 0xff
+        val b1 = b[off + 1].toInt() and 0xff
+        return when {
+            b0 == 0 || b0 == 10 || b0 == 127 -> false
+            b0 == 169 && b1 == 254 -> false
+            b0 == 172 && b1 in 16..31 -> false
+            b0 == 192 && b1 == 168 -> false
+            b0 == 100 && b1 in 64..127 -> false // CGNAT
+            b0 == 198 && b1 in 18..19 -> false // 基準測試保留
+            b0 >= 224 -> false // 多播＋240/4 保留
+            else -> true
+        }
     }
 
     private val ENTITY = Regex("&(#x[0-9a-fA-F]{1,6}|#\\d{1,7}|[a-zA-Z]{2,6});")
@@ -108,10 +123,17 @@ internal object OgFetch {
         return one.substring(0, end) + "…"
     }
 
+    /**
+     * 相對網址以 base 解析。用 URL(URL, String) 不用 URI.resolve：後者對沒有路徑的 base
+     * （`https://a.com` ＋ `b`）會接成 `https://a.comb`（JDK 已知問題）。
+     */
+    @Suppress("DEPRECATION")
+    fun resolveRef(base: String, ref: String): String = URL(URL(base), ref).toString()
+
     private fun cleanImage(raw: String?, base: String): String {
         if (raw.isNullOrBlank()) return ""
         val u = try {
-            URI(base).resolve(decodeEntities(raw.trim()).replace(" ", "%20"))
+            URI(resolveRef(base, decodeEntities(raw.trim()).replace(" ", "%20")))
         } catch (_: Exception) {
             return ""
         }
@@ -181,13 +203,18 @@ internal object OgFetch {
         url: String,
         /** 測試用：本機 MockWebServer 是 http＋127.0.0.1。正式呼叫一律 true。 */
         strict: Boolean = true,
+        totalTimeoutMs: Long = TOTAL_TIMEOUT_MS,
         resolve: (String) -> Array<InetAddress> = { InetAddress.getAllByName(it) },
         open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
     ): Result {
         var target = url
-        val deadline = System.nanoTime() + TOTAL_TIMEOUT_MS * 1_000_000
+        val deadline = System.nanoTime() + totalTimeoutMs * 1_000_000
+        // 剩下的時間（ms）：每一跳的 connect／read 時限都用它，整條（含轉址）才真的在總時限內。
+        // DNS 查詢沒有時限可設（getAllByName 會照系統設定等），網頁端 limiter 另有逾時。
+        fun remainingMs(): Int = ((deadline - System.nanoTime()) / 1_000_000).coerceIn(0, TIMEOUT_MS.toLong()).toInt()
         var hop = 0
         while (true) {
+            if (remainingMs() <= 0) return Result.Failed("network")
             if (strict && !acceptsUrl(target)) return Result.Failed("url")
             if (strict) {
                 val host = try {
@@ -208,8 +235,10 @@ internal object OgFetch {
                 return Result.Failed("network")
             }
             try {
-                conn.connectTimeout = TIMEOUT_MS
-                conn.readTimeout = TIMEOUT_MS
+                val left = remainingMs()
+                if (left <= 0) return Result.Failed("network")
+                conn.connectTimeout = left
+                conn.readTimeout = left
                 conn.instanceFollowRedirects = false
                 conn.setRequestProperty("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1")
                 conn.setRequestProperty("Accept-Language", "zh-TW,zh;q=0.9,en;q=0.5")
@@ -219,7 +248,7 @@ internal object OgFetch {
                     val loc = conn.getHeaderField("Location")
                     if (loc.isNullOrEmpty() || hop >= MAX_REDIRECTS) return Result.Failed("url")
                     target = try {
-                        URI(target).resolve(loc).toString()
+                        resolveRef(target, loc)
                     } catch (_: Exception) {
                         return Result.Failed("url")
                     }

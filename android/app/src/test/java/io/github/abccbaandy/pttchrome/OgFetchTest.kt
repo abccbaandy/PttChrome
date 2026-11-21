@@ -133,6 +133,60 @@ class OgFetchTest {
     }
 
     @Test
+    fun embeddedAndReservedV4AreNotPublic() {
+        listOf("64:ff9b::c0a8:101", "64:ff9b::a00:1", "2002:c0a8:101::1", "198.18.0.1", "240.0.0.1")
+            .forEach { assertFalse(it, OgFetch.isPublicAddress(InetAddress.getByName(it))) }
+        assertTrue(OgFetch.isPublicAddress(InetAddress.getByName("64:ff9b::808:808")))
+    }
+
+    @Test
+    fun resolvesRelativeLocationsAgainstPathlessBase() {
+        assertEquals("https://a.com/b", OgFetch.resolveRef("https://a.com", "b"))
+        assertEquals("https://a.com/x/c", OgFetch.resolveRef("https://a.com/x/y", "c"))
+        assertEquals("https://b.com/", OgFetch.resolveRef("https://a.com/x", "https://b.com/"))
+    }
+
+    /** 假連線：回一個固定的轉址，不碰網路。 */
+    private fun redirectTo(location: String): (java.net.URL) -> java.net.HttpURLConnection = { u ->
+        object : java.net.HttpURLConnection(u) {
+            override fun getResponseCode() = 302
+            override fun getHeaderField(name: String?) = if (name.equals("Location", ignoreCase = true)) location else null
+            override fun connect() {}
+            override fun disconnect() {}
+            override fun usingProxy() = false
+        }
+    }
+
+    @Test
+    fun strictModeRechecksEveryHop() {
+        val public = { _: String -> arrayOf(InetAddress.getByName("8.8.8.8")) }
+        // 轉到 http：下一跳過不了 acceptsUrl。
+        assertEquals(OgFetch.Result.Failed("url"), OgFetch.fetch("https://a.example.com/", resolve = public, open = redirectTo("http://a.example.com/")))
+        // 轉到解析成內網的名稱：下一跳的位址檢查擋下，不會連第二次。
+        var opened = 0
+        val r = OgFetch.fetch(
+            "https://a.example.com/",
+            resolve = { h -> if (h == "a.example.com") public(h) else arrayOf(InetAddress.getByName("10.0.0.1")) },
+            open = { u -> opened++; redirectTo("https://internal.example.com/")(u) },
+        )
+        assertEquals(OgFetch.Result.Failed("address"), r)
+        assertEquals(1, opened)
+    }
+
+    @Test
+    fun slowPageGivesUpWithinTotalTimeout() {
+        server.enqueue(
+            MockResponse.Builder().code(200).addHeader("Content-Type", "text/html")
+                .body("<p>" + "x".repeat(10_000)).throttleBody(10, 1, java.util.concurrent.TimeUnit.SECONDS).build()
+        )
+        val start = System.nanoTime()
+        val r = OgFetch.fetch(server.url("/slow").toString(), strict = false, totalTimeoutMs = 500)
+        val ms = (System.nanoTime() - start) / 1_000_000
+        assertEquals(OgFetch.Result.Failed("network"), r)
+        assertTrue("$ms ms", ms < 3_000)
+    }
+
+    @Test
     fun replyShapes() {
         val ok = OgFetch.reply(3, OgFetch.Result.Ok("t", "s", "", "https://a.com/"))
         assertEquals(true, ok.getBoolean("ok"))
