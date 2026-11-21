@@ -199,6 +199,21 @@ describe("致命錯誤", () => {
     expect(h.copied).toEqual([]);
   });
 
+  // upstream db2e6d86：禁推板上的板主按 X 改問「要以管理身份強制推文嗎？ [y/N]」（會寫 modlog）。
+  test("REGRESSION 送到一半遇到強制推文詢問 ⇒ 不答 y、Ctrl-C 收掉、剩下的留在錯誤框", () => {
+    const h = harness();
+    h.session.start({ text: "第一段\n第二段", type: "push" });
+    runOne(h);
+    const before = h.sent.length;
+    h.settle("此板目前禁推，要以管理身份強制推文嗎？ [y/N]: ");
+    expect(h.sent.slice(before)).toEqual(["\x03"]);
+    h.settle(ARTICLE_FOOTER);
+    expect(h.sent).not.toContain("y");
+    expect(h.session.active).toBe(false);
+    expect(h.results[0]).toMatchObject({ source: "ptt", sent: 1, rest: "第二段" });
+    expect(h.results[0].message).toMatch(/禁推/);
+  });
+
   test("已送出的那幾則不會被算進剩餘內容", () => {
     const h = harness();
     h.session.start({ text: "第一段\n第二段", type: "push" });
