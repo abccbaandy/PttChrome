@@ -1,0 +1,141 @@
+name: 問題回報（Bug）
+description: 回報畫面跑版、亂碼、功能失效、斷線等問題
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感謝回報！欄位填得越完整，越快能重現與修正。
+        送出前可以先[搜尋既有 issue](https://github.com/abccbaandy/PttChrome/issues?q=is%3Aissue)，看看是否已有人回報過。
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 使用環境
+      description: |
+        手機只支援 **Android App**。手機瀏覽器開的網頁版（含「加到主畫面」）目前**不支援**，請改用 App 確認問題是否仍存在。
+      options:
+        - Android App
+        - 電腦網頁版
+    validations:
+      required: true
+
+  - type: input
+    id: build
+    attributes:
+      label: 網頁版本（build）
+      description: |
+        打開「設定」→「關於」分頁 →「版本」區塊的最後一行，整行複製貼上。
+        - 電腦網頁版：在終端機畫面按右鍵 →「設定」
+        - Android App：底部工具列「更多」→「設定」
+      placeholder: "build: a1b2c3d (2026-11-21 14:30)"
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App 版本（僅 Android App）
+      description: 「設定」→「連線」分頁 →「App 設定」→「關於」區塊的「App 版本」。電腦網頁版免填。
+      placeholder: "App 版本：1.4.0"
+
+  - type: input
+    id: environment
+    attributes:
+      label: 瀏覽器／作業系統
+      description: 電腦網頁版請填瀏覽器與作業系統；App 請填手機型號與 Android 版本。
+      placeholder: "Chrome 131 / Windows 11　或　Pixel 8 / Android 15"
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 問題描述
+      description: 發生了什麼事？可以附截圖或錄影（直接拖進來）。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 重現步驟
+      description: 從哪個畫面、按了什麼、在哪個看板。
+      placeholder: |
+        1. 進入 Gossiping 板
+        2. 開啟下方網址那篇文章
+        3. 往下捲到推文
+        4. ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: article-url
+    attributes:
+      label: 文章網址
+      description: |
+        問題跟特定文章有關時請附上（可以多篇，一行一個），以下兩種格式都可以：
+        - PTT 網頁版網址（文章最後一行的「文章網址」）：`https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html`
+        - 本站網址列上的網址：`https://abccbaandy.github.io/PttChrome/#Browsers/M.1786265274.A.5E3.html`
+      placeholder: https://www.ptt.cc/bbs/Browsers/M.1786265274.A.5E3.html
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 預期行為
+      description: 你原本預期應該看到或發生什麼？
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 實際行為
+      description: 實際上看到或發生了什麼？
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: 發生頻率
+      options:
+        - 每次都會
+        - 偶爾發生
+        - 只發生過一次
+    validations:
+      required: false
+
+  - type: textarea
+    id: recording
+    attributes:
+      label: 錄製檔
+      description: |
+        錄製檔記下了出問題那段時間的連線資料與畫面，可以讓我們在本機完整重放問題，**強烈建議附上**。
+
+        **方法一：手動錄製（能穩定重現時）**
+        1. 「設定」→「關於」→「除錯」→ 打開「Debug 錄製模式」（重新整理後會自動關閉）
+        2. 回到出問題的畫面，按右下角「⋯」裡的「錄製」
+           （App 若開了「手機把文章工具收進『更多』」，錄製鈕在底部「更多」→「除錯」）
+        3. 重現一次問題
+        4. 按「停止錄製」，會下載（App 會跳出儲存對話框）一個 `ptt-debug-日期-時間.json`
+
+        **方法二：背景錄製（難重現、事後才想到要錄時）**
+        1. 「設定」→「關於」→「除錯」→ 打開「Debug 錄製模式」與「背景自動錄製最近 3 分鐘」
+        2. 平常照用；問題一發生，3 分鐘內按「⋯」裡的「存下最近 3 分鐘」，或在指令面板（F4）輸入「錄製」
+
+        把 `.json` 檔拖進下方欄位上傳（若上傳失敗，先壓縮成 `.zip` 再上傳）。
+
+        ⚠️ **錄製檔含你錄製期間鍵入的所有按鍵**。自動登入的密碼會被遮蔽，但**手動輸入的密碼無法自動遮蔽**——錄製期間請避免登入，上傳前請自行檢查。
+      placeholder: 把 ptt-debug-*.json 拖到這裡上傳
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他補充
+      description: 例如：最近有改過哪些設定、開了哪些增強功能、是否在別的瀏覽器／裝置也會發生。
+    validations:
+      required: false
