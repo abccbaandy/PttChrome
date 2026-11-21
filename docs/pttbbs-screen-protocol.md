@@ -208,6 +208,9 @@ OSC 8 的四條不變量（`src/js/osc_hyperlink.js` 檔頭）：
 - **只放行 http/https**、含控制字元整條不收；非 ASCII 位元組經 `b2u` 解碼後只對非 ASCII 段做百分比編碼（整條 `encodeURI` 會把既有 `%xx` 二次編碼）。
 - ST 要湊齊 `ESC \` 才生效：ESC 後接別的字元＝被新序列打斷，OSC 丟棄、新序列照常執行；CAN/SUB 丟棄；BEL 也收（xterm 慣例）。
 - 帶 `hyperlink` 的格子不算「URL 字元」（`url_join.isUrlCell`）⇒ body_wrap 不會拿猜的網址蓋掉 server 指定的 href。
+- 一條網址被 pmore 畫成多列（折行或作者硬斷行）時**每一列各自**送同一個完整 href 的 OSC 8
+  （`pmore.c` 的 `url_state`／`common/sys/string.c#url_tracker_*`）⇒ 跨列合成一條鏈（只開一張預覽）由
+  `body_wrap.detectOscWrappedLinks` 負責。
 
 守護：`ansi_parser_osc8.test.js`、`osc_hyperlink.test.js`、`ansi_parser_decawm_decstbm.test.js`、`body_wrap.test.js`「OSC 8」兩條。
 

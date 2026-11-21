@@ -131,6 +131,91 @@ export function detectBodyWrappedUrls(lines, isSkipRow) {
   return out;
 }
 
+// ---- OSC 8 跨列連結（server 指定）----
+// PTT 2026-09-30 起內文網址由 server 以 OSC 8 指定（ansi_parser → TermChar.hyperlink）。
+// pmore 把一條網址畫成好幾列時——顯示寬度折行（pmore.c#MFDISP_URL_LIMIT），或作者
+// 硬斷行、結尾落在 74～80 欄（common/sys/string.c#url_tracker_init，續行可帶 `: `／
+// `> ` 引言前綴）——**每一列各自**帶同一個完整 href。href 已經是定論、不需要猜，
+// 但逐列渲染時每一列都會各開一張行內預覽 ⇒ 同一張圖出現兩次。這裡只把它們認成同
+// 一條鏈，輸出形狀與 detectBodyWrappedUrls 相同 ⇒ 走同一條 wrapUrls（preview 只在
+// 最後一段）。不受「自動修復網址」開關影響（那個開關管的是猜測）。
+
+// 列尾以外可以忽略的格子：空白、pmore 折行符號 `\`（MFDISP_WRAP_INDICATOR）。
+function isTrailingFiller(c) {
+  return !c || (!c.hyperlink && (c.ch === ' ' || c.ch === '' || c.ch === '\\'));
+}
+
+// 這一列以 OSC 8 連結收尾（後面只剩空白／折行符號）→ { href, startCol, endCol }，否則 null。
+function oscTail(chars) {
+  if (!chars) return null;
+  let k = chars.length - 1;
+  while (k >= 0 && isTrailingFiller(chars[k])) --k;
+  if (k < 0 || !chars[k].hyperlink) return null;
+  const href = chars[k].hyperlink;
+  let l = k;
+  while (l > 0 && chars[l - 1].hyperlink === href) --l;
+  return { href, startCol: l, endCol: k + 1 };
+}
+
+// 這一列從列首（或引言前綴 `: `／`> ` 之後）接續 href → { startCol, endCol }，否則 null。
+function oscHead(chars, href) {
+  if (!chars || !chars.length) return null;
+  let s = 0;
+  if (chars[0].hyperlink !== href) {
+    const quoted =
+      (chars[0].ch === ':' || chars[0].ch === '>') &&
+      chars[1] && chars[1].ch === ' ' && !chars[1].hyperlink &&
+      chars[2] && chars[2].hyperlink === href;
+    if (!quoted) return null;
+    s = 2;
+  }
+  let e = s;
+  while (e < chars.length && chars[e].hyperlink === href) ++e;
+  return { startCol: s, endCol: e };
+}
+
+function hostOf(href) {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#:]+)/i.exec(href);
+  return m ? m[1].toLowerCase() : '';
+}
+
+// detectOscWrappedLinks(lines, isSkipRow) -> 同 detectBodyWrappedUrls 的輸出形狀。
+export function detectOscWrappedLinks(lines, isSkipRow) {
+  if (!lines || lines.length < 2) return [];
+  const out = [];
+  let row = 0;
+  while (row < lines.length - 1) {
+    const tail = isSkipRow(row) ? null : oscTail(lines[row]);
+    if (!tail) {
+      ++row;
+      continue;
+    }
+    const parts = [{ row, startCol: tail.startCol, endCol: tail.endCol, preview: false }];
+    let r = row + 1;
+    while (r < lines.length && !isSkipRow(r)) {
+      const head = oscHead(lines[r], tail.href);
+      if (!head) break;
+      parts.push({ row: r, startCol: head.startCol, endCol: head.endCol, preview: false });
+      // 這一段一路到列尾（整列都是這條連結）⇒ 鏈還可能往下接
+      const t = oscTail(lines[r]);
+      if (t && t.href === tail.href && t.startCol === head.startCol) {
+        ++r;
+        continue;
+      }
+      break;
+    }
+    if (parts.length < 2) {
+      ++row;
+      continue;
+    }
+    parts[parts.length - 1].preview = true;
+    out.push({ href: tail.href, host: hostOf(tail.href), parts });
+    // 最後一列可能在後面又起一條別的鏈 ⇒ 從它重新看（列號一定往前走）。
+    row = parts[parts.length - 1].row;
+  }
+  return out;
+}
+
 // 「後面再接新列」可能改變偵測結果的最早一列（好讀累積長頁的增量標註前沿，見
 // screen_annotations.js）。續行鏈只在最後一列寫滿 maxcol 時還「開著」——那時往回
 // 走過連續寫滿的列，鏈的左片段一定在其中（左片段本身也寫滿）。最後一列沒寫滿 ⇒
@@ -138,14 +223,19 @@ export function detectBodyWrappedUrls(lines, isSkipRow) {
 // isSkipRow 與 detectBodyWrappedUrls 的同一個（推文列／黑名單列不屬於任何鏈）：
 // **必須傳**——真實推文列的時間戳最後一格剛好落在 maxcol，不排除的話每一則推文都
 // 「寫滿」⇒ 前沿一路退回第一則推文，快路徑在真實文章裡從不生效。
-export function bodyWrapFrontier(lines, isSkipRow) {
+// OSC 8 鏈（detectOscWrappedLinks）一律算：以 OSC 連結收尾的列同樣「開著」。
+// opts.guess=false ＝純文字的猜測接合沒開（autoFixUrl 關），寫滿 maxcol 不算開著。
+export function bodyWrapFrontier(lines, isSkipRow, opts) {
   const n = lines ? lines.length : 0;
   if (!n) return 0;
   const cols = lines[0] ? lines[0].length : 0;
   if (cols < 4) return n;
   const maxcol = pmoreMaxCol(cols);
+  const guess = !opts || opts.guess !== false;
   const full = (r) =>
-    !!lines[r] && !(isSkipRow && isSkipRow(r)) && endsAtMaxCol(lines[r], maxcol);
+    !!lines[r] &&
+    !(isSkipRow && isSkipRow(r)) &&
+    ((guess && endsAtMaxCol(lines[r], maxcol)) || !!oscTail(lines[r]));
   if (!full(n - 1)) return n;
   let k = n - 1;
   while (k > 0 && full(k - 1)) --k;

@@ -54,7 +54,21 @@ function wrappedUrl(r, k) {
   return out;
 }
 
-function makeArticle(seed, total, fullPush = false, quotes = false) {
+// 同一條網址被 server 以 OSC 8 送成 k 列（PTT 2026-09-30 起；pmore 折行／作者硬斷行時
+// 每一列各自帶同一個完整 href）：左段收在 maxcol、中段整列、末段不滿。
+function oscWrapped(r, k) {
+  const href = "https://img.example.com/p/" + Math.floor(r() * 1e5) + ".png";
+  const mark = (rw, from, to) => {
+    for (let i = from; i < to; ++i) rw[i].hyperlink = href;
+    return rw;
+  };
+  const out = [mark(pad80("圖 " + "a".repeat(MAXCOL + 1 - 3)), 3, MAXCOL + 1)];
+  for (let i = 0; i < k - 2; ++i) out.push(mark(pad80("b".repeat(80)), 0, 80));
+  out.push(mark(pad80("c.png"), 0, 5));
+  return out;
+}
+
+function makeArticle(seed, total, fullPush = false, quotes = false, osc = false) {
   const r = rng(seed);
   const rows = [
     pad80("作者  poster (暱稱) 看板  Test"),
@@ -102,7 +116,8 @@ function makeArticle(seed, total, fullPush = false, quotes = false) {
         for (let q = 0; q < k; ++q) rows.push(pad80(": 引言 " + i + "-" + q));
       } else rows.push(pad80("edit reply line " + i));
     } else if (x < 0.8) {
-      rows.push(...wrappedUrl(r, r() < 0.5 ? 2 : 3));
+      const k = r() < 0.5 ? 2 : 3;
+      rows.push(...(osc ? oscWrapped(r, k) : wrappedUrl(r, k)));
     } else if (x < 0.86) {
       rows.push(pad80(""));
     } else if (x < 0.93) {
@@ -170,6 +185,9 @@ const OPTION_SETS = [
   // P106：長引言收起（含隔一段展開一段）。
   { merge: true, autoFixUrl: true, cards: false, mergeCaption: null, quotes: true },
   { merge: false, autoFixUrl: true, cards: true, mergeCaption: null, quotes: true, quoteExpand: true },
+  // OSC 8 跨列連結鏈（server 指定，不受「自動修復網址」開關影響）。
+  { merge: true, autoFixUrl: false, cards: false, mergeCaption: null, osc: true },
+  { merge: false, autoFixUrl: true, cards: true, mergeCaption: null, osc: true },
 ];
 
 // 全文先算一次，每隔一段取那段的 quoteKey 當「使用者點開過的」。
@@ -190,7 +208,13 @@ describe("前沿快路徑：逐頁 append 與全量重算逐列相同", () => {
   for (const [oi, o] of OPTION_SETS.entries()) {
     for (const seed of [1, 7, 42]) {
       test(`選項組 ${oi}／種子 ${seed}`, () => {
-        const full = makeArticle(seed * 31 + oi, 700, !!o.fullPush, !!o.quotes);
+        const full = makeArticle(seed * 31 + oi, 700, !!o.fullPush, !!o.quotes, !!o.osc);
+        if (o.osc) {
+          // 正向對照：OSC 鏈真的有被認出來（只有最後一段掛預覽）
+          const { annotations } = computeAnnotations(full, enhanceFor(o), o.mergeCaption, false, {}, {}, {}, null, null);
+          const parts = annotations.flatMap((a) => (a && a.wrapUrls) || []);
+          expect(parts.filter((p) => p.href.startsWith("https://img.example.com/") && !p.preview).length).toBeGreaterThan(5);
+        }
         const enhance = enhanceFor(o);
         if (o.quotes) {
           // 正向對照：真的有收起的段
@@ -309,5 +333,25 @@ describe("前沿的邊界情形", () => {
     });
     expect(hrefs[0]).toBeTruthy();
     expect(new Set(hrefs).size).toBe(1);
+  });
+
+  test("OSC 8 連結鏈跨頁（自動修復網址關閉）：上一頁的左段在下一頁接上後不再掛預覽", () => {
+    const oo = { ...o, autoFixUrl: false };
+    const head = makeArticle(9, 40).slice(0, 19).concat([push("推", "omega1", "x", "01")]);
+    const chain = oscWrapped(rng(1), 3);
+    const lines = head.concat(chain, [pad80("after")]);
+    let prev = null;
+    let out = null;
+    for (const end of [head.length + 1, head.length + 2, lines.length]) {
+      const ls = lines.slice(0, end);
+      const shape = prev ? spliceShape(prev.lines, ls) : null;
+      out = computeAnnotations(ls, enhanceFor(oo), oo.mergeCaption, false, {}, {}, {}, prev ? prev.cache : null, shape);
+      prev = { lines: ls, cache: out.cache };
+    }
+    expect(out.stablePrefix).toBeGreaterThan(0);
+    const w = [0, 1, 2].map((k) => out.annotations[head.length + k].wrapUrls);
+    expect(w.map((x) => x && x.length)).toEqual([1, 1, 1]);
+    expect(new Set(w.map((x) => x[0].href)).size).toBe(1);
+    expect(w.map((x) => x[0].preview)).toEqual([false, false, true]);
   });
 });

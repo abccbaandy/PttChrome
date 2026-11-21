@@ -27,6 +27,7 @@ import { detectFixableUrls } from "./url_fix";
 import { detectWrappedUrls } from "./url_wrap";
 import {
   detectBodyWrappedUrls,
+  detectOscWrappedLinks,
   applyWrapUrlRange,
   bodyWrapFrontier,
 } from "./body_wrap";
@@ -316,7 +317,8 @@ export function detectRowExtras(chars, text, ann, opts) {
 // 沿用過期的前綴標註。目前的跨列耦合與各自的前沿：
 //   runs  ：同作者推文合併——結尾那一串同作者推文（黑名單列透明）可能再接一則
 //           ⇒ 那一串的第一列（groupSameAuthorRuns 的規則）。
-//   wrap  ：內文跨行網址鏈——最後一列寫滿 maxcol 時鏈還開著（body_wrap.bodyWrapFrontier）。
+//   wrap  ：內文跨行網址鏈——最後一列寫滿 maxcol（猜測接合，wrapGuess）或以 OSC 8 連結
+//           收尾時鏈還開著（body_wrap.bodyWrapFrontier）。
 //   blank ：手機文末補白——最後一個非空白列之後。
 //   quote ：長引言收起（P106）——結尾那一段連續引言下一頁可能再變長（收起幾行、要不要收都會變）
 //           ⇒ 那一段的第一列。
@@ -346,7 +348,7 @@ function annotationFrontier(lines, texts, result, opts) {
       const a = result[row];
       return !!(a && (a.pusher !== undefined || a.hidden));
     };
-    f = Math.min(f, bodyWrapFrontier(lines, skip));
+    f = Math.min(f, bodyWrapFrontier(lines, skip, { guess: opts.wrapGuess }));
   }
   if (opts.filter) {
     // 推文篩選的「略過 N 則」標在一串被藏列的第一列、數的是整串 ⇒ 尾端那串下一頁
@@ -683,31 +685,39 @@ export function computeAnnotations(
     // 放在 caption / run 兩個裝飾 pass **之前**：它們用 {...result[row], ...extra}
     // 疊上去會保留 wrapUrls；而某一對 (r-1, r) 的判定在 pageLines append-only 之下
     // 不會改變，所以被烘進那兩個快取也安全。
+    //
+    // 兩種來源同一條路：純文字被切斷的猜測接合（autoFixUrl 開才做），以及 server 用
+    // OSC 8 把同一條網址送成好幾列（href 是定論，一律做——否則每列各開一張預覽，
+    // 見 body_wrap.detectOscWrappedLinks）。
     const wrapCache = new Map();
-    if (autoFixUrl) {
+    {
       const isSkipRow = (row) => {
         const a = base[row];
         return !!(a && (a.pusher !== undefined || a.hidden));
       };
+      const detectWrapped = (ls, skip) =>
+        (autoFixUrl ? detectBodyWrappedUrls(ls, skip) : []).concat(
+          detectOscWrappedLinks(ls, skip),
+        );
       // 反向期間 head 與 tail 分開掃：J-1 與 J 在文章裡不相鄰，不可接成一條網址。
       // 前沿快路徑：只從 fastFrom 起掃（前沿保證沒有鏈跨過它，見 body_wrap.bodyWrapFrontier）。
       const wrapped = fastFrom
-        ? detectBodyWrappedUrls(lines.slice(fastFrom), (row) =>
+        ? detectWrapped(lines.slice(fastFrom), (row) =>
             isSkipRow(row + fastFrom),
           ).map((w) => ({
             ...w,
             parts: w.parts.map((pt) => ({ ...pt, row: pt.row + fastFrom })),
           }))
         : J != null
-          ? detectBodyWrappedUrls(lines.slice(0, J), isSkipRow).concat(
-              detectBodyWrappedUrls(lines.slice(J), (row) =>
+          ? detectWrapped(lines.slice(0, J), isSkipRow).concat(
+              detectWrapped(lines.slice(J), (row) =>
                 isSkipRow(row + J),
               ).map((w) => ({
                 ...w,
                 parts: w.parts.map((pt) => ({ ...pt, row: pt.row + J })),
               })),
             )
-          : detectBodyWrappedUrls(lines, isSkipRow);
+          : detectWrapped(lines, isSkipRow);
       // 同一列可能有多段（依出現順序疊上去）。
       const rangesByRow = new Map();
       for (let k = 0; k < wrapped.length; ++k) {
@@ -1011,7 +1021,9 @@ export function computeAnnotations(
       J == null
         ? annotationFrontier(lines, texts, result, {
             runs: !!(easyReading && mergeSameAuthorComments && !commentFilter),
-            wrap: !!autoFixUrl,
+            // OSC 8 鏈一律偵測 ⇒ 前沿一律算；純文字猜測接合只在 autoFixUrl 開時算。
+            wrap: true,
+            wrapGuess: !!autoFixUrl,
             blank: !!enhance.commentCards,
             filter: !!(easyReading && commentFilter),
             quote: !!(easyReading && enhance.quoteCollapse),

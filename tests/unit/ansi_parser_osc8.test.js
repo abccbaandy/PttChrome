@@ -11,7 +11,7 @@
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
-import { mountRow, unmountAll } from "./helpers/mount_screen";
+import { mountRow, mountScreen, unmountAll } from "./helpers/mount_screen";
 
 const ESC = "\x1b";
 const ST = ESC + "\\";
@@ -224,6 +224,41 @@ describe("OSC 8 超連結", () => {
       expect(anchors).toHaveLength(1);
       expect(anchors[0].getAttribute("href")).toBe("https://term.ptt.cc/");
       expect(anchors[0].textContent).toBe("PTT");
+    });
+
+    // 文章好讀：pmore 把一條長圖片網址折成兩列，**兩列各自**送同一個完整 href 的
+    // OSC 8（位元組形狀取自 #1gxj3YUh 的實際畫面）。逐列各開一張預覽 ⇒ 同一張圖兩次。
+    describe("跨列的同一條 OSC 8 連結只開一張預覽", () => {
+      const IMG =
+        "https://lazy-cv.com/docs/stop-bilibili-dropping-quality/assets/01-quality-menu-zh-TW.png";
+      const IMG2 =
+        "https://lazy-cv.com/docs/stop-bilibili-dropping-quality/assets/02-network-lag-toast-zh-TW.jpg";
+      const wrapped = (url) =>
+        open(url) + url.slice(0, 78) + close + "\r\n" + open(url) + url.slice(78) + close;
+      const bytes =
+        wrapped(IMG) + "\r\n說明文字\r\n\r\n" + wrapped(IMG2) + "\r\n" + open(IMG) + "單列連結" + close;
+
+      const render = (autoFixUrl) => {
+        const { buf } = feed(bytes);
+        buf.updateCharAttr();
+        return mountScreen({
+          lines: buf.lines,
+          enableLinkInlinePreview: true,
+          enableLinkHoverPreview: false,
+          enhance: { pageState: 3, easyReading: true, dropHidden: true, articleId: 1, autoFixUrl },
+        }).container;
+      };
+      const slotsOf = (c) => c.querySelectorAll(".inlinePreviewSlot").length;
+
+      for (const autoFixUrl of [false, true]) {
+        test(`autoFixUrl=${autoFixUrl}：兩條跨列連結各一張、單列連結一張`, () => {
+          const c = render(autoFixUrl);
+          // 兩列都還是可點的同一條連結
+          const hrefs = [...c.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+          expect(hrefs.filter((h) => h === IMG2)).toHaveLength(2);
+          expect(slotsOf(c)).toBe(3);
+        });
+      }
     });
 
     test("被白名單擋掉的 OSC 8 不產生任何 <a>", () => {

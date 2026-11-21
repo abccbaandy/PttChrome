@@ -340,6 +340,11 @@
   **範圍內抑制 `isStartOfURL`/`isEndOfURL` 的切段**（不抑制的話左列殘段會被 term_buf 的舊邊界切開、
   拿回那個壞 `fullurl`）、**行內預覽 slot 只掛在 `preview:true` 的最後一段**（一條網址只開一張圖）。
 - 沿用 pref `enableAutoFixUrl`（不加新 pref）。合併推文塊那條 render 分支**不傳** `wrapUrls`。
+- **OSC 8 鏈（`detectOscWrappedLinks`）走同一條 `wrapUrls`、不受 `enableAutoFixUrl` 管**：pmore 折行
+  （`MFDISP_URL_LIMIT`）或作者硬斷行（`string.c#url_tracker_init`，結尾 74～80 欄、續行可帶 `: `／`> `）時，
+  server 讓**每一列各自**帶同一個完整 href ⇒ 不收成鏈就每列各開一張預覽（同一張圖兩次）。
+  判準：列尾（後面只剩空白／`\`）是 OSC 連結 ＋ 下一列 col 0（或引言前綴後 col 2）同一個 href。
+  前沿：以 OSC 連結收尾的列一律算開著（`bodyWrapFrontier` 的 `guess` 只管純文字那條）。
 - 限制：**非好讀模式**下若斷點跨頁（左列是該頁最後一列），兩列不同時在 buffer 裡 ⇒ 不接；
   好讀累積成 `buf.pageLines`，相鄰列一定拿得到 ⇒ 正常運作。
 - 共用原語（`URL_CHAR_RE` / `isUrlCell` / `validateJoined`）抽在 `src/js/url_join.js`，與 `url_wrap.js` 共用。
