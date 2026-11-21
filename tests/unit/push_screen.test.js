@@ -162,6 +162,16 @@ describe("致命（等了也沒用 → 中止）", () => {
   });
 });
 
+// upstream db2e6d86（bbs.c#recommend）：禁推板上板主按 X ⇒ vans 問要不要強制推（寫 modlog）。
+describe("禁推板的強制推文詢問", () => {
+  test("整句字串＋[y/N] ⇒ forceComment（不是確認列，也不是 other）", () => {
+    expect(kindOf("此板目前禁推，要以管理身份強制推文嗎？ [y/N]: ")).toBe("forceComment");
+  });
+  test("字串不在列首（例如推文內容剛好打了這句）⇒ 不認", () => {
+    expect(kindOf("→ abc: 此板目前禁推，要以管理身份強制推文嗎？ [y/N]: ")).not.toBe("forceComment");
+  });
+});
+
 describe("其他畫面", () => {
   test("文章底部的 pmore 狀態列不是推文畫面", () => {
     expect(

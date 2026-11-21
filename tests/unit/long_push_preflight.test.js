@@ -27,6 +27,8 @@ import {
   LIVE_REPEAT_PROMPT,
 } from "./helpers/long_push_harness";
 
+import { FORCE_COMMENT_MESSAGE } from "../../src/js/push_screen";
+
 beforeAll(() => loadBig5Tables());
 
 const NO_BOO_TYPE_MENU = "您覺得這篇文章 1.值得推薦 3.只加→註解 [1]? ";
@@ -208,6 +210,19 @@ describe("被擋下來", () => {
     leaveToArticle(h);
     expect(h.preflight[0].message).toBe(msg);
     expect(h.preflight[0].source).toBe("ptt");
+  });
+
+  // upstream db2e6d86（bbs.c#recommend）：禁推板上的板主按 X 改問 vans「要以管理身份強制推文嗎？」。
+  // 強制推文會寫 modlog ⇒ 不替使用者答 y；舊碼把這一幀當 'other' ⇒ 逾時、prompt 留在畫面上。
+  test("REGRESSION 禁推板問板主要不要強制推文 ⇒ 不答 y、Ctrl-C 收掉、算不能推", () => {
+    const h = pre();
+    probe(h, "此板目前禁推，要以管理身份強制推文嗎？ [y/N]: ");
+    expect(h.sent).toEqual(["X", "\x03"]);
+    leaveToArticle(h);
+    expect(h.sent).toEqual(["X", "\x03", "\r"]);
+    expect(h.sent).not.toContain("y");
+    expect(h.session.active).toBe(false);
+    expect(h.preflight[0]).toMatchObject({ blocked: true, source: "ptt", message: FORCE_COMMENT_MESSAGE });
   });
 
   test("被擋之後仍然回到原文章並還原閱讀位置", () => {

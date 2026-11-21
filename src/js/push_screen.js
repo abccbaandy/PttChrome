@@ -70,6 +70,13 @@ const PUSH_PROMPT_RE = /^(推|噓|→) ([A-Za-z][0-9A-Za-z]{1,11}) *:/;
 // 確認列（bbs.c:3098，注意 "確定" 前面那個空白是格式的一部分）。
 const CONFIRM_TEXT = ' 確定[y/N]:';
 
+// 禁推板上的板主（upstream db2e6d86，bbs.c#recommend）：按 X 不再是「抱歉, 禁止推薦」橫幅，
+// 而是 vans("此板目前禁推，要以管理身份強制推文嗎？ [y/N]: ")。強制推文會寫進看板的 modlog
+// ⇒ 一定要使用者自己決定，我們不答 y；Ctrl-C 收掉（vans 回 0 ⇒ FULLUPDATE 回原畫面）。
+// 不認的話這一幀是 'other' ⇒ 按 X 那一步逾時，prompt 留在畫面上、錯誤訊息寫「沒有回應」。
+const FORCE_COMMENT_TEXT = '此板目前禁推，要以管理身份強制推文嗎？';
+export const FORCE_COMMENT_MESSAGE = '此板目前禁推。要以板主身份強制推文，請在原生畫面按 X 自己回答。';
+
 // 已完成的推文列（判 IP 記錄板用）。時間戳前若有一個獨立的 IPv4 token，
 // 這塊看板就是 BRD_IPLOGRECMD（或使用者是 guest）——欄位知識同
 // comment_merge.js#commentContentCells，那邊逐格掃 TermChar，這裡只看純文字。
@@ -168,6 +175,7 @@ export function parseContentDenied(rowTexts, rows) {
 //   'inputPrompt' 內容輸入列（userId ＝ 從 prompt 讀到的自己的帳號）
 //   'confirm'     確定[y/N]
 //   'angel'       小天使匿名詢問
+//   'forceComment' 禁推板問板主要不要強制推文（message；不能替使用者答，Ctrl-C 收掉）
 //   'cooldown'    可以等的冷卻（waitSec / message）
 //   'fatal'       等了也沒用的擋人訊息（message）
 //   'other'       都不是（呼叫端自行判斷是不是已經回到文章／列表）
@@ -196,6 +204,9 @@ export function classifyPushScreen(rowTexts, rows) {
     return { kind: 'typeMenu', booAllowed: last.indexOf('2.') >= 0 };
 
   if (last.indexOf('要使用小天使匿名推文嗎？') >= 0) return { kind: 'angel' };
+
+  if (last.indexOf(FORCE_COMMENT_TEXT) === 0 && last.indexOf('[y/N]') > 0)
+    return { kind: 'forceComment', message: FORCE_COMMENT_MESSAGE };
 
   if (last.indexOf(CONFIRM_TEXT) >= 0) return { kind: 'confirm' };
 

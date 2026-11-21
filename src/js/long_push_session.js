@@ -795,7 +795,10 @@ LongPushSession.prototype = {
   _afterProbeX: function(c, result) {
     const self = this;
     const screen = {};
-    if (c.kind === 'fatal') {
+    // forceComment（禁推板問板主要不要強制推）：不替使用者答 ⇒ 跟擋人橫幅一樣算不能推，
+    // 收尾的 Ctrl-C 收掉 prompt，訊息帶回去叫他自己在原生畫面按。
+    const blocked = c.kind === 'fatal' || c.kind === 'forceComment';
+    if (blocked) {
       this._preflightScreen = null;
     } else if (c.kind === 'cooldown') {
       screen.cooldownSec = c.waitSec;
@@ -808,7 +811,7 @@ LongPushSession.prototype = {
       if (c.kind === 'angel') screen.angel = true;
       if (c.userId) screen.userId = c.userId;
     }
-    if (c.kind !== 'fatal') {
+    if (!blocked) {
       // 降級分支（inputPrompt）這一幀就量得到欄寬；型別選單要等收尾的 Ctrl-C 落到
       // 輸入列那一幀（_enqueueAbort 裡量）。量不到時畫面上還是文章，既有的推文列
       // 看得出這塊板記不記 IP ⇒ 公式退路的另一半。
@@ -818,7 +821,6 @@ LongPushSession.prototype = {
       this._preflightScreen = screen;
     }
 
-    const blocked = c.kind === 'fatal';
     const message = c.message;
     this._abortSteps = 0;
     this._enqueueAbort(
@@ -893,6 +895,14 @@ LongPushSession.prototype = {
 
   _afterOpen: function(c, result) {
     if (c.kind === 'fatal') return this._fail(c.message, 'ptt');
+    if (c.kind === 'forceComment') {
+      // 不替使用者答「強制推文」：Ctrl-C 收掉 prompt 再報失敗（剩下的字留在錯誤框）。
+      const self = this;
+      this._abortSteps = 0;
+      return this._enqueueAbort(function() {
+        self._fail(c.message, 'ptt');
+      });
+    }
     if (c.kind === 'cooldown') return this._enqueueDismissAndWait(c);
     if (c.kind === 'typeMenu') return this._enqueueType();
     if (c.kind === 'angel') return this._enqueueAngel();
