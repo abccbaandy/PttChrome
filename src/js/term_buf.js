@@ -20,6 +20,7 @@ import {
 import { MouseReportState } from './mouse_report';
 import { resolveDismiss } from './screen_dismiss';
 import { classifyPushScreen } from './push_screen';
+import { isOfoReplyScreen } from './waterball_reply';
 import { parseMenuItemRow, isMenuScreen } from './menu_items';
 import { isMailListFooter, isMailListRows, mailHeaderRow, MAIL_HEADER_SCAN_ROWS } from './mail_list';
 import { isEssenceListFooter, isEssenceListRows, ESSENCE_HEADER_SCAN_ROWS } from './essence_list';
@@ -1828,7 +1829,11 @@ TermBuf.prototype = {
       // 同 _overAnchor 的快取語意）。只有 pageState 3 看。
       pusherRange: this._pusherRange || null,
       // PTT 開著輸入框 ⇒ 這一幀什麼都不能點也不上色（見 resolveMouseRegion）。
-      inputPrompt: this.isPromptPending(),
+      // 一對一水球的名單選人（waterball_reply.isOfoReplyScreen）同樣在等使用者回答，只是
+      // 還不是輸入欄 ⇒ 一起算（點殘留的選單項會在名單裡換人、開始回覆）。
+      inputPrompt:
+        this.isPromptPending() ||
+        isOfoReplyScreen(this.getRowText(0, 0, this.cols), this.getRowText(1, 0, this.cols)),
       // 框開著（pressanykey／vmsg／輸入欄）⇒ 整片是「點空白處關框」的目標，
       // 只換指標。**送鍵不在這條路上**（見 App.mouse_click 的說明）。
       dismiss: this.dismissTarget(),
