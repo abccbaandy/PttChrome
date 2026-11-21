@@ -44,6 +44,31 @@ export function scrollPercent({ scrollTop, clientHeight, scrollHeight, trailing 
   return Math.max(0, Math.min(100, Math.floor((seen / content) * 100)));
 }
 
+// 「瀏覽」段的顏色跟著閱讀進度變（pmore.c#mf_display_footer：先看 mf_viewedAll，再看
+// mf_viewedNone，其餘是中段）：文章開頭＝黃字洋紅底、中段＝藍字青底、看到文末＝白字藍底。
+// 好讀把整篇接起來後 PTT 停在最後一頁 ⇒ 鏡像永遠是「看到文末」那一色，靠顏色分辨到底了沒的人會被騙。
+// 只在 PTT 畫的確實是這三色之一時才換（站方改了配色 ⇒ 照原樣，認不出 ⇒ 原生）。
+export const PMORE_FOOTER1_COLORS = {
+  all: { fg: 7, bg: 4 },
+  none: { fg: 3, bg: 5 },
+  mid: { fg: 4, bg: 6 },
+};
+
+// 讀者位置 → 'all'｜'none'｜'mid'；量不到 null。看到文末要整篇都接起來（complete）且最後一列在視窗裡；
+// 跟 pmore 一樣「整篇放得下」算看到文末。
+export function footerPhase(progress) {
+  const p = progress || {};
+  if (!(p.first >= 1) || !(p.last >= p.first) || !(p.total >= 1)) return null;
+  if (p.complete && p.last >= p.total) return 'all';
+  if (p.first === 1) return 'none';
+  return 'mid';
+}
+
+function isPmoreFooter1Color(c) {
+  if (!c || c.bright || c.invert) return false;
+  return Object.values(PMORE_FOOTER1_COLORS).some((k) => k.fg === c.fg && k.bg === c.bg);
+}
+
 // 一段文字 → 格子字元（Big5 線路：全形字＝兩個 Big5 位元組；UTF-8 線路收不下 Big5 的字＝
 // Unicode 本身＋WIDE_TRAIL，與 term_buf 存法一致，見 unicode_cells.js 檔頭）。
 function textToCellChars(text) {
@@ -65,7 +90,8 @@ function textToCellChars(text) {
 
 // 狀態列的格子（TermChar 陣列）→ 左半換成讀者位置的新陣列（原陣列不動）；換不了回 null。
 // head 用第 0 格的顏色（PTT 的「瀏覽」段），tail 用「目前顯示」那段的顏色，補空白到原寬。
-export function footerProgressCells(chars, span, texts) {
+// phase（footerPhase）有給、且第 0 格是 pmore 的三色之一 ⇒ head 換成讀者位置那一色。
+export function footerProgressCells(chars, span, texts, phase) {
   if (!chars || !span || !texts) return null;
   const head = textToCellChars(texts.head);
   const tail = textToCellChars(texts.tail);
@@ -81,7 +107,15 @@ export function footerProgressCells(chars, span, texts) {
   };
   const headSrc = chars[0];
   const tailSrc = chars[Math.min(span.secondStart + 1, span.end - 1)];
-  const left = head.map((ch) => clone(headSrc, ch));
+  const phaseColor = phase && isPmoreFooter1Color(headSrc) ? PMORE_FOOTER1_COLORS[phase] : null;
+  const left = head.map((ch) => {
+    const c = clone(headSrc, ch);
+    if (phaseColor) {
+      c.fg = phaseColor.fg;
+      c.bg = phaseColor.bg;
+    }
+    return c;
+  });
   for (const ch of tail) left.push(clone(tailSrc, ch));
   while (left.length < span.end) left.push(clone(tailSrc, ' '));
   // Big5 lead byte 標記（渲染端看位元組值配對；這裡只讓 isLeadByte 與 term_buf 的語意一致）。

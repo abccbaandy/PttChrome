@@ -9,7 +9,7 @@ import { functionKeyRows, parseFunctionKeys } from './footer_keys';
 import { edgeBandRect, exitBandRect } from './mouse_geometry';
 import { calcTermSize, termLayoutOffsets, listViewportCut } from './term_size';
 import { renderOverlayRow, renderScreen } from './term_ui';
-import { footerLeftSpan, footerProgressCells, footerProgressTexts, scrollPercent } from './reading_footer';
+import { footerLeftSpan, footerPhase, footerProgressCells, footerProgressTexts, scrollPercent } from './reading_footer';
 import { trailingPx } from './reading_record';
 import { i18n } from './i18n';
 import { setTimer, TRACE } from './util';
@@ -3841,7 +3841,7 @@ TermView.prototype = {
     var span = footerLeftSpan(statusText, textCellWidth);
     if (!span) return null;
     var progress = this._readingProgress(er);
-    return footerProgressCells(statusChars, span, footerProgressTexts(progress));
+    return footerProgressCells(statusChars, span, footerProgressTexts(progress), footerPhase(progress));
   },
 
   // 視窗頂端／底端是累積頁的第幾列（1 起算）＋總列數＋百分比；量不到 null。
