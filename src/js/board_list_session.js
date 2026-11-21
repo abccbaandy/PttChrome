@@ -1179,20 +1179,18 @@ BoardListSession.prototype = {
   },
 
   // 右鍵／長按「<板名> 加入／移出我的最愛」（board.c#fav_cmd_toggle_or_del，js/board_fav_toggle.js）。
-  // 同樣只作用在真游標那一列，前置檢查與設為已讀共用。兩種清單的 `m` 不一樣：
-  //   - 分類看板（IS_LISTING_FAV 為假）：直接切換、沒有 prompt，回來 reload 同一份清單（編號
-  //     空間不變）⇒ 跟 `v` 一樣走凍結交易，全程不切原生。
-  //   - 我的最愛：`vans("你確定刪除嗎? [N/y]")` ⇒ 那個提問留給使用者自己回答，所以切原生；
-  //     刪掉之後編號會位移，由自動回復的探針整份重建。跳號同步沒落地就**不送** `m`
-  //     （鍵盤按 `m` 的 passthrough 會照送，選單這條不行：對錯的看板按 `m` 就是動到別人的最愛）。
+  // 同樣只作用在真游標那一列，前置檢查與設為已讀共用。跟 `v` 不同，`m` **不走**凍結交易，
+  // 一律切原生（B 類，同鍵盤按 `m`）：
+  //   - 我的最愛：`vans("你確定刪除嗎? [N/y]")` ⇒ 那個提問留給使用者自己回答；刪掉之後編號位移。
+  //   - 分類看板：`ctx->reload` 重載清單。熱門看板也被歸成 class，reload 重讀 SHM 熱門清單，
+  //     同一編號可能換成別的板 ⇒「編號空間不變」不成立，緩衝不能原地續用。
+  //   - 最愛滿了是 vmsg（按任意鍵），凍結交易只會等到逾時。
+  // 回來由自動回復的探針整份重建。跳號同步沒落地就**不送** `m`
+  //（鍵盤按 `m` 的 passthrough 會照送，選單這條不行：對錯的看板按 `m` 就是動到別人的最愛）。
   markBoardFav: function(num, opts) {
     const pre = this._boardRowActionPrecheck(num, opts, '加入／移出我的最愛');
     if (pre !== null) return pre;
     const onDone = opts && opts.onDone;
-    if (this._variant === 'class' && this._autoResumeEnabled()) {
-      this._beginInplaceTransaction('m', { onDone: onDone });
-      return true;
-    }
     this._beginPassthroughBytes([{ keys: 'm', kind: 'native-key', onDone: onDone }], {
       syncFailHint: '游標沒有停在那一列，沒有送出加入／移出我的最愛'
     });

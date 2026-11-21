@@ -1224,27 +1224,18 @@ describe("右鍵「加入／移出我的最愛」：markBoardFav", () => {
     expect(h.s.markBoardFavTargetAtRow(bodyRow(1))).toBe(null);
   });
 
-  test("分類看板：跳號同步 → m，全程凍結交易、不切原生", () => {
+  // 熱門看板也歸 class，`m` 之後 reload 會換掉同編號的板 ⇒ 不准原地續用緩衝（凍結交易）。
+  test("分類看板：跳號同步 → 切原生送 m（不走凍結交易），onDone 照叫", () => {
     const h = engaged("class");
     const done = vi.fn();
     expect(h.s.markBoardFav(5, { name: "B5", onDone: done })).toBe(true);
     expect(h.enqueued[0].keys).toBe("5\r");
-    expect(h.s._renderMode).toBe("frozen");
     h.enqueued[0].onDone();
+    expect(h.s._renderMode).toBe("native");
     const m = h.enqueued[1];
     expect(m.keys).toBe("m");
-    expect(m.kind).toBe(BRD_CMD_PREFIX + "native-inplace");
-    expect(
-      m.expect(null, {
-        brd: { parked: true, cursorNum: 5, variant: "class", topNum: 1 },
-        rows: 24,
-        curX: 0,
-        curY: 7,
-        rowTexts: brdScreenRows(),
-      })
-    ).toBe(true);
+    expect(m.kind).toBe(BRD_CMD_PREFIX + "native-key");
     m.onDone();
-    expect(h.s._renderMode).toBe("buffer");
     expect(done).toHaveBeenCalledTimes(1);
   });
 
