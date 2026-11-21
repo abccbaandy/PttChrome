@@ -185,6 +185,9 @@
   "cmenu_boardMarkRead": {
     "message": "設為已讀"
   },
+  "cmenu_boardFavToggle": {
+    "message": "加入／移出我的最愛"
+  },
   "cmenu_markAllRead": {
     "message": "設為全部已讀"
   },
@@ -963,6 +966,12 @@
   },
   "tooltip_boardListUnreadMark": {
     "message": "我的最愛／看板列表上，有新文章的看板把「ˇ」畫成圓點、板名加粗變亮，沒有新文章的板名調暗一點。欄位位置不變，只改畫法，不會送任何按鍵。手機卡片另有自己的開關。"
+  },
+  "options_boardListFavToggle": {
+    "message": "看板列表右鍵／長按加入或移出我的最愛"
+  },
+  "tooltip_boardListFavToggle": {
+    "message": "看板列表對某個看板按右鍵（手機長按）多一項「加入／移出我的最愛」，等於把游標移到那一列再按 m。在我的最愛裡移出時，PTT 會問「你確定刪除嗎」，請自己回答。"
   },
   "tooltip_dimReadArticles": {
     "message": "文章列表中已讀過的文章整列調暗，未讀文章（+ 標記）一眼就能分辨。"

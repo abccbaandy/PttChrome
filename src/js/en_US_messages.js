@@ -185,6 +185,9 @@ export const en_US = {
   "cmenu_boardMarkRead": {
     "message": "mark as read"
   },
+  "cmenu_boardFavToggle": {
+    "message": "add to / remove from favorites"
+  },
   "cmenu_markAllRead": {
     "message": "Mark all as read"
   },
@@ -964,6 +967,12 @@ export const en_US = {
   },
   "tooltip_boardListUnreadMark": {
     "message": "Favorites/board list: boards with new posts get a dot instead of \"ˇ\" and a bold, brighter name; the rest are dimmed a little. Columns stay put; display only, no keys are sent. Mobile cards have their own switch."
+  },
+  "options_boardListFavToggle": {
+    "message": "Add or remove favorites from the board list menu"
+  },
+  "tooltip_boardListFavToggle": {
+    "message": "Right-click (long-press on mobile) a board in the board list to add it to or remove it from your favorites, same as moving the cursor there and pressing m. When removing inside Favorites, PTT asks you to confirm."
   },
   "tooltip_dimReadArticles": {
     "message": "Dims already-read rows in the article list so unread ones (+ mark) stand out at a glance."

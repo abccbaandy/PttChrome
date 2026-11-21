@@ -39,7 +39,7 @@ export function boardJumpLanded(facts, target) {
   return parseBoardListName((facts.rowTexts || [])[facts.curY] || '') === target.name;
 }
 
-function bufFacts(core) {
+export function bufFacts(core) {
   const buf = core.buf;
   const rowTexts = [];
   for (let r = 0; r < buf.rows; ++r) rowTexts.push(buf.getRowText(r, 0, buf.cols));

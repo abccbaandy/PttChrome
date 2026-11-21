@@ -441,6 +441,8 @@ export const DEFAULT_PREFS = {
   // 桌機看板列表（原生 80 欄）的新文章標記（P54 電腦版）：ˇ 畫成圓點、有新文章的板名加粗變亮、
   // 讀過的調暗；欄位不動、不送鍵（screen_annotations#applyBoardUnreadMarks）⇒ 不在安全模式清單。
   boardListUnreadMark: true,
+  // 看板列表右鍵／長按「加入／移出我的最愛」（P112，board_fav_toggle.js）：關掉＝選單項不出現。
+  boardListFavToggle: true,
   highlightAuthorComments: true,
   // 自己的推文：只染 id 格（綠），帳號取自選單底部狀態列（term_view._selfId）。
   highlightSelfComments: true,
