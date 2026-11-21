@@ -494,6 +494,12 @@ export const PREF_SEARCH_ITEMS = [
       titleKey: "options_boardListUnreadMark",
       tooltipKey: "tooltip_boardListUnreadMark",
     },
+    {
+      key: "boardListFavToggle",
+      type: "check",
+      titleKey: "options_boardListFavToggle",
+      tooltipKey: "tooltip_boardListFavToggle",
+    },
     { kind: "ui", key: "ui:theme", titleKey: "options_theme" },
     {
       key: "fontFace",

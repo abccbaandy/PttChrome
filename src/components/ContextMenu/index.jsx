@@ -193,6 +193,9 @@ const menuHandlerByEventKey = {
   // 看板列表：把右鍵那一列的看板設為已讀（跳號 → v）。目標在開選單當下就算好了。
   boardMarkRead: (pttchrome, { boardMarkReadTarget }) =>
     pttchrome.boardMarkRead.start(boardMarkReadTarget),
+  // 看板列表：把右鍵那一列的看板加入／移出我的最愛（跳號 → m）。
+  boardFavToggle: (pttchrome, { boardFavTarget }) =>
+    pttchrome.boardFavToggle.start(boardFavTarget),
   copy: (pttchrome, { selectedText }) => pttchrome.doCopy(selectedText),
   copyAnsi: (pttchrome) => pttchrome.doCopyAnsi(),
   paste: (pttchrome) => pttchrome.doPaste(),
@@ -427,6 +430,8 @@ const initialState = {
   markAllReadEnabled: false,
   // 看板列表右鍵那一列的看板（{ num, name } / null），boardMarkRead.targetAtRow。
   boardMarkReadTarget: null,
+  // 看板列表右鍵那一列的看板（{ num, name, fav } / null），boardFavToggle.targetAtRow。
+  boardFavTarget: null,
   // 選單作用的那篇文章（列表列／手機卡片；js/menu_target_highlight.js）。選單開著
   // 時在畫面上標出來，避免對錯的文章操作。null ＝ 不是在文章列上開的。
   menuTarget: null,
@@ -876,6 +881,11 @@ export const ContextMenu = ({ pttchrome }) => {
             pttchrome.boardMarkRead &&
             pttchrome.boardMarkRead.targetAtRow(pos.row)) ||
           null,
+        boardFavTarget:
+          (normalEnabled &&
+            pttchrome.boardFavToggle &&
+            pttchrome.boardFavToggle.targetAtRow(pos.row)) ||
+          null,
         markAllReadEnabled:
           !!normalEnabled &&
           !!pttchrome.markAllRead &&
@@ -940,6 +950,7 @@ export const ContextMenu = ({ pttchrome }) => {
         markReadTarget: null,
         markAllReadEnabled: false,
         boardMarkReadTarget: null,
+        boardFavTarget: null,
         menuTarget: null,
         menuAnchor: null,
         quickSearchItems: [],
@@ -1785,6 +1796,7 @@ export const ContextMenu = ({ pttchrome }) => {
     markReadTarget,
     markAllReadEnabled,
     boardMarkReadTarget,
+    boardFavTarget,
     replyCommentTarget,
     commentFilterTarget,
     readLaterTarget,
@@ -1854,6 +1866,7 @@ export const ContextMenu = ({ pttchrome }) => {
         markReadTarget={markReadTarget}
         markAllReadEnabled={markAllReadEnabled}
         boardMarkReadTarget={boardMarkReadTarget}
+        boardFavTarget={boardFavTarget}
         menuAnchor={menuAnchor}
         articleLinkEnabled={articleLinkEnabled}
         articleLinkRow={articleLinkRow}

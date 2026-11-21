@@ -889,7 +889,15 @@ BoardListSession.prototype = {
     };
     if (this._selectedNum != null && !this._serverCursorAt(this._selectedNum)) {
       this._freezeForTransaction();
-      this._enqueueCursorSyncJump('native-sync-jump', finish, finish);
+      // opts.syncFailHint：同步沒落地就不送（右鍵加入／移出我的最愛）。鍵盤直接按的鍵維持
+      // 照送（使用者自己按的，原生鏡像會讓他看到結果）。
+      const syncFailHint = opts && opts.syncFailHint;
+      const onSyncFail = syncFailHint
+        ? function() {
+            self._degradeToNative(syncFailHint);
+          }
+        : finish;
+      this._enqueueCursorSyncJump('native-sync-jump', finish, onSyncFail);
       return;
     }
     finish();
@@ -1141,6 +1149,11 @@ BoardListSession.prototype = {
   // ---- 右鍵／長按「<板名> 設為已讀」（board.c#board_cmd_mark_read，js/board_mark_read.js）--
 
   // 純查詢、零副作用：右鍵那一列（render row）能不能設為已讀、是哪一個看板。
+  // 加入／移出我的最愛用同一份目標（同樣排除分隔線／目錄／禁入列）。
+  markBoardFavTargetAtRow: function(renderRow) {
+    return this.markBoardReadTargetAtRow(renderRow);
+  },
+
   markBoardReadTargetAtRow: function(renderRow) {
     if (this.state !== 'active' || this._renderMode !== 'buffer') return null;
     const idx = renderRow - this.headerRows();
@@ -1157,6 +1170,39 @@ BoardListSession.prototype = {
   // opts.name ＝選單開出來那一刻那一列的板名：選單開著期間緩衝被換掉（同編號換成別的看板）
   // 時，設為已讀收不回來 ⇒ 板名對不上就停手，不送任何 byte。
   markBoardRead: function(num, opts) {
+    const pre = this._boardRowActionPrecheck(num, opts, '設為已讀');
+    if (pre !== null) return pre;
+    const onDone = opts && opts.onDone;
+    if (this._autoResumeEnabled()) this._beginInplaceTransaction('v', { onDone: onDone });
+    else this._beginPassthroughBytes([{ keys: 'v', kind: 'native-key', onDone: onDone }]);
+    return true;
+  },
+
+  // 右鍵／長按「<板名> 加入／移出我的最愛」（board.c#fav_cmd_toggle_or_del，js/board_fav_toggle.js）。
+  // 同樣只作用在真游標那一列，前置檢查與設為已讀共用。兩種清單的 `m` 不一樣：
+  //   - 分類看板（IS_LISTING_FAV 為假）：直接切換、沒有 prompt，回來 reload 同一份清單（編號
+  //     空間不變）⇒ 跟 `v` 一樣走凍結交易，全程不切原生。
+  //   - 我的最愛：`vans("你確定刪除嗎? [N/y]")` ⇒ 那個提問留給使用者自己回答，所以切原生；
+  //     刪掉之後編號會位移，由自動回復的探針整份重建。跳號同步沒落地就**不送** `m`
+  //     （鍵盤按 `m` 的 passthrough 會照送，選單這條不行：對錯的看板按 `m` 就是動到別人的最愛）。
+  markBoardFav: function(num, opts) {
+    const pre = this._boardRowActionPrecheck(num, opts, '加入／移出我的最愛');
+    if (pre !== null) return pre;
+    const onDone = opts && opts.onDone;
+    if (this._variant === 'class' && this._autoResumeEnabled()) {
+      this._beginInplaceTransaction('m', { onDone: onDone });
+      return true;
+    }
+    this._beginPassthroughBytes([{ keys: 'm', kind: 'native-key', onDone: onDone }], {
+      syncFailHint: '游標沒有停在那一列，沒有送出加入／移出我的最愛'
+    });
+    return true;
+  },
+
+  // markBoardRead／markBoardFav 共用：回 null ＝可以送；否則回給呼叫端的結果（true＝已處理掉）。
+  // opts.name ＝選單開出來那一刻那一列的板名：選單開著期間緩衝被換掉（同編號換成別的看板）
+  // 時板名對不上就停手，不送任何 byte。通過時已把選取移到那一列並同步重畫。
+  _boardRowActionPrecheck: function(num, opts, what) {
     if (this._renderMode === 'native') return false;
     if (this._busyHint()) return true;
     if (this.state !== 'active' || num == null || this._posOfNum(num) === -1) return false;
@@ -1165,17 +1211,14 @@ BoardListSession.prototype = {
       const now = boardMarkReadTargetOfText(this._rowTextOf(num));
       if (!now || now.name !== expectName) {
         if (this._view.flashListHint)
-          this._view.flashListHint('列表已經更新，沒有把 ' + expectName + ' 設為已讀，請再試一次', 0, HINT_ERROR);
+          this._view.flashListHint('列表已經更新，沒有把 ' + expectName + ' ' + what + '，請再試一次', 0, HINT_ERROR);
         return true;
       }
     }
     this._selectedNum = num;
     // 先同步重畫再凍住（否則凍的是點擊前的游標位置，同 onMouseClick）。
     this._forceRedraw();
-    const onDone = opts && opts.onDone;
-    if (this._autoResumeEnabled()) this._beginInplaceTransaction('v', { onDone: onDone });
-    else this._beginPassthroughBytes([{ keys: 'v', kind: 'native-key', onDone: onDone }]);
-    return true;
+    return null;
   },
 
   // ---- 滾輪／捲動 ------------------------------------------------------------

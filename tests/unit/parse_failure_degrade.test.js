@@ -38,6 +38,7 @@ import {
   boardMarkReadTargetFromFacts,
   boardJumpLanded,
 } from "../../src/js/board_mark_read";
+import { boardFavTargetFromFacts, boardFavResponse } from "../../src/js/board_fav_toggle";
 import { markReadPromptShown } from "../../src/js/mark_all_read";
 import { parseRawModeFromPrefRow, pmorePrefScreenSeen, rawModePrefRowVisible } from "../../src/js/pmore_pref";
 import { landedOnBoard } from "../../src/js/aid_navigation";
@@ -283,6 +284,35 @@ describe("看板列表指紋：認不出就不 engage", () => {
     const f = { ...base(), curY: 7 };
     mutate(f);
     expect(boardJumpLanded(f, { num: 5, name: "B5" })).toBe(false);
+  });
+
+  // 右鍵／長按「<板名> 加入／移出我的最愛」（board_fav_toggle.js，P112）：多一道「清單種類認得出」
+  // （我的最愛的 m 會問刪除確認，分類看板不會）。認不出種類 ⇒ 不給選單項。
+  test("對照組：加入／移出我的最愛的目標認得出", () => {
+    expect(boardFavTargetFromFacts(base(), 7)).toEqual(
+      expect.objectContaining({ num: 5, name: "B5" })
+    );
+  });
+
+  test.each([
+    ["標題改版", (f) => (f.rowTexts[0] = " 看板總覽 ")],
+    ["底列指令提示全改版（分不出最愛／分類）", (f) => (f.rowTexts[23] = "  選擇看板    (s)進入已知板名 (v/V)已讀/未讀 ")],
+    ["表頭改名", (f) => (f.rowTexts[2] = f.rowTexts[2].replace("編號", "序號"))],
+    ["條目格式改版", (f) => (f.rowTexts[7] = "  ＃5 某看板")],
+  ])("加入／移出我的最愛目標：%s → 不給", (_n, mutate) => {
+    const f = base();
+    mutate(f);
+    expect(boardFavTargetFromFacts(f, 7)).toBe(null);
+  });
+
+  test.each([
+    ["底列還沒畫", (f) => (f.rowTexts[23] = "")],
+    ["游標停在列中（別的 prompt）", (f) => (f.curX = 30)],
+    ["主功能表", (f) => (f.rowTexts[0] = "【主功能表】 批踢踢實業坊")],
+  ])("m 之後的回應：%s → 認不出（不算落地）", (_n, mutate) => {
+    const f = { ...base(), curY: 7 };
+    mutate(f);
+    expect(boardFavResponse(f)).toBe(null);
   });
 });
 

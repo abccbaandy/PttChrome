@@ -1200,6 +1200,102 @@ describe("右鍵「設為已讀」：markBoardReadTargetAtRow／markBoardRead", 
   });
 });
 
+// 右鍵／長按「<板名> 加入／移出我的最愛」（js/board_fav_toggle.js，P112）。board.c 的 `m` 也只作用在
+// 真游標那一列；分類看板沒有 prompt（凍結交易），我的最愛會問「你確定刪除嗎」（切原生留給使用者）。
+describe("右鍵「加入／移出我的最愛」：markBoardFav", () => {
+  const bodyRow = (idx) => 3 + idx;
+  const engaged = (variant) => {
+    const h = makeSession();
+    h.termBuf.feed(brdScreenRows());
+    seedBuffer(h.termBuf, 1, 20);
+    h.s.state = "active";
+    h.s._renderMode = "buffer";
+    h.s._variant = variant;
+    h.s._selectedNum = 1;
+    h.s._serverNum = 1;
+    h.enqueued.length = 0;
+    return h;
+  };
+
+  test("目標與設為已讀同一份（分隔線／禁入列不給）", () => {
+    const h = engaged("fav");
+    expect(h.s.markBoardFavTargetAtRow(bodyRow(4))).toEqual({ num: 5, name: "B5" });
+    h.termBuf.brdListLines[1] = rowChars(lineRow(2));
+    expect(h.s.markBoardFavTargetAtRow(bodyRow(1))).toBe(null);
+  });
+
+  test("分類看板：跳號同步 → m，全程凍結交易、不切原生", () => {
+    const h = engaged("class");
+    const done = vi.fn();
+    expect(h.s.markBoardFav(5, { name: "B5", onDone: done })).toBe(true);
+    expect(h.enqueued[0].keys).toBe("5\r");
+    expect(h.s._renderMode).toBe("frozen");
+    h.enqueued[0].onDone();
+    const m = h.enqueued[1];
+    expect(m.keys).toBe("m");
+    expect(m.kind).toBe(BRD_CMD_PREFIX + "native-inplace");
+    expect(
+      m.expect(null, {
+        brd: { parked: true, cursorNum: 5, variant: "class", topNum: 1 },
+        rows: 24,
+        curX: 0,
+        curY: 7,
+        rowTexts: brdScreenRows(),
+      })
+    ).toBe(true);
+    m.onDone();
+    expect(h.s._renderMode).toBe("buffer");
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  test("我的最愛：跳號同步 → 切原生送 m（刪除確認留給使用者）", () => {
+    const h = engaged("fav");
+    expect(h.s.markBoardFav(5, { name: "B5" })).toBe(true);
+    expect(h.enqueued[0].keys).toBe("5\r");
+    h.enqueued[0].onDone();
+    expect(h.s._renderMode).toBe("native");
+    expect(h.enqueued[1].keys).toBe("m");
+    expect(h.enqueued[1].kind).toBe(BRD_CMD_PREFIX + "native-key");
+  });
+
+  test("我的最愛：跳號同步失敗 → 絕不送 m（鍵盤 passthrough 會照送，選單這條不行）", () => {
+    const h = engaged("fav");
+    h.s.markBoardFav(5, { name: "B5" });
+    h.enqueued[0].onFail("timeout");
+    expect(h.enqueued.filter((c) => c.keys === "m")).toEqual([]);
+    expect(h.s._renderMode).toBe("native");
+    expect(h.hints.at(-1)).toContain("沒有送出");
+  });
+
+  test("分類看板：跳號同步失敗 → 不送 m", () => {
+    const h = engaged("class");
+    h.s.markBoardFav(5, { name: "B5" });
+    h.enqueued[0].onFail("timeout");
+    expect(h.enqueued.filter((c) => c.keys === "m")).toEqual([]);
+  });
+
+  test("選單開著期間同編號換成別的看板 → 不送任何 byte", () => {
+    const h = engaged("class");
+    h.termBuf.brdListLines[4] = rowChars(brdRow(5, "Other"));
+    expect(h.s.markBoardFav(5, { name: "B5" })).toBe(true);
+    expect(h.enqueued).toEqual([]);
+    expect(h.hints.at(-1)).toContain("加入／移出我的最愛");
+  });
+
+  test("自動回復關 → 分類看板也走 passthrough（仍是嚴格同步）", () => {
+    const h = engaged("class");
+    localStorage.setItem(
+      "pttchrome.pref.v1",
+      JSON.stringify({
+        values: { enableBoardListSmoothScroll: true, enableListNativeAutoResume: false },
+      })
+    );
+    h.s.markBoardFav(5, { name: "B5" });
+    h.enqueued[0].onFail("timeout");
+    expect(h.enqueued.filter((c) => c.keys === "m")).toEqual([]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 進板 → 退板：視野不得被 server 那一頁重新釘住
 //

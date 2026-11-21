@@ -74,6 +74,13 @@ export function buildContextMenuEntries(p) {
       `'${p.boardMarkReadTarget.name}' ${i18n("cmenu_boardMarkRead")}`,
       (e) => p.onMenuSelect("boardMarkRead", e),
     );
+  // 看板列表「<板名> 加入／移出我的最愛」（P112）：同樣作用在那一列，判定在 board_fav_toggle.targetAtRow。
+  if (p.normalEnabled && p.boardFavTarget)
+    item(
+      "boardFavToggle",
+      `'${p.boardFavTarget.name}' ${i18n("cmenu_boardFavToggle")}`,
+      (e) => p.onMenuSelect("boardFavToggle", e),
+    );
   // 「設為全部已讀」：文章列表（列表好讀與原生都可，判定在 mark_all_read.available）。
   // 手機不放這裡：在工具列「更多」（MobileToolbar）。
   const markAllRead = p.normalEnabled && p.markAllReadEnabled && !p.mobile;
@@ -87,6 +94,7 @@ export function buildContextMenuEntries(p) {
       p.titleBlacklistText ||
       p.markReadTarget ||
       p.boardMarkReadTarget ||
+      p.boardFavTarget ||
       markAllRead)
   )
     divider("d-blacklist");

@@ -18,6 +18,7 @@ import { isLoginBlockScreen } from './login_block';
 import { UnreadJump } from './unread_jump';
 import { MarkAllRead } from './mark_all_read';
 import { BoardMarkRead } from './board_mark_read';
+import { BoardFavToggle } from './board_fav_toggle';
 import { installPullRefresh } from './pull_refresh';
 import { installPullNextArticle, installWheelNextArticle } from './pull_next_article';
 import { LongPushSession } from './long_push_session';
@@ -243,6 +244,8 @@ export const App = function() {
   this.markAllRead = new MarkAllRead(this);
   // 看板列表右鍵／長按「<板名> 設為已讀」：跳號 → v，見 board_mark_read.js。
   this.boardMarkRead = new BoardMarkRead(this);
+  // 看板列表右鍵／長按「<板名> 加入／移出我的最愛」：跳號 → m，見 board_fav_toggle.js。
+  this.boardFavToggle = new BoardFavToggle(this);
   // 手機下拉重整（只在 mobile 版面起作用，被動監聽）。
   this._uninstallPullRefresh = installPullRefresh(this);
   this.longPush = new LongPushSession(this, this.view, this.buf, this.commandQueue);
