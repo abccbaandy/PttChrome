@@ -1603,6 +1603,25 @@ describe("upstream pttbbs 產的回水球畫面（一對一模式）", () => {
   test("主功能表那一幀不是回覆畫面 ⇒ 認不出（不送鍵）", () => {
     expect(step("menu")).toBe(null);
   });
+
+  // 名單選人那一刻還不是輸入欄（ofo_my_write 先 prints「丟<id>:」等 vkey，按了字才進
+  // getdata_buf）⇒ isPromptPending 不成立。下面殘留的選單項看起來還能點，但點下去送的
+  // ↑↓ 是在名單裡換人、⏎ 是開始回覆 ⇒ 整幀都不可點、不上底色。
+  test("滑鼠：名單選人時整個畫面點不下去（殘留的選單項也一樣）", () => {
+    for (const name of ["ofo-1", "ofo-2", "ofo-3"]) {
+      // 逐幀 notify（同真的連線）：pageState 從主功能表黏著 1。
+      const { buf } = screenAt(waterballOfoFx, name, { perFrame: true });
+      buf.useMouseBrowsing = true;
+      expect(buf.pageState, name).toBe(1);
+      for (let y = 1; y < buf.rows - 1; ++y)
+        expect(buf._resolveMouseRegionAt(40, y).action, `${name} row ${y}`).toBe("none");
+    }
+    const { buf: menu } = screenAt(waterballOfoFx, "menu");
+    menu.useMouseBrowsing = true;
+    const items = [];
+    for (let y = 1; y < menu.rows - 1; ++y) if (menu._resolveMouseRegionAt(40, y).action === "enter") items.push(y);
+    expect(items.length).toBeGreaterThan(0); // 對照組：主功能表的選單項點得下去
+  });
 });
 
 describe("upstream pttbbs 產的推文流程（bbs.c#comment 型別 → 輸入 → 確認 → 寫入）", () => {

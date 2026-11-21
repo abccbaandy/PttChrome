@@ -33,6 +33,13 @@ const FIRST_TARGET_RE = /^★(\S+)/;
 export const MAX_SWITCH_STEPS = 8;
 export const STEP_TIMEOUT_MS = 3000;
 
+// 一對一模式的名單選人畫面（row 0「丟<id>:」＋row 1「↑反擊對象↓」）。這一刻 PTT 在等 vkey
+// （↑↓／^R 換人、打字開始回覆、← 取消），還不是輸入欄 ⇒ isPromptPending 不成立；下面殘留的
+// 選單／列表看起來能點，點下去送的 ↑↓⏎ 卻是在名單裡換人、開始回覆。滑鼠可點區用它整幀關掉。
+export function isOfoReplyScreen(row0, row1) {
+  return OFO_PROMPT_RE.test(row0 || '') && (row1 || '').indexOf(OFO_LIST_MARK) >= 0;
+}
+
 // 認畫面。rows＝整頁每列文字。回傳：
 //   { mode: 'ofo', selected: id }
 //   { mode: 'default', selected: id|null }   第一下（還沒有回顧面板；selected＝底列 ★ 的對象，讀不出 null）
