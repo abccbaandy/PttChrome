@@ -12,7 +12,6 @@
 //      at a time (pttbbs typeahead skips repaints when keys race — protocol §2).
 // Misclassification always degrades toward NATIVE (functionMode mirrors the raw
 // screen), never toward a stale buffer.
-import { listRowSpan, listFillRows } from './mobile_layout';
 import { isHiddenListText, isFollowOnlyHidden } from './list_row_filter';
 import {
   parseListAuthor,
@@ -78,6 +77,7 @@ import { recordFor, listRecordMatches } from './reading_record';
 import { markReadPromptShown } from './mark_read_prompt';
 import { postInfoAnswer } from './aid_navigation';
 import { KEY_DISMISS } from './screen_dismiss';
+import { LIST_ENGINE_SHARED } from './list_engine_shared';
 import {
   windowVisibleSequence,
   LIST_HEADER_ROWS,
@@ -87,10 +87,6 @@ import {
   OWNER_ARTICLE_LIST,
   isBoardListCommandKind
 } from './list_render_owner';
-
-// 程式化平滑捲動的最長等待：超過就放棄「等它到站」，把 scroll 事件當成使用者
-// 自己捲的（動畫會被使用者的滾輪／拖曳取消，那時永遠到不了目標）。
-const SCROLL_ANIM_MAX_MS = 1000;
 
 // 兩次導覽操作間隔小於這個值就算「連發」（按住鍵的 OS 自動重複約 30/s、滾輪一次
 // 一頁的連續刻度也在這個量級）⇒ 該次 reveal 退成 instant，見 list_scroll.revealPlan。
@@ -794,9 +790,6 @@ const FROZEN_WATCHDOG_MS = 2500;
 // 在飛那一步自帶長預算時（_frozenStepBudgetMs）後盾跟著撐長，但不超過這個絕對上限
 // （＝佇列預設的 hard timeout）：預算再離譜也不能變成永久凍結＋吞鍵。
 const FROZEN_WATCHDOG_MAX_MS = 10000;
-// 後盾讓路給線路靜默寬限時多等的這一點：佇列自己的截止點（→ 交易的 onFail）先跑，
-// 後盾只收「回呼沒跑到」的殘局（見 _setFrozenWatchdog）。
-const STALL_WATCHDOG_SLACK_MS = 200;
 // Fast-fail budgets for the serialized machine keys. PTT answers in ~90ms and
 // term_buf needs another SETTLE_MS (50ms) to settle, so anything past ~250ms of
 // silence is already abnormal: ask the deterministic question (the queue's
@@ -1014,6 +1007,9 @@ export function ListSession(core, view, termBuf, queue) {
 }
 
 ListSession.prototype = {
+  // 兩個列表引擎逐字相同的方法（A9），見 list_engine_shared.js。
+  ...LIST_ENGINE_SHARED,
+
   // ---- settle pipeline -----------------------------------------------------
 
   _onScreenSettled: function() {
@@ -1114,14 +1110,6 @@ ListSession.prototype = {
     };
   },
 
-  // pref 開著＝本功能（L1 凍結交易 ＋ L2 自動回復）生效；關掉＝**逐位元回到
-  // 2026-09-03 之前**：A 類鍵一律走 passthrough、探針一次都不排。
-  // 這是使用者拍板的逃生門（三階梯見 docs/easy-reading-list.md）：判定類功能的
-  // 最後一道防線就是設定開關，全關就回到原生體驗。
-  _autoResumeEnabled: function() {
-    return !!readEffectivePrefs().enableListNativeAutoResume;
-  },
-
   // 真游標「現在」是不是在 num 那篇（可以省掉跳號同步腿）。背景補頁還在線上時一律不是：
   // 它的跳號（`<base>⏎`）與配對的翻頁都會移動真游標，_serverNum 要等它 onDone 才更新
   // ⇒ 交易若在這時拿舊值判「不用同步」，後面的 v／Q／t 就落在補頁的落點那一列。
@@ -1151,37 +1139,6 @@ ListSession.prototype = {
   },
 
   // ---- 靜置探針（非導覽操作完成 → 自動回好讀）--------------------------------
-
-  // 使用者往 PTT 送了 byte（原生鏡像期間鍵盤／貼上／IME／點功能鍵都走不到
-  // activeListSession()，所以這條是**無條件**從 term_view / pttchrome 呼進來的）。
-  // **只記時間戳，不得有任何其他副作用**（不變量 N2）。
-  noteNativeInput: function() {
-    this._lastUserByteAt = Date.now();
-    this._scheduleResumeProbe();
-  },
-
-  // (重新)排定探針。排定點：進入 hold 當下、每一次 settle、每一次使用者送 byte。
-  // 取消點：離開 functionMode／cleanup／pref-off／hold 變 external／斷線 ——
-  // 全部收斂到「holdReason !== 'passthrough' 就清掉」這一條。
-  _scheduleResumeProbe: function(delay) {
-    if (this._resumeProbe) {
-      clearTimeout(this._resumeProbe);
-      this._resumeProbe = null;
-    }
-    if (this._holdReason !== 'passthrough') return;
-    if (!this._autoResumeEnabled()) return;
-    const self = this;
-    this._resumeProbe = setTimeout(function() {
-      self._resumeProbe = null;
-      self._tryResumeProbe();
-    }, delay == null ? RESUME_QUIET_MS : delay);
-  },
-
-  _cancelResumeProbe: function() {
-    if (!this._resumeProbe) return;
-    clearTimeout(this._resumeProbe);
-    this._resumeProbe = null;
-  },
 
   // 探針到點：**不看事件，直接量當下畫面**（形狀同 evaluateNow）。只讀不寫
   // （不變量 N2：不送 byte、不排命令、不改錨），唯一的輸出是一個合成事件。
@@ -1267,11 +1224,6 @@ ListSession.prototype = {
     if (this.state !== 'idle') return;
     const facts = this._collectFacts(null);
     this._dispatch(this._settleEvent(facts), facts);
-  },
-
-  // Pref flipped OFF / disconnect: single exit (mirrors exitEasyReading rigor).
-  disable: function() {
-    this._dispatch({ type: 'pref-off' }, null);
   },
 
   // An external serialized navigation (aid_navigation.js) is about to drive
@@ -1872,12 +1824,6 @@ ListSession.prototype = {
     return true;
   },
 
-  // 滑鼠的左側退出帶（cols 0-6）→ 與按 ← 完全同一條路。
-  // **絕不直送 byte**：_beginLeave 會先 getkeep 把 server 的真游標同步回來再送鍵。
-  onMouseExitClick: function() {
-    return this.onFunctionKey(LEFT_ARROW);
-  },
-
   // byte 序列 → 白名單類別。**刻意獨立於 _classifyKey，不要合併**：
   // 後者認 `q` / `e` / `j` / `k` / `n` / `p` 這些**字元**為導覽鍵，因為那是使用者
   // 按下的按鍵；而 byte 層看到的 'q' 就只是 'q'（例如貼上、或功能鍵標示的字面
@@ -2325,24 +2271,6 @@ ListSession.prototype = {
     this._setFrozenWatchdog(ms);
   },
 
-  _setFrozenWatchdog: function(ms) {
-    const self = this;
-    if (this._frozenWatchdog) clearTimeout(this._frozenWatchdog);
-    this._frozenWatchdog = setTimeout(function() {
-      self._frozenWatchdog = null;
-      if (self._renderMode !== 'frozen' && self.state !== 'opening') return;
-      // 線路完全沒聲音、在飛命令還在靜默寬限內（command_queue.js 檔頭
-      // stallCapMs）：讓命令自己的有界截止點先收尾（它的 onFail 會降級），後盾
-      // 只往後挪到那之後再看一次。寬限是送出起算的絕對值 ⇒ 不會無限延長。
-      const stallMs = self._queue.stallWaitMs ? self._queue.stallWaitMs() : 0;
-      if (stallMs > 0) {
-        self._setFrozenWatchdog(stallMs + STALL_WATCHDOG_SLACK_MS);
-        return;
-      }
-      self._degradeToNative('指令逾時，已切至原生模式');
-    }, ms);
-  },
-
   // Number jump: digits collected locally (overlay input), one serialized
   // jump transaction on commit. The landing page may be far outside the
   // buffer → rebuild from the landed facts instead of resuming stale anchors.
@@ -2592,24 +2520,6 @@ ListSession.prototype = {
       rowH: rowH,
       viewportPx: (screen.getListViewportPx && screen.getListViewportPx()) || B * rowH
     });
-  },
-
-  // 一筆在捲動視口裡的高度（未縮放）。一般＝chh；手機卡片（view.listCards，
-  // docs/mobile.md「Phase 4」）＝ LIST_CARD_ROWS × chh。list_scroll.js 的數學只要
-  // 「每筆等高」，所以整個捲動／錨定／reveal 只靠這一支就換成卡片座標。
-  _rowHeight: function() {
-    const v = this._view;
-    return ((v && v.chh) || 0) * listRowSpan(!!(v && v.listCards));
-  },
-
-  // PgUp／PgDn 一次翻幾筆＝視口放得下幾筆。卡片模式一筆佔 LIST_CARD_ROWS 列，
-  // 翻 bodyRows 筆會跳過半屏沒看過的東西；視口高也不同（header／footer 收起，
-  // mobile_layout.listViewportGeometry，與 term_view／clientToPos 同源）。
-  // **只給視口操作用**：_bodyRows 仍是 server 的 p_lines（抓頁／補頁的單位），不可以一起換。
-  _pageRows: function() {
-    const v = this._view;
-    const cards = !!(v && v.listCards);
-    return listFillRows({ rows: this._termBuf.rows, headerRows: this.headerRows(), cards: cards });
   },
 
   // 左鍵單擊某一列（App.mouse_click 已把 client 座標換成**渲染後**的列號）＝
@@ -3106,12 +3016,6 @@ ListSession.prototype = {
     }
   },
 
-  _startFill: function() {
-    this._fillTarget = readEffectivePrefs().easyReadingListPrefetchCount || 0;
-    this._fillPages = 0;
-    this._maybeFill();
-  },
-
   // Background fill: page UP (older articles — we enter at the newest) until
   // enough visible rows, the page cap, or the top edge. One command at a time,
   // chained via onDone — never in parallel with anything.
@@ -3235,12 +3139,6 @@ ListSession.prototype = {
     if (this._prunePivotOverride !== undefined) return this._prunePivotOverride;
     if (this._topNum != null) return this._topNum;
     return this._selectedNum;
-  },
-
-  prunePivot: function() {
-    return this._prunePivotOverride !== undefined
-      ? this._prunePivotOverride
-      : this._selectedNum;
   },
 
   // ANCHORED prefetch (v4-stabilize bug 3: 往上讀卡住/亂跳頁). The single real
@@ -3924,12 +3822,6 @@ ListSession.prototype = {
     return LIST_HEADER_ROWS;
   },
 
-  // The window's body row count: the native list body (rows 3..rows-2 on a
-  // 24-row screen = 20 entries, pttbbs p_lines).
-  _bodyRows: function() {
-    return this._termBuf.rows - 4;
-  },
-
   // The navigable sequence: blacklist-filtered absolute listLines indices,
   // pinned tail gated behind a confirmed bottom edge (native parity: 置底文
   // exist only on the board's last page).
@@ -4196,18 +4088,6 @@ ListSession.prototype = {
     return -1;
   },
 
-  // 動畫到站了嗎（順便清掉）。逾時逃生門：使用者中途自己捲動會取消瀏覽器的
-  // 動畫，那時永遠到不了目標。
-  _scrollAnimSettled: function(px) {
-    const a = this._scrollAnim;
-    if (!a) return true;
-    if (Math.abs(px - a.px) < 1 || Date.now() - a.at > SCROLL_ANIM_MAX_MS) {
-      this._scrollAnim = null;
-      return true;
-    }
-    return false;
-  },
-
   // 重繪前：把 DOM 現在的 scrollTop 轉成內容錨。accumulate 會讓整段序列上下位移
   // （merge/evict/prune），位置留不住、錨留得住。
   captureScrollAnchor: function() {
@@ -4411,10 +4291,6 @@ ListSession.prototype = {
   _syncAnchorFromPx: function(seq, px, rowH) {
     const t = topPosFromScrollTop({ scrollTop: px, rowH: rowH });
     this._setAnchorPos(seq, t.pos, t.frac);
-  },
-
-  _screen: function() {
-    return (this._view && this._view.componentScreen) || null;
   },
 
   _diag: function(name, info) {
