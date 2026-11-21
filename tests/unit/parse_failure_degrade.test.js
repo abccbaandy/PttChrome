@@ -45,6 +45,8 @@ import { functionModeExitDecision } from "../../src/js/easy_reading";
 import { parseStatusRow } from "../../src/js/string_util";
 import { parseHelpMenuScreen, HelpMenuController } from "../../src/js/help_menu";
 import { HELP_FAV_PAGE1 } from "./fixtures/help_menu_rows";
+import { isMenuScreen } from "../../src/js/menu_items";
+import { MAIN_MENU_ROWS, MAIN_MENU_STATUS, SUBMENU_ROWS } from "./fixtures/main_menu_rows";
 import { isMailListRows, parseMailRow, isMailboxOverLimitNotice, isMailKeyHintRow } from "../../src/js/mail_list";
 import { classifyPushScreen, parseContentDenied } from "../../src/js/push_screen";
 import { MAIL_LIST_ROWS, MAIL_HEADER_ROW, MAIL_ITEM_ROWS } from "./fixtures/mail_list_rows";
@@ -403,6 +405,25 @@ describe("說明選單好讀：認不出 ⇒ 不開彈窗、不送鍵（原生�
     ctrl.noteScreen(parseHelpMenuScreen(rows));
     expect(ctrl.phase).toBe("idle");
     expect(sent).toEqual([]);
+  });
+});
+
+// 選單畫面（手機主功能表卡片、滑鼠點選單項、footer 鍵）：row 0 一定是 vs_draw_header 畫的
+// 「【標題】」（mbbsd/vtuikit.c，VMSG_HEADER_PREFIX）。被別的東西蓋掉（一對一水球的「丟<id>:」
+// 輸入列、半繪）⇒ 不是選單，照原生畫，不然卡片會把輸入列跟對象名單整個蓋住。
+describe("選單畫面：row 0 不是【標題】⇒ 不是選單（手機卡片讓開）", () => {
+  const status = MAIN_MENU_STATUS;
+  test("對照組：主選單、子選單認得出", () => {
+    expect(isMenuScreen(1, MAIN_MENU_ROWS[0], status)).toBe(true);
+    expect(isMenuScreen(1, SUBMENU_ROWS[0], SUBMENU_ROWS[23])).toBe(true);
+  });
+  test.each([
+    ["一對一水球輸入列（wmsg.c PROMPT_OFO）", "丟carol:"],
+    ["一般水球輸入列（PROMPT_TO）", "訊息傳過去: "],
+    ["半繪（row 0 還沒畫）", ""],
+    ["標題前綴改版", "[主功能表]                     批踢踢實業坊"],
+  ])("%s → 不是選單", (_n, row0) => {
+    expect(isMenuScreen(1, row0, status)).toBe(false);
   });
 });
 
