@@ -65,6 +65,20 @@ describe("哪些連結走預覽卡", () => {
     expect(isPreviewableUrl(href)).toBe(false);
   });
 
+  test("REGRESSION 開關關著時看過的連結，打開開關後不用重整就會出卡（不可預覽的不進快取）", async () => {
+    const href = freshHref();
+    setLinkPreviewCard(false);
+    await expect(requestPreview(href)).rejects.toThrow();
+    setLinkPreviewCard(true);
+    stubFetch({ title: "打開之後" });
+    markLinkCardWanted(href, 1);
+    try {
+      await expect(requestPreview(href)).resolves.toMatchObject({ type: "card", title: "打開之後" });
+    } finally {
+      markLinkCardWanted(href, -1);
+    }
+  });
+
   test("圖片代理關掉 ⇒ 也不抓（不想把瀏覽紀錄送過去）", () => {
     setImageProxyConfig({ enabled: false });
     expect(isPreviewableUrl(freshHref())).toBe(false);

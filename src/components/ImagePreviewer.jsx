@@ -67,7 +67,9 @@ export const requestPreview = (href) => {
     p.catch((e) => {
       if (isLinkCardStale(e) && previewRequestCache.get(href) === p) previewRequestCache.delete(href);
     });
-    previewRequestCache.set(href, p);
+    // 「不可預覽」（落到 Default）不進快取：那是**開關當下**的判斷（預覽卡、圖片代理關著時），
+    // 快取起來的話之後打開開關，看過的連結要重整頁面才會出卡。重算只是一次 regex 掃描。
+    if (isPreviewableUrl(href)) previewRequestCache.set(href, p);
   }
   return p;
 };

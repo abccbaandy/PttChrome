@@ -18,6 +18,7 @@ import {
   LAZY_MOUNT_MARGIN_PX,
   LAZY_UNMOUNT_MARGIN_PX,
 } from "../../src/js/lazy_media";
+import { linkCardWanted } from "../../src/js/link_card";
 
 const spies = vi.hoisted(() => ({ requestPreview: 0 }));
 
@@ -352,6 +353,25 @@ describe("延遲載入佔位盒（掛載/卸載）", () => {
     far().emit(false);
     card.remove();
     expect(floorOf(slot)).toBe("74px");
+  });
+
+  // 排隊中的預覽卡請求靠這個計數決定要不要作廢：掛載／卸載／拆掉要成對，漂移的話
+  // 不是永遠作廢（卡片出不來），就是永遠不作廢（捲過去的照打 Worker）。
+  test("預覽卡的「有人要」計數：掛載 +1、卸載與拆掉各 -1，最後歸零", () => {
+    const href = "https://example.com/news/wanted";
+    const a = mountSlot(href);
+    const b = mountSlot(href);
+    expect(linkCardWanted(href)).toBe(false);
+    near().emit(true);
+    expect(linkCardWanted(href)).toBe(true);
+    far().emit(false); // 兩個都卸載
+    expect(linkCardWanted(href)).toBe(false);
+    near().emit(true);
+    a.destroy();
+    expect(linkCardWanted(href)).toBe(true); // b 還掛著
+    b.destroy();
+    b.destroy(); // 重複拆不會多扣
+    expect(linkCardWanted(href)).toBe(false);
   });
 
   test("捲回來 ⇒ 重新掛載，佔位高度保留", () => {
