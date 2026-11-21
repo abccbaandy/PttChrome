@@ -1,4 +1,4 @@
-// 守護正式版 <meta> CSP（scripts/csp.mjs、docs/security.md）：
+// 守護正式版 <meta> CSP（scripts/csp.mjs、docs/csp-hardening.md）：
 //   1. 行內 <script> 由建置時算 hash 放行，meta 排在任何 script／link 之前（meta 只管之後的內容）。
 //   2. index.html 不准有行內事件屬性（onclick= 之類）或 javascript: 網址：hash 救不了，上線就被擋。
 //   3. Firebase SDK 會動態載入的 script 網址都在 script-src 裡（SDK 換網域時這裡先紅，

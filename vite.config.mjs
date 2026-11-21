@@ -71,7 +71,7 @@ export default defineConfig(({ command }) => {
   return {
     // 部署在 GitHub Pages 子路徑，所有資源引用走相對路徑。
     base: './',
-    // cspMetaPlugin 只在 build 注入 <meta> CSP（scripts/csp.mjs、docs/security.md）。
+    // cspMetaPlugin 只在 build 注入 <meta> CSP（scripts/csp.mjs、docs/csp-hardening.md）。
     plugins: [react(), htmlVars(), devServerPidfile(), devSshRelay(), cspMetaPlugin()],
     // .bin（Big5 轉碼表）與 .bmp 不在 Vite 內建 asset 清單，明確納入。
     assetsInclude: ['**/*.bin', '**/*.bmp'],

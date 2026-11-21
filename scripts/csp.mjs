@@ -1,4 +1,4 @@
-// 正式版 index.html 的 Content-Security-Policy（架構 review A4 步驟 b，docs/security.md）。
+// 正式版 index.html 的 Content-Security-Policy（架構 review A4 步驟 b，docs/csp-hardening.md）。
 //
 // 只在 `vite build` 注入（apply: 'build'）：Vite dev server 會在頁面塞行內 preamble（React refresh），
 // dev 加 CSP 只會擋自己。CI 的 offline e2e 跑打包版（E2E_SERVER=bundle）⇒ 驗得到這份 policy。

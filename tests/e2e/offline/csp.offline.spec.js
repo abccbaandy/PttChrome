@@ -1,4 +1,4 @@
-// 正式版 <meta> CSP（scripts/csp.mjs、docs/security.md）在真瀏覽器的兩件事：
+// 正式版 <meta> CSP（scripts/csp.mjs、docs/csp-hardening.md）在真瀏覽器的兩件事：
 //   1) 打包版開站整條 boot（含行內「下載程式中…」script）在 CSP 下沒有任何違規，app 照常連上。
 //      違規本身由 installReplay 掛的 csp_guard 對**每一條** offline spec 收（任何一條碰到被擋的載入都會紅），
 //      這裡多驗 meta 真的在、而且真的會擋（不然 guard 永遠收不到東西，等於沒守）。

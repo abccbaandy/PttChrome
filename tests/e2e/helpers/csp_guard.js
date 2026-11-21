@@ -1,4 +1,4 @@
-// CSP 違規守護（scripts/csp.mjs、docs/security.md）：installReplay 對每個 offline 頁面裝。
+// CSP 違規守護（scripts/csp.mjs、docs/csp-hardening.md）：installReplay 對每個 offline 頁面裝。
 // 正式版的 <meta> CSP 只在 build 注入 ⇒ 只有打包版（CI 的 E2E_SERVER=bundle）會真的擋；dev server
 // 沒有 CSP，這裡永遠是空的。被擋的資源瀏覽器只在 console 印一行、不丟例外，功能就是默默不見
 // （圖片預覽空白、登入按了沒反應），所以要主動收 securitypolicyviolation 讓 test 紅。
