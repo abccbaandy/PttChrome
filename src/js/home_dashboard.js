@@ -403,6 +403,12 @@ HomeDashboard.prototype = {
     });
   },
 
+  // 我的最愛在別處被改了（看板列表右鍵加入／移出，board_fav_toggle.js）：快取當作過期，
+  // 下次回首頁照 shouldFetchFavorites 重抓。已經顯示的那份先留著（重抓完才換）。
+  markFavoritesStale: function() {
+    this._set({ fetchedAt: null, failedAt: null });
+  },
+
   _hint: function(msg, ms, level) {
     const view = this._core.view;
     if (view && view.flashListHint) view.flashListHint(msg, ms || 3000, level);

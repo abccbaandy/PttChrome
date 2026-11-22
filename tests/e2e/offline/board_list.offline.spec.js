@@ -201,9 +201,8 @@ test('搜尋看板 prompt：不破字、整個畫面不上底色、殘留列表�
 // 沒有確認 ⇒ 原生路徑是「跳號 → 確認游標停在同板名 → 才送 v」。這卷的起始畫面是只有
 // 第 21 列的那一頁，錄的第一個跳號是 22 ⇒ 右鍵那一列送出的 `21⏎` 不會被餵回應，正好驗
 // 「跳號沒落地就絕不送 v」（正向序列由 unit board_mark_read.test.js 守）。
-test('右鍵看板列：選單有「<板名> 設為已讀」；跳號沒落地絕不送 v', async ({ page }) => {
-  test.skip(!smooth, '缺 scn-boardlist-class（yarn record:scenarios）');
-  await bootScenario(page, ptt, smooth);
+// 起始畫面上第一個看板列：標記 data-e2e-target，在那一列板名上按右鍵，回 { row, num, name }。
+async function rightClickFirstBoardRow(page) {
   const target = await page.evaluate(() => {
     const b = window.__app.buf;
     for (let r = 3; r < b.rows - 1; ++r) {
@@ -225,6 +224,13 @@ test('右鍵看板列：選單有「<板名> 設為已讀」；跳號沒落地�
   const box = await waitRectStable(page, '[data-e2e-target]');
   const chw = await page.evaluate(() => window.__app.view.chw);
   await page.mouse.click(box.left + 25.5 * chw, box.top + box.height / 2, { button: 'right' });
+  return target;
+}
+
+test('右鍵看板列：選單有「<板名> 設為已讀」；跳號沒落地絕不送 v', async ({ page }) => {
+  test.skip(!smooth, '缺 scn-boardlist-class（yarn record:scenarios）');
+  await bootScenario(page, ptt, smooth);
+  const target = await rightClickFirstBoardRow(page);
 
   const suffix = await page.evaluate(() => window.__i18n('cmenu_boardMarkRead'));
   const item = page
@@ -248,4 +254,35 @@ test('右鍵看板列：選單有「<板名> 設為已讀」；跳號沒落地�
   });
   const sent = await page.evaluate((from) => window.__replay.sent.slice(from), before);
   expect(sent.filter((d) => d.charAt(0) === 'v')).toEqual([]);
+});
+
+// 右鍵「<板名> 加入／移出我的最愛」（js/board_fav_toggle.js，P112）。跟設為已讀同一道守門：
+// 跳號沒落地絕不送 m（正向序列與我的最愛的刪除確認由 unit board_fav_toggle.test.js 守）。
+test('右鍵看板列：選單有「<板名> 加入／移出我的最愛」；跳號沒落地絕不送 m', async ({ page }) => {
+  test.skip(!smooth, '缺 scn-boardlist-class（yarn record:scenarios）');
+  await bootScenario(page, ptt, smooth);
+  const target = await rightClickFirstBoardRow(page);
+
+  const suffix = await page.evaluate(() => window.__i18n('cmenu_boardFavToggle'));
+  const item = page
+    .locator('.DropdownMenu')
+    .first()
+    .getByRole('menuitem')
+    .filter({ hasText: suffix });
+  await expect(item).toBeVisible();
+  await expect(item).toContainText(target.name);
+  await page.screenshot({ path: test.info().outputPath('board-fav-menu.png') });
+
+  const before = await page.evaluate(() => window.__replay.sent.length);
+  await item.click();
+  await page.waitForFunction(
+    ({ from, num }) => window.__replay.sent.slice(from).includes(num + '\r\f'),
+    { from: before, num: target.num },
+    { timeout: 10000 }
+  );
+  await page.waitForFunction(() => !window.__app.boardFavInFlight, undefined, {
+    timeout: 20000
+  });
+  const sent = await page.evaluate((from) => window.__replay.sent.slice(from), before);
+  expect(sent.filter((d) => d.charAt(0) === 'm')).toEqual([]);
 });

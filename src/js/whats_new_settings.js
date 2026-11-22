@@ -47,6 +47,7 @@ export const FEATURE_SETTING = {
   右鍵時標出選中的文章: "highlightMenuTarget",
   已讀文章低亮: "dimReadArticles",
   有新文章的看板一眼看得出來: "boardListUnreadMark",
+  "看板列表加入／移出我的最愛": "boardListFavToggle",
   快速捲動把手: "enableListFastScroll",
   跳到第一篇未讀: "unreadJumpKey",
   跳過進板畫面: "skipBoardEntryScreen",
