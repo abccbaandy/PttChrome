@@ -30,8 +30,8 @@
 // 定位，不成就停手）。誤推無法收回，寧可失敗。
 
 import {
-  parseListAuthor,
-  parseArticleAuthor,
+  parseListOwner,
+  parseArticleOwner,
   parseArticleTitle,
   subjectOfListText,
   pageArticleNums,
@@ -56,13 +56,14 @@ export function subjectKey(rawTitle) {
   return t || null;
 }
 
-// 從一列列表文字取出身分。author 是小寫 userid，subject 是 subject_ex 後的主題
-// （可能以 … 結尾＝被截斷）。兩者缺一就回 null —— 只有一半的身分不足以判定
+// 從一列列表文字取出身分。author 是作者欄的身分 key（小寫 userid；系統文章的
+// `[系統]`／`系統` 剝成 `系統`，見 comment_parse.ownerKey），subject 是 subject_ex
+// 後的主題（可能以 … 結尾＝被截斷）。兩者缺一就回 null —— 只有一半的身分不足以判定
 // 「還是同一篇」。空列／已刪除列（作者欄是 "-"）都會落在這裡。
 // **置底（★）列不會**：它照樣有作者與標題，只是沒有編號（bbs.c:843 以 ★ 取代
 // %7d）⇒ 身分讀得出來，能不能用編號跳是另一回事（findAnchorRowNum）。
 export function listRowIdentity(text) {
-  const author = parseListAuthor(text);
+  const author = parseListOwner(text);
   if (!author) return null;
   const subject = subjectOfListText(text);
   if (!subject) return null;
@@ -78,7 +79,7 @@ export function articleAnchor(rowTexts) {
   let author = null;
   let title = null;
   for (let i = 0; i < rowTexts.length && (!author || !title); ++i) {
-    if (!author) author = parseArticleAuthor(rowTexts[i]);
+    if (!author) author = parseArticleOwner(rowTexts[i]);
     if (!title) title = parseArticleTitle(rowTexts[i]);
   }
   const subject = subjectKey(title);

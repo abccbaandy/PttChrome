@@ -129,6 +129,11 @@ session 存的是**使用者打的原文**與「已送出到哪個 index」，�
 之後的畫面，游標列可能早就換人，拿它當基準等於把污染當成正確值。文章標頭讀不到時
 才退而求其次用**第一次**落地幀採（弱，但比完全不比對好）。
 
+`author` 是身分 key，不是帳號（`comment_parse.ownerKey`）：系統文章 owner 是 `[系統]`
+（`syspost.c#post_msg2`），線上文章標頭印 `[系統]`、列表印 `系統` ⇒ 剝外層 `[]` 後比對；
+列表欄位依**格**切（作者欄有寬字時標題區會位移）。讀不出作者 ⇒ 守門恆 unknown ⇒ 每步都要
+`#AID` 重新定位，`MAX_RELOCATIONS` 用完就整篇推不了。
+
 主題比對必須**容忍截斷**：`readdoent` 印標題時
 `if (strlen(title) > w) { outns(title, w-2); outs("…"); }`（w = `t_columns - 34`）。
 

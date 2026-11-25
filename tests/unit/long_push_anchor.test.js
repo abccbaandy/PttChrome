@@ -124,6 +124,54 @@ describe("articleAnchor", () => {
   });
 });
 
+// 系統發的文章（mbbsd/syspost.c#post_msg2 把 author 原樣 STRLCPY 進 fhdr.owner，呼叫端
+// 傳 "[系統]"）作者不是合法 userid。實測 PttCurrent 的公告：文章標頭印 `[系統]`、列表
+// 作者欄印 `系統`（上游 readdoent 原樣印 owner ⇒ 也可能是 `[系統]`，新舊都要吃）。
+// 讀不出身分的後果：長推文的游標守門恆為 unknown ⇒ 每一步都要 #AID 重新定位，
+// 探路收尾時定位額度已經用完 ⇒「原本那篇文章不見了」，整篇推不了。
+//
+// 列表文字是 getRowText 的輸出：寬字一個 code unit、佔兩格（欄位要依格數切）。
+describe("非帳號作者（系統文章）", () => {
+  const SYS_HEAD = [
+    " 作者  [系統]                                                看板  PttCurrent   ",
+    " 標題  [開發資訊] 系統變更: 新式留言與評分                                      ",
+    " 時間  Wed Nov 25 00:00:01 CST 2026                                             ",
+  ];
+  const SYS_SUBJECT = "[開發資訊] 系統變更: 新式留言與評分";
+  // 線上實測的列表列（作者欄 `系統` 佔 4 格 + 9 格 padding）。
+  const liveRow = (num, cursor) =>
+    (cursor ? ">" + String(num).padStart(6) : String(num).padStart(7)) +
+    "    11/25 系統         □ " +
+    SYS_SUBJECT +
+    "            ";
+  // 上游 readdoent 原樣印 owner（`[系統]` 佔 6 格 + 7 格 padding）。
+  const upstreamRow = (num, mark) =>
+    String(num).padStart(7) + "    11/25 [系統]       " + (mark || "□") + " " + SYS_SUBJECT;
+
+  test("文章標頭的 [系統] 讀得出錨點", () => {
+    expect(articleAnchor(SYS_HEAD)).toEqual({ author: "系統", subject: SYS_SUBJECT });
+  });
+
+  test("列表作者欄 系統／[系統] 都讀得出同一個身分", () => {
+    const want = { author: "系統", subject: SYS_SUBJECT };
+    expect(listRowIdentity(liveRow(1671, true))).toEqual(want);
+    expect(listRowIdentity(liveRow(1671, false))).toEqual(want);
+    expect(listRowIdentity(upstreamRow(1671))).toEqual(want);
+  });
+
+  test("作者欄的寬字不讓標題欄位移（R: 型別符照樣剝掉）", () => {
+    expect(listRowIdentity(upstreamRow(1671, "R:")).subject).toBe(SYS_SUBJECT);
+  });
+
+  test("文章標頭採的錨點對得上游標列 ⇒ ok", () => {
+    const anchor = articleAnchor(SYS_HEAD);
+    const f = facts([listRow(1670, "kirbycopy", "[問題] CFP板精華區消失"), liveRow(1671, true)], 4);
+    expect(checkCursorAnchor(f, anchor)).toBe("ok");
+    expect(anchorMatchCount(f, anchor)).toBe(1);
+    expect(findAnchorRowNum(f, anchor)).toBe(1671);
+  });
+});
+
 describe("subjectMatches：容忍 readdoent 的截斷", () => {
   // bbs.c#readdoent: strlen(title) > w ⇒ outns(title, w-2) + "…"
   test("列表側被截斷時只比前綴", () => {

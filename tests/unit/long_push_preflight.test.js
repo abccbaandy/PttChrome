@@ -397,6 +397,42 @@ describe("守門與旗標", () => {
   });
 });
 
+// 系統發的文章（作者 [系統]，PttCurrent 的公告）。作者不是合法 userid 時錨點身分讀不出來，
+// 守門恆為 unknown：Q 取 AID 關框落回列表時已經用掉唯一一次 #AID 重新定位，探路收尾
+// 回到列表再過守門 ⇒ 定位額度用完 ⇒「原本那篇文章不見了」，整篇推不了。
+describe("系統文章（作者 [系統]）", () => {
+  const SYS_SUBJECT = "[開發資訊] 系統變更: 新式留言與評分";
+  const SYS_HEAD = [
+    " 作者  [系統]                                                看板  PttCurrent   ",
+    " 標題  " + SYS_SUBJECT,
+    " 時間  Wed Nov 25 00:00:01 CST 2026",
+  ];
+  // 線上實測的列表列：作者欄 `系統`（寬字，佔 4 格）＋ 9 格 padding。
+  const SYS_ROW = (num, cursor) =>
+    (cursor ? ">" + String(num).padStart(6) : String(num).padStart(7)) +
+    "    11/25 系統         □ " +
+    SYS_SUBJECT;
+
+  test("Q 取 AID → 列表 → 探路 → 收尾後照常 ⏎ 回文章、回報可以推", () => {
+    const h = pre({ articleRows: SYS_HEAD, localAid: null });
+    expect(h.session.startPreflight({})).toBe(true);
+    expect(h.sent).toEqual(["Q"]);
+    h.settle("文章代碼(AID): #" + AID + " 按任意鍵繼續");
+    expect(h.sent).toEqual(["Q", " "]);
+    // view_postinfo 回 FULLUPDATE ⇒ 關框後人在列表，游標在原篇：身分對得上就直接 X。
+    h.settleList([OTHER_ROW(1670), SYS_ROW(1671, true)], 1);
+    expect(h.sent).toEqual(["Q", " ", "X"]);
+    h.settle(TYPE_MENU);
+    h.settle(PROMPT);
+    h.settleList([OTHER_ROW(1670), SYS_ROW(1671, true)], 1);
+    expect(h.sent).toEqual(["Q", " ", "X", "\x03", "\x03", "\r"]);
+    h.settle(ARTICLE_FOOTER);
+    expect(h.session.active).toBe(false);
+    expect(h.preflight).toHaveLength(1);
+    expect(h.preflight[0]).toMatchObject({ blocked: false, booAllowed: true });
+  });
+});
+
 // 探路階段（還沒打任何字）不可能有東西送出去 ⇒ onSent 一律不響，草稿留著。
 describe("探路階段不會誤清草稿", () => {
   test("被 PTT 擋下來不呼叫 onSent", () => {

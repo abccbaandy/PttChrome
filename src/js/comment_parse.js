@@ -458,6 +458,30 @@ export function parseArticleAuthor(text) {
   return m[1].toLowerCase();
 }
 
+// 作者欄的「身分 key」，不要求是合法帳號 —— 給錨點比對（long_push_anchor）用，**不給**
+// 黑名單／原PO 高亮（那些要的是帳號，繼續用 parseArticleAuthor／parseListAuthor）。
+// 系統發的文章 owner 是 `[系統]`（mbbsd/syspost.c#post_msg2 原樣 STRLCPY 進 fhdr.owner）：
+// 線上實測文章標頭印 `[系統]`、列表作者欄印 `系統`（上游 readdoent 原樣印 ⇒ 也可能是
+// `[系統]`）⇒ 剝掉外層 [] 當同一個 key。已刪除列的 "-"、空欄、中間有空白（欄位切歪）回 null。
+export function ownerKey(raw) {
+  if (!raw) return null;
+  let t = String(raw).trim();
+  const m = /^\[(.+)\]$/.exec(t);
+  if (m) t = m[1].trim();
+  if (!t || t === '-' || /\s/.test(t)) return null;
+  return t.toLowerCase();
+}
+
+const ARTICLE_OWNER_RE = /^\s*作者[:：]?\s+(\S+)/;
+
+// 文章標頭的作者身分 key：一般帳號同 parseArticleAuthor，系統文章回 `系統`。
+export function parseArticleOwner(text) {
+  const id = parseArticleAuthor(text);
+  if (id) return id;
+  const m = text ? text.match(ARTICLE_OWNER_RE) : null;
+  return m ? ownerKey(m[1]) : null;
+}
+
 // Same header line also carries "看板 board"; the board name is what an AID
 // link without an explicit board falls back to. Returned as-is (PTT board
 // lookup is case-insensitive), or null when the line is not an author header.
@@ -638,6 +662,29 @@ export function parseListAuthor(text) {
   return author.toLowerCase();
 }
 
+// 列表列依**格**切 [start, end)：rowToText／getRowText 把兩格的寬字收成一個字，
+// realignListColumns 只補得回作者欄**之前**的寬字（★／●）；作者欄自己有寬字時
+// （系統文章的 `系統`／`[系統]`）後面的標題欄會整段左移，只能逐字累計格數來切。
+// 跨在 start 上的寬字（左半在 start 之前）不算進來。
+function sliceListCells(text, start, end) {
+  const stop = end == null ? Infinity : end;
+  let cell = 0;
+  let out = '';
+  for (const ch of text) {
+    if (cell >= stop) break;
+    const w = charCells(ch);
+    if (cell >= start && cell + w <= stop) out += ch;
+    cell += w;
+  }
+  return out;
+}
+
+// 作者欄的身分 key（見 ownerKey）：一般帳號同 parseListAuthor，系統文章回 `系統`。
+export function parseListOwner(text) {
+  if (!text) return null;
+  return ownerKey(sliceListCells(text, LIST_AUTHOR_COL_START, LIST_AUTHOR_COL_END));
+}
+
 // Board list title column. Same calibration as parseListAuthor: the author field
 // ends at LIST_AUTHOR_COL_END (col 29) and the title region (incl. the "R:" reply
 // marker / "□"/"轉" state glyph) follows to end of line, e.g.:
@@ -648,21 +695,16 @@ export function parseListAuthor(text) {
 // in this region is a candidate for substring keyword matching, and a non-matching
 // row is simply never hidden (fail-safe).
 export function parseListTitle(text) {
-  if (!text || text.length <= LIST_AUTHOR_COL_END) return '';
-  // realign so the cursor/pinned row's leading wide marker doesn't shift the title
-  // region (keyword matching is substring-tolerant, but keep it consistent).
-  return realignListColumns(text)
-    .substring(LIST_AUTHOR_COL_END)
-    .trim()
-    .toLowerCase();
+  return parseListTitleRaw(text).toLowerCase();
 }
 
 // Raw-case variant of parseListTitle, for the quick-add-title-blacklist modal
 // prefill: the user edits the REAL title, so casing must be preserved (matching
 // itself is case-insensitive — parseTitleBlacklist lower-cases the keywords).
+// 依格切（sliceListCells）：開頭的 ★／● 與作者欄裡的寬字都不會讓標題區位移。
 export function parseListTitleRaw(text) {
-  if (!text || text.length <= LIST_AUTHOR_COL_END) return '';
-  return realignListColumns(text).substring(LIST_AUTHOR_COL_END).trim();
+  if (!text) return '';
+  return sliceListCells(text, LIST_AUTHOR_COL_END).trim();
 }
 
 // Which quick-blacklist region a screen column falls in on a board-list row.
