@@ -124,9 +124,16 @@ function makeArticle(seed, total, fullPush = false, quotes = false, osc = false)
       // 新格式推文（post.svc）：標頭＋`│` 內容列，黑名單要連內容列一起藏 ⇒ 跨列狀態
       // （ModernCommentThread）跟著增量快取走，必須與全量重算一致。
       const who = r() < 0.4 ? "badguy" : authors[Math.floor(r() * authors.length)];
-      rows.push(pad80("[" + i + "] " + who + "                     10/16/2026 13:" + mm));
       const k = 1 + Math.floor(r() * 3);
-      for (let j = 0; j < k; ++j) rows.push(pad80("│新格式內容 " + i + "-" + j + (j === 1 ? " GAMMA3" : "")));
+      if (i % 2) {
+        rows.push(pad80("[" + i + "] " + who + "                     10/16/2026 13:" + mm));
+        for (let j = 0; j < k; ++j) rows.push(pad80("│新格式內容 " + i + "-" + j + (j === 1 ? " GAMMA3" : "")));
+      } else {
+        // ea9fe3d6 之後的經典醒目：「推 id: 內容 … [N]」＋續行重複「→ id: 」（不多抽亂數，種子序列不變）。
+        const head = "推 " + who + ": 新格式內容 " + i;
+        rows.push(pad80(head + " ".repeat(Math.max(1, 50 - head.length)) + "10/16/2026 13:" + mm + " [" + i + "]"));
+        for (let j = 1; j < k; ++j) rows.push(pad80("→ " + who + ": 續行 " + i + "-" + j + (j === 1 ? " GAMMA3" : "")));
+      }
     } else {
       rows.push(push("推", uid, "接續 " + i, mm));
     }
@@ -203,6 +210,15 @@ const expandedKeys = (full, o) => {
   const keys = annotations.filter((a) => a && a.filterSkip).map((a) => a.filterSkipKey);
   return keys.filter((_, i) => i % 2 === 0);
 };
+
+test("正向對照：隨機文章裡 ea9fe3d6 形的新格式推文（「推 id: … [N]」＋「→ id: 」續行）真的被認出來", () => {
+  const o = OPTION_SETS[0];
+  const { annotations } = computeAnnotations(makeArticle(31, 700), enhanceFor(o), o.mergeCaption, false, {}, {}, {}, null, null);
+  // 「│」續行的內容欄是 2～3；「→ id: 」續行是 3＋id 長＋2 ≥ 9
+  expect(annotations.filter((a) => a && a.modernBody && a.modernBodyCol >= 9).length).toBeGreaterThan(2);
+  // 黑名單那一則的「→ badguy: 」續行一起藏
+  expect(annotations.filter((a) => a && a.modernBody && a.hidden).length).toBeGreaterThan(2);
+});
 
 describe("前沿快路徑：逐頁 append 與全量重算逐列相同", () => {
   for (const [oi, o] of OPTION_SETS.entries()) {

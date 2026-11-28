@@ -1396,7 +1396,16 @@ pmore 只在 `comments_start`（檔案最後一個 `※ ` 開頭行之後）且 
     不印；內容太長時連樓號都不印。第三個主題改名**對齊顯示**：id 前補空白到 `IDLEN`（12）格、不再有 `╭ ├ ─`。
   - 續行（`comment_render_body_prefix`）：印 `cur_header_width`（id 寬＋2；對齊顯示 14）格空白再接原文，不再有 `│`。
   - client 認法：列尾 ` [N]` 前要有 `HH:MM`、前導空白只能是 0 或補到 12 格；續行要剛好縮到內容欄。meta 被擠光的極長推文
-    不認（fail-safe）。由 `ptt_src_screens/modern_comments.json`（現行 seed）守。
+    不認（fail-safe）。由 `ptt_src_screens_legacy/modern_comments_ea9fe3d6.json` 守。
+- **904baa9a／ea9fe3d6（11/28）檔案再換、畫面小改（新舊都吃）**：
+  - 檔案（`engine.go#FormatCommentBlock`）：`RS[*][-|!]id|[~]N|MM/DD/YYYY HH:MM|[ip]|第一行` ＋ 續行 `RS[*]+id|內容`
+    （RS＝0x1e，編輯器打不出來 ⇒ 內文不會被當推文；pmore 在檔案任何位置都畫成推文）。`*`＝原PO（只換顏色）、
+    `-`＝本人刪「留言已刪除」、`!`＝板主移除「留言已移除」／「留言已移除 (<原因>)」。
+  - 畫面（`comments.c#comment_render_modern_header`／`print_more_prefix`）：標頭列同 87c3a1f3；**經典醒目**前面多
+    `推 `（刪除的也是「推」，變灰），續行是 `→ id: 內容`；**單純易讀**續行重複 `id: `（灰色）；**對齊顯示**續行照舊空白縮到 14 格。
+    01dc2b11 起預設主題是單純易讀、存在 `userec_t.comment_theme`（設定頁順序：單純易讀／對齊顯示／經典醒目）。
+  - client 認法：標頭可帶 `推 ` 前綴（此時不可再補空白）；續行吃「這一則的字首」（`→ id: `／`id: `，跟標頭列同寬 ⇒ 內容欄同 bodyCol）
+    或空白縮排。由 `ptt_src_screens/modern_comments.json`（現行 seed）守。
 - **終端推文仍是舊格式**：`bbs.c#comment` → `post.c#CommentAddRecord` 寫的是 `FormatCommentString` 那一列。
   ⇒ 一篇文章可以「上半舊格式、下半新格式」並存；兩種都要認。
 - client：`comment_parse.parseModernCommentHeader`（要求列尾 creation，80 欄下一定塞得下；id 照 `is_validuserid`）、

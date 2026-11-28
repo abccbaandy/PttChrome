@@ -210,8 +210,8 @@ describe('agent_parse.parseArticleLines：新舊推文都收', () => {
 //   續行：comment_render_body_prefix 印 cur_header_width（id 寬＋2；對齊顯示 14）格空白再接原文。
 // 畫面列文字照上面的規則手組（不是從被測程式反推）；upstream 實際產的畫面另由
 // ptt_src_screens.test.js 的 modern_comments 守。
-function pipeHeader(id, content, meta, floor, { aligned = false } = {}) {
-  const left = (aligned ? ' '.repeat(Math.max(0, 12 - id.length)) : '') + id + ': ' + content;
+function pipeHeader(id, content, meta, floor, { aligned = false, mark = '' } = {}) {
+  const left = (mark ? mark + ' ' : '') + (aligned ? ' '.repeat(Math.max(0, 12 - id.length)) : '') + id + ': ' + content;
   const right = (meta ? meta + ' ' : '') + '[' + floor + ']';
   const w = (t) => [...t].reduce((n, ch) => n + (ch.charCodeAt(0) > 0x7f ? 2 : 1), 0);
   return left + ' '.repeat(Math.max(1, 79 - w(left) - w(right))) + right;
@@ -228,6 +228,8 @@ describe('parseModernCommentHeader：87c3a1f3 之後（id: 內容 … [N]）', (
       user: 'alice',
       idCol: 0,
       bodyCol: 7,
+      bodyIdx: 7,
+      contPrefix: 'alice: ',
       content: '第一則推文',
       ip: '1.2.3.4',
       time: '10/28/2026 12:00',
@@ -339,5 +341,117 @@ describe('agent_parse.parseArticleLines：87c3a1f3 之後', () => {
       { type: 'modern', seq: 1, user: 'alice', content: '第一則推文', ip: '1.2.3.4', time: '10/28/2026 12:00' },
     ]);
     expect(r.content).not.toContain('壞話');
+  });
+});
+
+// ── upstream ea9fe3d6 之後（CONFIRMED @ pttbbs ea9fe3d6）──────────────────────────────
+//   檔案：service/nest/storage/engine.go#FormatCommentBlock
+//     "RS[*][-|!]id|[~]N|MM/DD/YYYY HH:MM|[ip]|第一行" ＋ 續行 "RS[*]+id|內容"（RS＝0x1e）
+//     刪除：- ＝「留言已刪除」、! ＝「留言已移除」或「留言已移除 (原因)」
+//   畫面：mbbsd/comments.c#comment_render_modern_header／print_more_prefix
+//     經典醒目：標頭 mark_first「推 」＋`id: 內容`…`[N]`；續行 mark_more「→ 」＋`id: 內容`
+//     單純易讀：標頭同 87c3a1f3；續行重複 `id: `（灰色）
+//     對齊顯示：沒有續行色 ⇒ 續行照舊空白縮到內容欄（14）
+// 畫面列文字照上面的規則手組；upstream 實際產的畫面另由 ptt_src_screens.test.js 的 modern_comments 守。
+const classicHeader = (id, content, meta, floor) => pipeHeader(id, content, meta, floor, { mark: '推' });
+const C2 = classicHeader('badguy', '壞話第一行', '10/28/2026 12:01', '2');
+
+describe('parseModernCommentHeader：ea9fe3d6 之後（經典醒目「推 」、續行重複 id）', () => {
+  test('經典醒目：「推 」之後才是 id；id 欄與內容欄是 cell（推是全形），續行字首「→ id: 」', () => {
+    const h = parseModernCommentHeader(C2);
+    expect(h).toMatchObject({
+      seq: 2,
+      userid: 'badguy',
+      idCol: 3,
+      bodyCol: 11,
+      bodyIdx: 10,
+      contPrefix: '→ badguy: ',
+      content: '壞話第一行',
+      ip: null,
+      time: '10/28/2026 12:01',
+    });
+    // 「推 id: 」開頭但列尾是 [N] 不是舊格式的「MM/DD HH:MM」⇒ 不會被當成舊格式推文
+    expect(parseComment(C2)).toBeNull();
+  });
+
+  test('單純易讀：續行字首是「id: 」；對齊顯示沒有字首（只有空白縮排）', () => {
+    expect(parseModernCommentHeader(P1).contPrefix).toBe('alice: ');
+    const aligned = parseModernCommentHeader(pipeHeader('nina', '嗨', '10/28/2026 12:05', '3', { aligned: true }));
+    expect(aligned.contPrefix).toBeNull();
+  });
+
+  test('「推 」之後又補空白（不是 pmore 畫的）⇒ 不認；噓／→ 開頭不是標頭', () => {
+    expect(parseModernCommentHeader('推 ' + pipeHeader('nina', '嗨', '10/28/2026 12:05', '3', { aligned: true }))).toBeNull();
+    expect(parseModernCommentHeader(C2.replace(/^推/, '噓'))).toBeNull();
+    expect(parseModernCommentHeader(C2.replace(/^推/, '→'))).toBeNull();
+  });
+
+  test('板主移除的內容「留言已移除 (原因)」／「留言已移除」算刪除', () => {
+    expect(parseModernCommentHeader(classicHeader('dave', '留言已移除 (廣告)', '10/28/2026 12:07', '5'))).toMatchObject({
+      deleted: '留言已移除 (廣告)',
+    });
+    expect(parseModernCommentHeader(pipeHeader('dave', '留言已移除', '10/28/2026 12:07', '5'))).toMatchObject({
+      deleted: '留言已移除',
+    });
+  });
+});
+
+describe('annotateComment：ea9fe3d6 之後', () => {
+  const ctxOf = (o = {}) => ({
+    blacklist: new Set(['badguy']),
+    showFloorNumbers: true,
+    floorCounter: new FloorCounter(),
+    highlightAuthor: true,
+    articleAuthor: 'alice',
+    modernThread: new ModernCommentThread(),
+    ...o,
+  });
+
+  test('經典醒目：黑名單連「→ id: 」續行一起藏；別人的「→ id: 」不算續行', () => {
+    const ctx = ctxOf();
+    const rows = [C2, '→ badguy: 壞話第二行', '→ alice: 不是這一則', ''];
+    const anns = rows.map((t) => annotateComment(t, ctx));
+    expect(anns[0]).toMatchObject({ modern: true, hidden: true, userid: 'badguy' });
+    expect(anns[1]).toEqual({ hidden: true, modernBody: true });
+    expect(anns[2]).toBeNull();
+  });
+
+  test('單純易讀：「id: 」續行接在同一則下，內容欄＝標頭的內容欄；原PO 高亮落在「推 」之後', () => {
+    const ctx = ctxOf();
+    const anns = [P1, 'alice: 第二行', 'bob: 別人'].map((t) => annotateComment(t, ctx));
+    expect(anns[1]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 7 });
+    expect(anns[2]).toBeNull();
+    const c = annotateComment(classicHeader('alice', '嗨', '10/28/2026 12:00', '1'), ctxOf());
+    expect([c.authorIdStart, c.authorIdEnd]).toEqual([3, 8]);
+    const ctx2 = ctxOf();
+    const cont = [classicHeader('alice', '嗨', '10/28/2026 12:00', '1'), '→ alice: 第二行'].map((t) => annotateComment(t, ctx2));
+    expect(cont[1]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 10 });
+  });
+
+  test('提到我：在「id: 」續行就標續行', () => {
+    const ctx = ctxOf({ selfId: 'meuser' });
+    const anns = [pipeHeader('bob', '第一行', '10/28/2026 12:00', '3'), 'bob: MeUser 看這'].map((t) => annotateComment(t, ctx));
+    expect(anns[1]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 5, mentionsSelf: true });
+  });
+});
+
+describe('agent_parse.parseArticleLines：ea9fe3d6 之後', () => {
+  test('經典醒目／單純易讀的重複 id 續行都接回同一則，字首不混進內容', () => {
+    const r = parseArticleLines([
+      '作者  poster (暱稱) 看板  Test',
+      '標題  [測試] 新格式',
+      '內文',
+      '※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4',
+      C2,
+      '→ badguy: 壞話第二行',
+      classicHeader('dave', '留言已移除 (廣告)', '10/28/2026 12:07', '5'),
+      P1,
+      'alice: 第二行 >>2',
+    ]);
+    expect(r.comments).toEqual([
+      { type: 'modern', seq: 2, user: 'badguy', content: '壞話第一行\n壞話第二行', ip: null, time: '10/28/2026 12:01' },
+      { type: 'modern', seq: 5, user: 'dave', content: '留言已移除 (廣告)', ip: null, time: '10/28/2026 12:07', deleted: true },
+      { type: 'modern', seq: 1, user: 'alice', content: '第一則推文\n第二行 >>2', ip: '1.2.3.4', time: '10/28/2026 12:00' },
+    ]);
   });
 });

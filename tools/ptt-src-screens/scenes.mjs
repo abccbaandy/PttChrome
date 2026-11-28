@@ -595,22 +595,23 @@ export const SCENES = [
     steps: [{ name: 'list' }, { keys: '\x10', name: 'post' }],
   },
   {
-    // 新格式推文（post.svc 寫回檔案的 "[N] id creation"＋"  內容"，含刪除的兩種）：pmore 在最後一個
-    // 「※ 」列之後改畫（comments.c#comment_render_modern_header／comment_render_body_prefix）。
-    // 留言色彩主題三種（pmore 設定頁 c 循環）：經典醒目 → 單純易讀 → 典雅邊框（標頭前多「╭ 」／「├ 」、
-    // id 與時間之間用 ─ 填）。comment_parse 的新格式認法靠它守。
+    // 新格式推文（nest.svc 寫回檔案的 "RS[*][-|!]id|[~]N|creation|[ip]|內容"＋續行 "RS[*]+id|內容"，
+    // 含刪除／移除）：pmore 在哪都畫成推文（comments.c#comment_render_header／comment_render_body_prefix）。
+    // 留言色彩主題三種（pmore 設定頁 c 循環）：01dc2b11 起預設單純易讀 → 對齊顯示（幀名沿用 bordered）→
+    // 經典醒目（之前預設經典醒目 → 單純易讀 → 典雅邊框；幀名照主題取，新舊 fixture 都對得上）。
+    // comment_parse 的新格式認法靠它守。
     file: 'modern_comments',
     entry: 'read:Comment',
     rows: 24,
     steps: [
       { name: 'list' },
-      { keys: '\r', name: 'classic' },
-      { keys: 'o' },
-      { keys: 'c' },
-      { keys: 'q', name: 'simple' },
+      { keys: '\r', name: 'simple' },
       { keys: 'o' },
       { keys: 'c' },
       { keys: 'q', name: 'bordered' },
+      { keys: 'o' },
+      { keys: 'c' },
+      { keys: 'q', name: 'classic' },
     ],
   },
   {

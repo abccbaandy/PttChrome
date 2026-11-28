@@ -36,6 +36,7 @@ import {
 import { parseArticleLines } from "../../src/js/agent_parse";
 import modernCommentsFx from "./fixtures/ptt_src_screens/modern_comments.json";
 import modernCommentsLegacyFx from "./fixtures/ptt_src_screens_legacy/modern_comments_768b172a.json";
+import modernCommentsPipeFx from "./fixtures/ptt_src_screens_legacy/modern_comments_ea9fe3d6.json";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
 import articleListTallFx from "./fixtures/ptt_src_screens/article_list_tall.json";
@@ -779,8 +780,8 @@ describe("upstream pttbbs 產的 pmore 設定頁（o 完整設定、\\ 快速設
   test("完整設定頁多出「留言色彩主題」列（upstream f30655b，同樣三段＋*）不會被當成色彩顯示方式", () => {
     for (const name of ["pref", "pref-cycled"]) {
       const theme = rows(name).find((t) => t.includes("留言色彩主題"));
-      // 第三個主題 87c3a1f3 從「典雅邊框」改名「對齊顯示」
-      expect(theme, name).toMatch(/\*經典醒目 \| 單純易讀 \| 對齊顯示/);
+      // 第三個主題 87c3a1f3 從「典雅邊框」改名「對齊顯示」；01dc2b11 起順序改成單純易讀（預設）先
+      expect(theme, name).toMatch(/\*單純易讀 \| 對齊顯示 \| 經典醒目/);
     }
     // 循環的是色彩顯示方式：主題列的 * 停在第 0 段，讀到的仍是第 1 段（原始ANSI控制碼）
     expect(parseRawModeFromPrefRow(rows("pref-cycled"))).toBe(MFDISP_RAW_NOANSI);
@@ -1861,15 +1862,25 @@ describe("upstream pttbbs 產的離站流程（xyz.c#Goodbye）", () => {
   });
 });
 
-// 兩代格式都守（PTT 實跑私有 commit，哪一代先上線未知）：
-// - 87c3a1f3 之後（seed.tsv 現行）：檔案 "|id[!]|內容|creation|[~]N"，畫面「id: 內容 … meta [N]」，
+// 三代格式都守（PTT 實跑私有 commit，哪一代先上線未知）：
+// - ea9fe3d6 之後（seed.tsv 現行）：檔案 "RS[*][-|!]id|[~]N|creation|[ip]|內容"＋續行 "RS[*]+id|內容"，
+//   畫面同下一代的標頭列，但經典醒目前面多「推 」、續行重複 id（單純易讀「id: 」、經典醒目「→ id: 」，
+//   對齊顯示仍是空白縮排）；別人移除的內容是「留言已移除 (原因)」。01dc2b11 起預設主題是單純易讀。
+// - 87c3a1f3～ea9fe3d6 之前（legacy fixture）：檔案 "|id[!]|內容|creation|[~]N"，畫面「id: 內容 … meta [N]」，
 //   續行縮到內容欄；第三個主題「對齊顯示」把 id 靠右對齊到 12 格。
 // - 768b172a 之前（legacy fixture）：檔案 "[N] id creation"＋"  內容"，畫面「[N] id … creation」＋「│」內容列；
 //   第三個主題「典雅邊框」加「╭ 」「├ 」。
 const MODERN_COMMENT_GENERATIONS = [
   {
-    label: "87c3a1f3 之後（id: 內容 … [N]）",
+    label: "ea9fe3d6 之後（推 id: 內容 … [N]，續行重複 id）",
     fx: modernCommentsFx,
+    headerOf: (id) => new RegExp(`^(?:推 )? *${id}: .*\\[~?\\d+\\]\\s*$`),
+    bobBodyRows: 1,
+    hiddenReason: "留言已移除 (廣告)",
+  },
+  {
+    label: "87c3a1f3 之後（id: 內容 … [N]）",
+    fx: modernCommentsPipeFx,
     headerOf: (id) => new RegExp(`^ *${id}: `),
     bobBodyRows: 1,
     hiddenReason: "留言已隱藏 (廣告)",

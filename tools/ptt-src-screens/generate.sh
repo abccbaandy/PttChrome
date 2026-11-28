@@ -68,9 +68,14 @@ done
 # fileheader_t 的推文數欄位：upstream b500faf 把 char pad＋char recommend 併成 int16_t rating（畫面不變）。
 # 新舊 upstream 都要編得過 ⇒ 看 header 決定 driver 寫哪個欄位。
 # upstream 8d5a7928 再把 rating 改名 score（一樣是淨推數，畫面不變）。
+# upstream 5c1cd6bb 把 score 改名 upvote、另拿 reserved 尾端兩 byte 當 downvote，列表顯示的淨推數改成
+# FHDR_SCORE＝upvote - downvote（bbs.c#readdoent）。driver memset 過 downvote＝0 ⇒ 把淨推數寫進 upvote，畫面不變
+# （upstream 對舊 .DIR 也是這樣相容：upvote 存舊淨推數、downvote 0）。
+UPVOTE_RE='^[[:space:]]*int16_t[[:space:]]+upvote;'
 SCORE_RE='^[[:space:]]*int16_t[[:space:]]+score;'
 RATING_RE='^[[:space:]]*int16_t[[:space:]]+rating;'
-if grep -Eq "$SCORE_RE" ../include/pttstruct.h; then FH_RATING=score
+if grep -Eq "$UPVOTE_RE" ../include/pttstruct.h; then FH_RATING=upvote
+elif grep -Eq "$SCORE_RE" ../include/pttstruct.h; then FH_RATING=score
 elif grep -Eq "$RATING_RE" ../include/pttstruct.h; then FH_RATING=rating
 else FH_RATING=recommend; fi
 # boardheader_t 的板主：upstream 653523c 把 char BM[] 換成 user_t moderators[]（見 driver.c#set_moderators）。
@@ -87,7 +92,10 @@ if grep -q 'vkey_sync_ipc' ../include/proto.h; then HAS_IPC_SYNC=1; LIVE_WRAP=$L
 if grep -q 'mbbsd_ipc_handler' ../include/proto.h; then IPC_HANDLER=mbbsd_ipc_handler; else IPC_HANDLER=wmsg_ipc_handler; fi
 # upstream f72c44a5：FormatCommentString 改名 bof_files_format_comment（driver 的實況推文用它排版）。
 if grep -qs 'bof_files_format_comment' ../include/bof_files.h; then HAS_BOF_FORMAT_COMMENT=1; else HAS_BOF_FORMAT_COMMENT=0; fi
-clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -DHAS_LIVE="$HAS_LIVE" -DHAS_CONTENT="$HAS_CONTENT" -DHAS_ACTIVITY_MSG="$HAS_ACTIVITY_MSG" -DHAS_ACTIVITY_SLOW="$HAS_ACTIVITY_SLOW" -DHAS_IPC_SYNC="$HAS_IPC_SYNC" -DIPC_HANDLER="$IPC_HANDLER" -DHAS_BOF_FORMAT_COMMENT="$HAS_BOF_FORMAT_COMMENT" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
+# upstream 01dc2b11：留言主題存進 userec（pmore 設定頁 o c ⇒ pwcuSetCommentTheme ⇒ PWCU 要 usernum＋.PASSWDS，
+# driver 都沒有 ⇒ assert SIGABRT）⇒ --wrap 掉、只寫 cuser（見 driver.c）。舊 upstream 沒這個函式就不接。
+if grep -q 'pwcuSetCommentTheme' ../include/proto.h; then HAS_COMMENT_THEME=1; CONTENT_WRAP=$CONTENT_WRAP,--wrap=pwcuSetCommentTheme; else HAS_COMMENT_THEME=0; fi
+clang -g -O0 -w -I../include -DBBSHOME='"/root"' -DFH_RATING="$FH_RATING" -DBH_MODERATORS="$BH_MODERATORS" -DHAS_IPC_FD="$HAS_IPC_FD" -DHAS_LIVE="$HAS_LIVE" -DHAS_CONTENT="$HAS_CONTENT" -DHAS_ACTIVITY_MSG="$HAS_ACTIVITY_MSG" -DHAS_ACTIVITY_SLOW="$HAS_ACTIVITY_SLOW" -DHAS_IPC_SYNC="$HAS_IPC_SYNC" -DIPC_HANDLER="$IPC_HANDLER" -DHAS_BOF_FORMAT_COMMENT="$HAS_BOF_FORMAT_COMMENT" -DHAS_COMMENT_THEME="$HAS_COMMENT_THEME" -c "$HERE/driver.c" -o "$OUT/driver.o" || exit 2
 # --wrap：driver.c 接住 upstream 等 stdin 的阻塞點，在 stdout 標出幀尾（WAIT_MARK，見 driver.c）；
 # passwd_query 一律「查不到」（板主 id 從 SHM->userid 來，見 driver.c#set_moderators）。
 # shellcheck disable=SC2086

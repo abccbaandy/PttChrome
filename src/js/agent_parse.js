@@ -103,7 +103,16 @@ export function parseModernCommentLine(text) {
   if (!h) return null;
   // 87c3a1f3 之後：內容、IP、時間都在標頭列上；刪除的內容是「留言已刪除」／「留言已隱藏 (原因)」。
   if (h.bodyCol != null) {
-    const c = { type: 'modern', seq: h.seq, user: h.user, content: h.content, ip: h.ip, time: h.time, bodyCol: h.bodyCol };
+    const c = {
+      type: 'modern',
+      seq: h.seq,
+      user: h.user,
+      content: h.content,
+      ip: h.ip,
+      time: h.time,
+      bodyCol: h.bodyCol,
+      contPrefix: h.contPrefix,
+    };
     if (h.deleted) c.deleted = true;
     return c;
   }
@@ -161,8 +170,9 @@ export function parseArticleLines(lines) {
     modernHead = null;
     modern = parseModernCommentLine(text);
     if (modern) {
-      if (!modern.deleted) modernHead = { bodyCol: modern.bodyCol };
+      if (!modern.deleted) modernHead = { bodyCol: modern.bodyCol, contPrefix: modern.contPrefix };
       delete modern.bodyCol;
+      delete modern.contPrefix;
       comments.push(modern);
       continue;
     }

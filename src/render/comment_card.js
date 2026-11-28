@@ -201,7 +201,8 @@ export function buildCommentCard({
     // 跟上一則不同天（同一人隔天又推）⇒ 寫完整「月/日 時:分」，只寫時:分會被讀成標頭那天。
     const stampOf = (lt) => {
       let s = "";
-      for (let i = lt.timeStart; i < lt.timeEnd; ++i) s += chars[i] ? chars[i].ch : "";
+      for (let i = lt.timeStart; i < lt.timeEnd; ++i)
+        s += chars[i] ? chars[i].ch : "";
       return s.trim();
     };
     const dateOf = (lt) => stampOf(lt).split(" ")[0];
@@ -210,7 +211,11 @@ export function buildCommentCard({
       let hm = "";
       if (dateOf(lt) !== dateOf(r.lineTails[k - 1])) hm = stampOf(lt);
       else
-        for (let i = hourMinuteStart(chars, lt.timeStart, lt.timeEnd); i < lt.timeEnd; ++i)
+        for (
+          let i = hourMinuteStart(chars, lt.timeStart, lt.timeEnd);
+          i < lt.timeEnd;
+          ++i
+        )
           hm += chars[i] ? chars[i].ch : "";
       if (!hm) continue;
       lines[k].insertBefore(
@@ -228,8 +233,15 @@ export function buildCommentCard({
         srow: row,
         "data-pusher": pusher,
         "data-pusher-col": pusherContentCol,
-        class: cx("commentCard", { pusherHighlight, mentionsSelf, newCommentsStart, justPushed }),
-        "data-new-comments": newCommentsStart ? i18n("new_comments_divider") : undefined,
+        class: cx("commentCard", {
+          pusherHighlight,
+          mentionsSelf,
+          newCommentsStart,
+          justPushed,
+        }),
+        "data-new-comments": newCommentsStart
+          ? i18n("new_comments_divider")
+          : undefined,
       },
       [head, el("span", { class: "commentCardText" }, text)],
     ),
@@ -244,7 +256,7 @@ export function buildCommentCard({
 //            （87c3a1f3 之後內容就在標頭列上；之前的「[N] id … creation」標頭列沒有內容）
 //   續行   → .commentCard.commentCardCont：只有內容（從 ann.modernBodyCol 讀）
 // 分隔線畫在標頭卡片的**上緣**（續行不知道自己是不是最後一列，畫在下緣會切開同一則）。
-// 刪除的推文（「留言已刪除」「留言已隱藏 (…)」「留言不顯示 (…)」）內容灰色。
+// 刪除的推文（「留言已刪除」「留言已移除 (…)」「留言已隱藏 (…)」「留言不顯示 (…)」）內容灰色。
 // 欄位一律換算成 cell（cellColOf），內容照原欄號餵 LinkSegmentBuilder（連結範圍照舊）。
 
 const MODERN_SEQ_TAIL_RE = /\[(~?)(\d+)\]\s*$/;
@@ -264,11 +276,12 @@ export function modernCommentCardRegions(chars) {
   let metaEnd = null;
   let edited = false;
   if (h.bodyCol != null) {
-    // 87c3a1f3 之後：「id: 內容 …… meta [N]」。id／空白／冒號都是半形 ⇒ 字元索引＝cell。
+    // 87c3a1f3 之後：「id: 內容 …… meta [N]」（ea9fe3d6 經典醒目前面多「推 」，全形 ⇒ 內容起點
+    // 用字元索引 bodyIdx 算結尾，欄號仍是 bodyCol）。
     const seq = MODERN_SEQ_TAIL_RE.exec(text);
     if (!seq) return null;
     edited = seq[1] === "~";
-    const contentEndIdx = h.bodyCol + h.content.length;
+    const contentEndIdx = h.bodyIdx + h.content.length;
     contentStart = h.bodyCol;
     contentEnd = cellColOf(text, contentEndIdx);
     metaStart = contentEnd;
@@ -355,7 +368,13 @@ function contentBuilder(o, chars, start, end) {
 // 尾端空白不讀（pre-wrap 會把補位空白折成空行）。
 function trimmedEnd(chars, start, end) {
   let b = Math.min(end, chars.length);
-  while (b > start && chars[b - 1] && !chars[b - 1].isLeadByte && /^[ \u3000]?$/.test(chars[b - 1].ch)) b--;
+  while (
+    b > start &&
+    chars[b - 1] &&
+    !chars[b - 1].isLeadByte &&
+    /^[ \u3000]?$/.test(chars[b - 1].ch)
+  )
+    b--;
   return b;
 }
 
@@ -430,7 +449,7 @@ export function buildModernCommentCard(o) {
   };
 }
 
-// 續行：只有內容。bodyCol 之前是縮排（空白或「│」）。
+// 續行：只有內容。bodyCol 之前是縮排（空白、「│」，或 ea9fe3d6 起重複的「id: 」／「→ id: 」）。
 export function buildModernCommentCont(o) {
   const { chars, row, bodyCol } = o;
   if (bodyCol == null || !chars || bodyCol >= chars.length) return null;
@@ -461,12 +480,10 @@ export function buildModernCommentCont(o) {
 //   all   整張卡片的內容，每則一行
 //   count 則數（>1 ＝合併塊，選單多給「複製整段」）
 // 不在推文卡片上 ⇒ null（桌機沒有卡片，這個選項永遠不出現）。
-const cardLineText = (node) =>
-  node.textContent.replace(/ /g, " ").trim();
+const cardLineText = (node) => node.textContent.replace(/ /g, " ").trim();
 
 export function commentCardCopyText(target) {
-  const card =
-    target && target.closest ? target.closest(".commentCard") : null;
+  const card = target && target.closest ? target.closest(".commentCard") : null;
   if (!card) return null;
   const body = card.querySelector(":scope > .commentCardText");
   if (!body) return null;

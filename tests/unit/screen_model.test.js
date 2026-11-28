@@ -314,7 +314,7 @@ const KIND_CENSUS = {
   main_menu_newmail: "menu=menu",
   mark_read_prompt: "list=list prompt=unknown",
   menu_search: "menu=menu board=menu",
-  modern_comments: "list=list classic=article simple=article bordered=article",
+  modern_comments: "list=list simple=article bordered=article classic=article",
   post_flow: "list=list post=unknown",
   post_info: "list=list info=pass dismissed=list",
   push: "list=list push-1=list push-2=list",

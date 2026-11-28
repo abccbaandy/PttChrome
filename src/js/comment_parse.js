@@ -183,27 +183,45 @@ export function isBlacklistableUserId(id) {
 // - 續行：前面空白縮到內容起始欄（id 寬＋2；對齊顯示是 14），不再有「│」。
 // 認法：要有列尾 ` [N]` 與它前面的 HH:MM —— 內文裡「someone: 某句話」這類寫法沒有；
 // meta 整段被擠掉的極長推文就不認（fail-safe：當一般內文，最多少藏一則）。
+//
+// upstream 904baa9a／ea9fe3d6（11/28）檔案再換、畫面小改（CONFIRMED，同樣新舊都吃）：
+// - 檔案（engine.go#FormatCommentBlock）："RS[*][-|!]id|[~]N|MM/DD/YYYY HH:MM|[ip]|第一行內容"
+//   ＋ 續行 "RS[*]+id|內容"（RS＝0x1e；* 原PO、- 本人刪「留言已刪除」、! 板主移除「留言已移除 (原因)」）。
+// - 畫面（comments.c#comment_render_modern_header）：標頭列同上；經典醒目前面多 mark_first「推 」
+//   （刪除的也是「推」，只是變灰）。續行（print_more_prefix）不再是空白縮排而是重複 id：
+//   單純易讀「id: 內容」（id 灰色）、經典醒目「→ id: 內容」；對齊顯示沒有續行色 ⇒ 照舊空白縮到內容欄。
+//   01dc2b11 起預設主題是單純易讀。
+// 續行的字首（contPrefix）跟標頭列一起決定，只接同一則的 id ⇒ 下一則的標頭列（有 [N]）不會被吃成續行。
 const PIPE_COMMENT_HEADER_RE =
-  /^( *)([A-Za-z][0-9A-Za-z]{1,11}): (.*?) +(?:(\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+) )?(?:(\d{2}\/\d{2}(?:\/\d{4})?) )?(\d{2}:\d{2}) \[~?(\d+)\]\s*$/;
-const PIPE_TOMBSTONE_RE = /^(留言已刪除|留言已隱藏(?: \(.*\))?)$/;
+  /^(推 )?( *)([A-Za-z][0-9A-Za-z]{1,11}): (.*?) +(?:(\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+) )?(?:(\d{2}\/\d{2}(?:\/\d{4})?) )?(\d{2}:\d{2}) \[~?(\d+)\]\s*$/;
+const PIPE_TOMBSTONE_RE = /^(留言已刪除|留言已隱藏(?: \(.*\))?|留言已移除(?: \(.*\))?)$/;
 const PTT_IDLEN = 12;
+const CLASSIC_MARK_MORE = '→ ';
 function parsePipeCommentHeader(text) {
   const m = PIPE_COMMENT_HEADER_RE.exec(text);
   if (!m) return null;
-  const pad = m[1].length;
-  const id = m[2];
-  // 對齊顯示：前面的空白剛好把 id 補到 IDLEN 格；其他主題從第 0 欄。其餘縮排都不是 pmore 畫的。
-  if (pad !== 0 && pad + id.length !== PTT_IDLEN) return null;
-  const content = m[3].trimEnd();
+  const mark = m[1] || '';
+  const pad = m[2].length;
+  const id = m[3];
+  // 對齊顯示：前面的空白剛好把 id 補到 IDLEN 格；其他主題從第 0 欄（經典醒目在「推 」之後）。
+  // 其餘縮排都不是 pmore 畫的。
+  if (pad !== 0 && (mark || pad + id.length !== PTT_IDLEN)) return null;
+  const idIdx = mark.length + pad;
+  const bodyIdx = idIdx + id.length + 2;
+  const content = m[4].trimEnd();
   const h = {
-    seq: parseInt(m[7], 10),
+    seq: parseInt(m[8], 10),
     userid: id.toLowerCase(),
     user: id,
-    idCol: pad,
-    bodyCol: pad + id.length + 2,
+    idCol: cellColOf(text, idIdx),
+    bodyCol: cellColOf(text, bodyIdx),
+    // 標頭列上內容的起點（字元索引；經典醒目的「推」是全形，跟 bodyCol 差 1）。
+    bodyIdx,
+    // ea9fe3d6 之後續行的字首；對齊顯示（pad > 0）只有空白縮排。
+    contPrefix: mark ? CLASSIC_MARK_MORE + id + ': ' : pad === 0 ? id + ': ' : null,
     content,
-    ip: m[4] || null,
-    time: m[5] ? m[5] + ' ' + m[6] : m[6],
+    ip: m[5] || null,
+    time: m[6] ? m[6] + ' ' + m[7] : m[7],
   };
   if (PIPE_TOMBSTONE_RE.test(content)) h.deleted = content;
   return h;
@@ -237,11 +255,16 @@ export function modernCommentBodyCol(text, h) {
 }
 
 // 新格式一則推文的內容續行 → 去掉縮排的原文；不是這一則的續行 ⇒ null。
-// h ＝這一則的標頭（parseModernCommentHeader 的結果，或 ModernCommentThread）。
+// h ＝這一則的標頭（parseModernCommentHeader 的結果，或 ModernCommentThread／{ bodyCol, contPrefix }）。
+// ea9fe3d6 之後（h.contPrefix 有值）：以這一則的「id: 」／「→ id: 」開頭（字首與標頭列同寬 ⇒ 內容欄＝bodyCol）。
 // 87c3a1f3 之後（h.bodyCol 有值）：前面剛好 bodyCol 格空白、接著不是空白。
 // 之前：「│」開頭（現行 body_indent「│ 」⇒ 只吃掉緊接的一格空白，原文自己的縮排留著）。
 export function modernCommentBodyText(text, h) {
   if (!text || !h) return null;
+  if (h.contPrefix && text.startsWith(h.contPrefix)) {
+    const rest = text.slice(h.contPrefix.length).trimEnd();
+    return rest ? rest : null;
+  }
   if (h.bodyCol != null) {
     const n = h.bodyCol;
     if (text.length <= n || text.charAt(n) === ' ') return null;
@@ -259,6 +282,7 @@ export class ModernCommentThread {
     this.userid = null;
     this.hidden = false;
     this.bodyCol = null;
+    this.contPrefix = null;
   }
 }
 
@@ -409,6 +433,7 @@ function annotateModernComment(text, ctx) {
     thread.hidden = hidden;
     thread.filtered = filtered;
     thread.bodyCol = h.bodyCol != null ? h.bodyCol : null;
+    thread.contPrefix = h.contPrefix || null;
   }
   const result = { type: 'modern', modern: true, userid: h.userid, hidden, pusher: h.userid };
   if (filtered) result.filtered = true;

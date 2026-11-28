@@ -104,7 +104,7 @@ export function analyzeArticle(lines, config, selfId) {
     let c = parseModernCommentLine(text);
     if (c) {
       stats.modern++;
-      if (!c.deleted) modernHead = { bodyCol: c.bodyCol };
+      if (!c.deleted) modernHead = { bodyCol: c.bodyCol, contPrefix: c.contPrefix };
     } else {
       c = parseCommentLine(text);
       if (!c) continue;

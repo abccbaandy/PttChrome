@@ -50,26 +50,53 @@ test("driver.c 的 WAIT_MARK 跟 capture.mjs 同一串，且 generate.sh 用 --w
   expect(gen).toContain("--wrap=read,--wrap=select,--wrap=poll");
 });
 
-test("fileheader_t 推文數欄位新舊 header 都編得過：driver.c 只經 FH_RATING 寫，generate.sh 依 header 選 score／rating／recommend", () => {
+test("fileheader_t 推文數欄位新舊 header 都編得過：driver.c 只經 FH_RATING 寫，generate.sh 依 header 選 upvote／score／rating／recommend", () => {
   const dir = path.join(__dirname, "../../tools/ptt-src-screens");
   const c = fs.readFileSync(path.join(dir, "driver.c"), "utf8");
-  expect(c).not.toMatch(/\.(recommend|rating|score)\b/);
+  expect(c).not.toMatch(/\.(recommend|rating|score|upvote|downvote)\b/);
   expect(c).toContain("fh.FH_RATING =");
   const gen = fs.readFileSync(path.join(dir, "generate.sh"), "utf8");
   expect(gen).toContain('-DFH_RATING="$FH_RATING"');
-  const reOf = (name) => new RegExp(gen.match(new RegExp(`^${name}='([^']*)'$`, "m"))[1].replaceAll("[[:space:]]", "\\s"), "m");
+  const reOf = (name) => {
+    const m = gen.match(new RegExp(`^${name}='([^']*)'$`, "m"));
+    expect(m, `generate.sh 缺 ${name}`).not.toBeNull();
+    return new RegExp(m[1].replaceAll("[[:space:]]", "\\s"), "m");
+  };
+  const upvote = reOf("UPVOTE_RE");
   const score = reOf("SCORE_RE");
   const rating = reOf("RATING_RE");
-  // upstream 8d5a7928 後、b500faf 後、b500faf 前的 fileheader_t
+  // upstream 5c1cd6bb 後（score 改名 upvote、另加 downvote；淨推數＝FHDR_SCORE＝upvote - downvote）、
+  // 8d5a7928 後、b500faf 後、b500faf 前的 fileheader_t
+  const upH =
+    "    char    reserved[LEGACY_FNSIZE - FNSIZE - 2]; /* 0; was the end of filename */\n    int16_t downvote;                /* was the end of filename */\n    time4_t modified;\n    int16_t upvote;                  /* was pad + recommend; old records: the net score */\n";
   const nowH = "    time4_t modified;\n    int16_t score;                   /* net votes (upvotes - downvotes); was pad + recommend */\n";
   const midH = "    time4_t modified;\n    int16_t rating;                  /* was pad + recommend */\n";
   const oldH = "    char    pad;\t\t     /* padding */\n    char    recommend;               /* important level */\n";
-  expect([score.test(nowH), rating.test(nowH)]).toEqual([true, false]);
-  expect([score.test(midH), rating.test(midH)]).toEqual([false, true]);
-  expect([score.test(oldH), rating.test(oldH)]).toEqual([false, false]);
-  // 先認 score 再認 rating，都沒有才是 recommend
-  expect(gen.indexOf('"$SCORE_RE"')).toBeGreaterThan(-1);
+  expect([upvote.test(upH), score.test(upH), rating.test(upH)]).toEqual([true, false, false]);
+  expect([upvote.test(nowH), score.test(nowH), rating.test(nowH)]).toEqual([false, true, false]);
+  expect([upvote.test(midH), score.test(midH), rating.test(midH)]).toEqual([false, false, true]);
+  expect([upvote.test(oldH), score.test(oldH), rating.test(oldH)]).toEqual([false, false, false]);
+  // 先認 upvote、再 score、再 rating，都沒有才是 recommend
+  expect(gen.indexOf('"$UPVOTE_RE"')).toBeGreaterThan(-1);
+  expect(gen.indexOf('"$UPVOTE_RE"')).toBeLessThan(gen.indexOf('"$SCORE_RE"'));
   expect(gen.indexOf('"$SCORE_RE"')).toBeLessThan(gen.indexOf('"$RATING_RE"'));
+  expect(gen).toMatch(/"\$UPVOTE_RE"[^\n]*then FH_RATING=upvote\b/);
+});
+
+test("留言主題持久化（upstream 01dc2b11）：pwcuSetCommentTheme 經 --wrap 只寫 cuser，不走 PWCU（driver 沒 usernum／.PASSWDS，assert SIGABRT）", () => {
+  const dir = path.join(__dirname, "../../tools/ptt-src-screens");
+  const c = fs.readFileSync(path.join(dir, "driver.c"), "utf8");
+  const gen = fs.readFileSync(path.join(dir, "generate.sh"), "utf8");
+  // 舊 upstream 沒有這個函式（主題存在 pmore 的 static）⇒ 看 proto.h 決定，wrap 只在有的時候接
+  expect(gen).toMatch(/grep -q 'pwcuSetCommentTheme' \.\.\/include\/proto\.h; then HAS_COMMENT_THEME=1/);
+  expect(gen).toContain('-DHAS_COMMENT_THEME="$HAS_COMMENT_THEME"');
+  expect(gen).toMatch(/--wrap=pwcuSetCommentTheme/);
+  const block = c.match(/#if HAS_COMMENT_THEME\n([\s\S]*?)#endif/);
+  expect(block).not.toBeNull();
+  expect(block[1]).toMatch(/int __wrap_pwcuSetCommentTheme\(uint8_t theme\)/);
+  // CONFIG_CONST_CUSER 下 cuser 是 const 巨集 ⇒ 寫可寫本體 pwcuser
+  expect(block[1]).toContain("pwcuser.comment_theme = theme;");
+  expect(block[1]).not.toMatch(/__real_pwcuSetCommentTheme/);
 });
 
 test("upstream 改名的欄位新舊都編得過：呼叫器只經 UT_WMSG 寫（c4a7085f），實況兩個檔都認 live_run（10db344b）", () => {

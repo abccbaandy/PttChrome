@@ -119,6 +119,18 @@ int __wrap_passwd_query(int num, userec_t *buf)
     return -1;
 }
 
+#if HAS_COMMENT_THEME
+// 留言主題：upstream 01dc2b11 起有 PERM_BASIC 的使用者存在 cuser.comment_theme（comments.c#comment_pref_theme
+// 讀它），設定走 passwd.c#pwcuSetCommentTheme 的 PWCU_START／END：要 usernum＋.PASSWDS，driver 都沒有
+// （assert 失敗 SIGABRT）。畫面只看 cuser ⇒ 只寫它的可寫本體 pwcuser（CONFIG_CONST_CUSER 下 cuser 是 const），
+// 不寫回 .PASSWDS。
+int __wrap_pwcuSetCommentTheme(uint8_t theme)
+{
+    pwcuser.comment_theme = theme;
+    return 0;
+}
+#endif
+
 static void set_moderators(boardheader_t *bh, const char *bms)
 {
 #if BH_MODERATORS
@@ -438,7 +450,7 @@ static void seed(const char *path)
             serial++;
             STRLCPY(fh.owner, f[1]);
             STRLCPY(fh.date, f[2]);
-            fh.FH_RATING = atoi(f[3]); // generate.sh 依 header 給 rating（新）或 recommend（舊）
+            fh.FH_RATING = atoi(f[3]); // 淨推數；generate.sh 依 header 給 upvote／score／rating／recommend
             if (strchr(f[4], 'm')) fh.filemode |= FILE_MARKED;
             STRLCPY(fh.title, f[5]);
             // 置底：upstream 的置底是 boardheader_t.bottom[] 裡的 AID 參照（指回 .DIR 裡
@@ -519,10 +531,18 @@ static void seed(const char *path)
             // 文章檔尾的一列（原樣，含行首空白）：發信站「※ 」列與 post.svc 的新格式推文
             // （upstream 87c3a1f3 起 "|id[!]|內容|ip 日期 時間|[~]N"＋"| 續行"；之前是 "[N] id creation"＋"  內容"）。
             // pmore 從最後一個「※ 」列之後畫成推文。
+            // upstream 904baa9a／ea9fe3d6 起推文列以 RS（0x1e，comments.c#COMMENT_LINE_MARK）開頭：
+            // "RS[*][-|!]id|[~]N|MM/DD/YYYY HH:MM|[ip]|內容"＋續行 "RS[*]+id|內容"，在哪都畫成推文。
+            // 種子是文字檔，RS 寫成行首的 "\x1e"（4 個 ASCII 字元），這裡換回位元組。
             if (!last_article[0]) die("T before A");
             FILE *tf = fopen(last_article, "a");
             if (!tf) die("article append");
-            fprintf(tf, "%s\n", f[1]);
+            const char *tline = f[1];
+            if (!strncmp(tline, "\\x1e", 4)) {
+                fputc(0x1e, tf);
+                tline += 4;
+            }
+            fprintf(tf, "%s\n", tline);
             fclose(tf);
         } else if (f[0][0] == 'F' && n >= 2) {
             if (fav_count >= MAX_FAV) die("too many favs");
