@@ -4,7 +4,7 @@ import { Event } from './event';
 import { ColorState } from './term_ui';
 import { b2u, textCellWidth, parseStatusRow, parseListRow, parsePagerFooterContext } from './string_util';
 import { isWideCellCode, cellText } from './unicode_cells';
-import { cjkUrlExtension } from './url_cjk';
+import { cjkUrlExtension, encodeCjkUrlExtension } from './url_cjk';
 import { trimUrlTailLength } from './url_trim';
 import { oscHyperlinkHref } from './osc_hyperlink';
 import { ringBell } from './bell';
@@ -723,10 +723,11 @@ TermBuf.prototype = {
               line[uri[0]].fullurl='http://www.pixiv.net/member_illust.php?mode=big&illust_id='+urlTemp2.substr(6,15);
             } else {
               // CJK extension: urlTemp's tail is raw Big5 bytes — swap it for
-              // the percent-encoded Unicode form so the link actually opens.
+              // the percent-encoded Unicode form so the link actually opens
+              // (only the non-ASCII part: an existing %xx must not become %25xx).
               if (uri[2])
                 u = urlTemp.slice(0, urlTemp.length - textCellWidth(uri[2])) +
-                    encodeURI(uri[2]);
+                    encodeCjkUrlExtension(uri[2]);
               line[uri[0]].fullurl = u;
             }
             line[uri[1]-1].endOfURL = true;

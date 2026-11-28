@@ -28,6 +28,13 @@ const STOP = new Set(
 // Mirrors the path char class of TermBuf.uriRegEx (src/js/term_buf.js).
 const PATH_ASCII = /[A-Za-z0-9_#!:.?+=&%@\-/$^,;|*~'()]/;
 
+// 延伸段 → href 用的寫法：只把非 ASCII 字元做百分比編碼。延伸段可以混著 ASCII（維基的
+// 「貓%28動物%29」是從瀏覽器複製來、括號已編碼），整段丟給 encodeURI 會把原本的 `%xx` 再編成
+// `%25xx`（同 osc_hyperlink.oscHyperlinkHref）。
+export function encodeCjkUrlExtension(ext) {
+  return ext.replace(/[^\x00-\x7f]+/g, (s) => encodeURI(s));
+}
+
 // cjkUrlExtension(prevChar, tail) -> string
 //   prevChar: last char of the ASCII URL match ('/' or '=' required).
 //   tail: decoded Unicode text that follows the match on the same row.

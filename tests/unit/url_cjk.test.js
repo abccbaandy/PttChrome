@@ -124,6 +124,14 @@ describe("TermBuf URI detection with CJK path (Big5)", () => {
     expect(line[1 + url.length].ch).toBe(")");
   });
 
+  // 從瀏覽器複製的維基網址常是「中文＋已編碼的括號」混著：只把非 ASCII 編碼，原本的 %xx 不能再編成 %25xx。
+  test("中文延伸段裡已經編碼過的 %xx 不再編一次", () => {
+    const line = paintRow("https://a.com/wiki/貓%28動物%29 x");
+    expect(line[0].fullurl).toBe(
+      "https://a.com/wiki/" + encodeURI("貓") + "%28" + encodeURI("動物") + "%29"
+    );
+  });
+
   test("網址後緊貼半形括號＋中文說明：落單的 ( 不得留在 href", () => {
     const line = paintRow("https://youtu.be/abc(超好笑) x");
     expect(line[0].fullurl).toBe("https://youtu.be/abc");
