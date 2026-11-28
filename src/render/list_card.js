@@ -100,12 +100,13 @@ export const CARD_LAYOUT = {
 };
 
 // 文章卡片的已讀標記分類（cell 8，pttbbs `mbbsd/bbs.c#readdoent` 的 type 字元）→
-// data-list-mark：'unread'（+、M：brc_unread == 1）／'updated'（~：讀過但有新推文）。
+// data-list-mark：'unread'（+、M：brc_unread == 1）／'updated'（~、=：brc_unread == 2，
+// 讀過但有新推文；= 是已標記 FILE_MARKED 的那一版）。
 // 次行縮了字之後 + 與 ~ 幾乎分不出來，CSS 依它放大未讀標記、把 ~ 調暗一階。
 export function articleCardMark(chars) {
   const ch = chars && chars[8] ? chars[8].ch : "";
   if (ch === "+" || ch === "M") return "unread";
-  if (ch === "~") return "updated";
+  if (ch === "~" || ch === "=") return "updated";
   return undefined;
 }
 

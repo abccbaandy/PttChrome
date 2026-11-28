@@ -133,6 +133,9 @@ describe("buildListCard：文章列表", () => {
     expect(mark("+")).toBe("unread");
     expect(mark("M")).toBe("unread");
     expect(mark("~")).toBe("updated");
+    // bbs.c#readdoent：已標記（FILE_MARKED）的文章 isunread 0／1／2 分別是 m／M／=，
+    // = 跟 ~ 一樣是「讀過但有新推文」。
+    expect(mark("=")).toBe("updated");
     expect(mark(" ")).toBe(null);
     expect(mark("m")).toBe(null);
     expect(mark("+", "board")).toBe(null);
