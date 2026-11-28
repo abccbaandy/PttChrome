@@ -192,11 +192,14 @@ export function isBlacklistableUserId(id) {
 //   單純易讀「id: 內容」（id 灰色）、經典醒目「→ id: 內容」；對齊顯示沒有續行色 ⇒ 照舊空白縮到內容欄。
 //   01dc2b11 起預設主題是單純易讀。
 // 續行的字首（contPrefix）跟標頭列一起決定，只接同一則的 id ⇒ 下一則的標頭列（有 [N]）不會被吃成續行。
+// upstream 0c3e3973（11/28）再調主題（CONFIRMED，同樣新舊都吃）：print_more_prefix 在主題沒有續行 id 色時
+// 不印 id，改成「→ 」＋空白補到內容欄 —— 單純易讀全部續行、經典醒目原PO 的續行都是這樣；
+// 經典醒目非原PO 仍是「→ id: 」。對齊顯示不變。
 const PIPE_COMMENT_HEADER_RE =
   /^(推 )?( *)([A-Za-z][0-9A-Za-z]{1,11}): (.*?) +(?:(\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+) )?(?:(\d{2}\/\d{2}(?:\/\d{4})?) )?(\d{2}:\d{2}) \[~?(\d+)\]\s*$/;
 const PIPE_TOMBSTONE_RE = /^(留言已刪除|留言已隱藏(?: \(.*\))?|留言已移除(?: \(.*\))?)$/;
 const PTT_IDLEN = 12;
-const CLASSIC_MARK_MORE = '→ ';
+const MARK_MORE = '→ ';
 function parsePipeCommentHeader(text) {
   const m = PIPE_COMMENT_HEADER_RE.exec(text);
   if (!m) return null;
@@ -218,7 +221,7 @@ function parsePipeCommentHeader(text) {
     // 標頭列上內容的起點（字元索引；經典醒目的「推」是全形，跟 bodyCol 差 1）。
     bodyIdx,
     // ea9fe3d6 之後續行的字首；對齊顯示（pad > 0）只有空白縮排。
-    contPrefix: mark ? CLASSIC_MARK_MORE + id + ': ' : pad === 0 ? id + ': ' : null,
+    contPrefix: mark ? MARK_MORE + id + ': ' : pad === 0 ? id + ': ' : null,
     content,
     ip: m[5] || null,
     time: m[6] ? m[6] + ' ' + m[7] : m[7],
@@ -264,6 +267,13 @@ export function modernCommentBodyText(text, h) {
   if (h.contPrefix && text.startsWith(h.contPrefix)) {
     const rest = text.slice(h.contPrefix.length).trimEnd();
     return rest ? rest : null;
+  }
+  // 0c3e3973 之後：主題沒有續行 id 色（單純易讀、經典醒目的原PO）⇒「→ 」＋空白補到內容欄。
+  if (h.contPrefix && h.bodyCol != null && text.startsWith(MARK_MORE)) {
+    let i = MARK_MORE.length;
+    while (text.charAt(i) === ' ') i++;
+    if (i >= text.length || cellColOf(text, i) !== h.bodyCol) return null;
+    return text.slice(i).trimEnd();
   }
   if (h.bodyCol != null) {
     const n = h.bodyCol;

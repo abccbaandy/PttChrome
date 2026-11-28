@@ -1406,6 +1406,10 @@ pmore 只在 `comments_start`（檔案最後一個 `※ ` 開頭行之後）且 
     01dc2b11 起預設主題是單純易讀、存在 `userec_t.comment_theme`（設定頁順序：單純易讀／對齊顯示／經典醒目）。
   - client 認法：標頭可帶 `推 ` 前綴（此時不可再補空白）；續行吃「這一則的字首」（`→ id: `／`id: `，跟標頭列同寬 ⇒ 內容欄同 bodyCol）
     或空白縮排。由 `ptt_src_screens/modern_comments.json`（現行 seed）守。
+- **0c3e3973（11/28）主題再調（新舊都吃）**：`print_more_prefix` 在主題沒有續行 id 色（`color_commenter_more`／`_op`
+  為 NULL）時不印 id，改成 `→ `＋空白補到標頭內容欄 ⇒ **單純易讀**全部續行、**經典醒目原PO** 的續行都是
+  `→ ` 空白縮排；經典醒目非原PO 仍 `→ id: `；對齊顯示不變。client：`→ ` 之後的空白剛好補到 bodyCol（cell）才算續行。
+  手組畫面守在 `modern_comment_parse.test.js`；`fixtures/ptt_src_screens/modern_comments.json` 還是 ea9fe3d6 產的，待 nightly 重產。
 - **終端推文仍是舊格式**：`bbs.c#comment` → `post.c#CommentAddRecord` 寫的是 `FormatCommentString` 那一列。
   ⇒ 一篇文章可以「上半舊格式、下半新格式」並存；兩種都要認。
 - client：`comment_parse.parseModernCommentHeader`（要求列尾 creation，80 欄下一定塞得下；id 照 `is_validuserid`）、

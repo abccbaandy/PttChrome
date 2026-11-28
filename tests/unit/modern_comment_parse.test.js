@@ -455,3 +455,69 @@ describe('agent_parse.parseArticleLines：ea9fe3d6 之後', () => {
     ]);
   });
 });
+
+// ── upstream 0c3e3973 之後（CONFIRMED @ pttbbs 0c3e3973 mbbsd/comments.c）──────────────
+//   print_more_prefix：先 print_mark(mark_more)（「→」＋一格空白＝3 格），該主題沒有續行 id 色
+//   （color_commenter_more／_op 為 NULL）時不印 id，改用空白補到標頭內容欄
+//   head ＝ (mark_first ? strlen+1 : 0) ＋ id 寬 ＋ 2。
+//     單純易讀：沒有 mark_first，mark_more「→」，兩種續行色都 NULL ⇒「→ 」＋(id寬+2-3) 格空白
+//     經典醒目原PO：color_commenter_more_op NULL ⇒「→ 」＋(id寬+2) 格空白（非原PO 照舊「→ id: 」）
+//   內容欄＝標頭的內容欄（bodyCol）。
+const simpleCont = (id, text) => '→ ' + ' '.repeat(id.length + 2 - 3) + text;
+const classicOpCont = (id, text) => '→ ' + ' '.repeat(id.length + 2) + text;
+
+describe('0c3e3973 之後：續行「→ 」＋空白縮到內容欄', () => {
+  const ctxOf = (o = {}) => ({
+    blacklist: new Set(['badguy']),
+    showFloorNumbers: true,
+    floorCounter: new FloorCounter(),
+    highlightAuthor: true,
+    articleAuthor: 'alice',
+    modernThread: new ModernCommentThread(),
+    ...o,
+  });
+
+  test('單純易讀：黑名單那一則的「→ 」空白續行一起藏', () => {
+    const ctx = ctxOf();
+    const anns = [P2, simpleCont('badguy', '壞話第二行'), ''].map((t) => annotateComment(t, ctx));
+    expect(anns[0]).toMatchObject({ modern: true, hidden: true, userid: 'badguy' });
+    expect(anns[1]).toEqual({ hidden: true, modernBody: true });
+  });
+
+  test('單純易讀／經典醒目原PO：續行內容欄＝標頭內容欄', () => {
+    const ctx = ctxOf();
+    const a = [P1, simpleCont('alice', '第二行')].map((t) => annotateComment(t, ctx));
+    expect(a[1]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 7 });
+    const ctx2 = ctxOf();
+    const b = [classicHeader('alice', '嗨', '10/28/2026 12:00', '1'), classicOpCont('alice', '第二行')].map((t) =>
+      annotateComment(t, ctx2),
+    );
+    expect(b[1]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 10 });
+  });
+
+  test('縮排沒對齊內容欄、或「→ 」後面直接是字 ⇒ 不算續行', () => {
+    const ctx = ctxOf();
+    expect([P1, '→ ' + '   ' + '少一格'].map((t) => annotateComment(t, ctx))[1]).toBeNull();
+    const ctx2 = ctxOf();
+    expect([P1, '→ ' + '      ' + '多一格'].map((t) => annotateComment(t, ctx2))[1]).toBeNull();
+    const ctx3 = ctxOf();
+    expect([P1, '→ 不是空白縮排'].map((t) => annotateComment(t, ctx3))[1]).toBeNull();
+  });
+
+  test('agent_parse：「→ 」空白續行接回同一則，字首不混進內容', () => {
+    const r = parseArticleLines([
+      '作者  poster (暱稱) 看板  Test',
+      '標題  [測試] 新格式',
+      '內文',
+      '※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4',
+      P1,
+      simpleCont('alice', '第二行 >>2'),
+      classicHeader('nina', '原PO回覆', '10/28/2026 12:05', '3'),
+      classicOpCont('nina', '原PO第二行'),
+    ]);
+    expect(r.comments).toEqual([
+      { type: 'modern', seq: 1, user: 'alice', content: '第一則推文\n第二行 >>2', ip: '1.2.3.4', time: '10/28/2026 12:00' },
+      { type: 'modern', seq: 3, user: 'nina', content: '原PO回覆\n原PO第二行', ip: null, time: '10/28/2026 12:05' },
+    ]);
+  });
+});
