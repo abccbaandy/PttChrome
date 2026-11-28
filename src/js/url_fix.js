@@ -112,12 +112,12 @@ function hostOf(fixed) {
 export function detectFixableUrls(text) {
   if (!text) return [];
 
-  // Verbatim valid-URL spans → used to skip already-good URLs.
-  const validTexts = new Set();
+  // Valid-URL spans [start, end) → used to skip already-good URLs.
+  const validSpans = [];
   VALID_URI_RE.lastIndex = 0;
   let v;
   while ((v = VALID_URI_RE.exec(text)) !== null) {
-    validTexts.add(v[0]);
+    validSpans.push([v.index, v.index + v[0].length]);
     if (VALID_URI_RE.lastIndex === v.index) VALID_URI_RE.lastIndex++; // guard zero-width
   }
 
@@ -129,7 +129,11 @@ export function detectFixableUrls(text) {
     if (CANDIDATE_RE.lastIndex === m.index) CANDIDATE_RE.lastIndex++;
     const original = m[0];
     // Already a clean, valid URL → the real pipeline handles it; don't duplicate.
-    if (validTexts.has(original)) continue;
+    // 「完全落在」一條有效網址裡面就跳過，不只整串相等：主機 TLD 不在白名單（archive.ph）、帶帳密、
+    // 主機有底線時，候選只是已連好網址的一段，修出來是指向別處的 ↳。只重疊不算（https://www . google
+    // .com/ 的有效段只有 https://www，仍要修）。
+    const end = m.index + original.length;
+    if (validSpans.some(([vs, ve]) => vs <= m.index && end <= ve)) continue;
     let fixed = original.replace(/\s+/g, '');
     if (!HAS_SCHEME_RE.test(fixed)) fixed = 'https://' + fixed;
     if (fixed === original) continue; // nothing was actually repaired

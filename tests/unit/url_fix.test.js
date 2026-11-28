@@ -191,6 +191,25 @@ describe('detectFixableUrls — 空白＋副檔名單字要有點才併', () => 
   });
 });
 
+// 主偵測器已經連好的網址：候選只是它的**一段**（主機的 TLD 不在白名單、帶帳密、主機有底線）時，
+// 不能拿那一段另畫一條指向別處的 ↳。只看「完全落在有效網址裡面」——跟有效網址只是重疊的
+// （https://www . google .com/ 的有效段只有 https://www）照修。
+describe('detectFixableUrls — 有效網址裡的一段不另修', () => {
+  test.each([
+    'https://archive.ph/newest/example.com/news/1',
+    'https://user:pw@example.com/x',
+    'https://my_host.example.com/a/b',
+    '看 https://archive.ph/newest/example.com/news/1 這篇',
+  ])('%s', (text) => {
+    expect(detectFixableUrls(text)).toEqual([]);
+  });
+
+  test('重疊但沒被包住的照修；同列另一段真的斷開也照修', () => {
+    expect(fixedOf('https://www . google .com/')).toEqual(['https://www.google.com/']);
+    expect(fixedOf('https://archive.ph/x 和 google .tw/page')).toEqual(['https://google.tw/page']);
+  });
+});
+
 describe('detectFixableUrls — shape & dedupe', () => {
   test('dedupe identical fixed within a row', () => {
     expect(fixedOf('www . a .com 和 www . a .com')).toEqual(['https://a.com'].map(() => 'https://www.a.com'));
