@@ -1337,14 +1337,18 @@ App.prototype.doCopyAnsi = function() {
   if (selection.start.row == selection.end.row) {
     ansiText += this.buf.getText(selection.start.row, selection.start.col, selection.end.col, true, true, false, pageLines);
   } else {
+    // 選取的 col 是 countCol 的「之前有幾格」、getText 的 colEnd 不含端點：非最後一列
+    // 取到 cols（含第 80 欄）；最後一列只到 end.col，end.col 0（選到下一列開頭）＝那一列
+    // 一格都沒選（getText 會把 colEnd 0 當成整列）。
     for (var i = selection.start.row; i <= selection.end.row; ++i) {
       var scol = 0;
-      var ecol = this.buf.cols-1;
+      var ecol = this.buf.cols;
       if (i == selection.start.row) {
         scol = selection.start.col;
       } else if (i == selection.end.row) {
         ecol = selection.end.col;
       }
+      if (i == selection.end.row && ecol <= 0) break;
       ansiText += this.buf.getText(i, scol, ecol, true, true, false, pageLines);
       if (i != selection.end.row ) {
         ansiText += '\r';

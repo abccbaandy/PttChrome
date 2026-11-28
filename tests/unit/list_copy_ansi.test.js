@@ -102,3 +102,55 @@ describe("doCopyAnsi 取用的 lines", () => {
     expect(copied(app)).toContain("SERVER-ROW0");
   });
 });
+
+// 選取座標是 countCol 的結果：end.col ＝結尾之前有幾格（不含端點），getText 的 colEnd
+// 同樣不含端點。跨列時非最後一列要取到行尾（第 80 欄），最後一列只取到 end.col。
+describe("doCopyAnsi 跨列的欄範圍", () => {
+  const FULL = "A".repeat(79) + "Z";
+  function makeFullBuf() {
+    const buf = new TermBuf(80, 24);
+    buf.setView({
+      charset: "UTF-8",
+      update() {},
+      updateCursorPos() {},
+      refreshCursorVisibility() {},
+      blinkOn: false,
+    });
+    buf.useMouseBrowsing = false;
+    feed(buf, at(1, 0, FULL));
+    feed(buf, at(2, 0, FULL));
+    feed(buf, at(3, 0, "NEXT-ROW"));
+    return buf;
+  }
+
+  test("非最後一列取到第 80 欄（不掉行尾那一格）", () => {
+    const buf = makeFullBuf();
+    const app = makeApp(buf, null);
+    app.lastSelection = { start: { row: 1, col: 0 }, end: { row: 2, col: 80 } };
+
+    app.doCopyAnsi();
+    const lines = copied(app).split("\r");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("Z");
+    expect(lines[1]).toContain("Z");
+  });
+
+  test("選到下一列的開頭（end.col 0）不會把那一整列也複製進來", () => {
+    const buf = makeFullBuf();
+    const app = makeApp(buf, null);
+    app.lastSelection = { start: { row: 2, col: 0 }, end: { row: 3, col: 0 } };
+
+    app.doCopyAnsi();
+    expect(copied(app)).toContain("Z");
+    expect(copied(app)).not.toContain("NEXT-ROW");
+  });
+
+  test("第 80 欄是落單的前導位元組（後半在下一列）也不 throw", () => {
+    const buf = makeFullBuf();
+    buf.lines[1][79].isLeadByte = true;
+    const app = makeApp(buf, null);
+    app.lastSelection = { start: { row: 1, col: 0 }, end: { row: 2, col: 5 } };
+
+    expect(() => app.doCopyAnsi()).not.toThrow();
+  });
+});

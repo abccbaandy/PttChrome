@@ -1302,7 +1302,8 @@ TermBuf.prototype = {
     } else colStart = 0;
 
     if ( colEnd > 0 ){
-      if ( text[colEnd-1].isLeadByte ) colEnd++;
+      // 已到行尾就不再往外擴（第 80 欄落單的前導位元組，後半在下一列）。
+      if ( colEnd < this.cols && text[colEnd-1].isLeadByte ) colEnd++;
     } else colEnd = this.cols;
 
     if (colStart >= colEnd) return '';
