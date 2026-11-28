@@ -597,8 +597,8 @@ export const SCENES = [
   {
     // 新格式推文（nest.svc 寫回檔案的 "RS[*][-|!]id|[~]N|creation|[ip]|內容"＋續行 "RS[*]+id|內容"，
     // 含刪除／移除）：pmore 在哪都畫成推文（comments.c#comment_render_header／comment_render_body_prefix）。
-    // 留言色彩主題三種（pmore 設定頁 c 循環）：01dc2b11 起預設單純易讀 → 對齊顯示（幀名沿用 bordered）→
-    // 經典醒目（之前預設經典醒目 → 單純易讀 → 典雅邊框；幀名照主題取，新舊 fixture 都對得上）。
+    // 留言色彩主題（pmore 設定頁 c 循環）：01dc2b11 起預設單純易讀 → 對齊顯示（幀名沿用 bordered）→
+    // 經典醒目 → 經典批兔（之前預設經典醒目 → 單純易讀 → 典雅邊框；幀名照主題取，新舊 fixture 都對得上）。
     // comment_parse 的新格式認法靠它守。
     file: 'modern_comments',
     entry: 'read:Comment',
@@ -612,6 +612,11 @@ export const SCENES = [
       { keys: 'o' },
       { keys: 'c' },
       { keys: 'q', name: 'classic' },
+      // upstream 0a247821 起第四種「經典批兔」（CLASSIC2）。舊 upstream 只有三種 ⇒ 循環回單純易讀，
+      // 這一幀跟 simple 相同（測試照幀內容判是哪一種）。
+      { keys: 'o' },
+      { keys: 'c' },
+      { keys: 'q', name: 'classic2' },
     ],
   },
   {

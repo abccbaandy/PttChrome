@@ -590,3 +590,95 @@ describe('0c3e3973 之後：對齊顯示 id 靠左、後面補空白', () => {
     expect(anns[2]).toMatchObject({ modern: true, hidden: false, userid: 'alice', authorIdStart: 0, authorIdEnd: 5 });
   });
 });
+
+// ── upstream 0a247821 之後（CONFIRMED @ pttbbs 0a247821 include/comments.h、mbbsd/comments.c）──────
+//   第四種主題 COMMENT_THEME_CLASSIC2「經典批兔」（PTT2 舊 OLDRECOMMEND 的樣子）：
+//     標頭：print_mark(mark_first「→」)＋print_commenter（tight_colon ⇒「id:」冒號後沒有空白）＋內容
+//           ＋右靠 meta：info_mark「推」＋一格空白＋「MM/DD HH:MM」＋` [N]`
+//     續行：print_mark(mark_more「  」)＝3 格空白；非原PO 有 color_commenter_more ⇒「id:」＋內容；
+//           原PO（color_commenter_more_op NULL）⇒ 空白補到 head ＝ (strlen(「→」)+1) ＋ id 寬 ＋ 1。
+//   內容欄＝ 3 ＋ id 寬 ＋ 1。
+function classic2Header(id, content, time, floor) {
+  const left = '→ ' + id + ':' + content;
+  const right = (time ? '推 ' + time + ' ' : '') + '[' + floor + ']';
+  const w = (t) => [...t].reduce((n, ch) => n + (ch.charCodeAt(0) > 0x7f ? 2 : 1), 0);
+  return left + ' '.repeat(Math.max(1, 79 - w(left) - w(right))) + right;
+}
+const classic2Cont = (id, text) => '   ' + id + ':' + text;
+const classic2OpCont = (id, text) => '   ' + ' '.repeat(id.length + 1) + text;
+
+describe('0a247821 之後：經典批兔主題（「→ id:內容 … 推 MM/DD HH:MM [N]」）', () => {
+  const ctxOf = (o = {}) => ({
+    blacklist: new Set(['badguy']),
+    showFloorNumbers: true,
+    floorCounter: new FloorCounter(),
+    highlightAuthor: true,
+    articleAuthor: 'alice',
+    modernThread: new ModernCommentThread(),
+    ...o,
+  });
+
+  test('標頭：「→ 」之後是 id、冒號緊貼內容、時間前的「推」不進內容', () => {
+    expect(parseModernCommentHeader(classic2Header('alice', '第一則', '11/28 18:00', '1'))).toEqual({
+      seq: 1,
+      userid: 'alice',
+      user: 'alice',
+      idCol: 3,
+      bodyCol: 9,
+      bodyIdx: 8,
+      contPrefix: '   alice:',
+      content: '第一則',
+      ip: null,
+      time: '11/28 18:00',
+    });
+    expect(parseModernCommentHeader(classic2Header('dave', '留言已移除 (廣告)', '11/28 18:07', '5'))).toMatchObject({
+      seq: 5,
+      deleted: '留言已移除 (廣告)',
+    });
+  });
+
+  test('判定不放寬：舊格式單列推文照舊、其他主題沒有「推」記號的冒號緊貼不認', () => {
+    expect(parseComment('→ alice:舊式批兔推文                                    推 11/28 18:00')).toMatchObject({
+      type: '→',
+      userid: 'alice',
+    });
+    // 「推 id:」（經典醒目的 mark_first 配 tight colon）沒有這種主題。
+    const bad = classic2Header('alice', '第一則', '11/28 18:00', '1').replace(/^→/, '推');
+    expect(parseModernCommentHeader(bad)).toBeNull();
+    // 「→ id:」但 meta 沒有 info_mark「推」：不是經典批兔畫的。
+    const noMark = classic2Header('alice', '第一則', '11/28 18:00', '1').replace('推 11/28', '   11/28');
+    expect(parseModernCommentHeader(noMark)).toBeNull();
+  });
+
+  test('黑名單：非原PO「   id:」續行與原PO空白續行都接回同一則', () => {
+    const ctx = ctxOf();
+    const anns = [
+      classic2Header('badguy', '壞話第一行', '11/28 18:01', '2'),
+      classic2Cont('badguy', '壞話第二行'),
+      classic2Header('alice', '原PO回覆', '11/28 18:02', '3'),
+      classic2OpCont('alice', '原PO第二行'),
+      classic2Cont('bob', '別人的續行不算'),
+    ].map((t) => annotateComment(t, ctx));
+    expect(anns[0]).toMatchObject({ modern: true, hidden: true, userid: 'badguy' });
+    expect(anns[1]).toEqual({ hidden: true, modernBody: true });
+    expect(anns[2]).toMatchObject({ modern: true, hidden: false, userid: 'alice', authorIdStart: 3, authorIdEnd: 8 });
+    expect(anns[3]).toEqual({ hidden: false, modernBody: true, modernBodyCol: 9 });
+    expect(anns[4]).toBeNull();
+  });
+
+  test('agent_parse：續行接回同一則，字首不混進內容', () => {
+    const r = parseArticleLines([
+      '作者  poster (暱稱) 看板  Test',
+      '標題  [測試] 新格式',
+      '內文',
+      '※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4',
+      classic2Header('bob', '第一則', '11/28 18:00', '1'),
+      classic2Cont('bob', '第二行'),
+      classic2Header('bob', '同一人下一則', '11/28 18:01', '2'),
+    ]);
+    expect(r.comments).toEqual([
+      { type: 'modern', seq: 1, user: 'bob', content: '第一則\n第二行', ip: null, time: '11/28 18:00' },
+      { type: 'modern', seq: 2, user: 'bob', content: '同一人下一則', ip: null, time: '11/28 18:01' },
+    ]);
+  });
+});

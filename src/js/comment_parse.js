@@ -196,14 +196,43 @@ export function isBlacklistableUserId(id) {
 // 不印 id，改成「→ 」＋空白補到內容欄 —— 單純易讀全部續行、經典醒目原PO 的續行都是這樣；
 // 經典醒目非原PO 仍是「→ id: 」。對齊顯示（print_commenter）改成 id 靠左、後面補空白到 IDLEN 再接「: 」
 // （以前是前面補空白、id 靠右）；續行照舊空白縮到內容欄 14。
+// upstream 0a247821（11/28）加第四種主題「經典批兔」（CLASSIC2，PTT2 舊 OLDRECOMMEND 的樣子，CONFIRMED）：
+// 標頭「→ id:內容」（tight_colon：冒號後沒有空白）＋右靠 meta 前多 info_mark「推 」；續行 mark_more 是
+// 兩格空白 ⇒ 非原PO「   id:內容」、原PO 空白補到內容欄（3＋id 寬＋1）。認法要整組指紋齊（「→ 」＋緊貼冒號
+// ＋「推 」＋時間＋[N]），只有其中一兩件的都不認。
 const PIPE_COMMENT_HEADER_RE =
   /^(推 )?( *)([A-Za-z][0-9A-Za-z]{1,11})( *): (.*?) +(?:(\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+) )?(?:(\d{2}\/\d{2}(?:\/\d{4})?) )?(\d{2}:\d{2}) \[~?(\d+)\]\s*$/;
 const PIPE_TOMBSTONE_RE = /^(留言已刪除|留言已隱藏(?: \(.*\))?|留言已移除(?: \(.*\))?)$/;
 const PTT_IDLEN = 12;
+const CLASSIC2_COMMENT_HEADER_RE =
+  /^→ ([A-Za-z][0-9A-Za-z]{1,11}):(.*?) +推 (?:(\d{2}\/\d{2}(?:\/\d{4})?) )?(\d{2}:\d{2}) \[~?(\d+)\]\s*$/;
 const MARK_MORE = '→ ';
+const CLASSIC2_MARK_MORE = '   ';
+function parseClassic2CommentHeader(text) {
+  const m = CLASSIC2_COMMENT_HEADER_RE.exec(text);
+  if (!m) return null;
+  const id = m[1];
+  const idIdx = MARK_MORE.length;
+  const bodyIdx = idIdx + id.length + 1;
+  const content = m[2].trimEnd();
+  const h = {
+    seq: parseInt(m[5], 10),
+    userid: id.toLowerCase(),
+    user: id,
+    idCol: cellColOf(text, idIdx),
+    bodyCol: cellColOf(text, bodyIdx),
+    bodyIdx,
+    contPrefix: CLASSIC2_MARK_MORE + id + ':',
+    content,
+    ip: null,
+    time: m[3] ? m[3] + ' ' + m[4] : m[4],
+  };
+  if (PIPE_TOMBSTONE_RE.test(content)) h.deleted = content;
+  return h;
+}
 function parsePipeCommentHeader(text) {
   const m = PIPE_COMMENT_HEADER_RE.exec(text);
-  if (!m) return null;
+  if (!m) return parseClassic2CommentHeader(text);
   const mark = m[1] || '';
   const pad = m[2].length;
   const id = m[3];

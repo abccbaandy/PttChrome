@@ -107,7 +107,7 @@ tests/unit/ptt_src_screens.test.js  依幀名把第 0..i 幀疊進 app 自己的
 | `reply_prompt` | `read:Test`／24 | `1⏎` `⏎` `y` | 文章裡 y 的「回應至 (F)看板 (M)作者信箱…」畫在倒數第二列：狀態列照樣認得（pageState 3）、游標在輸入欄、不攔 X、上傳網址走剪貼簿、編輯器輸入框不出現 |
 | `post_flow` | `read:Test`／24 | `^P` | 發文的種類 prompt：不是 clean-list、不是編輯器（pageState 不是 6）、上傳網址走剪貼簿 |
 | `class_list` | `menu`／24 | `⏎` `⏎` | 分類根（row 0【分類看板】）不是可接管的看板列表；進群組後認成 `class` 變體、可接管、列解析得出板名 |
-| `modern_comments` | `read:Comment`／24 | `⏎` `o` `c` `q` `o` `c` `q` | 新格式推文（seed 的 `T` 列接在檔尾：ea9fe3d6 起 `RS[*][-\|!]id\|[~]N\|creation\|[ip]\|內容`＋續行 `RS+id\|內容`，含刪除／移除）× 留言色彩主題三種（幀名照主題：`simple`（01dc2b11 起預設）→ `bordered`（對齊顯示）→ `classic`）：`annotateComment` 六則標頭都認、黑名單連內容列一起藏、原PO id 欄落在畫面上的 id、`parseArticleLines` 接上內容。前兩代畫面在 `ptt_src_screens_legacy/modern_comments_{768b172a,ea9fe3d6}.json`，同一組測試三代都跑 |
+| `modern_comments` | `read:Comment`／24 | `⏎` `o` `c` `q` `o` `c` `q` `o` `c` `q` | 新格式推文（seed 的 `T` 列接在檔尾：ea9fe3d6 起 `RS[*][-\|!]id\|[~]N\|creation\|[ip]\|內容`＋續行 `RS+id\|內容`，含刪除／移除）× 留言色彩主題四種（幀名照主題：`simple`（01dc2b11 起預設）→ `bordered`（對齊顯示）→ `classic` → `classic2`（0a247821 的經典批兔；更舊的 upstream 只有三種，這一幀循環回單純易讀））：`annotateComment` 六則標頭都認、黑名單連內容列一起藏、原PO id 欄落在畫面上的 id、`parseArticleLines` 接上內容。前三代畫面在 `ptt_src_screens_legacy/modern_comments_{768b172a,ea9fe3d6,0c3e3973}.json`，同一組測試四代都跑 |
 
 **加場景**：`scenes.mjs` 加一筆（第一步不送鍵；要斷言的幀取 name）→ 必要時 seed／driver 入口 →
 `sh tools/ptt-src-screens/generate.sh` → 在 test 加 describe。鍵只用 upstream 鍵表裡的鍵。

@@ -37,6 +37,7 @@ import { parseArticleLines } from "../../src/js/agent_parse";
 import modernCommentsFx from "./fixtures/ptt_src_screens/modern_comments.json";
 import modernCommentsLegacyFx from "./fixtures/ptt_src_screens_legacy/modern_comments_768b172a.json";
 import modernCommentsPipeFx from "./fixtures/ptt_src_screens_legacy/modern_comments_ea9fe3d6.json";
+import modernCommentsThemeFx from "./fixtures/ptt_src_screens_legacy/modern_comments_0c3e3973.json";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 import articleListFx from "./fixtures/ptt_src_screens/article_list.json";
 import articleListTallFx from "./fixtures/ptt_src_screens/article_list_tall.json";
@@ -1862,8 +1863,11 @@ describe("upstream pttbbs 產的離站流程（xyz.c#Goodbye）", () => {
   });
 });
 
-// 三代格式都守（PTT 實跑私有 commit，哪一代先上線未知）：
-// - ea9fe3d6 之後（seed.tsv 現行）：檔案 "RS[*][-|!]id|[~]N|creation|[ip]|內容"＋續行 "RS[*]+id|內容"，
+// 四代格式都守（PTT 實跑私有 commit，哪一代先上線未知）：
+// - 0c3e3973 之後（seed.tsv 現行）：檔案同下一代；畫面 meta 只剩「MM/DD HH:MM」（不印年份與 IP，raw mode 才有）、
+//   對齊顯示改成 id 靠左＋後面補空白到 12 格、單純易讀／經典醒目原PO 的續行是「→ 」＋空白；
+//   0a247821 起第四種主題「經典批兔」：「→ id:內容 … 推 MM/DD HH:MM [N]」（冒號後沒有空白）、續行「   id:」。
+// - ea9fe3d6～0c3e3973 之前（legacy fixture）：檔案 "RS[*][-|!]id|[~]N|creation|[ip]|內容"＋續行 "RS[*]+id|內容"，
 //   畫面同下一代的標頭列，但經典醒目前面多「推 」、續行重複 id（單純易讀「id: 」、經典醒目「→ id: 」，
 //   對齊顯示仍是空白縮排）；別人移除的內容是「留言已移除 (原因)」。01dc2b11 起預設主題是單純易讀。
 // - 87c3a1f3～ea9fe3d6 之前（legacy fixture）：檔案 "|id[!]|內容|creation|[~]N"，畫面「id: 內容 … meta [N]」，
@@ -1872,8 +1876,17 @@ describe("upstream pttbbs 產的離站流程（xyz.c#Goodbye）", () => {
 //   第三個主題「典雅邊框」加「╭ 」「├ 」。
 const MODERN_COMMENT_GENERATIONS = [
   {
-    label: "ea9fe3d6 之後（推 id: 內容 … [N]，續行重複 id）",
+    label: "0c3e3973 之後（meta 不印 IP、對齊顯示 id 靠左、經典批兔）",
     fx: modernCommentsFx,
+    headerOf: (id) => new RegExp(`^(?:推 |→ )?${id} *: ?.*\\[~?\\d+\\]\\s*$`),
+    themes: ["classic", "simple", "bordered", "classic2"],
+    bobBodyRows: 1,
+    hiddenReason: "留言已移除 (廣告)",
+    aliceMeta: { ip: null, time: "10/28 12:00" },
+  },
+  {
+    label: "ea9fe3d6 之後（推 id: 內容 … [N]，續行重複 id）",
+    fx: modernCommentsThemeFx,
     headerOf: (id) => new RegExp(`^(?:推 )? *${id}: .*\\[~?\\d+\\]\\s*$`),
     bobBodyRows: 1,
     hiddenReason: "留言已移除 (廣告)",
@@ -1911,7 +1924,7 @@ describe.each(MODERN_COMMENT_GENERATIONS)("upstream pttbbs 產的新格式推文
   };
   const rowOf = (rowTexts, re) => rowTexts.findIndex((t) => re.test(t));
 
-  for (const theme of ["classic", "simple", "bordered"]) {
+  for (const theme of gen.themes || ["classic", "simple", "bordered"]) {
     describe(theme, () => {
       const { buf, rowTexts } = screenAt(modernCommentsFx, theme);
 
@@ -1973,7 +1986,9 @@ describe.each(MODERN_COMMENT_GENERATIONS)("upstream pttbbs 產的新格式推文
           "最後一則",
         ]);
         const meta = cards[0].node.querySelector(".commentCardMeta").textContent;
-        expect(meta).toContain("1.2.3.4");
+        const aliceMeta = gen.aliceMeta || { ip: "1.2.3.4", time: "10/28/2026 12:00" };
+        if (aliceMeta.ip) expect(meta).toContain(aliceMeta.ip);
+        else expect(meta).not.toContain("1.2.3.4");
         expect(meta).toContain("12:00");
         for (const c of cards) {
           const body = c.lines.join(" ");
@@ -1997,7 +2012,7 @@ describe.each(MODERN_COMMENT_GENERATIONS)("upstream pttbbs 產的新格式推文
           [5, "dave", gen.hiddenReason],
           [6, "erin", "最後一則"],
         ]);
-        expect(comments[0]).toMatchObject({ ip: "1.2.3.4", time: "10/28/2026 12:00" });
+        expect(comments[0]).toMatchObject(gen.aliceMeta || { ip: "1.2.3.4", time: "10/28/2026 12:00" });
         expect(comments.filter((c) => c.deleted).map((c) => c.user)).toEqual(["carol", "dave"]);
       });
     });

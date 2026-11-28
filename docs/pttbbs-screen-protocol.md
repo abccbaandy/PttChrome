@@ -1411,8 +1411,13 @@ pmore 只在 `comments_start`（檔案最後一個 `※ ` 開頭行之後）且 
   `→ ` 空白縮排；經典醒目非原PO 仍 `→ id: `。client：`→ ` 之後的空白剛好補到 bodyCol（cell）才算續行。
   同一個 commit 的 `print_commenter` 也把**對齊顯示**改成 id **靠左**、後面補空白到 `IDLEN` 再接 `: `
   （`alice       : 內容`；以前是前面補空白、id 靠右）；續行照舊空白縮到 14 格。meta 只剩 `MM/DD HH:MM`（不印年份與 IP，raw mode 才有）。
-  client：id 前或 id 後補白（二選一、剛好補到 12 格、不帶 `推 `）都認。手組畫面守在 `modern_comment_parse.test.js`；
-  `fixtures/ptt_src_screens/modern_comments.json` 還是 ea9fe3d6 產的，待重產。
+  client：id 前或 id 後補白（二選一、剛好補到 12 格、不帶 `推 `）都認。
+- **0a247821（11/28）第四種主題「經典批兔」**（`COMMENT_THEME_CLASSIC2`，PTT2 舊 OLDRECOMMEND 的樣子；c1319abf 同時拿掉
+  `CONFIG_OLD_RECOMMEND`，「作者本人首推」「→ id:」輸入列這些字串 upstream 已刪，client 照舊相容）：標頭 `→ id:內容`
+  （`tight_colon`：冒號後沒有空白）＋右靠 `推 MM/DD HH:MM [N]`（`info_mark`）；續行 `mark_more` 是兩格空白 ⇒ 非原PO
+  `   id:內容`、原PO 空白補到內容欄（3＋id 寬＋1）。client：`→ `＋緊貼冒號＋`推 `＋時間＋`[N]` 整組齊才認。
+  以上都由 `fixtures/ptt_src_screens/modern_comments.json`（c1319abf 產，含 `classic2` 幀）守；0c3e3973 之前的畫面留在
+  legacy `modern_comments_0c3e3973.json`。
 - **終端推文仍是舊格式**：`bbs.c#comment` → `post.c#CommentAddRecord` 寫的是 `FormatCommentString` 那一列。
   ⇒ 一篇文章可以「上半舊格式、下半新格式」並存；兩種都要認。
 - client：`comment_parse.parseModernCommentHeader`（要求列尾 creation，80 欄下一定塞得下；id 照 `is_validuserid`）、
