@@ -206,6 +206,34 @@ function aboveBottomInset(px) {
   return 'bottom:' + hintBottomCss(px, false) + ';';
 }
 
+const BBSLINE_SEL = '[data-type="bbsline"]';
+const bbslineRow = (el) => ({ row: parseInt(el.getAttribute('data-row')), col: 0 });
+function firstBbsline(n) {
+  if (!n || n.nodeType !== 1) return null;
+  return n.matches(BBSLINE_SEL) ? n : n.querySelector(BBSLINE_SEL);
+}
+function lastBbsline(n) {
+  if (!n || n.nodeType !== 1) return null;
+  const all = n.querySelectorAll(BBSLINE_SEL);
+  return all.length ? all[all.length - 1] : n.matches(BBSLINE_SEL) ? n : null;
+}
+
+// 選取端點落在任何一列（bbsline）之外：取端點後面第一列的開頭；後面沒有列就取前面最後
+// 一列的行尾。都找不到回 null。只看 node 自己的子節點（端點就在它們之間）。
+export function selectionPointOutsideRow(node, pos) {
+  if (!node || node.nodeType !== 1) return null;
+  const kids = node.childNodes;
+  for (let i = pos; i < kids.length; ++i) {
+    const el = firstBbsline(kids[i]);
+    if (el) return bbslineRow(el);
+  }
+  for (let i = Math.min(pos, kids.length) - 1; i >= 0; --i) {
+    const el = lastBbsline(kids[i]);
+    if (el) return { row: parseInt(el.getAttribute('data-row')), col: textCellWidth(el.textContent) };
+  }
+  return null;
+}
+
 export function TermView() {
   //new pref - start
   this.bbsWidth = 0;
@@ -3168,16 +3196,30 @@ TermView.prototype = {
     return null;
   },
 
+  // Range 的端點 (node, pos) → { row, col }（col＝端點之前有幾格）。node 是元素時 pos 是
+  // 子節點索引，不是字元位移。端點落在列外（三連擊選整列時 Chromium 把結尾放在下一列
+  // 外層的元素上）⇒ 以端點後面第一列的開頭（col 0）、或前面最後一列的行尾代表。
   countCol: function(node, pos) {
     let rowNode = this.getRowLineElement(node);
     if (!rowNode) {
-      return { row: 0, col: 0 };
+      return selectionPointOutsideRow(node, pos) || { row: 0, col: 0 };
     }
 
+    // 元素端點：停在第 pos 個子節點之前；pos 在最後一個子節點之後 ⇒ 整個 node 都算。
+    let stop = node;
+    let stopAt = pos;
+    if (node.nodeType !== 3) {
+      if (pos < node.childNodes.length) {
+        stop = node.childNodes[pos];
+        stopAt = 0;
+      } else {
+        stopAt = Infinity;
+      }
+    }
     let col = 0;
     let doCount = function(cur) {
-      if (cur == node) {
-        col += textCellWidth(cur.textContent.substring(0, pos));
+      if (cur == stop) {
+        col += textCellWidth(stopAt === Infinity ? cur.textContent : cur.textContent.substring(0, stopAt));
         return false;
       }
       if (cur.nodeName == '#text') {
