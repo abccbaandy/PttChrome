@@ -314,17 +314,14 @@ AnsiParser.prototype.feed = function(data) {
         case 'J':
           term.clear(params ? params[0] : 0);
           break;
+        // CUP／HVP：兩個參數都可省略，省略＝1（ECMA-48 §8.3.21）⇒ `ESC[5H` ＝第 5 列
+        // 第 1 欄，不是原點。PTT 自己畫畫面恆送兩個（term.c#do_move），但文章內容裡
+        // 使用者寫的 CUP 也會過來（common/sys/string.c safe_mask 收 H／f）。
+        // 守護：tests/unit/ansi_parser_cup.test.js
         case 'H':
         case 'f':
-          if (params.length < 2) {
-            term.gotoPos(0, 0);
-          } else {
-            if (params[0] > 0)
-              --params[0];
-            if (params[1] > 0)
-              --params[1];
-            term.gotoPos(params[1], params[0]);
-          }
+          term.gotoPos(params[1] > 0 ? params[1] - 1 : 0,
+                       params[0] > 0 ? params[0] - 1 : 0);
           break;
         case 'K':
           term.eraseLine(params? params[0] : 0);
