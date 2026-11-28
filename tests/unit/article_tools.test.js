@@ -145,6 +145,28 @@ describe("analyzeArticle", () => {
       ["carol", "嗨"],
     ]);
   });
+  // ea9fe3d6 單純易讀：續行字首「id: 」跟同一人下一則的標頭列開頭一樣 ⇒ 要先認標頭（有 [N]）。
+  test("單純易讀：同一人連推兩則不會被併成一則", () => {
+    const head = (id, content, meta, n) => {
+      const left = `${id}: ${content}`;
+      const right = `${meta} [${n}]`;
+      const w = [...left].reduce((s, ch) => s + (ch.charCodeAt(0) > 0x7f ? 2 : 1), 0);
+      return left + " ".repeat(79 - w - right.length) + right;
+    };
+    const lines = [
+      ...HEADER,
+      "內文",
+      head("bob", "第一則", "09/01/2025 12:00", 1),
+      "bob: 第一則續行",
+      head("bob", "第二則", "09/01/2025 12:01", 2),
+    ];
+    const a = analyzeArticle(lines, {});
+    expect(a.stats).toEqual({ push: 0, boo: 0, arrow: 0, modern: 2 });
+    expect(a.comments.map((c) => [c.user, c.content])).toEqual([
+      ["bob", "第一則 第一則續行"],
+      ["bob", "第二則"],
+    ]);
+  });
   test("沒有檔頭 ⇒ 作者 null、沒人被標原PO", () => {
     const a = analyzeArticle(["內文", push("推", "bob", "x")], {});
     expect(a.author).toBe(null);

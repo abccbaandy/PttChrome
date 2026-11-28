@@ -265,6 +265,8 @@ export function modernCommentBodyCol(text, h) {
 export function modernCommentBodyText(text, h) {
   if (!text || !h) return null;
   if (h.contPrefix && text.startsWith(h.contPrefix)) {
+    // 單純易讀的字首「id: 」也是同一人下一則標頭列的開頭 ⇒ 是標頭（列尾有 [N]）就不是續行。
+    if (parsePipeCommentHeader(text)) return null;
     const rest = text.slice(h.contPrefix.length).trimEnd();
     return rest ? rest : null;
   }

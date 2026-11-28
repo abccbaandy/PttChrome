@@ -456,6 +456,25 @@ describe('agent_parse.parseArticleLines：ea9fe3d6 之後', () => {
   });
 });
 
+describe('agent_parse.parseArticleLines：單純易讀同一人連推', () => {
+  // 續行字首「id: 」跟同一人下一則的標頭列開頭一樣 ⇒ 標頭（有 [N]）要先認，不能被吃成續行。
+  test('第二則標頭不會被併進第一則的內容', () => {
+    const r = parseArticleLines([
+      '作者  poster (暱稱) 看板  Test',
+      '標題  [測試] 新格式',
+      '內文',
+      '※ 發信站: 批踢踢實業坊(ptt.cc), 來自: 1.2.3.4',
+      P1,
+      'alice: 第二行',
+      pipeHeader('alice', '再推一則', '10/28/2026 12:03', '2'),
+    ]);
+    expect(r.comments).toEqual([
+      { type: 'modern', seq: 1, user: 'alice', content: '第一則推文\n第二行', ip: '1.2.3.4', time: '10/28/2026 12:00' },
+      { type: 'modern', seq: 2, user: 'alice', content: '再推一則', ip: null, time: '10/28/2026 12:03' },
+    ]);
+  });
+});
+
 // ── upstream 0c3e3973 之後（CONFIRMED @ pttbbs 0c3e3973 mbbsd/comments.c）──────────────
 //   print_more_prefix：先 print_mark(mark_more)（「→」＋一格空白＝3 格），該主題沒有續行 id 色
 //   （color_commenter_more／_op 為 NULL）時不印 id，改用空白補到標頭內容欄
