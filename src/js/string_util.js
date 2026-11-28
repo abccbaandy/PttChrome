@@ -62,6 +62,7 @@ export function wrapText(it, maxLen, enterChar) {
   // caller here is paste normalization where a stray opener is merely ugly.
   var pattern = /\r|\n|([^\x00-\x7f][,.?!:;，。、；：？！）」』】〉》]?[\t ]*)|([\x00-\x08\x0b\x0c\x0e-\x1f\x21-\x7f]+[\t ]*)|[\t ]+/g;
   var splited = it.match(pattern);
+  if (!splited) return it; // '' (e.g. pasting an empty clipboard)
 
   var result = '';
   var len = 0;

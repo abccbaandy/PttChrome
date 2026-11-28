@@ -105,6 +105,13 @@ describe("normalizePasteText（貼上正規化，兩條貼上路徑共用）", (
     // 折行會插入 \r，混進跳脫序列中間就毀了它；原碼刻意在有 \x1b 時跳過 wrap。
     expect(normalizePasteText("ab cd\x1bef gh", 5)).toBe("ab cd\x15ef gh");
   });
+
+  // 右鍵「貼上」走 App.doPaste → clipboard.readText()，剪貼簿是空的就拿到 ''，
+  // 一路到 onTextInput(…, true) ⇒ 這裡。舊碼 ''.match(...) 是 null，wrapText 丟 TypeError。
+  it("空字串（剪貼簿是空的）原樣回傳，不丟例外", () => {
+    expect(normalizePasteText("", 78)).toBe("");
+    expect(wrapText("", 78, "\r")).toBe("");
+  });
 });
 
 // Guards the copy pipeline (App.doCopy → navigator.clipboard.writeText):
