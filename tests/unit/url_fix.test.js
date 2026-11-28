@@ -168,6 +168,29 @@ describe('detectFixableUrls — 有 scheme 或有路徑者不受 AI 閘門影響
   });
 });
 
+// 斷開的副檔名只修「name. png」「name .png」「name . png」：一定有點、只容忍一個注入空白（檔頭規則）。
+// 網址後面空一格接 gif／png／mp4 開頭的散文（「gif版」「png 都可以」）不是副檔名，接起來會在主偵測器
+// 已經連好的網址下面多畫一條錯的 ↳ 連結（同上面數字尾段的 lookbehind）。
+describe('detectFixableUrls — 空白＋副檔名單字要有點才併', () => {
+  test.each([
+    ['https://i.imgur.com/abcd.mp4 gif版畫質比較差', []],
+    ['https://www.youtube.com/watch?v=abc mp4', []],
+    ['看 i.imgur.com/abcd.jpg png 都可以', ['https://i.imgur.com/abcd.jpg']],
+    ['看 https://a.com/x.     png 這個', []],
+    ['看 https://a.com/x  .png 這個', []],
+  ])('%s', (text, fixed) => {
+    expect(fixedOf(text)).toEqual(fixed);
+  });
+
+  test.each([
+    ['www.example.com/someimage. png', 'https://www.example.com/someimage.png'],
+    ['www.example.com/someimage .png', 'https://www.example.com/someimage.png'],
+    ['www.example.com/someimage . png', 'https://www.example.com/someimage.png'],
+  ])('真的斷開照修：%s', (text, fixed) => {
+    expect(fixedOf(text)).toEqual([fixed]);
+  });
+});
+
 describe('detectFixableUrls — shape & dedupe', () => {
   test('dedupe identical fixed within a row', () => {
     expect(fixedOf('www . a .com 和 www . a .com')).toEqual(['https://a.com'].map(() => 'https://www.a.com'));
