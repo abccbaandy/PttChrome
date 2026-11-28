@@ -55,6 +55,16 @@ test("元素端點的 offset 是子節點索引：停在第 pos 個子節點之�
   expect(end).toEqual({ row: 1, col: line.textContent.length });
 });
 
+test("全選（App.doSelectAll：selectAllChildren(.main)）：第一列開頭到最後一列行尾", () => {
+  const s = threeRows();
+  window.getSelection().selectAllChildren(s.root);
+  const third = s.container.querySelector('[data-row="2"]');
+  expect(colRow()).toEqual({
+    start: { row: 0, col: 0 },
+    end: { row: 2, col: third.textContent.length },
+  });
+});
+
 test("列外端點後面沒有列：取前面最後一列的行尾", () => {
   const s = threeRows();
   const third = s.container.querySelector('[data-row="2"]');
