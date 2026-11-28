@@ -11,6 +11,7 @@ import { mountRow, unmountAll } from "./helpers/mount_screen";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
 import { isDBCSLead, u2b } from "../../src/js/string_util";
 import { symbolTable } from "../../src/js/symbol_table";
+import { shouldForceWidth } from "../../src/render/color_segment";
 import symMingLiuUrl from "../../src/fonts/symmingliu.woff?url";
 
 loadBig5Tables();
@@ -102,38 +103,30 @@ test("‼（Big5 91F7）之後的字仍對齊格線（實錄 Stock 推文列）"
   expect(lastGlyphRight(root)).toBeCloseTo((lastCol + 1) * CHW, 0);
 });
 
-// CJK 區塊（Unicode East Asian Width = W/F）：任何 CJK 字型的 advance 都是 1em，
-// 不需要撐寬。區塊外的一律不信任字型。
-function isCjkWide(c) {
-  return (
-    (c >= 0x1100 && c <= 0x115f) ||
-    (c >= 0x2e80 && c <= 0x303e) ||
-    (c >= 0x3041 && c <= 0x33ff) ||
-    (c >= 0x3400 && c <= 0x4dbf) ||
-    (c >= 0x4e00 && c <= 0x9fff) ||
-    (c >= 0xa000 && c <= 0xa4cf) ||
-    (c >= 0xac00 && c <= 0xd7a3) ||
-    (c >= 0xf900 && c <= 0xfaff) ||
-    (c >= 0xfe10 && c <= 0xfe19) ||
-    (c >= 0xfe30 && c <= 0xfe6f) ||
-    (c >= 0xff01 && c <= 0xff60) ||
-    (c >= 0xffe0 && c <= 0xffe6)
-  );
-}
+// 「字型可靠是 1em」只有漢字、假名、注音、CJK 標點、全形字這幾塊（render/color_segment.js
+// 的 isCjkWide）。韓文就不行：macOS 的 Hangul fallback（Apple SD Gothic Neo）advance ≈ 0.87em，
+// 連帶 KS X 1001 收進來的 ㎏ ㎡ ㉠ 這類方塊單位／圈字也一樣 ⇒ 要撐寬。這裡鎖規則本身，
+// 不靠當前機器剛好裝了哪套字型（Linux 的 Noto CJK 韓文剛好是 1em，量寬度抓不到）。
+test("撐寬規則：只信任漢字／假名／注音／CJK 標點／全形字的字型寬度", () => {
+  const trusted = ["中", "㐀", "あ", "ア", "ㄅ", "　", "，", "「", "Ａ", "￥", "兀"];
+  const untrusted = ["한", "ᄀ", "ㄱ", "㉠", "㈀", "㎏", "㎡", "ꀀ", "×", "‼", "─", "●"];
+  expect(trusted.filter((c) => shouldForceWidth(c))).toEqual([]);
+  expect(untrusted.filter((c) => !shouldForceWidth(c))).toEqual([]);
+});
 
-test("整張 b2u 表：CJK 區塊以外的 DBCS 字都正好 2 格寬", () => {
+test("整張 b2u 表：每個 DBCS 字都正好 2 格寬（含漢字等不撐寬的字）", () => {
   const b2u = globalThis.lib.b2uArray;
   const pairs = [];
   for (let lead = 0x81; lead <= 0xfe; lead++) {
     for (let trail = 0x40; trail <= 0xfe; trail++) {
       const pos = (lead << 8) | trail;
       const code = (b2u[2 * pos] << 8) | b2u[2 * pos + 1];
-      if (!code || isCjkWide(code)) continue;
+      if (!code) continue;
       if (symbolTable["x" + code.toString(16)] == 3) continue; // 壞字，畫成 ??
       pairs.push({ bytes: String.fromCharCode(lead, trail), code });
     }
   }
-  expect(pairs.length).toBeGreaterThan(900);
+  expect(pairs.length).toBeGreaterThan(13000);
 
   const bad = [];
   for (let i = 0; i < pairs.length; i += 39) {

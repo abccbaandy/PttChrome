@@ -97,6 +97,28 @@ test("格線：⭐（U+2B50，全形）與 ġ、泰文（半形）之後的字�
   expect(zRect.left - left).toBeCloseTo(5 * CHW, 0);
 });
 
+test("格線：韓文之後的字仍對齊（Hangul 字型的 advance 不一定是 1em）", () => {
+  // macOS 的 Hangul fallback（Apple SD Gothic Neo）advance 只有約 0.87em：韓文若當一般字排，
+  // 後面整排左移。한국어＝col 0-5、空白＝6、ok＝7-8 ⇒ k 的右緣＝9 格。
+  const { root } = mount(rowFrom("한국어 ok"));
+  const line = root.querySelector('[data-type="bbsline"]');
+  const left = line.getBoundingClientRect().left;
+  for (const box of line.querySelectorAll(".wpadding")) {
+    expect(box.getBoundingClientRect().width).toBeCloseTo(FONT_PX, 0);
+  }
+  const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+  let kRect = null;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const at = n.data.indexOf("k");
+    if (at < 0) continue;
+    const r = document.createRange();
+    r.setStart(n, at);
+    r.setEnd(n, at + 1);
+    kRect = r.getBoundingClientRect();
+  }
+  expect(kRect.right - left).toBeCloseTo(9 * CHW, 0);
+});
+
 test("右半格被蓋掉：左半照原樣畫、蓋上去的字照畫；孤兒右半畫成 ?", () => {
   // server 在右半格（col 1）寫 X ⇒ 한 失去右半
   const orphanLead = rowFrom("한" + ESC + "[1;2HX");

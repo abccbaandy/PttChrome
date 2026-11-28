@@ -10,17 +10,24 @@ function isBadDBCS(u) {
   return symbolTable["x" + u.charCodeAt(0).toString(16)] == 3;
 }
 
-// Unicode East Asian Width = W/F 的 CJK 區塊：任何 CJK 字型的 advance 都是 1em。
+// 字型 advance 可靠是 1em 的 CJK 區塊（中日文字型的設計格就是 1em 方框）：部首、CJK 標點、
+// 假名、注音、漢字、相容漢字、直排／小型標點、全形字。
+// 刻意**不含**韓文（Hangul 字母／音節、相容字母、帶圈／括號韓文、KS X 1001 帶進來的 ㎏ ㎡ 方塊
+// 單位）與彝文：East Asian Width 雖是 W，韓文字型的 advance 不是 1em（macOS 的 Apple SD
+// Gothic Neo ≈ 0.87em），彝文多半沒字型、fallback 成窄字 ⇒ 交給撐寬。
+// 守護 tests/unit/dbcs_cell_width.test.js（規則）、unicode_cells_render.test.js（韓文格線）。
 function isCjkWide(c) {
   return (
-    (c >= 0x1100 && c <= 0x115f) ||
-    (c >= 0x2e80 && c <= 0x303e) ||
-    (c >= 0x3041 && c <= 0x33ff) ||
+    (c >= 0x2e80 && c <= 0x2ffb) ||
+    (c >= 0x3000 && c <= 0x302d) ||
+    (c >= 0x3030 && c <= 0x303e) ||
+    (c >= 0x3041 && c <= 0x312f) ||
+    (c >= 0x3190 && c <= 0x31ee) ||
+    (c >= 0x31f0 && c <= 0x31ff) ||
     (c >= 0x3400 && c <= 0x4dbf) ||
     (c >= 0x4e00 && c <= 0x9fff) ||
-    (c >= 0xa000 && c <= 0xa4cf) ||
-    (c >= 0xac00 && c <= 0xd7a3) ||
-    (c >= 0xf900 && c <= 0xfaff) ||
+    (c >= 0xf900 && c <= 0xfa2d) ||
+    (c >= 0xfa30 && c <= 0xfa6d) ||
     (c >= 0xfe10 && c <= 0xfe19) ||
     (c >= 0xfe30 && c <= 0xfe6f) ||
     (c >= 0xff01 && c <= 0xff60) ||
@@ -68,7 +75,8 @@ export class ColorSegmentBuilder {
       this.appendNormalChar(ch.ch === WIDE_TRAIL ? "?" : ch.ch, color);
       return;
     }
-    if (!this.wordBuilder.isLastSegmentSameColor(color)) this.beginSegment(color);
+    if (!this.wordBuilder.isLastSegmentSameColor(color))
+      this.beginSegment(color);
     this.wordBuilder.appendHalfWidthWord(ch.ch, this.forceWidth / 2);
   }
 
