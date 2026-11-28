@@ -540,3 +540,53 @@ describe('0c3e3973 之後：續行「→ 」＋空白縮到內容欄', () => {
     ]);
   });
 });
+
+// ── upstream 0c3e3973 之後的對齊顯示（CONFIRMED @ pttbbs 0c3e3973 mbbsd/comments.c#print_commenter）──
+//   以前 prints("%*s", pad) 在 id 前面補空白（id 靠右）；之後 prints("%.*s%*s", user_len, user, pad, "")
+//   ⇒ id 靠左、後面補空白到 IDLEN（12）格再接「: 」。續行（沒有續行色）照舊空白補到內容欄 14。
+const alignedLeftHeader = (id, content, time, floor) =>
+  pipeHeader(id + ' '.repeat(Math.max(0, 12 - id.length)), content, time, floor);
+
+describe('0c3e3973 之後：對齊顯示 id 靠左、後面補空白', () => {
+  const ctxOf = (o = {}) => ({
+    blacklist: new Set(['badguy']),
+    showFloorNumbers: true,
+    floorCounter: new FloorCounter(),
+    highlightAuthor: true,
+    articleAuthor: 'alice',
+    modernThread: new ModernCommentThread(),
+    ...o,
+  });
+
+  test('標頭：id 在第 0 欄、內容欄 14、沒有續行字首', () => {
+    expect(parseModernCommentHeader(alignedLeftHeader('alice', '第一則', '10/28 12:00', '1'))).toEqual({
+      seq: 1,
+      userid: 'alice',
+      user: 'alice',
+      idCol: 0,
+      bodyCol: 14,
+      bodyIdx: 14,
+      contPrefix: null,
+      content: '第一則',
+      ip: null,
+      time: '10/28 12:00',
+    });
+  });
+
+  test('判定不放寬：補的空白不是剛好到 12 格、或「推 」配靠左補白 ⇒ 不認', () => {
+    expect(parseModernCommentHeader(pipeHeader('alice' + '   ', '第一則', '10/28 12:00', '1'))).toBeNull();
+    expect(parseModernCommentHeader(pipeHeader('alice' + ' '.repeat(7), '第一則', '10/28 12:00', '1', { mark: '推' }))).toBeNull();
+  });
+
+  test('黑名單連 14 格空白續行一起藏；原PO 高亮落在 id 那幾格', () => {
+    const ctx = ctxOf();
+    const anns = [
+      alignedLeftHeader('badguy', '壞話第一行', '10/28 12:01', '2'),
+      ' '.repeat(14) + '壞話第二行',
+      alignedLeftHeader('alice', '原PO回覆', '10/28 12:05', '3'),
+    ].map((t) => annotateComment(t, ctx));
+    expect(anns[0]).toMatchObject({ modern: true, hidden: true, userid: 'badguy' });
+    expect(anns[1]).toEqual({ hidden: true, modernBody: true });
+    expect(anns[2]).toMatchObject({ modern: true, hidden: false, userid: 'alice', authorIdStart: 0, authorIdEnd: 5 });
+  });
+});

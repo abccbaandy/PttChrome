@@ -194,9 +194,10 @@ export function isBlacklistableUserId(id) {
 // 續行的字首（contPrefix）跟標頭列一起決定，只接同一則的 id ⇒ 下一則的標頭列（有 [N]）不會被吃成續行。
 // upstream 0c3e3973（11/28）再調主題（CONFIRMED，同樣新舊都吃）：print_more_prefix 在主題沒有續行 id 色時
 // 不印 id，改成「→ 」＋空白補到內容欄 —— 單純易讀全部續行、經典醒目原PO 的續行都是這樣；
-// 經典醒目非原PO 仍是「→ id: 」。對齊顯示不變。
+// 經典醒目非原PO 仍是「→ id: 」。對齊顯示（print_commenter）改成 id 靠左、後面補空白到 IDLEN 再接「: 」
+// （以前是前面補空白、id 靠右）；續行照舊空白縮到內容欄 14。
 const PIPE_COMMENT_HEADER_RE =
-  /^(推 )?( *)([A-Za-z][0-9A-Za-z]{1,11}): (.*?) +(?:(\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+) )?(?:(\d{2}\/\d{2}(?:\/\d{4})?) )?(\d{2}:\d{2}) \[~?(\d+)\]\s*$/;
+  /^(推 )?( *)([A-Za-z][0-9A-Za-z]{1,11})( *): (.*?) +(?:(\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+) )?(?:(\d{2}\/\d{2}(?:\/\d{4})?) )?(\d{2}:\d{2}) \[~?(\d+)\]\s*$/;
 const PIPE_TOMBSTONE_RE = /^(留言已刪除|留言已隱藏(?: \(.*\))?|留言已移除(?: \(.*\))?)$/;
 const PTT_IDLEN = 12;
 const MARK_MORE = '→ ';
@@ -206,25 +207,27 @@ function parsePipeCommentHeader(text) {
   const mark = m[1] || '';
   const pad = m[2].length;
   const id = m[3];
-  // 對齊顯示：前面的空白剛好把 id 補到 IDLEN 格；其他主題從第 0 欄（經典醒目在「推 」之後）。
-  // 其餘縮排都不是 pmore 畫的。
-  if (pad !== 0 && (mark || pad + id.length !== PTT_IDLEN)) return null;
+  const tail = m[4].length;
+  // 對齊顯示：空白剛好把 id 補到 IDLEN 格 —— 0c3e3973 之前補在前面（id 靠右），之後補在後面（id 靠左）；
+  // 其他主題從第 0 欄（經典醒目在「推 」之後）、id 後緊接冒號。其餘縮排都不是 pmore 畫的。
+  if (pad !== 0 && tail !== 0) return null;
+  if (pad + tail !== 0 && (mark || pad + tail + id.length !== PTT_IDLEN)) return null;
   const idIdx = mark.length + pad;
-  const bodyIdx = idIdx + id.length + 2;
-  const content = m[4].trimEnd();
+  const bodyIdx = idIdx + id.length + tail + 2;
+  const content = m[5].trimEnd();
   const h = {
-    seq: parseInt(m[8], 10),
+    seq: parseInt(m[9], 10),
     userid: id.toLowerCase(),
     user: id,
     idCol: cellColOf(text, idIdx),
     bodyCol: cellColOf(text, bodyIdx),
     // 標頭列上內容的起點（字元索引；經典醒目的「推」是全形，跟 bodyCol 差 1）。
     bodyIdx,
-    // ea9fe3d6 之後續行的字首；對齊顯示（pad > 0）只有空白縮排。
-    contPrefix: mark ? MARK_MORE + id + ': ' : pad === 0 ? id + ': ' : null,
+    // ea9fe3d6 之後續行的字首；對齊顯示（補了空白）只有空白縮排。
+    contPrefix: mark ? MARK_MORE + id + ': ' : pad + tail === 0 ? id + ': ' : null,
     content,
-    ip: m[5] || null,
-    time: m[6] ? m[6] + ' ' + m[7] : m[7],
+    ip: m[6] || null,
+    time: m[7] ? m[7] + ' ' + m[8] : m[8],
   };
   if (PIPE_TOMBSTONE_RE.test(content)) h.deleted = content;
   return h;
