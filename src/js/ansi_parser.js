@@ -315,8 +315,10 @@ AnsiParser.prototype.feed = function(data) {
           term.clear(params ? params[0] : 0);
           break;
         // CUP／HVP：兩個參數都可省略，省略＝1（ECMA-48 §8.3.21）⇒ `ESC[5H` ＝第 5 列
-        // 第 1 欄，不是原點。PTT 自己畫畫面恆送兩個（term.c#do_move），但文章內容裡
-        // 使用者寫的 CUP 也會過來（common/sys/string.c safe_mask 收 H／f）。
+        // 第 1 欄，不是原點（pfterm.c#fterm_exec 解譯 CUP 也是這個語意）。PTT 線上
+        // 不會送單參數形：使用者內容裡的 CSI 先被 server 端 pfterm 解譯進虛擬畫面，
+        // 送出的是 fterm_rawcmd2 重新產生的序列，FTCONF_ANSICMD2_OMIT=0 ⇒ 要嘛兩個
+        // 參數、要嘛 `ESC[H`。這裡照標準是給其他站台／未來改設定時不跑位。
         // 守護：tests/unit/ansi_parser_cup.test.js
         case 'H':
         case 'f':

@@ -2,9 +2,10 @@
 // CUP／HVP（`ESC[<row>;<col>H`、`ESC[<row>;<col>f`）只帶一個參數的形式。
 //
 // ECMA-48 §8.3.21：CUP 的兩個參數都可省略，省略＝1 ⇒ `ESC[5H` ＝第 5 列第 1 欄
-// （xterm 同）。PTT 自己畫畫面一律送兩個參數（mbbsd/term.c#do_move），但文章／看板
-// 內容裡使用者寫的 ANSI 也會經過這裡：pttbbs common/sys/string.c 的 ANSI 掃描把
-// CUP（H／f）列為 safe_mask 內的「安全指令」，動畫文、ANSI 圖可能只寫列號。
+// （xterm 同；pttbbs mbbsd/pfterm.c#fterm_exec 解譯 CUP 也是同一語意）。PTT 線上
+// 不送單參數形：使用者內容裡的 CSI 先被 server 端 pfterm 解譯，送出的是
+// fterm_rawcmd2 重產的序列（FTCONF_ANSICMD2_OMIT=0 ⇒ 兩個參數或 `ESC[H`）。
+// 這條守的是標準語意（其他站台、server 設定改變時不跑位）。
 // 舊碼看到參數少於兩個就一律跳原點 (0,0)，後面的字全畫到第一列。
 import { TermBuf } from "../../src/js/term_buf";
 import { AnsiParser } from "../../src/js/ansi_parser";
