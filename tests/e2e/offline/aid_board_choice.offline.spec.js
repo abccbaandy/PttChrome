@@ -52,6 +52,9 @@ async function boardlessLink(page) {
 // 所以點之前先等彈窗停好；紀錄留著，萬一再紅錯誤訊息直接帶出落點。
 async function chooseAid(page, which) {
   const sel = `[data-aid-choice="${which}"]`;
+  // 先等彈窗停好再抓按鈕：彈窗還沒出現時 querySelector 是 null，下面五個 listener 每個事件都會
+  // 在 btn.isConnected 丟 TypeError（頁面的未捕捉錯誤），紀錄也就整份失效。
+  await waitDialogSettled(page, sel);
   await page.evaluate((s) => {
     const btn = document.querySelector(s);
     const trace = [];
@@ -74,7 +77,6 @@ async function chooseAid(page, which) {
       );
     }
   }, sel);
-  await waitDialogSettled(page, sel);
   await page.locator(sel).click();
   try {
     await expect(page.locator('[data-aid-board-choice]')).toHaveCount(0, { timeout: 5000 });
