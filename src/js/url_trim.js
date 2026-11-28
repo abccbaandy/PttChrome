@@ -16,7 +16,7 @@
 // 規則（反覆套用到收斂）：
 //   1. 不成對的 `)` `]` `}` ⇒ 砍。「成對」指的是剩餘字串裡該右括號的數量不超過
 //      對應左括號 —— 所以 `(https://a/b)` 的 `)` 砍掉（左括號在 URL 之外），
-//      `https://a/b_(c)` 的 `)` 保留。
+//      `https://a/b_(c)` 的 `)` 保留。結尾的 `(` `[` `{` 後面沒東西，必定不成對 ⇒ 也砍。
 //   2. 結尾的 `.` `,` `;` `:` `!` `?` ⇒ 砍（句尾標點，URL 幾乎不會以它們結尾）。
 //   3. 絕不砍進 scheme：`<scheme>://` ＋至少一個字元永遠保留（`https://)` 這種
 //      退化輸入不得被砍成 `https://`）。
@@ -31,6 +31,7 @@ const TAIL_PUNCT = '.,;:!?';
 
 // 右括號 → 對應左括號。
 const CLOSERS = { ')': '(', ']': '[', '}': '{' };
+const OPENERS = '([{';
 
 // `text` 前 `end` 個字元裡 `ch` 出現幾次。
 function countChar(text, ch, end) {
@@ -54,6 +55,12 @@ export function trimUrlTailLength(url) {
   while (end > floor) {
     const ch = url.charAt(end - 1);
     if (TAIL_PUNCT.indexOf(ch) >= 0) {
+      --end;
+      continue;
+    }
+    // 結尾的左括號後面什麼都沒有 ⇒ 必定不成對（「https://youtu.be/abc(超好笑)」：ASCII-only 的
+    // uriRegEx 停在中文前面，左括號落單在結尾）。
+    if (OPENERS.indexOf(ch) >= 0) {
       --end;
       continue;
     }

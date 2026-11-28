@@ -27,6 +27,15 @@ describe("trimUrlTail — 不成對括號", () => {
     expect(trimUrlTail("https://a.com/x((y)))")).toBe("https://a.com/x((y))");
   });
 
+  // 「https://youtu.be/abc(超好笑)」：uriRegEx 是 ASCII-only，停在中文前面，左括號落單在結尾。
+  // 結尾的左括號後面什麼都沒有，必定不成對。
+  test("結尾落單的左括號也砍（後面接的是中文散文）", () => {
+    expect(trimUrlTail("https://youtu.be/abc(")).toBe("https://youtu.be/abc");
+    expect(trimUrlTail("https://a.com/x[")).toBe("https://a.com/x");
+    expect(trimUrlTail("https://a.com/x{")).toBe("https://a.com/x");
+    expect(trimUrlTail("https://a.com/x_(y)(")).toBe("https://a.com/x_(y)");
+  });
+
   test("方括號與大括號同規則", () => {
     expect(trimUrlTail("https://a.com/x]")).toBe("https://a.com/x");
     expect(trimUrlTail("https://a.com/x[1]")).toBe("https://a.com/x[1]");

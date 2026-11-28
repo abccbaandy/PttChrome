@@ -124,6 +124,13 @@ describe("TermBuf URI detection with CJK path (Big5)", () => {
     expect(line[1 + url.length].ch).toBe(")");
   });
 
+  test("網址後緊貼半形括號＋中文說明：落單的 ( 不得留在 href", () => {
+    const line = paintRow("https://youtu.be/abc(超好笑) x");
+    expect(line[0].fullurl).toBe("https://youtu.be/abc");
+    expect(line[19].endOfURL).toBe(true);
+    expect(line[20].partOfURL).toBeFalsy();
+  });
+
   test("全形括號（Big5 placeholder）包起來也不影響邊界", () => {
     const url = "https://docs.frankentui.com/render/synchronized-output";
     const line = paintRow("（" + url + "）");
