@@ -219,9 +219,26 @@ function lastBbsline(n) {
 }
 
 // 選取端點落在任何一列（bbsline）之外：取端點後面第一列的開頭；後面沒有列就取前面最後
-// 一列的行尾。都找不到回 null。只看 node 自己的子節點（端點就在它們之間）。
+// 一列的行尾。端點的子節點裡找不到（或端點是列外的文字節點，例如好讀「展開引言」鈕的字）
+// ⇒ 往外一層，把端點當成「在這個節點之前（offset 0）／之後」再找；最多到 `.main`
+// （再外面是 #easyReadingLastRow，它的列號恆為 0）。都找不到回 null。
 export function selectionPointOutsideRow(node, pos) {
-  if (!node || node.nodeType !== 1) return null;
+  let n = node;
+  let p = pos;
+  while (n && n.nodeType !== 9) {
+    const hit = n.nodeType === 1 ? pointAmongChildren(n, p) : null;
+    if (hit) return hit;
+    if (n.classList && n.classList.contains('main')) break;
+    const parent = n.parentNode;
+    if (!parent) break;
+    const idx = Array.prototype.indexOf.call(parent.childNodes, n);
+    p = p > 0 ? idx + 1 : idx;
+    n = parent;
+  }
+  return null;
+}
+
+function pointAmongChildren(node, pos) {
   const kids = node.childNodes;
   for (let i = pos; i < kids.length; ++i) {
     const el = firstBbsline(kids[i]);

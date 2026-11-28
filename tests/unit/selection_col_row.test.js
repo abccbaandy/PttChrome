@@ -65,6 +65,21 @@ test("全選（App.doSelectAll：selectAllChildren(.main)）：第一列開頭�
   });
 });
 
+test("端點是列外的文字節點（好讀「展開引言」鈕的字）：往上找到外層再取前後的列", () => {
+  const s = threeRows();
+  const second = s.container.querySelector('[data-row="1"]');
+  const btn = document.createElement("button");
+  btn.textContent = "展開引言";
+  second.parentNode.appendChild(btn);
+  const r = document.createRange();
+  r.setStart(s.container.querySelector('[data-row="0"]').firstChild, 0);
+  r.setEnd(btn.firstChild, 2);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  expect(colRow().end).toEqual({ row: 1, col: second.textContent.length });
+});
+
 test("列外端點後面沒有列：取前面最後一列的行尾", () => {
   const s = threeRows();
   const third = s.container.querySelector('[data-row="2"]');
