@@ -22,6 +22,15 @@ describe("cjkUrlExtension (pure)", () => {
     expect(cjkUrlExtension("/", "戈黛娃夫人」後略")).toBe("戈黛娃夫人");
   });
 
+  // 彎引號、直式／小型標點、全形直線都在 Big5 裡（PTT 上打得出來），一樣是句子的標點：
+  // 「“https://zh.wikipedia.org/wiki/貓”很可愛」的 ” 不能吃進網址。
+  test.each(["“", "”", "‘", "’", "〝", "〞", "﹐", "﹑", "﹒", "﹔", "﹕", "﹖", "﹗", "︰", "｜"])(
+    "full-width punctuation %s terminates the extension",
+    (p) => {
+      expect(cjkUrlExtension("/", "貓" + p + "很可愛")).toBe("貓");
+    },
+  );
+
   test("prose after a letter/digit boundary is NOT absorbed", () => {
     // ...watch?v=xxx真的好看 → prev char is 'x', not '/' or '='
     expect(cjkUrlExtension("x", "真的好看")).toBe("");

@@ -22,7 +22,7 @@ import { trimUrlTail } from './url_trim';
 
 // Full-width punctuation / whitespace that ends a sentence, never a URL.
 const STOP = new Set(
-  '　。，、；：！？…‥—－～‧·「」『』（）《》〈〉【】〔〕｛｝＂＇．'.split('')
+  '　。，、；：！？…‥—－～‧·「」『』（）《》〈〉【】〔〕｛｝＂＇．“”‘’〝〞﹐﹑﹒﹔﹕﹖﹗︰｜'.split('')
 );
 
 // Mirrors the path char class of TermBuf.uriRegEx (src/js/term_buf.js).
