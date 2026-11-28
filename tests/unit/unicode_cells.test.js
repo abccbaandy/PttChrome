@@ -168,6 +168,17 @@ describe("string_util 在 UTF-8 線路", () => {
     expect(textCellWidth("é")).toBe(1);
   });
 
+  // 0x80–0xFF 不能存成 Unicode 格，只能借 Big5 近似字，沒有就 '?'（一格）：NBSP、«、»、¬ 都是後者。
+  // 欄號換算要跟實際存／送的格數一致，不然貼上折行提早折、輸入框量錯寬。
+  test("Latin-1 裡 Big5 收不下的字：格寬＝實際存的 '?' 一格", () => {
+    for (const ch of [" ", "«", "»", "¬"]) {
+      expect(u2b(ch)).toBe("?");
+      expect(charCells(ch)).toBe(1);
+    }
+    expect(textCellWidth("a «b»")).toBe(u2b("a «b»").length);
+    expect(charCells("±")).toBe(u2b("±").length);
+  });
+
   test("Big5 線路：寬度規則與既有的「非 ASCII 一律 2」相同", () => {
     setUnicodeCells(false);
     expect(textCellWidth("中한ġA")).toBe(7);

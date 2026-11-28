@@ -99,7 +99,9 @@ export function encodeCodePoint(cp) {
 // Big5 線路一律 2：那邊的格子全是 Big5 位元組，與既有的「> 0x7F 算兩格」相同。
 export function codePointCells(cp) {
   if (cp < 0x80) return 1;
-  if (!enabled || cp < 0x100) return 2;
+  if (!enabled) return 2;
+  // 0x80–0xFF 存的是 Big5 近似字（兩格）或 '?'（一格），見 latin1Big5。
+  if (cp < 0x100) return latin1Big5(cp).length;
   if (cp === WIDE_TRAIL_CODE) return 0;
   // 熱路徑（每列文字的欄號換算）：Big5 收得下的字先查表就結束，不必算 ucs_width。
   if (!serverNative && big5Of(cp)) return 2;
