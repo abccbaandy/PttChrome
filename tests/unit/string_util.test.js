@@ -30,6 +30,7 @@ import {
   normalizePasteText
 } from "../../src/js/string_util";
 import { loadBig5Tables } from "./helpers/load_big5_tables";
+import { setUnicodeCells } from "../../src/js/unicode_cells";
 
 describe("wrapText group-width measurement", () => {
   // Regression guard for the CodeQL "incomplete string escaping" fix: the group
@@ -108,6 +109,30 @@ describe("normalizePasteText（貼上正規化，兩條貼上路徑共用）", (
 
   // 右鍵「貼上」走 App.doPaste → clipboard.readText()，剪貼簿是空的就拿到 ''，
   // 一路到 onTextInput(…, true) ⇒ 這裡。舊碼 ''.match(...) 是 null，wrapText 丟 TypeError。
+  // UTF-8 線路照送 emoji（u2bUnicode）。舊的字組 regex 一次吃一個 UTF-16 code unit，
+  // 斷點可以落在 surrogate pair 中間：前半留行尾、後半到下一行，兩半各被
+  // unicode_cells.encodeCodePoint 送成 '?'。
+  describe("emoji 不被折行拆成兩半", () => {
+    beforeAll(() => loadBig5Tables());
+    afterEach(() => setUnicodeCells(false));
+
+    it("UTF-8 線路：emoji 整個換到下一行（寬 2）", () => {
+      setUnicodeCells(true);
+      for (let n = 74; n <= 79; n++) {
+        const out = normalizePasteText("a".repeat(n) + "😀b", 78);
+        expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+        expect(out.replace(/\r/g, "")).toBe("a".repeat(n) + "😀b");
+      }
+      expect(wrapText("a".repeat(76) + "😀b", 78, "\r")).toBe("a".repeat(76) + "😀\rb");
+      expect(wrapText("a".repeat(77) + "😀b", 78, "\r")).toBe("a".repeat(77) + "\r😀b");
+    });
+
+    it("Big5 線路：寬度照舊（u2b 送兩個 \\xFF\\xFD＝四格），也不拆開", () => {
+      expect(wrapText("a".repeat(74) + "😀b", 78, "\r")).toBe("a".repeat(74) + "😀\rb");
+      expect(wrapText("a".repeat(75) + "😀b", 78, "\r")).toBe("a".repeat(75) + "\r😀b");
+    });
+  });
+
   it("空字串（剪貼簿是空的）原樣回傳，不丟例外", () => {
     expect(normalizePasteText("", 78)).toBe("");
     expect(wrapText("", 78, "\r")).toBe("");

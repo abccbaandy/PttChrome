@@ -60,7 +60,10 @@ export function wrapText(it, maxLen, enterChar) {
   // KNOWN boundary (deliberate): the mirror rule — full-width OPENERS （「『【 must
   // not end a line — is not handled; that needs lookahead to regroup, and every
   // caller here is paste normalization where a stray opener is merely ugly.
-  var pattern = /\r|\n|([^\x00-\x7f][,.?!:;，。、；：？！）」』】〉》]?[\t ]*)|([\x00-\x08\x0b\x0c\x0e-\x1f\x21-\x7f]+[\t ]*)|[\t ]+/g;
+  // A surrogate pair (emoji) is ONE full-width group: matching code unit by code
+  // unit would let the break land between the halves, and on the UTF-8 wire each
+  // lone half is sent as '?' (unicode_cells.encodeCodePoint).
+  var pattern = /\r|\n|((?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\x00-\x7f])[,.?!:;，。、；：？！）」』】〉》]?[\t ]*)|([\x00-\x08\x0b\x0c\x0e-\x1f\x21-\x7f]+[\t ]*)|[\t ]+/g;
   var splited = it.match(pattern);
   if (!splited) return it; // '' (e.g. pasting an empty clipboard)
 
@@ -68,8 +71,8 @@ export function wrapText(it, maxLen, enterChar) {
   var len = 0;
   for (var i = 0; i < splited.length; ++i) {
     // Tab = 4 cells, newline = 0, everything else by its screen width.
-    var grouplen = textCellWidth(splited[i].replace(/\t/g,"    ")
-                                           .replace(/\r|\n/g,""));
+    var grouplen = wrapGroupCells(splited[i].replace(/\t/g,"    ")
+                                            .replace(/\r|\n/g,""));
 
     if (splited[i] == '\r' || splited[i] == '\n')
       len = 0;
@@ -82,6 +85,15 @@ export function wrapText(it, maxLen, enterChar) {
   }
   return result;
 };
+
+// Cells a paste group occupies once sent. UTF-8 wire: the server's width
+// (textCellWidth). Big5 wire: what u2b puts on the wire — 1 per ASCII code unit,
+// 2 per non-ASCII code unit, so an emoji (two '\xFF\xFD') counts 4.
+function wrapGroupCells(text) {
+  if (unicodeCellsEnabled()) return textCellWidth(text);
+  var nonAscii = text.match(/[^\x00-\x7f]/g);
+  return text.length + (nonAscii ? nonAscii.length : 0);
+}
 
 // Paste normalization, shared by EVERY paste route so they all put the same
 // bytes on the wire. Two callers today:
